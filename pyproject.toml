@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "sigmaflux"
+version = "0.1.0"
+description = "Metabolic Flux Analysis with EMU framework and AI-based flux prediction"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "Daniel R. Weilandt" }]
+keywords = ["metabolic flux analysis", "MFA", "EMU", "stable isotope", "bioinformatics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "scipy>=1.10",
+    "cobra>=0.29",
+    "networkx>=3.0",
+    "optlang>=1.8",
+    "tqdm>=4.0",
+    "matplotlib>=3.7",
+    "h5py>=3.8",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-autodoc-typehints",
+    "furo",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
