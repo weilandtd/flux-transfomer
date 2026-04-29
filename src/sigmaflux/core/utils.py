@@ -1,3 +1,5 @@
+import string
+
 import pandas as pd
 
 import numpy as np
@@ -8,11 +10,11 @@ from scipy.sparse import hstack, vstack
 
 from scipy.optimize import LinearConstraint, Bounds
 from scipy.optimize import milp, linprog
-import re 
+import re
 
 import time
 import logging
-import torch 
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,83 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
         except: 
             pass
 
-def atommap_boundary(model): 
+def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C'):
+    """
+    Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated
+    with SigmaFlux atom_mapping strings, ready for MFAModel().
+
+    Maranas AMM format (one row per metabolite per reaction, atoms as integers)
+    is converted to SigmaFlux string format, e.g.:
+        reaction.annotation['atom_mapping'] = "accoa_c (ab) + accoa_c (cd) -> aacoa_c (abcd) + coa_c"
+
+    :param path_to_cobra: path to Maranas GEM xlsx (Reactions + Metabolites sheets)
+    :param path_to_atom_map_xls: path to Maranas AMM xlsx (Atom Transition + Symmetry sheets)
+    :param path_to_output: if given, save annotated model as JSON
+    :param atom_type: element to track, default 'C'
+    """
+    import cobra
+
+    # Load GEM xlsx into a cobra model
+    gem = pd.read_excel(path_to_cobra, sheet_name=None)
+    model = cobra.Model()
+    for _, row in gem['Metabolites'].iterrows():
+        model.add_metabolites([cobra.Metabolite(id=str(row['metid']), name=str(row['metname']))])
+    for _, row in gem['Reactions'].iterrows():
+        rxn = cobra.Reaction(str(row['Rxn ID']), lower_bound=row['Lower bound'], upper_bound=row['Upper bound'])
+        model.add_reactions([rxn])
+        rxn.build_reaction_from_string(str(row['Reaction Formula']))
+
+    # Annotate with atom mappings
+    amm = pd.read_excel(path_to_atom_map_xls, sheet_name='Atom Transition')
+    amm = amm[amm['startNodeSymbol'] == atom_type]
+
+    _chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
+
+    for rxn_id, grp in amm.groupby('rxnAbbreviation', sort=False):
+        try:
+            rxn = model.reactions.get_by_id(rxn_id)
+
+            # Map sorted unique integer atom IDs → single chars (a-z, A-Z, 0-9)
+            all_ids = sorted({int(x) for maps in grp['maps'] for x in str(maps).split(',')})
+            lbl = {aid: _chars[i] for i, aid in enumerate(all_ids)}
+
+            reactants, products = [], []
+            for _, row in grp.iterrows():
+                ids = [int(x) for x in str(row['maps']).split(',')]
+                entry = f"{row['metAbbreviation']} ({''.join(lbl[i] for i in ids)})"
+                (reactants if row['ReactantProductFlag'] == 'reactant' else products).append(entry)
+
+            amm_mets = set(grp['metAbbreviation'])
+            reactants += [m.id for m in rxn.reactants if m.id not in amm_mets]
+            products  += [m.id for m in rxn.products  if m.id not in amm_mets]
+
+            rxn.annotation['atom_mapping'] = ' + '.join(reactants) + ' -> ' + ' + '.join(products)
+        except:
+            pass
+
+    # Symmetries
+    try:
+        sym = pd.read_excel(path_to_atom_map_xls, sheet_name='Symmetry')
+        for _, row in sym.iterrows():
+            try:
+                met = model.metabolites.get_by_id(str(row['Metab_name']).strip())
+                default = [int(x) for x in str(row['default mapping']).split()]
+                sym_pos = [int(x) for x in str(row['symmetry mapping']).split()]
+                p2l = {p: string.ascii_lowercase[i] for i, p in enumerate(default)}
+                entry = ''.join(p2l[p] for p in default) + '.' + ''.join(p2l[p] for p in sym_pos)
+                met.annotation.setdefault('symmetries', []).append(entry)
+            except:
+                pass
+    except:
+        pass
+
+    if path_to_output is not None:
+        cobra.io.save_json_model(model, str(path_to_output))
+
+    return model
+
+
+def atommap_boundary(model):
     all_rxns = set(model.reactions)
     for r in model.boundary: 
         metabolite = list(r.metabolites.keys())[0]
