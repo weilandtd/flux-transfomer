@@ -13,16 +13,26 @@ TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir))
 
 
-def make_test_data():
-    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', 'test_labeling.csv'))
+def _dataset_prefix(dataset):
+    if dataset == 'yeast':
+        return 'yeast_test'
+    if dataset == 'toy':
+        return 'toy_test'
+    raise ValueError(f"Unknown dataset '{dataset}'. Expected 'yeast' or 'toy'.")
+
+
+def make_test_data(dataset='yeast'):
+    prefix = _dataset_prefix(dataset)
+    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_labeling.csv'))
     data = df.groupby(['id', 'mid']).mean()[['enrichment', ]]
     data['std'] = df.groupby(['id', 'mid']).std()['enrichment']
     data.columns = ['mean', 'std']
     return data.reset_index()
 
 
-def make_test_flux_data(model):
-    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', 'test_fluxes.csv'))
+def make_test_flux_data(model, dataset='yeast'):
+    prefix = _dataset_prefix(dataset)
+    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_fluxes.csv'))
     data = df.groupby(['id', ]).mean()[['flux', ]]
     data['std'] = df.groupby(['id', ]).std()['flux']
     data.columns = ['mean', 'std']
@@ -34,7 +44,7 @@ def make_test_flux_data(model):
 
 
 # Test model initialization of IO model
-def run_model_test(path, name):
+def run_model_test(path, name, dataset='yeast'):
     torch.autograd.set_detect_anomaly(True)
 
     model = load_json_model(path)
@@ -44,10 +54,15 @@ def run_model_test(path, name):
     assert {r.id for r in mfa_model.reactions} == {r.id for r in model.reactions}
 
     # Make a test experiment
-    data = MassIsotopomerData(mfa_model, make_test_data())
-    flux_data = FluxData(mfa_model, make_test_flux_data(model))
+    data = MassIsotopomerData(mfa_model, make_test_data(dataset=dataset))
+    flux_data = FluxData(mfa_model, make_test_flux_data(model, dataset=dataset))
 
-    tracer_1 = Tracer(mfa_model.metabolites.glc__D_e, 0.1, [1, 1, 1, 1, 1, 1])
+    if dataset == 'yeast':
+        tracer_1 = Tracer(mfa_model.metabolites.glc__D_e, 0.1, [1, 1, 1, 1, 1, 1])
+    elif dataset == 'toy':
+        tracer_1 = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1, ])
+    else:
+        raise ValueError(f"Unknown dataset '{dataset}'. Expected 'yeast' or 'toy'.")
 
     experiment = Experiment(data, [tracer_1, ], fluxes=flux_data)
 
@@ -61,11 +76,17 @@ def run_model_test(path, name):
 
     labeling = mfa_model()
 
-    assert (labeling[:, mfa_model._metabolite_hash['pyr_c']].detach().numpy() \
-            != np.array([0.0, 0.0, 0.0, 0.0, 0.0], )).any()
-
+    if dataset == 'yeast':
+        assert (labeling[:, mfa_model._metabolite_hash['pyr_c']].detach().numpy()
+                != np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], )).any()
+    elif dataset == 'toy':
+        assert (labeling[:, mfa_model._metabolite_hash['Ser']].detach().numpy()
+                != np.array([0.0, 0.0, 0.0, 0.0], )).any()
+    else:
+        raise ValueError(f"Unknown dataset '{dataset}'. Expected 'yeast' or 'toy'.")
 
 
 def test_models():
-    run_model_test(os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO')
-    run_model_test(os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
