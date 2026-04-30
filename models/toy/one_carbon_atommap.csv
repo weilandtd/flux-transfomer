@@ -1,0 +1,26 @@
+id,atom_mapping
+in_Ser, Ser_in (abc) -> Ser (abc)
+src_Ser, Ser_src (abc) -> Ser (abc)
+sink_Ser, Ser (abc) -> Ser_sink (abc)
+src_Gly, Gly_src (ab) -> Gly (ab)
+sink_Gly, Gly (ab) -> Gly_sink (ab)
+src_meTHF, meTHF_src (c) -> meTHF (c)
+sink_meTHF, meTHF (c) -> meTHF_sink (c)
+shmt1, Ser (abc) + H2O -> Gly (ab) + meTHF (c)
+shmt2, Gly (ab) + meTHF (c) -> Ser (abc) + H2O 
+glyC, Gly (ab) -> meTHF (b) + CO2 (a)
+sink_CO2, CO2 (a) -> CO2_sink (a)
+src_H2O, H2O_src  -> H2O
+sink_H2O, H2O -> H2O_sink 
+rev_mthfd, meTHF (c) + H2O <-> meTHF (c) + H2O 
+EX_Ser_in,  --> Ser_in (abc)
+EX_Ser_src,  --> Ser_src (abc)
+EX_Ser_sink,  Ser_sink (abc) --> 
+EX_Gly_src,  Gly_src (ab) -->
+EX_Gly_sink,  --> Gly_sink (ab) 
+EX_meTHF_src,  --> meTHF_src (a) 
+EX_meTHF_sink,  meTHF_sink (a) -->
+EX_CO2_sink,  CO2_sink (a) --> 
+EX_H2O_src,  --> H2O_src
+EX_H2O_sink,  H2O_sink --> 
+
