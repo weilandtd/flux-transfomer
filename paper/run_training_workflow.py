@@ -22,7 +22,7 @@ import subprocess
 import sys
 
 
-def find_annotated_model(model_folder, models_root="models"):
+def find_annotated_model(model_folder, models_root="./../models"):
     pattern = os.path.join(models_root, model_folder, "*_annotated.json")
     matches = glob.glob(pattern)
     if not matches:
@@ -141,7 +141,7 @@ def main():
             "--seed", str(args.seed),
         ])
 
-    print(f"\nWorkflow complete.")
+    print("\nWorkflow complete.")
     print(f"Trained model: {output_model}")
 
 
