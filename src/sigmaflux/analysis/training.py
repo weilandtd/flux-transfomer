@@ -9,7 +9,7 @@ KEYS = ["_fluxes", "_reversibility", "_lambda", "_mu"]
 def get_dataframe_key(checkpoint, key):
     df = pd.DataFrame()
     for i in range(len(checkpoint)):
-        if type(checkpoint[i][key]) == torch.Tensor:
+        if isinstance(checkpoint[i][key], torch.Tensor):
             df = pd.concat([df, pd.DataFrame(checkpoint[i][key].cpu().numpy())], axis=1)
         else:
             df = pd.concat([df, pd.DataFrame([checkpoint[i][key],])], axis=1)
