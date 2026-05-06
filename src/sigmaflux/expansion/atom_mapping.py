@@ -1,5 +1,5 @@
 import re
-from sigmaflux.expansion.utils import check_symetry_kwd, emu_to_bin, intersection
+from sigmaflux.expansion.utils import emu_to_bin
 from sigmaflux.expansion.emu import EMU, OriginSet
 
 from collections import OrderedDict
@@ -20,7 +20,7 @@ class AtomMapping(object):
         :param rxn: cobra.Reaction() with atom_mapping annotation
         """
 
-        if not 'atom_mapping' in rxn.annotation:
+        if 'atom_mapping' not in rxn.annotation:
             # Todo check if this should be an error or Warning
             raise MissingAtomMappingError('Reaction {} is not annotated with atom_mapping')
 
