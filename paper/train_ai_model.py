@@ -2,7 +2,7 @@
 Train SigmaFlux's labeling-to-flux transformer from generated HDF5 data.
 
 Example:
-    PYTHONPATH=src python train_ai_model.py \
+    PYTHONPATH=src python paper/train_ai_model.py \
         --data-dir training_data \
         --model-json models/I_orientalis/imIsor_annotated.json \
         --output imisor_transformer.pt \
