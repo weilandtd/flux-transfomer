@@ -1,7 +1,7 @@
 import cobra
 import networkx as nx
 from sigmaflux.expansion.atom_mapping import AtomMapping, MissingAtomMappingError
-from sigmaflux.expansion.emu import EMU, OriginSet
+from sigmaflux.expansion.emu import OriginSet
 from sigmaflux.expansion.utils import can_make_met
 
 
@@ -26,7 +26,7 @@ class EMUNetwork(object):
         self.max_size = max_size
 
     def has_emu(self, item) -> bool:
-        if not item.size in self.subnetworks:
+        if item.size not in self.subnetworks:
             return False
         return self.subnetworks[item.size].has_node(item)
 
@@ -73,7 +73,7 @@ class EMUExpansion(object):
             the_emu = emus_to_expand.pop()
 
             # Find the reactions that make the metabolite
-            if type(the_emu._metabolite) == cobra.Metabolite:
+            if isinstance(the_emu._metabolite, cobra.Metabolite):
                 the_met = self.model.metabolites.get_by_id(the_emu.id)
             else:
                 raise TypeError(f'The emu.metabolite is not a cobra.Metabolite but {type(the_emu.metabolite)}')
@@ -139,7 +139,7 @@ class EMUExpansion(object):
 
                 #Add a new subnetwork of size new_emu if necessary
                 for the_new_emu in new_emus:
-                    if not the_new_emu.size in self.emu_network.subnetworks:
+                    if the_new_emu.size not in self.emu_network.subnetworks:
                         self.emu_network.expand(the_new_emu.size)
 
                 #print(the_emu,the_atom_mapping.product_mappings , the_atom_mapping.educt_mappings, origin_set)
