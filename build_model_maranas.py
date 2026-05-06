@@ -1,4 +1,4 @@
-from src.sigmaflux.core.utils import convert_mfa_maranas
+from sigmaflux.core.utils import convert_mfa_maranas
 
 
 # I_orientalis  

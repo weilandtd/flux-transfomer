@@ -12,6 +12,9 @@ import os
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir))
 
+print(f"TEST_DIR: {TEST_DIR}")
+print(f"PROJECT_DIR: {PROJECT_DIR}")
+
 
 def _dataset_prefix(dataset):
     if dataset == 'yeast':
@@ -48,7 +51,15 @@ def run_model_test(path, name, dataset='yeast'):
     torch.autograd.set_detect_anomaly(True)
 
     model = load_json_model(path)
-    mfa_model = MFAModel(model, name )
+
+    # Maranas-format models have _out metabolites that are not mass-balanced in COBRA,
+    # so COBRApy sampling gives zero glucose fluxes. Use uniform unit fluxes instead.
+    if dataset == 'yeast':
+        initial_fluxes = pd.Series(1.0, index=[r.id for r in model.reactions])
+    else:
+        initial_fluxes = None
+
+    mfa_model = MFAModel(model, name, initial_flux_distribution=initial_fluxes)
 
     assert len(mfa_model.reactions) > 0
     assert {r.id for r in mfa_model.reactions} == {r.id for r in model.reactions}
@@ -58,7 +69,7 @@ def run_model_test(path, name, dataset='yeast'):
     flux_data = FluxData(mfa_model, make_test_flux_data(model, dataset=dataset))
 
     if dataset == 'yeast':
-        tracer_1 = Tracer(mfa_model.metabolites.glc__D_e, 0.1, [1, 1, 1, 1, 1, 1])
+        tracer_1 = Tracer(mfa_model.metabolites.glc__D_out, 0.1, [1, 1, 1, 1, 1, 1])
     elif dataset == 'toy':
         tracer_1 = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1, ])
     else:
@@ -77,11 +88,9 @@ def run_model_test(path, name, dataset='yeast'):
     labeling = mfa_model()
 
     if dataset == 'yeast':
-        assert (labeling[:, mfa_model._metabolite_hash['pyr_c']].detach().numpy()
-                != np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], )).any()
+        assert labeling[:, mfa_model._metabolite_hash['pyr_c']].detach().numpy().any()
     elif dataset == 'toy':
-        assert (labeling[:, mfa_model._metabolite_hash['Ser']].detach().numpy()
-                != np.array([0.0, 0.0, 0.0, 0.0], )).any()
+        assert labeling[:, mfa_model._metabolite_hash['Ser']].detach().numpy().any()
     else:
         raise ValueError(f"Unknown dataset '{dataset}'. Expected 'yeast' or 'toy'.")
 
@@ -90,3 +99,7 @@ def test_models():
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
+
+
+if __name__ == '__main__':
+    test_models()
