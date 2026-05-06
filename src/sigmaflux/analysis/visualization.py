@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt 
 from sigmaflux.core.mfa import fit_mfa_model
 from sigmaflux.core.data import get_model_labeling_data, get_model_flux_data
-from torch import nn, optim
 import torch 
 import numpy as np
 
@@ -9,13 +8,13 @@ import numpy as np
 def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot = False, with_replicates = False, n_reps = 5):
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
-    if with_replicates == False: 
+    if not with_replicates: 
         n_reps = 1
     labeling_diff = np.zeros((len(epochs), n_reps))
     for i,epoch in enumerate(epochs):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -25,7 +24,7 @@ def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot 
         plt.ylabel("MID Difference")
         labeling_diff_mean = np.mean(labeling_diff, axis = 1)
         
-        if with_replicates == True:
+        if with_replicates:
             labeling_diff_std = np.std(labeling_diff, axis = 1)
             plt.errorbar(epochs, labeling_diff_mean, yerr = labeling_diff_std, fmt = "bo-")
         else: 
@@ -37,13 +36,13 @@ def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot 
 def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5): 
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
-    if with_replicates == False: 
+    if not with_replicates: 
         n_reps = 1
     labeling_diff = np.zeros((len(lam1s), n_reps))
     for i,lam1 in enumerate(lam1s):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -52,7 +51,7 @@ def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plo
     plt.ylabel("MID Difference")
     labeling_diff_mean = np.mean(labeling_diff, axis = 1)
     if plot: 
-        if with_replicates == True:
+        if with_replicates:
             labeling_diff_std = np.std(labeling_diff, axis = 1)
             plt.errorbar(lam1s, labeling_diff_mean, yerr = labeling_diff_std, fmt = "bo-")
         else: 
@@ -64,13 +63,13 @@ def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plo
 def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5): 
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
-    if with_replicates == False: 
+    if not with_replicates: 
         n_reps = 1
     labeling_diff = np.zeros((len(lam2s), n_reps))
     for i,lam2 in enumerate(lam2s):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -79,7 +78,7 @@ def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot
     plt.ylabel("MID Difference")
     labeling_diff_mean = np.mean(labeling_diff, axis = 1)
     if plot: 
-        if with_replicates == True:
+        if with_replicates:
             labeling_diff_std = np.std(labeling_diff, axis = 1)
             plt.errorbar(lam2s, labeling_diff_mean, yerr = labeling_diff_std, fmt = "bo-")
         else: 
@@ -91,13 +90,13 @@ def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot
 def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100, plot = False, with_replicates = False, n_reps = 5): 
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
-    if with_replicates == False: 
+    if not with_replicates: 
         n_reps = 1
     labeling_diff = np.zeros((len(labeling_scalers), n_reps))
     for i,labeling_scaler in enumerate(labeling_scalers):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -106,7 +105,7 @@ def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100,
     plt.ylabel("MID Difference")
     labeling_diff_mean = np.mean(labeling_diff, axis = 1)
     if plot:
-        if with_replicates == True:
+        if with_replicates:
             labeling_diff_std = np.std(labeling_diff, axis = 1)
             plt.errorbar(labeling_scalers, labeling_diff_mean, yerr = labeling_diff_std, fmt = "bo-")
         else: 
