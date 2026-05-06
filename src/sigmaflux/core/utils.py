@@ -4,12 +4,8 @@ import pandas as pd
 
 import numpy as np
 
-from scipy.sparse import eye as speye
-from scipy.sparse import find as sfind
-from scipy.sparse import hstack, vstack
 
-from scipy.optimize import LinearConstraint, Bounds
-from scipy.optimize import milp, linprog
+from scipy.optimize import linprog
 import re
 
 import time
@@ -37,12 +33,12 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
 
     for met, row in atom_mapping_annotation.iterrows():
         try: 
-            if type(row[atom_mapping]) == str:
+            if isinstance(row[atom_mapping], str):
                 model.reactions.get_by_id(met).annotation['atom_mapping'] = row[atom_mapping]
             else:
                # print("no atom_mapping", met, row)
                 model.reactions.get_by_id(met).annotation['atom_mapping'] = ''
-        except: 
+        except Exception:
             pass
 
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C'):
@@ -96,7 +92,7 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
             products  += [m.id for m in rxn.products  if m.id not in amm_mets]
 
             rxn.annotation['atom_mapping'] = ' + '.join(reactants) + ' -> ' + ' + '.join(products)
-        except:
+        except Exception:
             pass
 
     # Symmetries
@@ -110,9 +106,9 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
                 p2l = {p: string.ascii_lowercase[i] for i, p in enumerate(default)}
                 entry = ''.join(p2l[p] for p in default) + '.' + ''.join(p2l[p] for p in sym_pos)
                 met.annotation.setdefault('symmetries', []).append(entry)
-            except:
+            except Exception:
                 pass
-    except:
+    except Exception:
         pass
 
     if path_to_output is not None:

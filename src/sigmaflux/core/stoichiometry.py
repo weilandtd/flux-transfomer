@@ -1,7 +1,6 @@
 from collections import namedtuple
 from networkx import incidence_matrix
 import torch
-from sigmaflux.expansion.emu_expansion import EMUExpansion
 from sigmaflux.expansion.emu import get_metabolite
 
 AnnotatedStoichiometry = namedtuple('AnnotatedStoichiometry', ['matrix', 'reactions', 'directions',
