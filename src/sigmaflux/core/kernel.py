@@ -1,8 +1,8 @@
-from optlang import Model, Variable, Constraint, Objective
+from optlang import Variable, Constraint, Objective
 from cobra.util.solver import check_solver
-import numpy as np 
+import numpy as np
 from scipy import linalg
-from tqdm import tqdm
+from scipy.optimize import linprog
 
 def right_kernel_stoich_matrix_qr(S):
     """
@@ -28,7 +28,7 @@ def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
     Note that this formulation requieres a cplex or gurobi installation. 
 
     """
-    if not solver in ["cplex", "gurobi"]:
+    if solver not in ["cplex", "gurobi"]:
         raise NotImplementedError("Only cplex and gurbi interfaces support the indicator constraint!")
 
     # Charateristics of the stoichometric matrix
@@ -104,10 +104,8 @@ def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
     model.add(constraints)
 
     # Finding linerly independent kernel vectors 
-    print(f"Finding linerly independent kernel vectors")
+    print("Finding linerly independent kernel vectors")
 
-    counter = 0 
-    efm_size = 0 
     this_rank = 0
 
     while this_rank < rank_deficiency:
@@ -162,7 +160,7 @@ def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
             raise RuntimeError("MILP infeasible cant find Kernel")
 
     # final kernel 
-    kernel = np.stack([v for v,l in zip(kernel_vectors,linear_dependence) if l]).T
+    kernel = np.stack([v for v, _ld in zip(kernel_vectors, linear_dependence) if _ld]).T
 
     if np.linalg.matrix_rank(kernel) < rank_deficiency:
          raise RuntimeError("Kernel is not full rank!")
@@ -235,28 +233,28 @@ def right_kernel_stoich_matrix_legacy(S, eps=1e-3):
     b = np.zeros(A.shape[0])
     #b[-1] = 1.0
     
-    I = np.eye(num_reactions)
-    Zero = np.zeros_like(I)
+    eye = np.eye(num_reactions)
+    Zero = np.zeros_like(eye)
 
-    A_ub_0 = np.concatenate([-I, Zero, -2 * eps * I , Zero, Zero], axis=1)
+    A_ub_0 = np.concatenate([-eye, Zero, -2 * eps * eye, Zero, Zero], axis=1)
     b_ub_0 = -eps * np.ones(num_reactions)
 
-    A_ub_1 = np.concatenate([Zero, -I, Zero , - 2 * eps * I, Zero], axis=1)
+    A_ub_1 = np.concatenate([Zero, -eye, Zero, -2 * eps * eye, Zero], axis=1)
     b_ub_1 = -eps * np.ones(num_reactions)
 
-    A_ub_2 = np.concatenate([I, Zero, I, Zero, Zero], axis=1)
+    A_ub_2 = np.concatenate([eye, Zero, eye, Zero, Zero], axis=1)
     b_ub_2 = np.ones(num_reactions)
 
-    A_ub_3 = np.concatenate([Zero, I, Zero, I, Zero ], axis=1)
+    A_ub_3 = np.concatenate([Zero, eye, Zero, eye, Zero], axis=1)
     b_ub_3 = np.ones(num_reactions)
 
-    A_ub_4 = np.concatenate([Zero, Zero, -I, -I, 2*I], axis=1)
+    A_ub_4 = np.concatenate([Zero, Zero, -eye, -eye, 2 * eye], axis=1)
     b_ub_4 = np.zeros(num_reactions)
 
-    A_ub_6 = np.concatenate([Zero, Zero, I, I, -I], axis=1)
+    A_ub_6 = np.concatenate([Zero, Zero, eye, eye, -eye], axis=1)
     b_ub_6 = np.ones(num_reactions)
 
-    A_ub_7 = np.concatenate([Zero, Zero, -I,-I, Zero], axis=1)
+    A_ub_7 = np.concatenate([Zero, Zero, -eye, -eye, Zero], axis=1)
     b_ub_7 = -np.ones(num_reactions)
 
     A_ub_5 = -1 * np.concatenate([  np.ones((1,S.shape[1])), 
@@ -297,7 +295,7 @@ def right_kernel_stoich_matrix_legacy(S, eps=1e-3):
                       bounds=(0,1),
                       integrality=integrality,)
 
-        if not res.x is None:
+        if res.x is not None:
             # Nomrmalize the 
             objective_val.append(res.fun)
             k = res.x[:num_reactions] - res.x[num_reactions:2*num_reactions] #np.array([x if abs(x) > eps else 0.0 for x in res.x[:num_reactions]])

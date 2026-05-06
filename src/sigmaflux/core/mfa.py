@@ -1,16 +1,14 @@
 """
 Functions for MFA
 """
-from networkx import constraint
 from sigmaflux.expansion.emu import OriginSet, EMU
 from sigmaflux.core.data import get_model_labeling_data, get_model_flux_data
 from tqdm import trange
 import numpy as np
 import torch
 import logging
-from sigmaflux.core.scaling import get_default_factor, Scaling
+from sigmaflux.core.scaling import Scaling
 from sigmaflux.core.utils import time_function 
-import pickle    
 # TODO MAKE A CENTRAL DEFINITION
 EPSILON = 1e-9
 
@@ -58,10 +56,9 @@ def fit_mfa_model(model, loss_fn,flux_loss_fn, optimizer,
     if isinstance(labeling_scaler, float):
         labeling_scaler = labeling_scaler * torch.ones(len(model.experiments), device=model.device) 
 
-    labeling_scaling = Scaling(labeling_scaler)
+    Scaling(labeling_scaler)
 
     log = []
-    gradients = []
 
     # Generate indices of experiments to run simultanously
     experiment_batches = []
@@ -177,7 +174,7 @@ def fit_mfa_model(model, loss_fn,flux_loss_fn, optimizer,
                 
                 try:
                     labeling_data = torch.load(labeling_checkpoint_file)
-                except:
+                except Exception:
                     labeling_data = []
 
                 labeling_data.append(aggregated_output)

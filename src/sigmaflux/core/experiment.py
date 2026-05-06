@@ -1,9 +1,8 @@
 import torch
-from sigmaflux.expansion.atom_mapping import MissingAtomMappingError
 from sigmaflux.core.data import MassIsotopomerData, FluxData
 from sigmaflux.expansion.emu import EMU, OriginSet
 from sigmaflux.core.utils import insert_mapping_into_reaction
-from cobra import Reaction, Model, Metabolite
+from cobra import Reaction, Metabolite
 import re 
 
 
@@ -24,7 +23,7 @@ class Experiment(object):
 
         """
 
-        if not type(mid_data) == MassIsotopomerData:
+        if not isinstance(mid_data, MassIsotopomerData):
             raise ValueError(f'data is of type {type(mid_data)} not {MassIsotopomerData}')
         else:
             # TODO assert if the file-format matches std.
@@ -32,7 +31,7 @@ class Experiment(object):
 
         if fluxes is None:
             fluxes = []
-        elif not type(fluxes) == FluxData:
+        elif not isinstance(fluxes, FluxData):
             raise ValueError(f'data is of type {type(fluxes)} not {FluxData}')
         else:
             # TODO
@@ -46,7 +45,7 @@ class Experiment(object):
 
         self._tracers = dict()
         for the_tracer in tracers:
-            if not the_tracer.metabolite in self._tracers:
+            if the_tracer.metabolite not in self._tracers:
                 self._tracers[the_tracer.metabolite.id] = list()
             self._tracers[the_tracer.metabolite.id].append(the_tracer)
 
@@ -90,7 +89,7 @@ def get_tracer_inputs(experiment, boundaries, device=None, dtype=torch.float64):
             tracer_list = experiment.get_tracer_by_met(the_boundary._values[0].metabolite)
             boundary_inputs[the_boundary] = calculate_tracer_input(tracer_list, the_boundary._values[0], device=device, dtype=dtype)
         # if not in the experiment, make all MID 0
-        elif isinstance(the_boundary, EMU) and not the_boundary.metabolite in experiment._tracers:
+        elif isinstance(the_boundary, EMU) and the_boundary.metabolite not in experiment._tracers:
 
             tensor_input = torch.tensor([0.0, ] * (len(the_boundary.mid) + 1), device=device,dtype=dtype)
             tensor_input[0] = 1.0
@@ -98,7 +97,7 @@ def get_tracer_inputs(experiment, boundaries, device=None, dtype=torch.float64):
 
         elif isinstance(the_boundary, OriginSet) \
                 and len(the_boundary) == 1 \
-                and not the_boundary._values[0].metabolite in experiment._tracers:
+                and the_boundary._values[0].metabolite not in experiment._tracers:
 
             tensor_input = torch.tensor([0.0, ] * (len(the_boundary._values[0].mid) + 1), dtype=dtype,
                                         device=device)

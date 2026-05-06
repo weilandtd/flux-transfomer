@@ -1,12 +1,11 @@
-import torch 
+import torch
+import time
 from sigmaflux.core.mfa import get_labeling, filter_conv_inputs, \
     convolution, update_states, update_derivative_states, get_derivative_labeling, convolution_derivative, filter_conv_inputs_with_indices
-from sigmaflux.expansion.emu import get_metabolite
 import logging
 from sigmaflux.core.utils import multiply_3d_sparse_with_2d
 
 logger = logging.getLogger(__name__)
-import time
 
 def diagonalize_flux(v_f, v_r):
         diag_f = torch.diag(v_f)
