@@ -408,14 +408,20 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
             # Use provided statistics
             mean = float(norm_stats_input['labeling_mean'])
             std = float(norm_stats_input['labeling_std'])
+            if std < 1e-12:
+                std = 1.0
             labeling_data = (labeling_data - mean) / std
             norm_stats = norm_stats_input.copy()
+            norm_stats['labeling_std'] = std
         else:
             # Compute new statistics
             mean = labeling_data.mean()
             std = labeling_data.std()
+            if std < 1e-12:
+                std = 1.0
             labeling_data = (labeling_data - mean) / std
             norm_stats = {'labeling_mean': mean, 'labeling_std': std}
+        labeling_data = np.nan_to_num(labeling_data, nan=0.0, posinf=0.0, neginf=0.0)
     else:
         norm_stats = {}
     

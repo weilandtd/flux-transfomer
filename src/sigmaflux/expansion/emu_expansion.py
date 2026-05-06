@@ -82,6 +82,8 @@ class EMUExpansion(object):
 
             # Find all origin EMUs that can result in this specific EMU
             for the_rxn in the_reactions:
+                if the_rxn.id not in self.mappings:
+                    continue
                 the_atom_mapping = self.mappings[the_rxn.id]
 
                 #DWR: one atom maping can have multiple origin sets

@@ -37,6 +37,11 @@ def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10)
         >>> # Use in training
         >>> train_model(model, train_loader, loss_function=loss_fn)
     """
+    precomputed_variance = precomputed_variance.to(
+        device=predictions.device,
+        dtype=predictions.dtype,
+    )
+
     # MSE per feature (across batch dimension)
     mse_per_feature = torch.mean((predictions - targets) ** 2, dim=0)
     
