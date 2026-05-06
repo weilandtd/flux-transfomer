@@ -6,22 +6,16 @@ from torch.nn import Parameter as TorchParameter
 from tqdm import tqdm
 
 from cobra import Model
-from cobra.exceptions import Infeasible
 from cobra.util.array import create_stoichiometric_matrix
 from cobra.sampling import sample
 
 from sigmaflux.expansion.emu_expansion import EMUExpansion
-from sigmaflux.expansion.emu import get_metabolite
-from sigmaflux.core.stoichiometry import get_subnets, get_boundaries
+from sigmaflux.core.stoichiometry import get_subnets
 from sigmaflux.core.experiment import get_tracer_inputs
-from sigmaflux.core.mfa import get_labeling, filter_conv_inputs, \
-    convolution, build_emu_met_filter, update_derivative_states, \
-    convolution_derivative
+from sigmaflux.core.mfa import build_emu_met_filter
 from sigmaflux.core.calc_labeling import calculate_labeling, get_subnet_fluxes
-from sigmaflux.core.utils import solve_for_theta, time_function, select_sparse_column, flatten_sparse_matrix, reshape_sparse_tensor_to_3D
-from sigmaflux.core.kernel import right_kernel_stoich_matrix_milp
+from sigmaflux.core.utils import time_function, select_sparse_column, flatten_sparse_matrix, reshape_sparse_tensor_to_3D
 
-import numpy as np 
 import pandas as pd
 
 import pickle
@@ -207,7 +201,7 @@ class MFAModel(TorchModule, Model):
     # Load the existing checkpoints if any
         try:
             checkpoints = torch.load(file)
-        except:
+        except Exception:
             checkpoints = []
 
         check_points_data = self.state_dict()
@@ -224,7 +218,7 @@ class MFAModel(TorchModule, Model):
         # Load the checkpoints
         try:
             checkpoints = torch.load(file)
-        except:
+        except Exception:
             print("File not found")
             return
 
