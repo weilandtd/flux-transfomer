@@ -6,9 +6,10 @@ Steps executed in order:
   2. generate_training_data.py — simulate isotope labeling for each flux sample
   3. train_ai_model.py         — train the labeling-to-flux transformer
 
-Usage:
+Usage (works from any directory):
     python paper/run_training_workflow.py I_orientalis
-    python paper/run_training_workflow.py I_orientalis --n-samples 5000 --epochs 50 --device cpu
+    python /abs/path/to/paper/run_training_workflow.py I_orientalis
+    python run_training_workflow.py I_orientalis   # if cwd is paper/
 
 Individual steps can be skipped if their outputs already exist:
     python paper/run_training_workflow.py I_orientalis --skip-sampling --skip-generate
@@ -21,8 +22,14 @@ import os
 import subprocess
 import sys
 
+# Absolute paths derived from the script's own location — independent of cwd.
+_PAPER_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_PAPER_DIR)
 
-def find_annotated_model(model_folder, models_root="./../models"):
+
+def find_annotated_model(model_folder, models_root=None):
+    if models_root is None:
+        models_root = os.path.join(_REPO_ROOT, "models")
     pattern = os.path.join(models_root, model_folder, "*_annotated.json")
     matches = glob.glob(pattern)
     if not matches:
@@ -55,9 +62,21 @@ def main():
     )
 
     # Path overrides
-    parser.add_argument("--models-root", default="models", help="Root directory for models")
-    parser.add_argument("--output-dir", default=None, help="Output directory (default: <model_folder>_<YYYYMMDD>)")
-    parser.add_argument("--output-model", default=None, help="Output .pt file (default: <output_dir>/<model_folder>_transformer.pt)")
+    parser.add_argument(
+        "--models-root",
+        default=None,
+        help="Root directory for models (default: <repo>/models)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Output directory (default: <model_folder>_<YYYYMMDD>)",
+    )
+    parser.add_argument(
+        "--output-model",
+        default=None,
+        help="Output .pt file (default: <output_dir>/<model_folder>_transformer.pt)",
+    )
 
     # Shared
     parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
@@ -65,14 +84,22 @@ def main():
 
     # Step 1: sampling
     sampling = parser.add_argument_group("Step 1 — flux sampling")
-    sampling.add_argument("--skip-sampling", action="store_true", help="Skip flux sampling (reuse existing flux_samples.csv)")
+    sampling.add_argument(
+        "--skip-sampling",
+        action="store_true",
+        help="Skip flux sampling (reuse existing flux_samples.csv)",
+    )
     sampling.add_argument("--n-samples", type=int, default=10000)
     sampling.add_argument("--processes", type=int, default=1)
     sampling.add_argument("--thinning", type=int, default=1000)
 
     # Step 2: labeling generation
     generate = parser.add_argument_group("Step 2 — labeling data generation")
-    generate.add_argument("--skip-generate", action="store_true", help="Skip labeling simulation (reuse existing HDF5 files)")
+    generate.add_argument(
+        "--skip-generate",
+        action="store_true",
+        help="Skip labeling simulation (reuse existing HDF5 files)",
+    )
 
     # Step 3: training
     train = parser.add_argument_group("Step 3 — transformer training")
@@ -88,7 +115,9 @@ def main():
     run_name = f"{args.model_folder}_{datestamp}"
     model_json = find_annotated_model(args.model_folder, args.models_root)
     output_dir = args.output_dir or run_name
-    output_model = args.output_model or os.path.join(output_dir, f"{args.model_folder.lower()}_transformer.pt")
+    output_model = args.output_model or os.path.join(
+        output_dir, f"{args.model_folder.lower()}_transformer.pt"
+    )
     python = sys.executable
 
     print(f"Model folder : {args.model_folder}")
@@ -101,7 +130,7 @@ def main():
         print("\n[Step 1] Skipping flux sampling.")
     else:
         run_step([
-            python, "paper/sample_flux_maranas.py",
+            python, os.path.join(_PAPER_DIR, "sample_flux_maranas.py"),
             "--model-file", model_json,
             "--output-dir", output_dir,
             "--n-samples", str(args.n_samples),
@@ -117,7 +146,7 @@ def main():
         prepared_model = os.path.join(output_dir, "maranas_model_prepared_for_mfa.json")
         flux_samples = os.path.join(output_dir, "flux_samples.csv")
         run_step([
-            python, "paper/generate_training_data.py",
+            python, os.path.join(_PAPER_DIR, "generate_training_data.py"),
             "--model_file", prepared_model,
             "--flux_samples", flux_samples,
             "--output_dir", output_dir,
@@ -130,7 +159,7 @@ def main():
         print("\n[Step 3] Skipping model training.")
     else:
         run_step([
-            python, "paper/train_ai_model.py",
+            python, os.path.join(_PAPER_DIR, "train_ai_model.py"),
             "--data-dir", output_dir,
             "--model-json", model_json,
             "--output", output_model,
