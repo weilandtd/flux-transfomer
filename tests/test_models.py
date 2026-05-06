@@ -1,3 +1,4 @@
+import pytest
 import torch
 from cobra.io.json import load_json_model
 from sigmaflux.core.model import MFAModel
@@ -95,11 +96,17 @@ def run_model_test(path, name, dataset='yeast'):
         raise ValueError(f"Unknown dataset '{dataset}'. Expected 'yeast' or 'toy'.")
 
 
-def test_models():
+@pytest.mark.parametrize("path,name,dataset", [
+    (os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
+    (os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
+])
+def test_models(path, name, dataset):
+    run_model_test(path, name, dataset=dataset)
+
+
+if __name__ == '__main__':
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
 
-
-if __name__ == '__main__':
-    test_models()
