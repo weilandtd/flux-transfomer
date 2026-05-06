@@ -429,8 +429,6 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
     # Get unique tracers and their indicators
     tracers = labeling_df.index.get_level_values('Tracer')
     unique_tracers = tracers.unique().tolist()
-    num_experiments = len(unique_tracers)
-    
     # For each unique tracer, get its multi-hot encoding (all rows for same tracer have same encoding)
     tracer_indicators = []
     for tracer in unique_tracers:
