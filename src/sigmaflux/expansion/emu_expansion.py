@@ -109,8 +109,7 @@ class EMUExpansion(object):
                         if data is None: 
                             has_edge = False 
                         else: 
-                            this_edge_data = {'reaction': the_rxn, 'direction': 'fwd'} 
-                            compare = [d == this_edge_data for d in data.values() ]
+                            compare = [d['reaction'] == the_rxn and d['direction'] == 'fwd' for d in data.values()]
                             has_edge = any(compare) 
 
                         if not has_edge: 
@@ -126,8 +125,7 @@ class EMUExpansion(object):
                         if data is None: 
                             has_edge = False 
                         else: 
-                            this_edge_data = {'reaction': the_rxn, 'direction': 'rvs'} 
-                            compare = [d == this_edge_data for d in data.values() ]
+                            compare = [d['reaction'] == the_rxn and d['direction'] == 'rvs' for d in data.values()]
                             has_edge = any(compare) 
 
                         if not has_edge: 
