@@ -212,3 +212,7 @@ __marimo__/
 # Local task notes
 CLAUDE.md
 task.md
+
+# Data files - DO NOT COMMIT
+*.h5
+*.pkl
