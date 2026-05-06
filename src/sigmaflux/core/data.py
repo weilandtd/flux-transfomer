@@ -140,7 +140,6 @@ def get_model_labeling_data(model, experimental_scaling, with_std=False, exp_ix=
 
 
 def create_data_index(model, e, m, c):
-    max_e = len(model.experiments)
     max_m = model.max_mid_size
     max_c = len(model._metabolite_hash)
     # Convert 1D to 3D index
