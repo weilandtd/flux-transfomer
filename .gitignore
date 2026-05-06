@@ -216,3 +216,5 @@ task.md
 # Data files - DO NOT COMMIT
 *.h5
 *.pkl
+training_data*/flux_samples.csv
+training_data*/maranas_model_prepared_for_mfa.json
