@@ -9,7 +9,7 @@ This follows the mammalian atlas workflow:
   5. Save labeling, flux, and reversibility HDF5 files.
 
 Example:
-    PYTHONPATH=src python generate_training_data.py \
+    PYTHONPATH=src python paper/generate_training_data.py \
         --flux_samples training_data/flux_samples.csv \
         --start_idx 0 \
         --end_idx 500 \

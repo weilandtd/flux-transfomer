@@ -6,7 +6,7 @@ This is the Maranas-model analogue of the mammalian atlas
 fluxes, and saves the exact model that those fluxes belong to.
 
 Example:
-    PYTHONPATH=src python sample_flux_maranas.py \
+    PYTHONPATH=src python paper/sample_flux_maranas.py \
         --model-file models/I_orientalis/imIsor_annotated.json \
         --output-dir training_data_maranas \
         --n-samples 10000 \
