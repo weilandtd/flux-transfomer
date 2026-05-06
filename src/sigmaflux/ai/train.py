@@ -124,7 +124,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         if warmup_epochs > 0:
             print(f"LR warmup enabled: {warmup_epochs} epochs (1% → 100% of lr={learning_rate})")
         if use_scheduler:
-            print(f"ReduceLROnPlateau scheduler enabled (after warmup)")
+            print("ReduceLROnPlateau scheduler enabled (after warmup)")
         if mask_prob > 0:
             print(f"Missing data augmentation enabled: mask_prob={mask_prob}, min_experiments={min_experiments}")
     
