@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import csv
-import re 
 import json
 from sigmaflux.core.experiment import Tracer
 import os
@@ -424,7 +423,6 @@ def get_tracers_from_data(mfa_model, tracer_list, serum_data = None, infusion_en
            For combined tracers: {"his-[13C6];lys-[13C6]": [Tracer(...), Tracer(...)]}
     """
 
-    SUFFIX = "_t"
     if tracer_dict_file is None:
         # Return the tracer metabolites from the dataframe w/o procesing
         return tracer_list

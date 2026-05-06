@@ -1,4 +1,4 @@
-from cobra import Reaction, Model, Metabolite
+from cobra import Reaction, Metabolite
 from sigmaflux.core.utils import insert_mapping_into_reaction
 import re
 import csv 

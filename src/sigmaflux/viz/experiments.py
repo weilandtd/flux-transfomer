@@ -1,8 +1,7 @@
 import matplotlib.pyplot as plt
 
 
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.data import MassIsotopomerData, FluxData
+from sigmaflux.core.experiment import Experiment
 import torch
 import numpy as np 
 # Function to generate a MassIsotopomerData plot as a bar plot with error bars
@@ -86,7 +85,7 @@ def plot_mass_isotopomer_data_grid(experiment: Experiment, show: bool = True) ->
 
 def plot_met_labeling(mfa_model, metabolite, labeling, default_num_mid=7, show = True): 
     # Determine the number of experiments to create subplots
-    n_experiments = len(mfa_model.experiments)
+    len(mfa_model.experiments)
 
     # Setup the figure and subplots
     fig, axs = plt.subplots(4, 2, figsize=(8, 9))
@@ -101,7 +100,7 @@ def plot_met_labeling(mfa_model, metabolite, labeling, default_num_mid=7, show =
                 exp_std = d._std[1:]
                 color = "orange"
                 break 
-        if found == False: 
+        if not found: 
             exp_mean = torch.zeros(7)
             exp_std = torch.zeros(7)
             color = "red"

@@ -1,6 +1,5 @@
-from cobra import Reaction, Model
+from cobra import Model
 from cobra.flux_analysis import flux_variability_analysis
-import os 
 from sigmaflux.generate.utils import read_subnet
 
 def add_reactions_from_tasks(model, tasks, filepath, bound = 20, medium=None, prune_boundaries=True):
@@ -33,12 +32,12 @@ def add_reactions_from_tasks(model, tasks, filepath, bound = 20, medium=None, pr
                     rxn.lower_bound = -bound 
                 if rxn.upper_bound != 0:
                     rxn.upper_bound = bound
-                if not rxn in new.reactions:
+                if rxn not in new.reactions:
                     new.add_reactions([rxn,])
 
     # Assing a medium to the model i.e. metabolites that can be uptaked or secreted
     # by the specific tissue
-    if not medium is None:
+    if medium is not None:
         # Assing medium to the model close boundaries by default
         for rxn in new.boundary:
             if rxn.id in medium.keys():

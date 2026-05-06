@@ -1,5 +1,5 @@
 
-from cobra import Reaction, Model, Metabolite
+from cobra import Reaction, Metabolite
 
 def add_dummy_reactions(model):
     # Add dummy reactions:
@@ -54,7 +54,7 @@ def add_dummy_reactions(model):
     compartment = 'c'
     )
 
-    fatty_acid = Metabolite(
+    Metabolite(
         'fatty_acid', 
         name = "fatty acid", 
         compartment = 'c'
