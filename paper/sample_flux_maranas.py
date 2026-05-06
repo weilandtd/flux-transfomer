@@ -17,7 +17,6 @@ import argparse
 import os
 
 import cobra
-import pandas as pd
 from cobra import Reaction
 from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
