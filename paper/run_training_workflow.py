@@ -2,7 +2,7 @@
 Run the full SigmaFlux training workflow for a model folder.
 
 Steps executed in order:
-  1. sample_flux_maranas.py   — sample flux distributions from the COBRA model
+  1. sample_flux.py            — sample flux distributions from the COBRA model
   2. generate_training_data.py — simulate isotope labeling for each flux sample
   3. train_ai_model.py         — train the labeling-to-flux transformer
 
@@ -130,7 +130,7 @@ def main():
         print("\n[Step 1] Skipping flux sampling.")
     else:
         run_step([
-            python, os.path.join(_PAPER_DIR, "sample_flux_maranas.py"),
+            python, os.path.join(_PAPER_DIR, "sample_flux.py"),
             "--model-file", model_json,
             "--output-dir", output_dir,
             "--n-samples", str(args.n_samples),
@@ -143,7 +143,7 @@ def main():
     if args.skip_generate:
         print("\n[Step 2] Skipping labeling data generation.")
     else:
-        prepared_model = os.path.join(output_dir, "maranas_model_prepared_for_mfa.json")
+        prepared_model = os.path.join(output_dir, "model_prepared_for_mfa.json")
         flux_samples = os.path.join(output_dir, "flux_samples.csv")
         run_step([
             python, os.path.join(_PAPER_DIR, "generate_training_data.py"),

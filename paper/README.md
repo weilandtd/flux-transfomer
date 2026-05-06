@@ -30,15 +30,15 @@ fitting the labeling-to-flux transformer used in the paper.
 
 ## Steps
 
-### 1. Sample flux distributions — `sample_flux_maranas.py`
+### 1. Sample flux distributions — `sample_flux.py`
 
-Prepares a COBRA sampling problem from an annotated Maranas-format model and
+Prepares a COBRA sampling problem from an annotated model and
 draws flux samples via COBRApy's `optgp` sampler.
 
 ```bash
-python paper/sample_flux_maranas.py \
+python paper/sample_flux.py \
     --model-file models/I_orientalis/imIsor_annotated.json \
-    --output-dir training_data_maranas \
+    --output-dir training_data \
     --n-samples 10000 \
     --processes 5
 ```

@@ -1,14 +1,13 @@
 """
-Build and sample a Maranas yeast flux problem for SigmaFlux AI data generation.
+Prepare and sample an MFA flux problem for SigmaFlux AI data generation.
 
-This is the Maranas-model analogue of the mammalian atlas
-`sample_flux_problem.py`: it prepares a COBRA sampling problem, writes sampled
+Prepares a COBRA sampling problem from an annotated model, writes sampled
 fluxes, and saves the exact model that those fluxes belong to.
 
 Example:
-    PYTHONPATH=src python paper/sample_flux_maranas.py \
+    PYTHONPATH=src python paper/sample_flux.py \
         --model-file models/I_orientalis/imIsor_annotated.json \
-        --output-dir training_data_maranas \
+        --output-dir training_data \
         --n-samples 10000 \
         --processes 5
 """
@@ -122,7 +121,7 @@ def main(args):
         removed_reactions, removed_metabolites = constrain_by_fva(model, args.fva_fraction)
         print(f"Removed {removed_reactions} zero-FVA reactions and {removed_metabolites} orphaned metabolites")
 
-    prepared_model_path = os.path.join(args.output_dir, "maranas_model_prepared_for_mfa.json")
+    prepared_model_path = os.path.join(args.output_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, prepared_model_path)
     print(f"Saved prepared model: {prepared_model_path}")
 
@@ -143,9 +142,9 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sample fluxes for Maranas yeast models.")
+    parser = argparse.ArgumentParser(description="Sample fluxes from an annotated MFA model.")
     parser.add_argument("--model-file", default=DEFAULT_MODEL_FILE)
-    parser.add_argument("--output-dir", default="training_data_maranas")
+    parser.add_argument("--output-dir", default="training_data")
     parser.add_argument("--n-samples", type=int, default=10000)
     parser.add_argument("--thinning", type=int, default=1000)
     parser.add_argument("--processes", type=int, default=1)
