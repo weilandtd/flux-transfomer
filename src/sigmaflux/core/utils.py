@@ -111,13 +111,111 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     except Exception:
         pass
 
+    _remove_out_metabolites(model)
+    _standardize_exchange_directions(model)
+
     if path_to_output is not None:
         cobra.io.save_json_model(model, str(path_to_output))
 
     return model
 
 
-def atommap_boundary(model):
+def _remove_out_metabolites(model):
+    """Convert Maranas _out boundary metabolites to proper COBRA exchange reactions.
+
+    In Maranas MFA models, EX_ reactions connect an _e metabolite to an _out
+    metabolite (the external environment pool).  This converts them to standard
+    COBRA boundary reactions that simply deplete the _e metabolite:
+
+        Before:  EX_glc__D_e : glc__D_e → glc__D_out
+        After:   EX_glc__D_e : glc__D_e →
+
+    Atom-mapping annotations are updated to remove _out references, and all
+    orphaned _out metabolites are removed from the model.
+    """
+    for reaction in list(model.reactions):
+        mets = list(reaction.metabolites.keys())
+        out_mets = [m for m in mets if m.id.endswith("_out")]
+        e_mets   = [m for m in mets if m.id.endswith("_e")]
+
+        if not out_mets or not e_mets:
+            continue
+
+        # Remove _out metabolites from the reaction stoichiometry
+        reaction.subtract_metabolites({m: reaction.metabolites[m] for m in out_mets})
+
+        # Strip _out entries from atom_mapping annotation
+        if "atom_mapping" in reaction.annotation:
+            reaction.annotation["atom_mapping"] = _strip_out_from_atom_mapping(
+                reaction.annotation["atom_mapping"]
+            )
+
+    # Remove metabolites that are now orphaned (no reactions left)
+    orphaned = [m for m in model.metabolites if m.id.endswith("_out") and not m.reactions]
+    model.remove_metabolites(orphaned)
+    print(f"Removed {len(orphaned)} _out metabolites; EX_ reactions now deplete _e metabolites directly")
+
+
+def _standardize_exchange_directions(model):
+    """Ensure all EX_ reactions are in the depletion direction: met_e → (coeff -1).
+
+    In Maranas models the stoichiometric direction of exchange reactions is
+    inconsistent — some produce the _e metabolite (+1, uptake-positive) while
+    others consume it (-1, secretion-positive).  This normalises every EX_
+    reaction so that:
+
+        positive flux = secretion  (metabolite leaves the system)
+        negative flux = uptake     (metabolite enters the system)
+
+    Reactions that already follow the convention are left untouched.
+    For reactions where the _e metabolite has coefficient +1, the stoichiometry
+    is flipped and the bounds are negated and swapped.
+    """
+    flipped = []
+    for reaction in model.reactions:
+        if not reaction.id.startswith("EX_"):
+            continue
+        e_mets = {m: c for m, c in reaction.metabolites.items() if m.id.endswith("_e")}
+        if not e_mets:
+            continue
+        # If the _e metabolite is a product (+1), flip the reaction direction
+        if all(c > 0 for c in e_mets.values()):
+            # Negate all stoichiometric coefficients
+            reaction.subtract_metabolites({m: 2 * c for m, c in reaction.metabolites.items()})
+            lb, ub = reaction.bounds
+            reaction.bounds = (-ub, -lb)
+            # Flip atom_mapping: swap reactants and products across the '->' arrow
+            if "atom_mapping" in reaction.annotation:
+                amm = reaction.annotation["atom_mapping"]
+                if "->" in amm:
+                    lhs, rhs = amm.split("->", 1)
+                    reaction.annotation["atom_mapping"] = rhs.strip() + " -> " + lhs.strip()
+            flipped.append(reaction.id)
+
+    print(f"Standardized {len(flipped)} EX_ reactions to depletion direction: {flipped}")
+
+
+def _strip_out_from_atom_mapping(amm_str):
+    """Remove all _out metabolite entries from an atom_mapping string.
+
+    Handles entries at any position: first term, after '+', and on either
+    side of '->'.  Entries may optionally carry an atom label, e.g.
+    ``glc__D_out (abcdef)``.
+    """
+    if "->" not in amm_str:
+        return amm_str
+
+    def _strip_terms(half):
+        # Split on '+', strip _out entries, rejoin
+        terms = [t.strip() for t in half.split("+")]
+        kept = [t for t in terms if not re.match(r'\S+_out\b', t)]
+        return " + ".join(kept)
+
+    lhs, rhs = amm_str.split("->", 1)
+    return _strip_terms(lhs) + " -> " + _strip_terms(rhs)
+
+
+
     all_rxns = set(model.reactions)
     for r in model.boundary: 
         metabolite = list(r.metabolites.keys())[0]
