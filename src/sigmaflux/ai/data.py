@@ -98,30 +98,39 @@ def get_measured_fluxes_reaction_ids(mode='respiratory', config_path=None):
     return reaction_ids, derived_features, feature_names
 
 
-def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_path=None):
+def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_path=None, reaction_ids=None):
     """
     Extract bypass features from flux data.
-    
+
     These are fluxes that will be measured with orthogonal methods and passed
     directly to the transformer, bypassing the labeling data pathway.
-    
+
     Args:
         flux_df: DataFrame with flux data (reactions x samples)
         train_indices: Sample indices to extract
-        mode: Bypass mode (see get_bypass_reaction_ids for options)
-        config_path: Path to bypass config JSON file
-    
+        mode: Bypass mode (see get_bypass_reaction_ids for options). Ignored when
+            reaction_ids is provided.
+        config_path: Path to bypass config JSON file. Ignored when reaction_ids
+            is provided.
+        reaction_ids: Explicit list of reaction IDs to extract. When provided,
+            mode and config_path are ignored and no derived features are computed.
+
     Returns:
         measured_fluxes_data: (num_samples, num_bypass_features) numpy array
         feature_names: List of feature names
     """
-    if mode is None or mode is False:
-        return None, []
-    
-    reaction_ids, derived_features, feature_names = get_measured_fluxes_reaction_ids(mode, config_path)
-    
-    if not reaction_ids and not derived_features:
-        return None, []
+    if reaction_ids is not None:
+        # Caller supplied an explicit list — skip mode resolution entirely.
+        direct_rxn_ids = reaction_ids
+        derived_features = []
+        feature_names = list(reaction_ids)
+    else:
+        if mode is None or mode is False:
+            return None, []
+        direct_rxn_ids_from_mode, derived_features, feature_names = get_measured_fluxes_reaction_ids(mode, config_path)
+        if not direct_rxn_ids_from_mode and not derived_features:
+            return None, []
+        direct_rxn_ids = direct_rxn_ids_from_mode
     
     flux_data_subset = flux_df.values[:, train_indices].T  # (num_samples, num_reactions)
     reaction_list = flux_df.index.tolist()
@@ -148,8 +157,8 @@ def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_p
             # Remove respiratory features from feature_names
             feature_names = [f for f in feature_names if f not in ['VO2', 'VCO2', 'RER']]
     
-    # Handle direct flux extraction (biosynthetic fluxes)
-    direct_rxn_ids = [r for r in reaction_ids if r not in ['EX_o2_e_lung', 'EX_co2_e_lung']]
+    # Handle direct flux extraction (filter out exchange reactions already handled above)
+    direct_rxn_ids = [r for r in direct_rxn_ids if r not in ['EX_o2_e_lung', 'EX_co2_e_lung']]
     missing_rxns = []
     
     for rxn_id in direct_rxn_ids:
