@@ -381,54 +381,34 @@ class MFAModel(TorchModule, Model):
                 boundary_S = torch.index_select(self.forward_dict["S"][subnet], 0, self.forward_dict["ix_b"][subnet])
                 core_S_plus = torch.index_select(self.forward_dict["S_plus"][subnet], 1, self.forward_dict["ix_c"][subnet])
 
+                if not torch.isfinite(v[subnet]).all():
+                    bad = torch.where(~torch.isfinite(v[subnet]))[0].tolist()
+                    raise RuntimeError(
+                        f"Non-finite flux values in subnet {subnet} at edge indices {bad}. "
+                        "Check upstream flux parametrisation (e.g. softplus bounds, log-space mapping)."
+                    )
+
                 n_fluxes = len(v[subnet])
-                offsets = torch.tensor([0]) 
+                offsets = torch.tensor([0])
                 V = torch.sparse.spdiags(v[subnet].cpu(), offsets.cpu(), (n_fluxes, n_fluxes),).to(self.device)
                 A = -(torch.mm(torch.mm(core_S, V), core_S_plus)).T
                 B = (torch.mm(torch.mm(boundary_S, V), core_S_plus)).T
 
                 AD = A.to_dense()
-                BD = B.to_dense() 
+                BD = B.to_dense()
 
                 # We use the inverse for backward calculation
-                # we remove 0 fluxes so A is invertible
                 try:
                     self.forward_dict["A_inv"][subnet] = torch.linalg.pinv(AD)
                 except torch.linalg.LinAlgError:
-                    # Find diagonal elements that are zero
-                    logger.error(f"Failed to invert A matrix for subnet {subnet}")
-
-                    AD_diag = torch.diagonal(AD)
-                    # Find zero diagonal elements
-                    zero_diag_indices = torch.where(torch.abs(AD_diag) < 1e-6)[0]  
-
-                    # Check which EMUs correspond to these indices
-                    if len(zero_diag_indices) > 0:
-                        logger.error(f"Zero diagonal elements at indices: {zero_diag_indices.tolist()}")
-                        # Get the corresponding EMU ids from emu_hashes
-                        zero_diag_emus = [self.forward_dict["emu_hashes"][subnet][i.item()] for i in zero_diag_indices]
-                        logger.error(f"Corresponding EMUs: {zero_diag_emus}")
-                        # Suggest checking fluxes for reactions involving these EMUs
-                        for emu in zero_diag_emus:
-                            logger.error(f"Check fluxes for reactions involving EMU: {emu}")
-                        raise RuntimeError(f"Failed to invert A matrix for subnet {subnet}")
-                    
-                    # Check if any sum of each row is below zero with 1e-6 tolerance
                     row_sums = torch.sum(AD, dim=1)
-                    small_row_sum_indices = torch.where(row_sums > 0.5e-6)[0]
-                    if len(small_row_sum_indices) > 0:
-                        logger.error(f"Rows with small sums at indices: {small_row_sum_indices.tolist()}")
-                        for i in small_row_sum_indices:
-                            logger.error(f"Row {i.item()} sum: {row_sums[i].item()}")
-                        #Logg all the rows that are small 
-                        sero_row_sum_emus = [self.forward_dict["emu_hashes"][subnet][i.item()] for i in small_row_sum_indices]
-                        for emu in sero_row_sum_emus:
-                            logger.error(f"Check fluxes for reactions involving EMU: {emu} row sum {row_sums[i].item()}")    
-                        
-                        raise RuntimeError(f"Failed to invert A matrix for subnet {subnet} due to small row sums")
-                    
-                    else:
-                        raise RuntimeError(f"Failed to invert A matrix for subnet {subnet} due to unknown reasons")
+                    small_indices = torch.where(row_sums < 0.5e-6)[0]
+                    small_emus = [self.forward_dict["emu_hashes"][subnet][i.item()] for i in small_indices]
+                    raise RuntimeError(
+                        f"Degenerate A matrix for subnet {subnet}: "
+                        f"{len(small_indices)} EMUs have near-zero row sums "
+                        f"{small_emus[:10]}{'...' if len(small_emus) > 10 else ''}"
+                    )
                 
                 self.forward_dict["B"][subnet] = BD
 
