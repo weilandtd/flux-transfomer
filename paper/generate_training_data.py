@@ -254,10 +254,23 @@ def main(args):
     flux_data = []
     reversibility_data = []
     output_suffix = f"_{args.start_idx}_{end_idx}"
+    skipped = 0
 
     for sample_ix in tqdm(range(len(flux_samples)), desc="Processing samples"):
         fluxes = flux_samples.iloc[sample_ix]
         mfa_model.reset_initial_fluxes(initial_flux_distribution=fluxes)
+
+        try:
+            with torch.no_grad():
+                labeling = mfa_model()
+        except RuntimeError as exc:
+            print(f"Warning: skipping sample {sample_ix}: degenerate flux configuration ({exc})")
+            skipped += 1
+            continue
+
+        labeling_vector = torch.take(labeling, labeling_to).cpu().detach().numpy()
+        if labeling_vector.sum() == 0:
+            raise ValueError("Predicted labeling is all zeros.")
 
         reversibilities = pd.Series(
             mfa_model.reversibility.cpu().detach().numpy(),
@@ -265,16 +278,10 @@ def main(args):
         )
         reversibility_data.append(reversibilities)
         flux_data.append(fluxes)
-
-        with torch.no_grad():
-            labeling = mfa_model()
-
-        labeling_vector = torch.take(labeling, labeling_to).cpu().detach().numpy()
-        if labeling_vector.sum() == 0:
-            raise ValueError("Predicted labeling is all zeros.")
         labeling_data.append(labeling_vector)
 
-        if (sample_ix + 1) % args.batch_size == 0 or (sample_ix + 1) == len(flux_samples):
+        accepted = sample_ix + 1 - skipped
+        if accepted % args.batch_size == 0 or (sample_ix + 1) == len(flux_samples):
             write_training_batch(
                 args.output_dir,
                 output_suffix,
@@ -285,6 +292,8 @@ def main(args):
             )
 
     print(f"\nCompleted processing samples {args.start_idx}:{end_idx}")
+    if skipped:
+        print(f"Skipped {skipped} degenerate samples (inversion failure); {len(labeling_data)} samples written.")
     print(f"Output files saved to {args.output_dir}")
 
 
