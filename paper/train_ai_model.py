@@ -2,18 +2,19 @@
 Train SigmaFlux's labeling-to-flux transformer from generated HDF5 data.
 
 Example:
-    PYTHONPATH=src python paper/train_ai_model.py \
-        --data-dir training_data \
-        --model-json models/I_orientalis/imIsor_annotated.json \
-        --output imisor_transformer.pt \
-        --device cuda
+    PYTHONPATH=src python paper/train_ai_model.py --config paper/io_config.yaml
 """
 
 import argparse
+import datetime
+import os
 from functools import partial
 
 import numpy as np
 import torch
+import yaml
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from torch.utils.data import DataLoader
 
 from sigmaflux.ai.data import (
@@ -132,8 +133,7 @@ def main(args):
         tracer_multi_hot,
         train_indices=train_indices,
         normalize=True,
-        extract_bypass=args.bypass_mode != "none",
-        bypass_mode=None if args.bypass_mode == "none" else args.bypass_mode,
+        measured_fluxes=args.measured_fluxes,
     )
     val_dataset, _ = prepare_dataset(
         labeling_df,
@@ -142,8 +142,7 @@ def main(args):
         tracer_multi_hot,
         train_indices=val_indices,
         normalize=True,
-        extract_bypass=args.bypass_mode != "none",
-        bypass_mode=None if args.bypass_mode == "none" else args.bypass_mode,
+        measured_fluxes=args.measured_fluxes,
         norm_stats_input=norm_stats,
     )
 
@@ -154,7 +153,7 @@ def main(args):
     input_dim = labeling_df.shape[0] // num_experiments
     flux_dim = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
-    bypass_dim = len(norm_stats.get("bypass_feature_names", []))
+    measured_fluxes_dim = len(norm_stats.get("measured_fluxes_feature_names", []))
 
     model_config = {
         "input_dim": input_dim,
@@ -165,7 +164,7 @@ def main(args):
         "dropout": args.dropout,
         "num_attn_heads": args.num_attn_heads,
         "num_transformer_layers": args.num_transformer_layers,
-        "bypass_dim": bypass_dim,
+        "measured_fluxes_dim": measured_fluxes_dim,
     }
 
     model = LabelingToFluxTransformer(
@@ -229,31 +228,40 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", default="training_data")
-    parser.add_argument("--model-json", default="models/I_orientalis/imIsor_annotated.json")
-    parser.add_argument("--output", default="imisor_transformer.pt")
-    parser.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
-    parser.add_argument("--max-samples", type=int, default=None)
+    parser = argparse.ArgumentParser(description="Train the SigmaFlux labeling-to-flux transformer.")
+    parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    cli = parser.parse_args()
 
-    parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=64)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
-    parser.add_argument("--warmup-epochs", type=int, default=5)
-    parser.add_argument("--gradient-clip", type=float, default=1.0)
-    parser.add_argument("--no-scheduler", action="store_true")
+    with open(cli.config) as f:
+        cfg = yaml.safe_load(f)
 
-    parser.add_argument("--loss", choices=["variance", "mse"], default="variance")
-    parser.add_argument("--val-fraction", type=float, default=0.2)
-    parser.add_argument("--seed", type=int, default=42)
+    t = cfg.get("training", {})
+    output_dir = f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
+    output_model = os.path.join(output_dir, t.get("output_model", "transformer.pt"))
 
-    parser.add_argument("--combined-dim", type=int, default=256)
-    parser.add_argument("--num-attn-heads", type=int, default=8)
-    parser.add_argument("--num-transformer-layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.15)
+    measured_fluxes = t.get("measured_fluxes") or None  # list of reaction IDs, or None
 
-    parser.add_argument("--mask-prob", type=float, default=0.2)
-    parser.add_argument("--min-experiments", type=int, default=1)
-    parser.add_argument("--bypass-mode", default="none")
-
-    main(parser.parse_args())
+    args = argparse.Namespace(
+        data_dir=output_dir,
+        model_json=os.path.join(_REPO_ROOT, cfg["model_file"]) if not os.path.isabs(cfg["model_file"]) else cfg["model_file"],
+        output=output_model,
+        device=cfg.get("device", "auto"),
+        seed=cfg.get("seed", 42),
+        max_samples=t.get("max_samples"),
+        epochs=t.get("epochs", 100),
+        batch_size=t.get("batch_size", 64),
+        learning_rate=t.get("learning_rate", 1e-3),
+        warmup_epochs=t.get("warmup_epochs", 5),
+        gradient_clip=t.get("gradient_clip", 1.0),
+        no_scheduler=not t.get("scheduler", True),
+        loss=t.get("loss", "variance"),
+        val_fraction=t.get("val_fraction", 0.2),
+        combined_dim=t.get("combined_dim", 256),
+        num_attn_heads=t.get("num_attn_heads", 8),
+        num_transformer_layers=t.get("num_transformer_layers", 2),
+        dropout=t.get("dropout", 0.15),
+        mask_prob=t.get("mask_prob", 0.2),
+        min_experiments=t.get("min_experiments", 1),
+        measured_fluxes=measured_fluxes,
+    )
+    main(args)
