@@ -39,10 +39,10 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask
             mask = None
             if extract_mask:
                 from sigmaflux.ai.data import extract_mask_from_data
-                _labeling_and_tracer_dim = inputs.shape[1] - model.bypass_dim
+                _labeling_and_tracer_dim = inputs.shape[1] - model.measured_fluxes_dim
                 _num_experiments = _labeling_and_tracer_dim // (model.input_dim + model.num_base_tracers)
                 mask = extract_mask_from_data(inputs, num_base_tracers=num_base_tracers,
-                                              bypass_dim=model.bypass_dim, num_experiments=_num_experiments)
+                                              measured_fluxes_dim=model.measured_fluxes_dim, num_experiments=_num_experiments)
             
             flux_predictions, reversibility_predictions = model(inputs, mask=mask)
             predictions = torch.cat([flux_predictions, reversibility_predictions], dim=1)

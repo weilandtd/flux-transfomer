@@ -161,13 +161,13 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             mask = None
             if mask_prob > 0:
                 from sigmaflux.ai.data import apply_random_masking
-                _labeling_and_tracer_dim = inputs.shape[1] - model.bypass_dim
+                _labeling_and_tracer_dim = inputs.shape[1] - model.measured_fluxes_dim
                 _num_experiments = _labeling_and_tracer_dim // (model.input_dim + model.num_base_tracers)
                 inputs, mask = apply_random_masking(
                     inputs, mask_prob=mask_prob,
                     min_experiments=min_experiments,
                     num_base_tracers=model.num_base_tracers,
-                    bypass_dim=model.bypass_dim,
+                    measured_fluxes_dim=model.measured_fluxes_dim,
                     num_experiments=_num_experiments
                 )
             

@@ -18,12 +18,12 @@ from cobra.util.array import create_stoichiometric_matrix
 
 
 # Default path to biosynthetic bypass reactions config
-_DEFAULT_BYPASS_CONFIG_PATH = os.path.join(
+_DEFAULT_MEASURED_FLUXES_CONFIG_PATH = os.path.join(
     os.path.dirname(__file__), '../../data/biosynthetic_bypass_reactions.json'
 )
 
 
-def load_bypass_config(config_path=None):
+def load_measured_fluxes_config(config_path=None):
     """
     Load biosynthetic bypass reactions configuration from JSON file.
     
@@ -34,7 +34,7 @@ def load_bypass_config(config_path=None):
         config: Dictionary with bypass reaction configuration
     """
     if config_path is None:
-        config_path = _DEFAULT_BYPASS_CONFIG_PATH
+        config_path = _DEFAULT_MEASURED_FLUXES_CONFIG_PATH
     
     with open(config_path, 'r') as f:
         config = json.load(f)
@@ -42,7 +42,7 @@ def load_bypass_config(config_path=None):
     return config
 
 
-def get_bypass_reaction_ids(mode='respiratory', config_path=None):
+def get_measured_fluxes_reaction_ids(mode='respiratory', config_path=None):
     """
     Get list of bypass reaction IDs based on mode.
     
@@ -67,7 +67,7 @@ def get_bypass_reaction_ids(mode='respiratory', config_path=None):
         # Custom list of reaction IDs
         return mode, [], mode
     
-    config = load_bypass_config(config_path)
+    config = load_measured_fluxes_config(config_path)
     
     reaction_ids = []
     derived_features = []
@@ -98,7 +98,7 @@ def get_bypass_reaction_ids(mode='respiratory', config_path=None):
     return reaction_ids, derived_features, feature_names
 
 
-def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_path=None):
+def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_path=None):
     """
     Extract bypass features from flux data.
     
@@ -112,13 +112,13 @@ def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_p
         config_path: Path to bypass config JSON file
     
     Returns:
-        bypass_data: (num_samples, num_bypass_features) numpy array
+        measured_fluxes_data: (num_samples, num_bypass_features) numpy array
         feature_names: List of feature names
     """
     if mode is None or mode is False:
         return None, []
     
-    reaction_ids, derived_features, feature_names = get_bypass_reaction_ids(mode, config_path)
+    reaction_ids, derived_features, feature_names = get_measured_fluxes_reaction_ids(mode, config_path)
     
     if not reaction_ids and not derived_features:
         return None, []
@@ -126,7 +126,7 @@ def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_p
     flux_data_subset = flux_df.values[:, train_indices].T  # (num_samples, num_reactions)
     reaction_list = flux_df.index.tolist()
     
-    bypass_columns = []
+    measured_fluxes_columns = []
     
     # Handle respiratory-derived features (VO2, VCO2, RER)
     if 'VO2' in derived_features:
@@ -141,7 +141,7 @@ def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_p
             # Calculate RER
             rer = np.where(vo2 > 1e-6, vco2 / vo2, 0.0)
             
-            bypass_columns.extend([vo2, vco2, rer])
+            measured_fluxes_columns.extend([vo2, vco2, rer])
         else:
             print("WARNING: Could not find EX_o2_e_lung or EX_co2_e_lung in flux data")
             print("         Respiratory bypass features will not be included")
@@ -155,7 +155,7 @@ def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_p
     for rxn_id in direct_rxn_ids:
         if rxn_id in reaction_list:
             rxn_idx = reaction_list.index(rxn_id)
-            bypass_columns.append(flux_data_subset[:, rxn_idx])
+            measured_fluxes_columns.append(flux_data_subset[:, rxn_idx])
         else:
             missing_rxns.append(rxn_id)
             # Remove from feature_names
@@ -169,11 +169,11 @@ def extract_bypass_features(flux_df, train_indices, mode='respiratory', config_p
         if len(missing_rxns) > 5:
             print(f"         ... and {len(missing_rxns) - 5} more")
     
-    if not bypass_columns:
+    if not measured_fluxes_columns:
         return None, []
     
-    bypass_data = np.column_stack(bypass_columns)
-    return bypass_data, feature_names
+    measured_fluxes_data = np.column_stack(measured_fluxes_columns)
+    return measured_fluxes_data, feature_names
 
 
 def find_data_batches(base_dir, base_filename, pattern='*_*.h5'):
@@ -359,11 +359,11 @@ def load_stoichiometric_matrix(model_path):
 
 
 def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
-                   train_indices=None, normalize=True, extract_bypass=True,
-                   bypass_mode='respiratory', norm_stats_input=None):
+                   train_indices=None, normalize=True, measured_fluxes=None,
+                   norm_stats_input=None):
     """
     Prepare PyTorch dataset from DataFrames.
-    
+
     Args:
         labeling_df: DataFrame with labeling data
         flux_df: DataFrame with flux data
@@ -371,19 +371,14 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
         tracer_multi_hot: Array of multi-hot tracer encodings
         train_indices: Indices to use (None for all)
         normalize: Whether to normalize data
-        extract_bypass: Whether to extract and append bypass features from flux_df.
-                       For backwards compatibility, True uses bypass_mode, False disables.
-        bypass_mode: Mode for bypass feature extraction (only used if extract_bypass=True):
-            - 'respiratory' or 'legacy': Just VO2/VCO2/RER (3 features, default)
-            - 'biosynthetic' or 'extended': All biosynthetic fluxes (30 features)
-            - 'full': Respiratory + biosynthetic (33 features)
-            - list: Custom list of reaction IDs to extract
-            - None: No bypass features (same as extract_bypass=False)
+        measured_fluxes: List of reaction IDs whose fluxes are directly measured
+                        and should be appended to the model input alongside labeling
+                        data.  Pass None (default) or [] to disable.
         norm_stats_input: Optional pre-computed normalization statistics to apply.
-                         If provided, normalize must be True and statistics will be applied
-                         rather than computed. Should contain 'labeling_mean', 'labeling_std', 
-                         and optionally 'bypass_mean', 'bypass_std', 'bypass_feature_names'.
-    
+                         Should contain 'labeling_mean', 'labeling_std', and
+                         optionally 'measured_fluxes_mean', 'measured_fluxes_std',
+                         'measured_fluxes_feature_names'.
+
     Returns:
         dataset: TensorDataset with (inputs, targets)
         stats: Dictionary with normalization statistics (either computed or input)
@@ -439,51 +434,44 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
     # Flatten tracer indicators and repeat for all samples
     tracer_data = np.tile(tracer_indicators.flatten(), (len(train_indices), 1))  # (num_samples, num_experiments * num_base_tracers)
     
-    # Combine inputs: [labeling_data, tracer_data, bypass_data]
+    # Combine inputs: [labeling_data, tracer_data, measured_fluxes_data]
     inputs = np.hstack([labeling_data, tracer_data])
-    
-    # Extract bypass features from flux data if requested
-    effective_bypass_mode = bypass_mode if extract_bypass else None
-    
-    if effective_bypass_mode is not None:
-        bypass_data, feature_names = extract_bypass_features(
-            flux_df, train_indices, mode=effective_bypass_mode
+
+    # Extract and append measured flux features if requested
+    if measured_fluxes:
+        measured_fluxes_data, feature_names = extract_measured_fluxes(
+            flux_df, train_indices, reaction_ids=measured_fluxes
         )
-        
-        if bypass_data is not None and len(feature_names) > 0:
-            # Normalize bypass features
+
+        if measured_fluxes_data is not None and len(feature_names) > 0:
             if normalize:
-                # Apply or compute bypass normalization statistics
-                if norm_stats_input is not None and 'bypass_mean' in norm_stats_input:
-                    # Use provided statistics
-                    bypass_mean = np.array(norm_stats_input['bypass_mean'])
-                    bypass_std = np.array(norm_stats_input['bypass_std'])
-                    
-                    # Validate dimensions match
-                    if len(bypass_mean) != bypass_data.shape[1]:
+                if norm_stats_input is not None and 'measured_fluxes_mean' in norm_stats_input:
+                    measured_fluxes_mean = np.array(norm_stats_input['measured_fluxes_mean'])
+                    measured_fluxes_std = np.array(norm_stats_input['measured_fluxes_std'])
+
+                    if len(measured_fluxes_mean) != measured_fluxes_data.shape[1]:
                         raise ValueError(
-                            f"Bypass normalization stats dimension mismatch: "
-                            f"expected {len(bypass_mean)} features but got {bypass_data.shape[1]}. "
-                            f"Make sure bypass_mode matches the training configuration."
+                            f"Measured-fluxes normalization stats dimension mismatch: "
+                            f"expected {len(measured_fluxes_mean)} features but got {measured_fluxes_data.shape[1]}. "
+                            f"Make sure measured_fluxes matches the training configuration."
                         )
-                    
-                    bypass_data = (bypass_data - bypass_mean) / bypass_std
-                    norm_stats['bypass_mean'] = norm_stats_input['bypass_mean']
-                    norm_stats['bypass_std'] = norm_stats_input['bypass_std']
-                    if 'bypass_feature_names' in norm_stats_input:
-                        norm_stats['bypass_feature_names'] = norm_stats_input['bypass_feature_names']
+
+                    measured_fluxes_data = (measured_fluxes_data - measured_fluxes_mean) / measured_fluxes_std
+                    norm_stats['measured_fluxes_mean'] = norm_stats_input['measured_fluxes_mean']
+                    norm_stats['measured_fluxes_std'] = norm_stats_input['measured_fluxes_std']
+                    if 'measured_fluxes_feature_names' in norm_stats_input:
+                        norm_stats['measured_fluxes_feature_names'] = norm_stats_input['measured_fluxes_feature_names']
                 else:
-                    # Compute new statistics
-                    bypass_mean = bypass_data.mean(axis=0)
-                    bypass_std = bypass_data.std(axis=0)
-                    bypass_std = np.where(bypass_std < 1e-6, 1.0, bypass_std)  # Avoid division by zero
-                    bypass_data = (bypass_data - bypass_mean) / bypass_std
-                    norm_stats['bypass_mean'] = bypass_mean.tolist()
-                    norm_stats['bypass_std'] = bypass_std.tolist()
-                    norm_stats['bypass_feature_names'] = feature_names
-            
-            inputs = np.hstack([inputs, bypass_data])
-            print(f"Extracted {len(feature_names)} bypass features: {feature_names[:3]}{'...' if len(feature_names) > 3 else ''}")
+                    measured_fluxes_mean = measured_fluxes_data.mean(axis=0)
+                    measured_fluxes_std = measured_fluxes_data.std(axis=0)
+                    measured_fluxes_std = np.where(measured_fluxes_std < 1e-6, 1.0, measured_fluxes_std)
+                    measured_fluxes_data = (measured_fluxes_data - measured_fluxes_mean) / measured_fluxes_std
+                    norm_stats['measured_fluxes_mean'] = measured_fluxes_mean.tolist()
+                    norm_stats['measured_fluxes_std'] = measured_fluxes_std.tolist()
+                    norm_stats['measured_fluxes_feature_names'] = feature_names
+
+            inputs = np.hstack([inputs, measured_fluxes_data])
+            print(f"Extracted {len(feature_names)} measured fluxes: {feature_names}")
     
     # Prepare targets (flux + reversibility)
     flux_data = flux_df.values[:, train_indices].T
@@ -499,7 +487,7 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, tracer_multi_hot,
     return dataset, norm_stats
 
 
-def apply_random_masking(inputs, mask_prob=0.3, min_experiments=1, num_base_tracers=21, bypass_dim=0, num_experiments=None):
+def apply_random_masking(inputs, mask_prob=0.3, min_experiments=1, num_base_tracers=21, measured_fluxes_dim=0, num_experiments=None):
     """
     Apply random masking augmentation to input data during training.
 
@@ -512,7 +500,7 @@ def apply_random_masking(inputs, mask_prob=0.3, min_experiments=1, num_base_trac
         mask_prob: Probability of masking each experiment (0.0 to 1.0)
         min_experiments: Minimum number of experiments to keep (at least 1)
         num_base_tracers: Number of base tracers (to determine num_experiments)
-        bypass_dim: Number of bypass features appended at end of input (e.g. 3 for VO2/VCO2/RER)
+        measured_fluxes_dim: Number of bypass features appended at end of input (e.g. 3 for VO2/VCO2/RER)
         num_experiments: Number of experiments in input. Must be provided; cannot be
                          reliably inferred from input dimensions alone.
 
@@ -524,13 +512,13 @@ def apply_random_masking(inputs, mask_prob=0.3, min_experiments=1, num_base_trac
     device = inputs.device
 
     # Input layout: [labeling_exp0 | ... | labeling_expN | tracer_exp0 | ... | tracer_expN | bypass]
-    labeling_and_tracer_dim = total_dim - bypass_dim
+    labeling_and_tracer_dim = total_dim - measured_fluxes_dim
 
     if num_experiments is None:
         raise ValueError(
             "num_experiments must be provided to apply_random_masking — it cannot be reliably "
             "inferred from input dimensions. Pass model.input_dim and model.num_base_tracers to "
-            "compute it: num_experiments = (total_dim - bypass_dim) // (input_dim + num_base_tracers)"
+            "compute it: num_experiments = (total_dim - measured_fluxes_dim) // (input_dim + num_base_tracers)"
         )
 
     labeling_total = labeling_and_tracer_dim - num_experiments * num_base_tracers
@@ -574,7 +562,7 @@ def apply_random_masking(inputs, mask_prob=0.3, min_experiments=1, num_base_trac
     return masked_inputs, mask
 
 
-def extract_mask_from_data(inputs, num_base_tracers=21, threshold=1e-6, bypass_dim=0, num_experiments=None):
+def extract_mask_from_data(inputs, num_base_tracers=21, threshold=1e-6, measured_fluxes_dim=0, num_experiments=None):
     """
     Extract mask from data by detecting which experiments are all zeros/missing.
 
@@ -584,7 +572,7 @@ def extract_mask_from_data(inputs, num_base_tracers=21, threshold=1e-6, bypass_d
         inputs: (batch_size, total_input_dim) tensor
         num_base_tracers: Number of base tracers
         threshold: Threshold for considering data as missing
-        bypass_dim: Number of bypass features appended at end of input (e.g. 3 for VO2/VCO2/RER)
+        measured_fluxes_dim: Number of bypass features appended at end of input (e.g. 3 for VO2/VCO2/RER)
         num_experiments: Number of experiments in input. Must be provided; cannot be
                          reliably inferred from input dimensions alone.
 
@@ -594,13 +582,13 @@ def extract_mask_from_data(inputs, num_base_tracers=21, threshold=1e-6, bypass_d
     batch_size, total_dim = inputs.shape
     device = inputs.device
 
-    labeling_and_tracer_dim = total_dim - bypass_dim
+    labeling_and_tracer_dim = total_dim - measured_fluxes_dim
 
     if num_experiments is None:
         raise ValueError(
             "num_experiments must be provided to extract_mask_from_data — it cannot be reliably "
             "inferred from input dimensions. Pass model.input_dim and model.num_base_tracers to "
-            "compute it: num_experiments = (total_dim - bypass_dim) // (input_dim + num_base_tracers)"
+            "compute it: num_experiments = (total_dim - measured_fluxes_dim) // (input_dim + num_base_tracers)"
         )
 
     labeling_total = labeling_and_tracer_dim - num_experiments * num_base_tracers

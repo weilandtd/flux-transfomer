@@ -77,23 +77,23 @@ class LabelingToFluxTransformer(nn.Module):
         flux_dim: Number of reactions (fluxes)
         reversibility_dim: Number of reactions (reversibilities)
         num_base_tracers: Number of unique tracers
-        combined_dim: Total dimension for transformer (includes embedding + tracer info + bypass)
+        combined_dim: Total dimension for transformer (includes embedding + tracer info + measured fluxes)
         dropout: Dropout rate
         num_attn_heads: Number of attention heads
         num_transformer_layers: Number of transformer encoder layers
-        bypass_dim: Additional features to bypass transformer
+        measured_fluxes_dim: Number of directly measured flux features passed alongside labeling data
     """
-    
-    def __init__(self, stoichiometric_matrix, input_dim, flux_dim, reversibility_dim, 
-                 num_base_tracers, combined_dim=512, dropout=0.15, 
-                 num_attn_heads=8, num_transformer_layers=2, bypass_dim=0):
+
+    def __init__(self, stoichiometric_matrix, input_dim, flux_dim, reversibility_dim,
+                 num_base_tracers, combined_dim=512, dropout=0.15,
+                 num_attn_heads=8, num_transformer_layers=2, measured_fluxes_dim=0):
         super(LabelingToFluxTransformer, self).__init__()
 
         self.num_base_tracers = num_base_tracers
         self.input_dim = input_dim
         self.flux_dim = flux_dim
         self.reversibility_dim = reversibility_dim
-        self.bypass_dim = bypass_dim
+        self.measured_fluxes_dim = measured_fluxes_dim
 
         # Compute FBApro matrix (I - S_pinv @ S) for Sv=0 constraint
         S = torch.tensor(stoichiometric_matrix, dtype=torch.float32)
@@ -110,9 +110,9 @@ class LabelingToFluxTransformer(nn.Module):
             f"combined_dim ({combined_dim}) must be divisible by num_attn_heads ({num_attn_heads})"
         
         # Compute embedding dimension
-        embed_dim = combined_dim - num_base_tracers - bypass_dim
+        embed_dim = combined_dim - num_base_tracers - measured_fluxes_dim
         assert embed_dim > 0, \
-            f"embed_dim must be positive (combined_dim={combined_dim}, num_base_tracers={num_base_tracers}, bypass_dim={bypass_dim})"
+            f"embed_dim must be positive (combined_dim={combined_dim}, num_base_tracers={num_base_tracers}, measured_fluxes_dim={measured_fluxes_dim})"
         
         self.embed_dim = embed_dim
         self.combined_dim = combined_dim
@@ -147,7 +147,7 @@ class LabelingToFluxTransformer(nn.Module):
         Forward pass through the transformer.
         
         Args:
-            x: (batch_size, total_input_dim) - concatenated [labeling_data, tracer_data, bypass_features]
+            x: (batch_size, total_input_dim) - concatenated [labeling_data, tracer_data, measured_fluxes]
             mask: Optional mask for experiments
         
         Returns:
@@ -157,12 +157,12 @@ class LabelingToFluxTransformer(nn.Module):
         batch_size, total_dim = x.shape
         
         # Split inputs
-        labeling_and_tracer_dim = total_dim - self.bypass_dim
+        labeling_and_tracer_dim = total_dim - self.measured_fluxes_dim
         num_experiments = labeling_and_tracer_dim // (self.input_dim + self.num_base_tracers)
-        
+
         labeling_data = x[:, :num_experiments * self.input_dim]
         tracer_data = x[:, num_experiments * self.input_dim:labeling_and_tracer_dim]
-        bypass_data = x[:, labeling_and_tracer_dim:]
+        measured_fluxes_data = x[:, labeling_and_tracer_dim:]
         
         # Reshape to 3D
         labeling_data = labeling_data.view(batch_size, num_experiments, self.input_dim)
@@ -175,10 +175,10 @@ class LabelingToFluxTransformer(nn.Module):
         # Combine with tracer info
         combined_input = torch.cat([projected_labeling, tracer_data], dim=-1)
         
-        # Add bypass features if present
-        if self.bypass_dim > 0:
-            bypass_expanded = bypass_data.unsqueeze(1).expand(-1, num_experiments, -1)
-            combined_input = torch.cat([combined_input, bypass_expanded], dim=-1)
+        # Add measured fluxes if present
+        if self.measured_fluxes_dim > 0:
+            measured_fluxes_expanded = measured_fluxes_data.unsqueeze(1).expand(-1, num_experiments, -1)
+            combined_input = torch.cat([combined_input, measured_fluxes_expanded], dim=-1)
         
         # Transformer encoding
         # src_key_padding_mask: True = ignore position (inverted from our convention where True=valid)
