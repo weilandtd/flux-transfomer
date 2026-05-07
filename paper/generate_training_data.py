@@ -9,17 +9,21 @@ This follows the mammalian atlas workflow:
   5. Save labeling, flux, and reversibility HDF5 files.
 
 Example:
-    PYTHONPATH=src python paper/generate_training_data.py \
-        --flux_samples training_data/flux_samples.csv \
-        --start_idx 0 \
-        --end_idx 500 \
-        --output_dir training_data \
-        --device cuda
+    PYTHONPATH=src python paper/generate_training_data.py --config paper/io_config.yaml
+
+    # Process a specific slice (for parallel jobs):
+    PYTHONPATH=src python paper/generate_training_data.py --config paper/io_config.yaml \\
+        --start-idx 0 --end-idx 500
 """
 
 import argparse
+import datetime
 import os
 import re
+
+import yaml
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 import pandas as pd
 import torch
@@ -30,12 +34,6 @@ from sigmaflux.core.data import MassIsotopomerData, create_data_index
 from sigmaflux.core.experiment import Experiment, Tracer
 from sigmaflux.core.model import MFAModel
 from sigmaflux.expansion.emu import EMU
-
-
-TRACERS = [
-    {"tracer_id": "glc__D_out", "labeling": [1, 1, 1, 1, 1, 1], "enrichment": 0.5},
-    {"tracer_id": "glc__D_out", "labeling": [1, 1, 0, 0, 0, 0], "enrichment": 0.5},
-]
 
 
 MEASURED_METABOLITE_IDS = [
@@ -52,7 +50,33 @@ MEASURED_METABOLITE_IDS = [
 ]
 
 
-DEFAULT_MODEL_FILE = "models/I_orientalis/imIsor_annotated.json"
+def validate_tracers(tracer_cfg, media_cfg):
+    """Check that every tracer metabolite has an open exchange reaction in the media.
+
+    The exchange reaction for metabolite ``met_id`` is expected to be named
+    ``EX_<met_id>``.  A reaction is considered open when at least one of its
+    bounds is non-zero (i.e. flux can flow through it).
+
+    Raises ValueError listing all incompatible tracers.
+    """
+    errors = []
+    for t in tracer_cfg:
+        met_id = t["tracer_id"]
+        ex_id = f"EX_{met_id}"
+        bounds = media_cfg.get(ex_id)
+        if bounds is None:
+            errors.append(
+                f"  tracer '{met_id}': exchange reaction '{ex_id}' is not in the media"
+            )
+        elif bounds["lb"] == 0 and bounds["ub"] == 0:
+            errors.append(
+                f"  tracer '{met_id}': exchange reaction '{ex_id}' is closed (lb=0, ub=0)"
+            )
+    if errors:
+        raise ValueError(
+            "Tracer/media incompatibility — the following tracers cannot enter the network:\n"
+            + "\n".join(errors)
+        )
 
 
 def infer_atom_pattern(model, met_id):
@@ -83,9 +107,9 @@ def resolve_device(device_arg):
     return torch.device("cuda:0" if device_arg == "cuda" else "cpu")
 
 
-def build_experiments(mfa_model):
+def build_experiments(mfa_model, tracer_cfg):
     tracers = []
-    for tracer_info in TRACERS:
+    for tracer_info in tracer_cfg:
         metabolite = mfa_model.metabolites.get_by_id(tracer_info["tracer_id"])
         tracer = Tracer(
             metabolite,
@@ -183,8 +207,10 @@ def main(args):
     device = resolve_device(args.device)
     dtype = torch.float64
 
-    model_file = args.model_file or DEFAULT_MODEL_FILE
+    model_file = args.model_file
     flux_samples_file = args.flux_samples or os.path.join(args.output_dir, "flux_samples.csv")
+
+    validate_tracers(args.tracer_cfg, args.media_cfg)
 
     print(f"Using device: {device}")
     print(f"Loading model: {model_file}")
@@ -211,7 +237,7 @@ def main(args):
         initial_flux_distribution=flux_samples.iloc[0],
     )
 
-    experiments = build_experiments(mfa_model)
+    experiments = build_experiments(mfa_model, args.tracer_cfg)
     targets, measured_metabolites, metabolite_atom_patterns = build_targets(mfa_model)
 
     print("Preparing MFAModel...")
@@ -264,13 +290,30 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate training data from pre-sampled fluxes.")
-    parser.add_argument("--start_idx", type=int, default=0)
-    parser.add_argument("--end_idx", type=int, default=None)
-    parser.add_argument("--n_samples", type=int, default=None)
-    parser.add_argument("--output_dir", type=str, default="training_data")
-    parser.add_argument("--model_file", type=str, default=None)
-    parser.add_argument("--flux_samples", type=str, default=None)
-    parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu", "cuda"])
-    parser.add_argument("--batch_size", type=int, default=500)
-    parser.add_argument("--seed", type=int, default=42)
-    main(parser.parse_args())
+    parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    # Optional slice overrides for parallel jobs
+    parser.add_argument("--start-idx", type=int, default=None, help="Override start sample index")
+    parser.add_argument("--end-idx", type=int, default=None, help="Override end sample index")
+    parser.add_argument("--n-samples", type=int, default=None, help="Override number of samples to process")
+    cli = parser.parse_args()
+
+    with open(cli.config) as f:
+        cfg = yaml.safe_load(f)
+
+    lab = cfg.get("labeling", {})
+    output_dir = f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
+
+    args = argparse.Namespace(
+        output_dir=output_dir,
+        model_file=os.path.join(output_dir, "model_prepared_for_mfa.json"),
+        flux_samples=os.path.join(output_dir, "flux_samples.csv"),
+        device=cfg.get("device", "auto"),
+        seed=cfg.get("seed", 42),
+        batch_size=lab.get("batch_size", 500),
+        start_idx=cli.start_idx if cli.start_idx is not None else 0,
+        end_idx=cli.end_idx,
+        n_samples=cli.n_samples,
+        tracer_cfg=lab["tracers"],
+        media_cfg=cfg["sampling"]["media"],
+    )
+    main(args)
