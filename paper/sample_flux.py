@@ -5,45 +5,32 @@ Prepares a COBRA sampling problem from an annotated model, writes sampled
 fluxes, and saves the exact model that those fluxes belong to.
 
 Example:
-    PYTHONPATH=src python paper/sample_flux.py \
-        --model-file models/I_orientalis/imIsor_annotated.json \
-        --output-dir training_data \
-        --n-samples 10000 \
-        --processes 5
+    PYTHONPATH=src python paper/sample_flux.py --config paper/io_config.yaml
 """
 
 import argparse
+import datetime
 import os
 
 import cobra
-from cobra import Reaction
+import yaml
 from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
 from optlang.symbolics import Zero
 
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DEFAULT_MODEL_FILE = "models/I_orientalis/imIsor_annotated.json"
+
+def resolve_path(path):
+    """Resolve a config path relative to the repo root if not absolute."""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(_REPO_ROOT, path)
 
 
-def add_out_reservoir_reactions(model, bound):
-    added = []
-    for metabolite in list(model.metabolites):
-        if not metabolite.id.endswith("_out"):
-            continue
-
-        source = Reaction(f"SRC_{metabolite.id}")
-        source.bounds = (0, bound)
-        source.add_metabolites({metabolite: 1})
-
-        demand = Reaction(f"DM_{metabolite.id}")
-        demand.bounds = (0, bound)
-        demand.add_metabolites({metabolite: -1})
-
-        model.add_reactions([source, demand])
-        added.extend([source.id, demand.id])
-
-    return added
+def output_dir_for(cfg):
+    return f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
 
 
 def set_bounds(model, reaction_id, lower_bound, upper_bound):
@@ -52,14 +39,18 @@ def set_bounds(model, reaction_id, lower_bound, upper_bound):
         reaction.bounds = (lower_bound, upper_bound)
 
 
-def constrain_yeast_exchange(model, args):
-    set_bounds(model, "EX_glc__D_e", args.glucose_lb, args.glucose_ub)
-    set_bounds(model, "GLCt_c_e", args.glucose_lb, args.glucose_ub)
-    set_bounds(model, "BIOMASS", args.biomass_lb, args.biomass_ub)
-    set_bounds(model, "EX_o2_e", args.o2_lb, args.o2_ub)
-    set_bounds(model, "EX_co2_e", args.co2_lb, args.co2_ub)
-    set_bounds(model, "EX_etoh_e", args.etoh_lb, args.etoh_ub)
-    set_bounds(model, "EX_ac_e", args.ac_lb, args.ac_ub)
+def apply_media(model, media_cfg):
+    """Close all EX_ reactions, then open only those listed in media_cfg."""
+    for reaction in model.reactions:
+        if reaction.id.startswith("EX_"):
+            reaction.bounds = (0, 0)
+    for rxn_id, bounds in media_cfg.items():
+        set_bounds(model, rxn_id, bounds["lb"], bounds["ub"])
+    print(f"Applied media: {len(media_cfg)} open exchange reactions, all others closed")
+
+
+def constrain_growth(model, growth_cfg):
+    set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
 
 
 def constrain_by_fva(model, fraction_of_optimum):
@@ -88,54 +79,44 @@ def summarize_variation(samples):
     print(std.sort_values(ascending=False).head(20).to_string())
 
 
-def main(args):
-    os.makedirs(args.output_dir, exist_ok=True)
+def main(cfg):
+    s = cfg["sampling"]
+    output_dir = output_dir_for(cfg)
+    os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Loading model: {args.model_file}")
-    model = load_json_model(args.model_file)
+    print(f"Loading model: {cfg['model_file']}")
+    model = load_json_model(resolve_path(cfg["model_file"]))
     model.solver.configuration.tolerances.feasibility = 1e-9
 
-    added = add_out_reservoir_reactions(model, args.reservoir_bound)
-    print(f"Added {len(added)} reservoir source/demand reactions for *_out metabolites")
-
-    constrain_yeast_exchange(model, args)
+    apply_media(model, s["media"])
+    constrain_growth(model, s["growth"])
 
     solution = model.optimize()
     if solution.status != "optimal":
         raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
     print(f"Prepared model status: {solution.status}, objective={solution.objective_value}")
 
-    expression = sum(reaction.forward_variable + reaction.reverse_variable for reaction in model.reactions)
-    model.objective = expression
-    model.objective_direction = "min"
-    parsimonious_solution = model.optimize()
-    if parsimonious_solution.status != "optimal":
-        raise RuntimeError(f"Parsimony optimization failed: {parsimonious_solution.status}")
-    model.add_cons_vars(
-        model.problem.Constraint(expression, ub=parsimonious_solution.objective_value * args.parsimony_factor)
-    )
     model.objective = Zero
-    print(f"Added parsimony constraint: total flux <= {parsimonious_solution.objective_value * args.parsimony_factor:.6g}")
 
-    if args.use_fva:
-        removed_reactions, removed_metabolites = constrain_by_fva(model, args.fva_fraction)
+    if s.get("fva", {}).get("enabled", False):
+        removed_reactions, removed_metabolites = constrain_by_fva(model, s["fva"]["fraction"])
         print(f"Removed {removed_reactions} zero-FVA reactions and {removed_metabolites} orphaned metabolites")
 
-    prepared_model_path = os.path.join(args.output_dir, "model_prepared_for_mfa.json")
+    prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, prepared_model_path)
     print(f"Saved prepared model: {prepared_model_path}")
 
-    print(f"Sampling {args.n_samples} flux distributions...")
+    print(f"Sampling {s['n_samples']} flux distributions...")
     samples = sample(
         model,
-        n=args.n_samples,
-        thinning=args.thinning,
-        processes=args.processes,
-        method=args.method,
-        seed=args.seed,
+        n=s["n_samples"],
+        thinning=s["thinning"],
+        processes=s["processes"],
+        method=s["method"],
+        seed=cfg["seed"],
     )
 
-    samples_path = os.path.join(args.output_dir, "flux_samples.csv")
+    samples_path = os.path.join(output_dir, "flux_samples.csv")
     samples.to_csv(samples_path)
     print(f"Saved flux samples: {samples_path} shape={samples.shape}")
     summarize_variation(samples)
@@ -143,30 +124,10 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sample fluxes from an annotated MFA model.")
-    parser.add_argument("--model-file", default=DEFAULT_MODEL_FILE)
-    parser.add_argument("--output-dir", default="training_data")
-    parser.add_argument("--n-samples", type=int, default=10000)
-    parser.add_argument("--thinning", type=int, default=1000)
-    parser.add_argument("--processes", type=int, default=1)
-    parser.add_argument("--method", choices=["optgp", "achr"], default="optgp")
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    args = parser.parse_args()
 
-    parser.add_argument("--reservoir-bound", type=float, default=1000.0)
-    parser.add_argument("--glucose-lb", type=float, default=1.0)
-    parser.add_argument("--glucose-ub", type=float, default=10.0)
-    parser.add_argument("--biomass-lb", type=float, default=0.01)
-    parser.add_argument("--biomass-ub", type=float, default=7.0)
-    parser.add_argument("--o2-lb", type=float, default=0.0)
-    parser.add_argument("--o2-ub", type=float, default=100.0)
-    parser.add_argument("--co2-lb", type=float, default=0.0)
-    parser.add_argument("--co2-ub", type=float, default=100.0)
-    parser.add_argument("--etoh-lb", type=float, default=0.0)
-    parser.add_argument("--etoh-ub", type=float, default=100.0)
-    parser.add_argument("--ac-lb", type=float, default=0.0)
-    parser.add_argument("--ac-ub", type=float, default=100.0)
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
 
-    parser.add_argument("--parsimony-factor", type=float, default=1.5)
-    parser.add_argument("--use-fva", action="store_true")
-    parser.add_argument("--fva-fraction", type=float, default=0.1)
-
-    main(parser.parse_args())
+    main(cfg)
