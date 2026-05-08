@@ -18,6 +18,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from torch.utils.data import DataLoader
 
 from sigmaflux.ai.data import (
+    build_radial_vocabs,
     create_tracer_mapping,
     load_data,
     load_stoichiometric_matrix,
@@ -39,7 +40,7 @@ def build_loss_function(train_dataset, flux_dim, loss_name):
     if loss_name == "mse":
         return None
 
-    targets = train_dataset.tensors[1]
+    targets = train_dataset.targets  # (num_samples, flux_dim + rev_dim)
     flux_variance = torch.var(targets[:, :flux_dim], dim=0).clamp_min(1.0)
     reversibility_variance = torch.var(targets[:, flux_dim:], dim=0).clamp_min(1.0)
 
@@ -49,7 +50,7 @@ def build_loss_function(train_dataset, flux_dim, loss_name):
     }
 
 
-def pearson_corr(predictions, targets):
+def r2_score(predictions, targets):
     predictions = predictions.detach().cpu()
     targets = targets.detach().cpu()
     variable = targets.std(dim=0) > 1e-8
@@ -58,14 +59,10 @@ def pearson_corr(predictions, targets):
 
     predictions = predictions[:, variable]
     targets = targets[:, variable]
-    pred_centered = predictions - predictions.mean(dim=0, keepdim=True)
-    target_centered = targets - targets.mean(dim=0, keepdim=True)
-    numerator = (pred_centered * target_centered).sum(dim=0)
-    denominator = torch.sqrt(
-        (pred_centered ** 2).sum(dim=0) * (target_centered ** 2).sum(dim=0)
-    )
-    corr = numerator / denominator.clamp_min(1e-12)
-    return torch.nan_to_num(corr, nan=0.0), int(variable.sum())
+    ss_res = ((predictions - targets) ** 2).sum(dim=0)
+    ss_tot = ((targets - targets.mean(dim=0, keepdim=True)) ** 2).sum(dim=0)
+    r2 = 1.0 - ss_res / ss_tot.clamp_min(1e-12)
+    return torch.nan_to_num(r2, nan=0.0), int(variable.sum())
 
 
 def evaluate_validation_correlations(model, val_loader, device, flux_dim):
@@ -86,22 +83,22 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim):
             reversibility_predictions.append(pred_reversibility)
             reversibility_targets.append(targets[:, flux_dim:])
 
-    flux_corr, n_flux_corr = pearson_corr(
+    flux_r2, n_flux_r2 = r2_score(
         torch.cat(flux_predictions, dim=0),
         torch.cat(flux_targets, dim=0),
     )
-    reversibility_corr, n_reversibility_corr = pearson_corr(
+    reversibility_r2, n_reversibility_r2 = r2_score(
         torch.cat(reversibility_predictions, dim=0),
         torch.cat(reversibility_targets, dim=0),
     )
 
     return {
-        "flux_mean": float(flux_corr.mean()) if len(flux_corr) else 0.0,
-        "flux_median": float(flux_corr.median()) if len(flux_corr) else 0.0,
-        "flux_n": n_flux_corr,
-        "reversibility_mean": float(reversibility_corr.mean()) if len(reversibility_corr) else 0.0,
-        "reversibility_median": float(reversibility_corr.median()) if len(reversibility_corr) else 0.0,
-        "reversibility_n": n_reversibility_corr,
+        "flux_mean": float(flux_r2.mean()) if len(flux_r2) else 0.0,
+        "flux_median": float(flux_r2.median()) if len(flux_r2) else 0.0,
+        "flux_n": n_flux_r2,
+        "reversibility_mean": float(reversibility_r2.mean()) if len(reversibility_r2) else 0.0,
+        "reversibility_median": float(reversibility_r2.median()) if len(reversibility_r2) else 0.0,
+        "reversibility_n": n_reversibility_r2,
     }
 
 
@@ -121,25 +118,35 @@ def main(args):
         flux_df = flux_df.iloc[:, :args.max_samples]
         reversibility_df = reversibility_df.iloc[:, :args.max_samples]
         print(f"Using first {labeling_df.shape[1]} samples after --max-samples")
-    tracer_multi_hot, base_tracer_names = create_tracer_mapping(labeling_df)
-    stoichiometric_matrix, _ = load_stoichiometric_matrix(args.model_json)
+
+    _, base_tracer_names = create_tracer_mapping(labeling_df)
+    stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
+
+    vocabs = build_radial_vocabs(
+        cobra_model,
+        labeling_df,
+        base_tracer_names,
+        h_compound=args.h_compound,
+        h_label=args.h_label,
+        h_tracer=args.h_tracer,
+    )
 
     train_indices, val_indices = split_indices(labeling_df.shape[1], args.val_fraction, args.seed)
 
-    train_dataset, norm_stats = prepare_dataset(
+    train_dataset, norm_stats, token_experiment_ids = prepare_dataset(
         labeling_df,
         flux_df,
         reversibility_df,
-        tracer_multi_hot,
+        vocabs=vocabs,
         train_indices=train_indices,
         normalize=True,
         measured_fluxes=args.measured_fluxes,
     )
-    val_dataset, _ = prepare_dataset(
+    val_dataset, _, _ = prepare_dataset(
         labeling_df,
         flux_df,
         reversibility_df,
-        tracer_multi_hot,
+        vocabs=vocabs,
         train_indices=val_indices,
         normalize=True,
         measured_fluxes=args.measured_fluxes,
@@ -149,26 +156,22 @@ def main(args):
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
 
-    num_experiments = len(labeling_df.index.get_level_values("Tracer").unique())
-    input_dim = labeling_df.shape[0] // num_experiments
     flux_dim = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
-    measured_fluxes_dim = len(norm_stats.get("measured_fluxes_feature_names", []))
 
     model_config = {
-        "input_dim": input_dim,
+        "token_dim": vocabs['token_dim'],
         "flux_dim": flux_dim,
         "reversibility_dim": reversibility_dim,
-        "num_base_tracers": len(base_tracer_names),
         "combined_dim": args.combined_dim,
         "dropout": args.dropout,
         "num_attn_heads": args.num_attn_heads,
         "num_transformer_layers": args.num_transformer_layers,
-        "measured_fluxes_dim": measured_fluxes_dim,
     }
 
     model = LabelingToFluxTransformer(
         stoichiometric_matrix=stoichiometric_matrix,
+        token_experiment_ids=token_experiment_ids,
         **model_config,
     )
 
@@ -199,8 +202,10 @@ def main(args):
     checkpoint = {
         "model_state_dict": model.state_dict(),
         "model_config": model_config,
+        "vocabs": {k: v for k, v in vocabs.items()
+                   if k not in ('compound_emb_table', 'label_emb_table', 'tracer_emb_table')},
+        "token_experiment_ids": token_experiment_ids.tolist(),
         "norm_stats": norm_stats,
-        "base_tracer_names": base_tracer_names,
         "train_indices": train_indices.tolist(),
         "val_indices": val_indices.tolist(),
         "log": log,
@@ -214,13 +219,13 @@ def main(args):
     print(f"Final train loss: {log['train_loss'][-1]:.6g}")
     print(f"Final val loss: {log['val_loss'][-1]:.6g}")
     print(
-        "Validation flux Pearson: "
+        "Validation flux R²: "
         f"mean={val_correlations['flux_mean']:.4f}, "
         f"median={val_correlations['flux_median']:.4f}, "
         f"n={val_correlations['flux_n']}"
     )
     print(
-        "Validation reversibility Pearson: "
+        "Validation reversibility R²: "
         f"mean={val_correlations['reversibility_mean']:.4f}, "
         f"median={val_correlations['reversibility_median']:.4f}, "
         f"n={val_correlations['reversibility_n']}"
@@ -263,5 +268,8 @@ if __name__ == "__main__":
         mask_prob=t.get("mask_prob", 0.2),
         min_experiments=t.get("min_experiments", 1),
         measured_fluxes=measured_fluxes,
+        h_compound=t.get("h_compound"),   # None → auto from formula
+        h_label=t.get("h_label"),
+        h_tracer=t.get("h_tracer"),
     )
     main(args)
