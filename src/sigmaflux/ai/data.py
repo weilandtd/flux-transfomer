@@ -835,4 +835,234 @@ def extract_mask_from_data(tokens, token_experiment_ids, threshold=1e-6):
         exp_has_data = exp_fracs.abs().max(dim=1).values > threshold  # (batch,)
         token_mask[:, tok_idxs] &= exp_has_data.unsqueeze(1)
 
+
+# ---------------------------------------------------------------------------
+# ID-based token features (for FluxDecoder)
+# ---------------------------------------------------------------------------
+
+def build_id_token_features(labeling_df, vocabs):
+    """
+    Build integer ID arrays for FluxDecoder's internal embedding lookups.
+
+    Unlike build_token_static_features (which precomputes float embeddings),
+    this returns integer indices so the model performs embedding lookups at
+    runtime.  Multi-tracer combinations (e.g. "A|B") are handled by summing
+    base tracer embeddings and treating each unique combination string as a
+    single vocabulary entry.
+
+    Args:
+        labeling_df: DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer).
+        vocabs: dict from build_radial_vocabs.
+
+    Returns:
+        compound_ids:         (num_tokens,) int64
+        label_ids:            (num_tokens,) int64
+        tracer_ids:           (num_tokens,) int64
+        token_experiment_ids: (num_tokens,) int64  (same index as tracer_ids)
+        tracer_combo_vocab:   sorted list of unique tracer strings
+        tracer_combo_emb_table: (n_combos, d_tracer) float32
+    """
+    compound_vocab       = vocabs['compound_vocab']
+    label_vocab          = vocabs['label_vocab']
+    tracer_base_vocab    = vocabs['tracer_vocab']
+    tracer_base_emb_table = vocabs['tracer_emb_table']
+
+    compound_to_idx      = {c: i for i, c in enumerate(compound_vocab)}
+    label_to_idx         = {l: i for i, l in enumerate(label_vocab)}
+    tracer_base_to_idx   = {t: i for i, t in enumerate(tracer_base_vocab)}
+
+    tracers     = labeling_df.index.get_level_values('Tracer')
+    metabolites = labeling_df.index.get_level_values('Metabolite')
+    isotopomers = labeling_df.index.get_level_values('Isotopomer')
+
+    # Combined tracer vocab: one entry per unique tracer string (incl. "A|B")
+    tracer_combo_vocab    = sorted(tracers.unique().tolist())
+    tracer_combo_to_idx   = {t: i for i, t in enumerate(tracer_combo_vocab)}
+
+    # Precompute combined embeddings by summing base tracer embeddings
+    tracer_emb_dim = tracer_base_emb_table.shape[1]
+    tracer_combo_emb_table = np.zeros(
+        (len(tracer_combo_vocab), tracer_emb_dim), dtype=np.float32
+    )
+    for combo_str, combo_idx in tracer_combo_to_idx.items():
+        for bt in (t.strip() for t in combo_str.split('|')):
+            bt_idx = tracer_base_to_idx.get(bt, 0)
+            tracer_combo_emb_table[combo_idx] += tracer_base_emb_table[bt_idx]
+
+    num_tokens           = len(labeling_df)
+    compound_ids         = np.zeros(num_tokens, dtype=np.int64)
+    label_ids            = np.zeros(num_tokens, dtype=np.int64)
+    tracer_ids           = np.zeros(num_tokens, dtype=np.int64)
+    token_experiment_ids = np.zeros(num_tokens, dtype=np.int64)
+
+    missing_compounds = set()
+    missing_labels    = set()
+
+    for i, (tracer_str, met_id, isotopomer) in enumerate(
+            zip(tracers, metabolites, isotopomers)):
+        c_idx = compound_to_idx.get(met_id)
+        if c_idx is None:
+            missing_compounds.add(met_id)
+            c_idx = 0
+        compound_ids[i] = c_idx
+
+        l_idx = label_to_idx.get(isotopomer)
+        if l_idx is None:
+            missing_labels.add(isotopomer)
+            l_idx = 0
+        label_ids[i] = l_idx
+
+        combo_idx = tracer_combo_to_idx.get(tracer_str, 0)
+        tracer_ids[i]           = combo_idx
+        token_experiment_ids[i] = combo_idx  # experiment ≡ tracer combination
+
+    if missing_compounds:
+        print(f"WARNING: {len(missing_compounds)} metabolite(s) not in COBRA model vocab "
+              f"(using index 0): {sorted(missing_compounds)}")
+    if missing_labels:
+        print(f"WARNING: {len(missing_labels)} isotopomer(s) not in label vocab "
+              f"(using index 0): {sorted(missing_labels)}")
+
+    return (
+        compound_ids, label_ids, tracer_ids, token_experiment_ids,
+        tracer_combo_vocab, tracer_combo_emb_table,
+    )
+
+
+class IDTokenizedDataset(Dataset):
+    """
+    Dataset for FluxDecoder: stores integer IDs + fractions rather than
+    precomputed float embeddings.
+
+    __getitem__ returns:
+        ((compound_ids, label_ids, tracer_ids, fracs), targets)
+        where compound/label/tracer_ids are (num_tokens,) int64 tensors shared
+        across all samples, and fracs is (num_tokens, 1) per-sample float32.
+    """
+
+    def __init__(self, compound_ids, label_ids, tracer_ids, fractions, targets):
+        """
+        Args:
+            compound_ids: (num_tokens,) int64
+            label_ids:    (num_tokens,) int64
+            tracer_ids:   (num_tokens,) int64
+            fractions:    (num_samples, num_tokens) float32
+            targets:      (num_samples, out_dim) float32
+        """
+        self.compound_ids = torch.tensor(compound_ids, dtype=torch.long)
+        self.label_ids    = torch.tensor(label_ids,    dtype=torch.long)
+        self.tracer_ids   = torch.tensor(tracer_ids,   dtype=torch.long)
+        self.fractions    = torch.tensor(fractions,    dtype=torch.float32)
+        self.targets      = torch.tensor(targets,      dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.fractions)
+
+    def __getitem__(self, idx):
+        fracs = self.fractions[idx].unsqueeze(1)  # (num_tokens, 1)
+        return (
+            self.compound_ids,  # (num_tokens,)
+            self.label_ids,     # (num_tokens,)
+            self.tracer_ids,    # (num_tokens,)
+            fracs,              # (num_tokens, 1)
+        ), self.targets[idx]
+
+
+def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
+                       train_indices=None, normalize=True, measured_fluxes=None,
+                       norm_stats_input=None):
+    """
+    Prepare an IDTokenizedDataset for use with FluxDecoder.
+
+    Delegates all normalization and bypass-token handling to prepare_dataset,
+    then extracts integer ID arrays so the model can perform embedding lookups
+    at runtime rather than receiving precomputed float embeddings.
+
+    Args:
+        Same as prepare_dataset.
+
+    Returns:
+        dataset:               IDTokenizedDataset
+        norm_stats:            dict (same schema as prepare_dataset)
+        token_experiment_ids:  (num_tokens,) int64 tensor
+        tracer_combo_vocab:    sorted list of unique tracer strings
+        tracer_combo_emb_table:(n_combos, d_tracer) float32 array
+    """
+    float_dataset, norm_stats, token_experiment_ids = prepare_dataset(
+        labeling_df, flux_df, reversibility_df, vocabs,
+        train_indices=train_indices,
+        normalize=normalize,
+        measured_fluxes=measured_fluxes,
+        norm_stats_input=norm_stats_input,
+    )
+
+    compound_ids, label_ids, tracer_ids, _, tracer_combo_vocab, tracer_combo_emb_table = \
+        build_id_token_features(labeling_df, vocabs)
+
+    # Prepend zero IDs for bypass tokens (prepended first in prepare_dataset)
+    n_total  = float_dataset.static.shape[0]
+    n_bypass = n_total - len(labeling_df)
+    if n_bypass > 0:
+        z            = np.zeros(n_bypass, dtype=np.int64)
+        compound_ids = np.concatenate([z, compound_ids])
+        label_ids    = np.concatenate([z, label_ids])
+        tracer_ids   = np.concatenate([z, tracer_ids])
+
+    fractions = float_dataset.fractions.numpy()  # (num_samples, n_total)
+    targets   = float_dataset.targets.numpy()
+
+    dataset = IDTokenizedDataset(compound_ids, label_ids, tracer_ids, fractions, targets)
+    return dataset, norm_stats, token_experiment_ids, tracer_combo_vocab, tracer_combo_emb_table
+
+
+def generate_experiment_mask(token_experiment_ids, batch_size, device,
+                              mask_prob=0.3, min_experiments=1):
+    """
+    Generate a random experiment-group mask for missing-data augmentation.
+
+    Equivalent to apply_random_masking but returns only the boolean mask
+    without modifying any input tensor — suitable for FluxDecoder where
+    inputs are integer IDs that cannot be zeroed out meaningfully.
+
+    Args:
+        token_experiment_ids: (num_tokens,) int64 tensor; -1 = bypass token
+        batch_size:           int
+        device:               torch device
+        mask_prob:            probability of masking any given experiment
+        min_experiments:      minimum experiments kept unmasked per sample
+
+    Returns:
+        mask: (batch_size, num_tokens) bool, True = valid / unmasked
+    """
+    exp_ids       = token_experiment_ids.to(device)
+    num_tokens    = exp_ids.shape[0]
+    valid_exp     = exp_ids >= 0
+    unique_exp_ids = exp_ids[valid_exp].unique()
+    num_experiments = unique_exp_ids.shape[0]
+
+    token_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool, device=device)
+
+    if num_experiments == 0 or mask_prob <= 0.0:
+        return token_mask
+
+    exp_keep = torch.rand(batch_size, num_experiments, device=device) >= mask_prob
+
+    for b in range(batch_size):
+        num_kept = exp_keep[b].sum().item()
+        if num_kept < min_experiments:
+            masked_idxs = torch.where(~exp_keep[b])[0]
+            to_enable   = masked_idxs[
+                torch.randperm(len(masked_idxs), device=device)[
+                    :min_experiments - int(num_kept)
+                ]
+            ]
+            exp_keep[b, to_enable] = True
+
+    for exp_i in range(num_experiments):
+        exp_id    = unique_exp_ids[exp_i]
+        tok_idxs  = (exp_ids == exp_id)
+        token_mask[:, tok_idxs] &= exp_keep[:, exp_i].unsqueeze(1)
+
+    return token_mask
+
     return token_mask
