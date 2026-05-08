@@ -1,12 +1,9 @@
 """
 AI module for metabolic flux prediction from labeling data.
-
-This module provides deep learning models for predicting metabolic fluxes
-and reversibilities from isotopic labeling experiments.
 """
 
 # Model
-from .model import LabelingToFluxTransformer, AttentionPooling
+from .model import FBAProProjection, CrossAttention, FluxDecoderConfig, FluxDecoder
 
 # Training
 from .train import train_model, var_norm_mse_loss
@@ -29,16 +26,22 @@ from .data import (
     radial_embedding_table,
     build_radial_vocabs,
     build_token_static_features,
+    build_id_token_features,
     TokenizedDataset,
+    IDTokenizedDataset,
     prepare_dataset,
+    prepare_id_dataset,
     apply_random_masking,
-    extract_mask_from_data
+    extract_mask_from_data,
+    generate_experiment_mask,
 )
 
 __all__ = [
     # Model
-    'LabelingToFluxTransformer',
-    'AttentionPooling',
+    'FBAProProjection',
+    'CrossAttention',
+    'FluxDecoderConfig',
+    'FluxDecoder',
     # Training
     'train_model',
     'var_norm_mse_loss',
@@ -56,8 +59,12 @@ __all__ = [
     'radial_embedding_table',
     'build_radial_vocabs',
     'build_token_static_features',
+    'build_id_token_features',
     'TokenizedDataset',
+    'IDTokenizedDataset',
     'prepare_dataset',
+    'prepare_id_dataset',
     'apply_random_masking',
     'extract_mask_from_data',
+    'generate_experiment_mask',
 ]
