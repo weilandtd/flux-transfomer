@@ -8,6 +8,8 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
+from sigmaflux.ai.data import apply_random_masking
+
 
 def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10):
     """
@@ -160,15 +162,10 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             # Apply random masking augmentation if enabled
             mask = None
             if mask_prob > 0:
-                from sigmaflux.ai.data import apply_random_masking
-                _labeling_and_tracer_dim = inputs.shape[1] - model.measured_fluxes_dim
-                _num_experiments = _labeling_and_tracer_dim // (model.input_dim + model.num_base_tracers)
                 inputs, mask = apply_random_masking(
-                    inputs, mask_prob=mask_prob,
+                    inputs, model.token_experiment_ids,
+                    mask_prob=mask_prob,
                     min_experiments=min_experiments,
-                    num_base_tracers=model.num_base_tracers,
-                    measured_fluxes_dim=model.measured_fluxes_dim,
-                    num_experiments=_num_experiments
                 )
             
             optimizer.zero_grad()

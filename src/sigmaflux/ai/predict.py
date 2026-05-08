@@ -8,122 +8,113 @@ import torch
 from tqdm import tqdm
 
 
-def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask=False, num_base_tracers=21):
+def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask=False):
     """
-    Generate flux predictions from labeling data.
-    
+    Generate flux predictions from tokenized labeling data.
+
     Args:
         model: Trained LabelingToFluxTransformer model
-        data_loader: DataLoader with (input_data, flux_targets) batches
+        data_loader: DataLoader yielding (token_tensor, targets) batches
         device: Device to run on ('cuda' or 'cpu')
         verbose: Whether to show progress bar
         extract_mask: Whether to automatically detect and use masks from data
-        num_base_tracers: Number of base tracers (for mask extraction)
-    
+            (based on zero-valued fractions in the token tensor)
+
     Returns:
         predictions: (num_samples, flux_dim + reversibility_dim) tensor
     """
     model.to(device)
     model.eval()
-    
+
     all_predictions = []
-    
+
     iterator = tqdm(data_loader, desc="Predicting") if verbose else data_loader
-    
+
     with torch.no_grad():
         for batch_data in iterator:
             inputs, _ = batch_data
             inputs = inputs.to(device)
-            
-            # Extract mask if requested
+
             mask = None
             if extract_mask:
                 from sigmaflux.ai.data import extract_mask_from_data
-                _labeling_and_tracer_dim = inputs.shape[1] - model.measured_fluxes_dim
-                _num_experiments = _labeling_and_tracer_dim // (model.input_dim + model.num_base_tracers)
-                mask = extract_mask_from_data(inputs, num_base_tracers=num_base_tracers,
-                                              measured_fluxes_dim=model.measured_fluxes_dim, num_experiments=_num_experiments)
-            
+                mask = extract_mask_from_data(inputs, model.token_experiment_ids)
+
             flux_predictions, reversibility_predictions = model(inputs, mask=mask)
             predictions = torch.cat([flux_predictions, reversibility_predictions], dim=1)
-            
+
             all_predictions.append(predictions.cpu())
-    
+
     predictions = torch.cat(all_predictions, dim=0)
-    
     return predictions
 
 
-def create_ensemble(num_models, stoichiometric_matrix, input_dim, flux_dim, 
-                   reversibility_dim, num_base_tracers, **model_kwargs):
+def create_ensemble(num_models, stoichiometric_matrix, token_dim, flux_dim,
+                   reversibility_dim, token_experiment_ids, **model_kwargs):
     """
     Create an ensemble of models for uncertainty estimation.
-    
+
     Args:
         num_models: Number of models in ensemble
         stoichiometric_matrix: Stoichiometric matrix for models
-        input_dim: Dimension of labeling input
+        token_dim: Dimension of each input token
         flux_dim: Dimension of flux output
         reversibility_dim: Dimension of reversibility output
-        num_base_tracers: Number of unique tracers
+        token_experiment_ids: (num_tokens,) tensor mapping tokens to experiments
         **model_kwargs: Additional arguments for LabelingToFluxTransformer
-    
+
     Returns:
         models: List of LabelingToFluxTransformer models
     """
     from .model import LabelingToFluxTransformer
-    
+
     models = []
     for i in range(num_models):
         print(f"Creating ensemble model {i+1}/{num_models}")
         model = LabelingToFluxTransformer(
             stoichiometric_matrix=stoichiometric_matrix,
-            input_dim=input_dim,
+            token_dim=token_dim,
             flux_dim=flux_dim,
             reversibility_dim=reversibility_dim,
-            num_base_tracers=num_base_tracers,
-            **model_kwargs
+            token_experiment_ids=token_experiment_ids,
+            **model_kwargs,
         )
         models.append(model)
-    
+
     return models
 
 
-def ensemble_predict(models, data_loader, device='cuda', verbose=True, extract_mask=False, num_base_tracers=21):
+def ensemble_predict(models, data_loader, device='cuda', verbose=True, extract_mask=False):
     """
     Generate predictions from an ensemble of models with uncertainty estimation.
-    
+
     Args:
         models: List of trained LabelingToFluxTransformer models
         data_loader: DataLoader with labeling experiments
         device: Device to run on ('cuda' or 'cpu')
         verbose: Whether to show progress
         extract_mask: Whether to automatically detect and use masks from data
-        num_base_tracers: Number of base tracers (for mask extraction)
-    
+
     Returns:
         mean_predictions: (num_samples, flux_dim + reversibility_dim) - ensemble mean
-        std_predictions: (num_samples, flux_dim + reversibility_dim) - ensemble std (uncertainty)
-        all_predictions: (num_models, num_samples, flux_dim + reversibility_dim) - individual predictions
+        std_predictions: (num_samples, flux_dim + reversibility_dim) - ensemble std
+        all_predictions: (num_models, num_samples, flux_dim + reversibility_dim)
     """
     all_model_predictions = []
-    
+
     for i, model in enumerate(models):
         if verbose:
             print(f"Ensemble model {i+1}/{len(models)} predictions...")
         predictions = predict_fluxes(
             model, data_loader, device=device, verbose=verbose,
-            extract_mask=extract_mask, num_base_tracers=num_base_tracers
+            extract_mask=extract_mask,
         )
         all_model_predictions.append(predictions)
-    
-    # Stack predictions: (num_models, num_samples, output_dim)
+
     all_predictions = torch.stack(all_model_predictions, dim=0)
-    
-    # Compute statistics
     mean_predictions = all_predictions.mean(dim=0)
     std_predictions = all_predictions.std(dim=0)
-    
+
     return mean_predictions, std_predictions, all_predictions
 
 
@@ -133,7 +124,7 @@ def train_ensemble(models, train_loader, val_loader=None, num_epochs=100,
                   mask_prob=0.0, min_experiments=1):
     """
     Train an ensemble of models independently.
-    
+
     Args:
         models: List of LabelingToFluxTransformer models
         train_loader: DataLoader for training data
@@ -145,19 +136,19 @@ def train_ensemble(models, train_loader, val_loader=None, num_epochs=100,
         gradient_clip: Max norm for gradient clipping
         use_scheduler: Whether to use learning rate scheduler
         verbose: Whether to print training progress
-    
+
     Returns:
         logs: List of training logs for each model
     """
     from .train import train_model
-    
+
     logs = []
-    
+
     for i, model in enumerate(models):
         print(f"\n{'='*60}")
         print(f"Training ensemble model {i+1}/{len(models)}")
         print(f"{'='*60}")
-        
+
         log = train_model(
             model=model,
             train_loader=train_loader,
@@ -170,9 +161,9 @@ def train_ensemble(models, train_loader, val_loader=None, num_epochs=100,
             use_scheduler=use_scheduler,
             verbose=verbose,
             mask_prob=mask_prob,
-            min_experiments=min_experiments
+            min_experiments=min_experiments,
         )
-        
+
         logs.append(log)
-    
+
     return logs
