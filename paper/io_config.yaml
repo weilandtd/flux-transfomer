@@ -79,9 +79,18 @@ training:
 
   # Architecture
   combined_dim: 256
-  num_attn_heads: 8
-  num_transformer_layers: 2
-  dropout: 0.15
+  num_attn_heads: 16
+  num_transformer_layers: 3
+  dropout: 0.2
+
+  # Radial embedding dimensions (number of harmonics H per vocabulary).
+  # Resulting embedding vector length = 2*H.
+  # Set to null to auto-compute H = ceil(log2(N)) from vocab size.
+  h_compound: 16   # compounds  — full metabolic model vocab (~400 metabolites → 32-dim)
+  h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
+  h_tracer: 1      # tracer identities (1–2 tracers   →  2-dim)
+
+  # Missing-data augmentation: randomly mask entire tracer experiments during training.
   mask_prob: 0.2
   min_experiments: 1
   # Measured fluxes are passed directly to the transformer alongside labeling data.
