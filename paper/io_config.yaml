@@ -77,11 +77,11 @@ training:
   val_fraction: 0.2
   max_samples: null   # null = use all samples
 
-  # Architecture
-  combined_dim: 256
-  num_attn_heads: 16
-  num_transformer_layers: 3
-  dropout: 0.2
+  # Architecture (FluxDecoder cross-attention decoder)
+  combined_dim: 32        # d_model
+  num_attn_heads: 8
+  num_transformer_layers: 2
+  dropout: 0.3
 
   # Radial embedding dimensions (number of harmonics H per vocabulary).
   # Resulting embedding vector length = 2*H.
@@ -101,3 +101,6 @@ training:
     - EX_co2_e
     - EX_etoh_e
     - EX_ac_e
+    - EX_glyc_e
+    - EX_succ_e
+    - BIOMASS
