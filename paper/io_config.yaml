@@ -92,7 +92,7 @@ training:
 
   # Missing-data augmentation: randomly mask entire tracer experiments during training.
   mask_prob: 0.2
-  min_experiments: 1
+  min_experiments: 1 #TODO does this still make sense with the token embeddings?
   # Measured fluxes are passed directly to the transformer alongside labeling data.
   # List the exchange reaction IDs whose fluxes will be measured experimentally.
   measured_fluxes:
