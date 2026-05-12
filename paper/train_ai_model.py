@@ -12,6 +12,7 @@ from dataclasses import asdict
 from functools import partial
 
 import numpy as np
+import scipy.linalg
 import torch
 import yaml
 
@@ -66,7 +67,7 @@ def r2_score(predictions, targets):
     return torch.nan_to_num(r2, nan=0.0), int(variable.sum())
 
 
-def evaluate_validation_correlations(model, val_loader, device, flux_dim):
+def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=None):
     model.eval()
     flux_preds, flux_tgts, rev_preds, rev_tgts = [], [], [], []
 
@@ -81,17 +82,24 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim):
 
             fixed_fluxes = None
             if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.fba_pro.fixed_idx]
+                fixed_idx = (model.null_decoder.fixed_idx if model.null_decoder is not None
+                             else model.fba_pro.fixed_idx)
+                fixed_fluxes = targets[:, fixed_idx]
             pred_flux, pred_rev = model(cids, lids, tids, fracs, None, fixed_fluxes)
             flux_preds.append(pred_flux)
             flux_tgts.append(targets[:, :flux_dim])
             rev_preds.append(pred_rev)
             rev_tgts.append(targets[:, flux_dim:])
 
-    flux_r2, n_flux = r2_score(torch.cat(flux_preds), torch.cat(flux_tgts))
-    rev_r2,  n_rev  = r2_score(torch.cat(rev_preds),  torch.cat(rev_tgts))
+    all_flux_preds = torch.cat(flux_preds)
+    all_flux_tgts  = torch.cat(flux_tgts)
+    all_rev_preds  = torch.cat(rev_preds)
+    all_rev_tgts   = torch.cat(rev_tgts)
 
-    return {
+    flux_r2, n_flux = r2_score(all_flux_preds, all_flux_tgts)
+    rev_r2,  n_rev  = r2_score(all_rev_preds,  all_rev_tgts)
+
+    result = {
         "flux_mean":            float(flux_r2.mean())   if len(flux_r2) else 0.0,
         "flux_median":          float(flux_r2.median()) if len(flux_r2) else 0.0,
         "flux_n":               n_flux,
@@ -99,6 +107,15 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim):
         "reversibility_median": float(rev_r2.median())  if len(rev_r2) else 0.0,
         "reversibility_n":      n_rev,
     }
+
+    # Per-reaction R² — only for variable reactions; stored alongside names if provided
+    if flux_names is not None and len(flux_r2) > 0:
+        variable_mask = all_flux_tgts.std(dim=0) > 1e-8
+        var_names = [flux_names[i] for i, v in enumerate(variable_mask.tolist()) if v]
+        result["flux_r2_per_reaction"] = flux_r2.tolist()
+        result["flux_reaction_names"]  = var_names
+
+    return result
 
 
 def main(args):
@@ -179,6 +196,73 @@ def main(args):
     if args.measured_fluxes:
         fixed_flux_indices = [flux_df.index.get_loc(name) for name in args.measured_fluxes]
 
+    # ── Null-space reparameterization (full null space) ─────────────────────
+    # Compute the orthonormal null-space basis Z_full of the FULL stoichiometric
+    # matrix S. The model predicts basis coefficients y ∈ R^38 and reconstructs
+    # all 386 fluxes as V = y @ Z_full.T, guaranteeing S@V=0 by construction.
+    # Measured fluxes are fed as a soft feature through fusion_layer — not hard-enforced.
+    free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
+    fixed_idx = fixed_flux_indices or []
+
+    Z_full       = scipy.linalg.null_space(stoichiometric_matrix)  # (n_fluxes, n_basis=38)
+    n_free_basis = Z_full.shape[1]
+
+    print(f"Full null-space basis dimension: {n_free_basis}  (was {flux_dim - len(fixed_idx) - n_free_basis + n_free_basis} from S_free)")
+
+    # ── Compute y normalization and observability weights from training data ──
+    # y_true = v_targets @ Z_full  (project all flux targets onto null-space basis)
+    # Normalize so the model predicts y_norm ≈ N(0,1) — clean gradient signal.
+    # obs_weights[i] = max|Pearson r(y_i, labeling_j)| across all labeling features.
+    if n_free_basis > 0:
+        train_tgts      = train_dataset.targets                          # (n_train, flux+rev)
+        train_tgts_flux = train_tgts[:, :flux_dim]                       # (n_train, 386)
+        Z_t             = torch.tensor(Z_full, dtype=torch.float32)
+        y_train         = train_tgts_flux @ Z_t                          # (n_train, 38)
+        y_mean          = y_train.mean(dim=0).numpy()
+        y_std           = y_train.std(dim=0).clamp_min(1e-6).numpy()
+        print(f"y_true stats: mean_abs={np.abs(y_mean).mean():.2f}, "
+              f"std range=[{y_std.min():.2f}, {y_std.max():.2f}]")
+
+        # Observability: Pearson r between each y-component and each labeling feature
+        L_train = torch.tensor(
+            labeling_df.iloc[:, train_indices].values.T, dtype=torch.float32
+        )                                                                # (n_train, n_meas)
+        y_c     = y_train - y_train.mean(dim=0, keepdim=True)
+        L_c     = L_train - L_train.mean(dim=0, keepdim=True)
+        y_std_c = y_c.std(dim=0).clamp_min(1e-10)
+        L_std_c = L_c.std(dim=0).clamp_min(1e-10)
+        cov_yl  = (y_c.T @ L_c) / y_train.shape[0]                     # (38, n_meas)
+        corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
+        obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) max|r|
+        obs_weights_np = obs_weights.numpy()
+        n_obs = int((obs_weights > 0.1).sum().item())
+        print(f"Observability: {n_obs}/{n_free_basis} y-components have max|r|>0.1 "
+              f"; max|r| range=[{obs_weights_np.min():.3f}, {obs_weights_np.max():.3f}]")
+    else:
+        y_mean, y_std, obs_weights_np = None, None, None
+
+    # Normalization stats for fixed_fluxes (measured exchange fluxes).
+    # Used to bring v_known from mmol/gDCW/h scale to ~N(0,1) before fusion_layer,
+    # preventing scale mismatch from corrupting unobservable null-space directions.
+    t_fixed = train_dataset.targets[:, fixed_idx]       # (n_train, 8)
+    fixed_flux_mean_np = t_fixed.mean(dim=0).numpy()
+    fixed_flux_std_np  = t_fixed.std(dim=0).clamp_min(1e-6).numpy()
+    print(f"Fixed-flux normalization: mean={fixed_flux_mean_np.round(2)}, "
+          f"std={fixed_flux_std_np.round(2)}")
+
+    null_space_data = dict(
+        Z_free          = Z_full,               # (n_fluxes, 38) — field name kept for compat
+        free_idx        = free_idx,             # metadata: indices of non-measured reactions
+        fixed_idx       = fixed_idx,            # metadata: indices of measured reactions
+        y_mean          = y_mean,
+        y_std           = y_std,
+        obs_weights     = obs_weights_np,
+        fixed_flux_mean = fixed_flux_mean_np,   # for fusion_layer input normalization
+        fixed_flux_std  = fixed_flux_std_np,
+    )
+
+    config.n_free = n_free_basis
+
     model = FluxDecoder(
         config                = config,
         stoichiometric_matrix = stoichiometric_matrix,
@@ -187,7 +271,10 @@ def main(args):
         label_emb_table       = vocabs['label_emb_table'],
         tracer_emb_table      = tracer_combo_emb_table,
         fixed_flux_indices    = fixed_flux_indices,
+        null_space_data       = null_space_data,
     )
+    # Noise injection magnitude for denoising autoencoder training (plain float, not a parameter)
+    model.flux_noise_std = args.flux_noise_std
 
     loss_function = build_loss_function(train_dataset, flux_dim, args.loss)
 
@@ -204,9 +291,11 @@ def main(args):
         mask_prob         = args.mask_prob,
         min_experiments   = args.min_experiments,
         warmup_epochs     = args.warmup_epochs,
+        y_l2_reg          = args.y_l2_reg,
     )
 
-    val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim)
+    flux_names = flux_df.index.tolist()
+    val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=flux_names)
 
     model_config = asdict(config)
 
@@ -222,6 +311,18 @@ def main(args):
         "val_indices":          val_indices.tolist(),
         "log":                  log,
         "val_correlations":     val_correlations,
+        "flux_names":           flux_names,
+        "reversibility_names":  reversibility_df.index.tolist(),
+        "null_space_data": {
+            "Z_free":           Z_full,              # (n_fluxes, 38) full null-space basis
+            "free_idx":         free_idx,
+            "fixed_idx":        fixed_idx,
+            "y_mean":           y_mean,
+            "y_std":            y_std,
+            "obs_weights":      obs_weights_np,
+            "fixed_flux_mean":  fixed_flux_mean_np,
+            "fixed_flux_std":   fixed_flux_std_np,
+        },
         "data_dir":             args.data_dir,
         "model_json":           args.model_json,
     }
@@ -247,13 +348,14 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train the SigmaFlux FluxDecoder.")
     parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    parser.add_argument("--data-dir", default=None, help="Directory containing HDF5 training data (overrides date-based default)")
     cli = parser.parse_args()
 
     with open(cli.config) as f:
         cfg = yaml.safe_load(f)
 
     t = cfg.get("training", {})
-    output_dir   = f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
+    output_dir   = cli.data_dir or f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
     output_model = os.path.join(output_dir, t.get("output_model", "transformer.pt"))
 
     measured_fluxes = t.get("measured_fluxes") or None
@@ -283,5 +385,7 @@ if __name__ == "__main__":
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
+        flux_noise_std         = t.get("flux_noise_std", 0.0),
+        y_l2_reg               = t.get("y_l2_reg", 0.0),
     )
     main(args)

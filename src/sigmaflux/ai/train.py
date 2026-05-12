@@ -59,7 +59,8 @@ def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10)
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda', loss_function=None,
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
-                mask_prob=0.0, min_experiments=1, warmup_epochs=0):
+                mask_prob=0.0, min_experiments=1, warmup_epochs=0,
+                y_l2_reg=0.0):
     """
     Train a FluxDecoder model.
 
@@ -79,6 +80,10 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         warmup_epochs: Number of epochs for linear LR warmup from 1% to 100% of
                        learning_rate (0 = disabled). After warmup, ReduceLROnPlateau
                        takes over if use_scheduler.
+        y_l2_reg: L2 regularization coefficient on y_norm predictions (null-space mode
+                  only). Pulls unobservable y-components toward 0 (the prior mean in
+                  normalized y-space), preventing overfitting to training-data noise in
+                  directions with no MID signal. Applied to train loss only (default: 0.0).
 
     Returns:
         log: Dictionary with 'train_loss', 'val_loss', and 'grad_norm' lists
@@ -127,6 +132,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             print("ReduceLROnPlateau scheduler enabled (after warmup)")
         if mask_prob > 0:
             print(f"Missing data augmentation enabled: mask_prob={mask_prob}, min_experiments={min_experiments}")
+        if y_l2_reg > 0:
+            print(f"y_norm L2 regularization enabled: lambda={y_l2_reg} (prevents unobservable-direction overfitting)")
 
     log = {
         'train_loss': [],
@@ -172,15 +179,36 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             optimizer.zero_grad()
             fixed_fluxes = None
             if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.fba_pro.fixed_idx]
+                fixed_idx = (model.null_decoder.fixed_idx if model.null_decoder is not None
+                             else model.fba_pro.fixed_idx)
+                fixed_fluxes = targets[:, fixed_idx]
+
+            # Denoising autoencoder: corrupt measured fluxes before they enter
+            # fusion_layer during training. Loss is always against clean targets.
+            fixed_fluxes_input = fixed_fluxes
+            if (model.training and fixed_fluxes is not None
+                    and getattr(model, 'flux_noise_std', 0.0) > 0.0):
+                noise = torch.randn_like(fixed_fluxes) * model.flux_noise_std * fixed_fluxes.abs()
+                fixed_fluxes_input = fixed_fluxes + noise
+
             flux_predictions, reversibility_predictions = model(
-                compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes
+                compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes_input
             )
 
             flux_targets          = targets[:, :model.flux_dim]
             reversibility_targets = targets[:, model.flux_dim:]
 
-            flux_loss         = flux_loss_fn(flux_predictions, flux_targets)
+            # Null-space mode: plain MSE in normalized y-space.
+            # All 38 components receive gradient — unobservable ones converge toward 0
+            # (the prior mean in normalized space), preventing Z_full explosion.
+            if model.null_decoder is not None:
+                y_pred = model.null_decoder.encode_targets(flux_predictions)
+                y_true = model.null_decoder.encode_targets(flux_targets)
+                flux_loss = ((y_pred - y_true) ** 2).mean()
+                if y_l2_reg > 0:
+                    flux_loss = flux_loss + y_l2_reg * (y_pred ** 2).mean()
+            else:
+                flux_loss = flux_loss_fn(flux_predictions, flux_targets)
             reversibility_loss = reversibility_loss_fn(reversibility_predictions, reversibility_targets)
 
             loss = flux_loss + reversibility_loss
@@ -206,6 +234,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         if val_loader is not None:
             model.eval()
             val_epoch_loss = 0.0
+            y_preds_ep, y_trues_ep = [], []
 
             with torch.no_grad():
                 for val_batch in val_loader:
@@ -218,14 +247,23 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
 
                     val_fixed_fluxes = None
                     if model.cfg.n_measured > 0:
-                        val_fixed_fluxes = val_targets[:, model.fba_pro.fixed_idx]
+                        fixed_idx = (model.null_decoder.fixed_idx if model.null_decoder is not None
+                                     else model.fba_pro.fixed_idx)
+                        val_fixed_fluxes = val_targets[:, fixed_idx]
                     val_flux_predictions, val_reversibility_predictions = model(
                         val_cids, val_lids, val_tids, val_fracs, None, val_fixed_fluxes
                     )
                     val_flux_targets          = val_targets[:, :model.flux_dim]
                     val_reversibility_targets = val_targets[:, model.flux_dim:]
 
-                    val_flux_loss         = flux_loss_fn(val_flux_predictions, val_flux_targets)
+                    if model.null_decoder is not None:
+                        y_pred = model.null_decoder.encode_targets(val_flux_predictions)
+                        y_true = model.null_decoder.encode_targets(val_flux_targets)
+                        val_flux_loss = ((y_pred - y_true) ** 2).mean()
+                        y_preds_ep.append(y_pred.cpu())
+                        y_trues_ep.append(y_true.cpu())
+                    else:
+                        val_flux_loss = flux_loss_fn(val_flux_predictions, val_flux_targets)
                     val_reversibility_loss = reversibility_loss_fn(
                         val_reversibility_predictions, val_reversibility_targets
                     )
@@ -234,14 +272,30 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             avg_val_loss = val_epoch_loss / len(val_loader)
             val_losses.append(avg_val_loss)
 
+            # Per-epoch y-space R² (null-space mode only)
+            y_r2_mean = y_r2_median = None
+            if y_preds_ep:
+                Y_pred = torch.cat(y_preds_ep)
+                Y_true = torch.cat(y_trues_ep)
+                ss_res = ((Y_pred - Y_true) ** 2).sum(dim=0)
+                ss_tot = ((Y_true - Y_true.mean(dim=0, keepdim=True)) ** 2).sum(dim=0)
+                r2     = (1.0 - ss_res / ss_tot.clamp_min(1e-12)).nan_to_num(nan=0.0)
+                y_r2_mean   = float(r2.mean())
+                y_r2_median = float(r2.median())
+
             if warmup_scheduler is not None and epoch < warmup_epochs:
                 warmup_scheduler.step()
             elif plateau_scheduler is not None:
                 plateau_scheduler.step(avg_val_loss)
 
             if verbose:
-                iterator.set_postfix({'train_loss': f'{avg_epoch_loss:.4f}', 'val_loss': f'{avg_val_loss:.4f}', 'grad_norm': f'{avg_epoch_grad_norm:.4f}'})
-                tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Train: {avg_epoch_loss:.4f}, Val: {avg_val_loss:.4f}, GradNorm: {avg_epoch_grad_norm:.4f}")
+                if y_r2_mean is not None:
+                    iterator.set_postfix({'train': f'{avg_epoch_loss:.4f}', 'val': f'{avg_val_loss:.4f}', 'y_R2': f'{y_r2_mean:.3f}'})
+                    tqdm.write(f"Epoch {epoch+1}/{num_epochs}  train={avg_epoch_loss:.4f}  val={avg_val_loss:.4f}  "
+                               f"y_R2_mean={y_r2_mean:.3f}  y_R2_median={y_r2_median:.3f}  grad={avg_epoch_grad_norm:.3f}")
+                else:
+                    iterator.set_postfix({'train_loss': f'{avg_epoch_loss:.4f}', 'val_loss': f'{avg_val_loss:.4f}', 'grad_norm': f'{avg_epoch_grad_norm:.4f}'})
+                    tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Train: {avg_epoch_loss:.4f}, Val: {avg_val_loss:.4f}, GradNorm: {avg_epoch_grad_norm:.4f}")
         else:
             if warmup_scheduler is not None and epoch < warmup_epochs:
                 warmup_scheduler.step()

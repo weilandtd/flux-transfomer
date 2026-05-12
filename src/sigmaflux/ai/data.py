@@ -10,12 +10,37 @@ import os
 import glob
 import re
 import json
+import h5py
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from cobra.io.json import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
+
+
+def _read_hdf(filepath, key):
+    """Read a pandas HDF5 file using h5py, bypassing the broken tables package."""
+    with h5py.File(filepath, 'r') as f:
+        g = f[key]
+        columns = g['axis0'][:]
+        values  = g['block0_values'][:]  # (n_rows, n_cols)
+
+        if 'axis1_level0' in g:
+            # MultiIndex (labeling data has 3 levels: Tracer, Metabolite, Isotopomer)
+            n_levels = sum(1 for k in g.keys() if k.startswith('axis1_level'))
+            arrays, names = [], []
+            for i in range(n_levels):
+                ds   = g[f'axis1_level{i}']
+                lvls = [x.decode() for x in ds[:]]
+                lbs  = g[f'axis1_label{i}'][:]
+                arrays.append([lvls[lb] for lb in lbs])
+                names.append(ds.attrs.get('name', b'').decode())
+            index = pd.MultiIndex.from_arrays(arrays, names=names)
+        else:
+            index = pd.Index([x.decode() for x in g['axis1'][:]])
+
+        return pd.DataFrame(values, index=index, columns=columns)
 
 
 # Default path to biosynthetic bypass reactions config
@@ -236,7 +261,7 @@ def load_data_batches(base_dir, base_filename, key='labeling', max_samples=None)
         # Try single file without batch suffix
         single_file = os.path.join(base_dir, f"{base_filename}.h5")
         if os.path.exists(single_file):
-            return pd.read_hdf(single_file, key=key)
+            return _read_hdf(single_file, key=key)
         else:
             raise FileNotFoundError(f"No batch files found for {base_filename} in {base_dir}")
 
@@ -244,7 +269,7 @@ def load_data_batches(base_dir, base_filename, key='labeling', max_samples=None)
     total_samples = 0
 
     for start_idx, end_idx, filepath in batch_files:
-        df = pd.read_hdf(filepath, key=key)
+        df = _read_hdf(filepath, key=key)
         num_samples = end_idx - start_idx
 
         # Select appropriate samples
