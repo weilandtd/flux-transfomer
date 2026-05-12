@@ -6,9 +6,9 @@ device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 1000
+  n_samples: 100000
   thinning: 100
-  processes: 1
+  processes: 4
   method: optgp       # optgp | achr
 
   growth:
@@ -67,20 +67,20 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  epochs: 100
-  batch_size: 64
+  epochs: 50
+  batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
   loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: null   # null = use all samples
+  max_samples: 15000
 
   # Architecture (FluxDecoder cross-attention decoder)
-  combined_dim: 32        # d_model
-  num_attn_heads: 8
-  num_transformer_layers: 2
+  combined_dim: 128       # d_model
+  num_attn_heads: 4       # n_head
+  num_transformer_layers: 4
   dropout: 0.3
 
   # Radial embedding dimensions (number of harmonics H per vocabulary).
@@ -104,3 +104,12 @@ training:
     - EX_glyc_e
     - EX_succ_e
     - BIOMASS
+
+  # Denoising autoencoder: proportional Gaussian noise added to measured fluxes
+  # during training only (0 = off). Forces model to cross-reference MID data
+  # with noisy v_known, learning to denoise at inference time.
+  flux_noise_std: 0.10
+  # L2 regularization on y_norm predictions (null-space mode only). Pulls
+  # unobservable y-components toward 0 (prior mean in normalized y-space),
+  # preventing overfitting in directions with no MID signal (e.g. sulfur pathway).
+  y_l2_reg: 0.05
