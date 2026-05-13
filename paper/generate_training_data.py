@@ -300,6 +300,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate training data from pre-sampled fluxes.")
     parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    parser.add_argument("--output-dir", default=None, help="Directory containing sampled inputs and where HDF5 outputs are written")
     # Optional slice overrides for parallel jobs
     parser.add_argument("--start-idx", type=int, default=None, help="Override start sample index")
     parser.add_argument("--end-idx", type=int, default=None, help="Override end sample index")
@@ -310,7 +311,7 @@ if __name__ == "__main__":
         cfg = yaml.safe_load(f)
 
     lab = cfg.get("labeling", {})
-    output_dir = f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
+    output_dir = cli.output_dir or f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
 
     args = argparse.Namespace(
         output_dir=output_dir,
