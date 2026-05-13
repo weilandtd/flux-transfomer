@@ -28,6 +28,7 @@ from sigmaflux.ai.data import (
 )
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import train_model, var_norm_mse_loss
+from sigmaflux.ai.utils import compute_sparse_nullspace
 
 
 def split_indices(n_samples, val_fraction, seed):
@@ -204,7 +205,7 @@ def main(args):
     free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
     fixed_idx = fixed_flux_indices or []
 
-    Z_full       = scipy.linalg.null_space(stoichiometric_matrix)  # (n_fluxes, n_basis=38)
+    Z_full       = compute_sparse_nullspace(stoichiometric_matrix)  # (n_fluxes, n_basis=38)
     n_free_basis = Z_full.shape[1]
 
     print(f"Full null-space basis dimension: {n_free_basis}  (was {flux_dim - len(fixed_idx) - n_free_basis + n_free_basis} from S_free)")
