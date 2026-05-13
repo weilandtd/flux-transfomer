@@ -29,7 +29,9 @@ def resolve_path(path):
     return os.path.join(_REPO_ROOT, path)
 
 
-def output_dir_for(cfg):
+def output_dir_for(cfg, output_dir_override=None):
+    if output_dir_override:
+        return output_dir_override
     return f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
 
 
@@ -79,9 +81,9 @@ def summarize_variation(samples):
     print(std.sort_values(ascending=False).head(20).to_string())
 
 
-def main(cfg):
+def main(cfg, output_dir_override=None):
     s = cfg["sampling"]
-    output_dir = output_dir_for(cfg)
+    output_dir = output_dir_for(cfg, output_dir_override)
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Loading model: {cfg['model_file']}")
@@ -125,9 +127,10 @@ def main(cfg):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sample fluxes from an annotated MFA model.")
     parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
+    parser.add_argument("--output-dir", default=None, help="Directory for generated outputs (overrides date-based default)")
     args = parser.parse_args()
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    main(cfg)
+    main(cfg, args.output_dir)
