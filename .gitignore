@@ -216,6 +216,10 @@ task.md
 # macOS metadata
 .DS_Store
 
+# SLURM/sbatch scripts (may contain HPC paths/credentials)
+*.sh
+!paper/slurm_submit.sh
+
 # Data files - DO NOT COMMIT
 *.h5
 *.pkl
