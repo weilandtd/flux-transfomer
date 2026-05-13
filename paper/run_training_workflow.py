@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--skip-sampling", action="store_true", help="Skip flux sampling (reuse existing flux_samples.csv)")
     parser.add_argument("--skip-generate", action="store_true", help="Skip labeling simulation (reuse existing HDF5 files)")
     parser.add_argument("--skip-train", action="store_true", help="Skip model training")
+    parser.add_argument("--data-dir", default=None, help="Data directory containing HDF5 files (default: <name>_YYYYMMDD)")
     args = parser.parse_args()
 
     config_path = os.path.abspath(args.config)
@@ -52,7 +53,7 @@ def main():
         cfg = yaml.safe_load(f)
 
     t = cfg.get("training", {})
-    output_dir = f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
+    output_dir = args.data_dir or f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
     output_model = os.path.join(output_dir, t.get("output_model", "transformer.pt"))
     python = sys.executable
 
@@ -77,7 +78,8 @@ def main():
     if args.skip_train:
         print("\n[Step 3] Skipping model training.")
     else:
-        run_step([python, os.path.join(_PAPER_DIR, "train_ai_model.py"), "--config", config_path])
+        run_step([python, os.path.join(_PAPER_DIR, "train_ai_model.py"),
+                  "--config", config_path, "--data-dir", output_dir])
 
     print("\nWorkflow complete.")
     print(f"Trained model: {output_model}")
