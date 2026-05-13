@@ -213,8 +213,15 @@ __marimo__/
 CLAUDE.md
 task.md
 
+# macOS metadata
+.DS_Store
+
 # Data files - DO NOT COMMIT
 *.h5
 *.pkl
 training_data*/flux_samples.csv
 training_data*/maranas_model_prepared_for_mfa.json
+
+# Paper training output directories (dated runs + figures)
+paper/I_orientalis_*/
+paper/output/
