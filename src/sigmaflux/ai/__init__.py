@@ -16,6 +16,9 @@ from .predict import (
     train_ensemble
 )
 
+# Math utilities
+from .utils import compute_sparse_nullspace
+
 # Data utilities
 from .data import (
     load_data,
@@ -37,6 +40,8 @@ from .data import (
 )
 
 __all__ = [
+    # Math utilities
+    'compute_sparse_nullspace',
     # Model
     'FBAProProjection',
     'CrossAttention',
