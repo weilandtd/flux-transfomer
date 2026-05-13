@@ -6,7 +6,7 @@ device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 100000
+  n_samples: 50000
   thinning: 100
   processes: 4
   method: optgp       # optgp | achr
@@ -20,7 +20,7 @@ sampling:
   # negative flux = uptake.
   media:
     # Carbon source — mandatory uptake
-    EX_glc__D_e: {lb: -10.0, ub: -1.0}
+    EX_glc__D_e: {lb: -20.0, ub: -1.0}
     # Electron acceptor — mandatory uptake
     EX_o2_e:     {lb: -100.0, ub: 0.0}
     # Carbon secretion products
@@ -68,7 +68,7 @@ labeling:
 training:
   output_model: imisor_transformer.pt
   epochs: 50
-  batch_size: 512
+  batch_size: 32
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
@@ -97,8 +97,6 @@ training:
   # List the exchange reaction IDs whose fluxes will be measured experimentally.
   measured_fluxes:
     - EX_glc__D_e
-    - EX_o2_e
-    - EX_co2_e
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
