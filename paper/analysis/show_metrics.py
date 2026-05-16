@@ -2,7 +2,7 @@
 Print evaluation metrics stored inside a saved checkpoint — no HDF5 needed.
 
 Usage:
-    python paper/show_metrics.py I_orientalis_20260508/imisor_transformer.pt
+    python paper/analysis/show_metrics.py I_orientalis_20260508/data/imisor_transformer.pt
 """
 import argparse
 import os
