@@ -16,7 +16,7 @@ import scipy.linalg
 import torch
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from torch.utils.data import DataLoader
 
 from sigmaflux.ai.data import (
@@ -289,10 +289,9 @@ def main(args):
         loss_function     = loss_function,
         gradient_clip     = args.gradient_clip,
         use_scheduler     = not args.no_scheduler,
-        mask_prob         = args.mask_prob,
-        min_experiments   = args.min_experiments,
         warmup_epochs     = args.warmup_epochs,
         y_l2_reg          = args.y_l2_reg,
+        met_mask_prob     = args.met_mask_prob,
     )
 
     flux_names = flux_df.index.tolist()
@@ -380,8 +379,7 @@ if __name__ == "__main__":
         num_attn_heads         = t.get("num_attn_heads", 4),
         num_transformer_layers = t.get("num_transformer_layers", 4),
         dropout                = t.get("dropout", 0.3),
-        mask_prob              = t.get("mask_prob", 0.2),
-        min_experiments        = t.get("min_experiments", 1),
+        met_mask_prob          = t.get("met_mask_prob", 0.0),
         measured_fluxes        = measured_fluxes,
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),

@@ -179,14 +179,18 @@ class CrossAttention(nn.Module):
             d_model, n_heads, dropout=dropout, batch_first=True
         )
 
-    def forward(self, q, kv, key_padding_mask=None, attn_bias=None):
+    def forward(self, q, kv, key_padding_mask=None, attn_bias=None, return_weights=False):
         q  = self.q_norm(q)
         kv = self.kv_norm(kv)
-        out, _ = self.attn(
+        out, weights = self.attn(
             q, kv, kv,
             key_padding_mask=key_padding_mask,
             attn_mask=attn_bias,
+            need_weights=return_weights,
+            average_attn_weights=True,   # average over heads → (B, R, N)
         )
+        if return_weights:
+            return out, weights          # weights: (B, 38, N)
         return out
 
 
@@ -292,8 +296,13 @@ class FluxDecoder(nn.Module):
                 # Unobservable y-directions stay near zero — no spurious Adam drift.
                 nn.init.zeros_(self.fusion_layer.weight)
                 nn.init.zeros_(self.fusion_layer.bias)
+                # Gated fusion: per-component gate g ∈ R^38, sigmoid → (0,1).
+                # gate[i] = 0 → pure transformer; gate[i] = 1 → pure fusion correction.
+                # Zero-init → sigmoid(0) = 0.5 (equal weight at start).
+                self.fusion_gate = nn.Parameter(torch.zeros(cfg.n_free))
             else:
                 self.fusion_layer = None
+                self.fusion_gate  = None
             # Normalization statistics for fixed_fluxes (mmol/gDCW/h → ~N(0,1)).
             # Without this, v_known O(10) × Xavier-init weights O(0.15) = O(1.5) initial
             # correction in y-space — large enough to corrupt unobservable directions.
@@ -331,11 +340,13 @@ class FluxDecoder(nn.Module):
         padding_mask,         # (batch, N) bool, True = padded
         fixed_fluxes=None,    # (batch, n_measured) float
         attn_bias=None,       # (batch*n_heads, n_queries, N) float, additive attention bias
+        return_attn=False,    # if True, return attention weights (B, 38, N) as third output
     ):
         """
         Returns:
             fluxes:          (batch, n_fluxes) satisfying Sv=0
             reversibilities: (batch, n_rev) non-negative
+            attn_weights:    (batch, 38, N) averaged over heads — only if return_attn=True
         """
         # Embed and concatenate
         x = torch.cat([
@@ -351,7 +362,11 @@ class FluxDecoder(nn.Module):
 
         B = x.shape[0]
         q   = self.flux_queries.unsqueeze(0).expand(B, -1, -1)
-        out = self.cross_attn(q, x, key_padding_mask=padding_mask, attn_bias=attn_bias)
+        if return_attn:
+            out, attn_weights = self.cross_attn(q, x, key_padding_mask=padding_mask,
+                                                attn_bias=attn_bias, return_weights=True)
+        else:
+            out = self.cross_attn(q, x, key_padding_mask=padding_mask, attn_bias=attn_bias)
 
         logits = self.output_proj(out).squeeze(-1)   # (B, n_queries)
 
@@ -367,11 +382,12 @@ class FluxDecoder(nn.Module):
                 ff = fixed_fluxes
                 if self.fixed_flux_mean is not None:
                     ff = (ff - self.fixed_flux_mean) / self.fixed_flux_std
-                # Unmasked: let BIOMASS inform stoichiometrically-coupled unobservable
-                # pathways (sulfur, nucleotides). y_l2_reg in the training loss suppresses
-                # y_raw noise for those directions, leaving the fusion correction to carry
-                # the stoichiometric signal from the measured fluxes.
-                y_norm = y_raw + self.fusion_layer(ff)
+                # Gated weighted addition: per-component gate in (0,1) controls how
+                # much each y-dimension comes from the transformer vs. v_known fusion.
+                # gate[i] → 0: y_norm[i] ≈ y_raw[i]  (transformer)
+                # gate[i] → 1: y_norm[i] ≈ fusion_layer(ff)[i]  (measured fluxes)
+                gate   = torch.sigmoid(self.fusion_gate)         # (38,) ∈ (0,1)
+                y_norm = (1.0 - gate) * y_raw + gate * self.fusion_layer(ff)
             else:
                 y_norm = y_raw
             fluxes = self.null_decoder(y_norm)                           # (B, n_fluxes)
@@ -382,4 +398,6 @@ class FluxDecoder(nn.Module):
 
         fluxes          = torch.nan_to_num(fluxes, nan=0.0)
         reversibilities = torch.nan_to_num(reversibilities, nan=0.0)
+        if return_attn:
+            return fluxes, reversibilities, attn_weights
         return fluxes, reversibilities

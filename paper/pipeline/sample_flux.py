@@ -19,7 +19,7 @@ from cobra.io.json import load_json_model
 from cobra.sampling import sample
 from optlang.symbolics import Zero
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def resolve_path(path):
