@@ -12,11 +12,13 @@ import torch
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('checkpoint')
+    parser.add_argument('--random', action='store_true',
+                        help='Replace R² scores with random values (null-hypothesis baseline)')
     args = parser.parse_args()
 
     ckpt = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
 
-    if 'log' in ckpt:
+    if 'log' in ckpt and not args.random:
         log = ckpt['log']
         print(f"Training: {len(log['train_loss'])} epochs")
         print(f"  Final train loss : {log['train_loss'][-1]:.6g}")
@@ -55,6 +57,12 @@ def main():
 
     all_names = vc['flux_reaction_names']
     all_r2    = vc['flux_r2_per_reaction']
+
+    if args.random:
+        import numpy as np
+        rng = np.random.default_rng(0)
+        all_r2 = list(rng.uniform(-1, 1, size=len(all_r2)))
+        print(f"[--random] R² scores replaced with uniform random values in [-1, 1]  (null-hypothesis baseline)\n")
 
     pairs         = list(zip(all_r2, all_names))
     pairs_fixed   = [(r2, n) for r2, n in pairs if n in fixed_names]
@@ -124,7 +132,110 @@ def main():
             eq = fmt_eq(name)
             print(f"  {name:<30}  {r2:>+7.2f}  │  {eq}")
 
+    # ── Observability → R² correlation ───────────────────────────────────────
+    import numpy as np
+    from scipy import stats
+
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+
+    if Z.ndim == 2 and obs.size == Z.shape[1] and flux_names:
+        name_to_idx = {n: i for i, n in enumerate(flux_names)}
+
+        obs_pred, actual = [], []
+        for r2, name in zip(all_r2, all_names):
+            if name not in name_to_idx:
+                continue
+            row_sq = Z[name_to_idx[name], :] ** 2
+            denom  = row_sq.sum()
+            obs_pred.append((row_sq @ obs) / denom if denom > 1e-10 else 0.0)
+            actual.append(r2)
+
+        obs_pred = np.array(obs_pred)
+        actual   = np.array(actual)
+
+        # Spearman is rank-based → robust to the R²=-22k outliers
+        rho, p_s = stats.spearmanr(obs_pred, actual)
+        # Pearson on clipped R² to reduce explosion influence
+        r_p, p_p = stats.pearsonr(obs_pred, np.clip(actual, -5, 1))
+
+        print(f"\n=== Observability → R² correlation (n={len(actual)} reactions) ===")
+        print(f"  Spearman ρ = {rho:+.3f}  (p={p_s:.1e})  ← rank-based, robust to explosion outliers")
+        print(f"  Pearson  r = {r_p:+.3f}  (p={p_p:.1e})  ← R² clipped to [-5, 1]")
+
+        # Bin reactions by predicted observability; show actual R² per bin
+        edges = [0.0, 0.05, 0.10, 0.20, 0.30, 0.50, 1.01]
+        labels = ['[0.00,0.05)', '[0.05,0.10)', '[0.10,0.20)',
+                  '[0.20,0.30)', '[0.30,0.50)', '[0.50,1.00]']
+        print(f"\n  {'Pred-obs bin':<14}  {'n':>4}  {'mean R²':>8}  {'median R²':>10}  {'%R²>0':>7}")
+        print(f"  " + "─" * 52)
+        for lo, hi, lab in zip(edges[:-1], edges[1:], labels):
+            mask = (obs_pred >= lo) & (obs_pred < hi)
+            n = mask.sum()
+            if n == 0:
+                continue
+            r2_bin = actual[mask]
+            pct_pos = 100.0 * (r2_bin > 0).mean()
+            print(f"  {lab:<14}  {n:>4}  {r2_bin.mean():>+8.3f}  {np.median(r2_bin):>+10.3f}  {pct_pos:>6.1f}%")
+
     print(f"\nReversibility R²  mean={vc['reversibility_mean']:.4f}  median={vc['reversibility_median']:.4f}  n={vc['reversibility_n']}")
+
+    # ── Gated fusion: per-y-dimension gate analysis ───────────────────────────
+    import numpy as np
+
+    state = ckpt.get('model_state_dict', {})
+    gate_raw = state.get('fusion_gate')
+    if gate_raw is None:
+        return
+
+    gate_raw = gate_raw.float().numpy()           # (38,) raw logits
+    gate     = 1.0 / (1.0 + np.exp(-gate_raw))   # sigmoid → (0,1)
+
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+
+    print(f"\n=== Fusion gate  (gate→0: trust transformer/MID  |  gate→1: trust v_known/BIOMASS) ===")
+    print(f"  mean gate = {gate.mean():.3f}   min = {gate.min():.3f}   max = {gate.max():.3f}")
+
+    # Correlation: obs_weight vs gate (hypothesis: high obs → low gate)
+    if obs.size == gate.size:
+        from scipy import stats as _stats
+        rho_g, p_g = _stats.spearmanr(obs, gate)
+        print(f"  Spearman ρ(obs_weight, gate) = {rho_g:+.3f}  (p={p_g:.1e})")
+        print(f"  {'> 0: fusion learns from MID-observable dims' if rho_g > 0 else '< 0: confirms hypothesis — obs dims rely on transformer'}")
+
+    # Sort dims by gate value descending (most fusion-reliant first)
+    order = np.argsort(-gate)
+
+    print(f"\n  {'y-dim':>5}  {'gate':>6}  {'bar':<20}  {'obs_w':>6}  │  top fluxes (|Z| loadings)")
+    print(f"  " + "─" * 90)
+
+    name_list = flux_names if flux_names else []
+
+    for rank, j in enumerate(order):
+        g   = gate[j]
+        bar = '█' * int(g * 20)
+        ow  = f"{obs[j]:.3f}" if obs.size == gate.size else "  ─  "
+
+        # Top 3 fluxes driven by this y-dimension (largest |Z[:,j]|)
+        if Z.ndim == 2 and Z.shape[1] > j:
+            col     = np.abs(Z[:, j])
+            top_idx = np.argsort(-col)[:3]
+            top_str = "  ".join(
+                f"{name_list[k] if k < len(name_list) else k}({col[k]:.2f})"
+                for k in top_idx
+            )
+        else:
+            top_str = ""
+
+        print(f"  {j:>5}  {g:.4f}  {bar:<20}  {ow:>6}  │  {top_str}")
+
+    # Summary: high-gate vs low-gate dims
+    high_gate = order[:10]
+    low_gate  = order[-10:]
+    if obs.size == gate.size:
+        print(f"\n  Top-10 gate (fusion-dominated) obs_weight mean : {obs[high_gate].mean():.3f}")
+        print(f"  Bot-10 gate (transformer-dom.) obs_weight mean : {obs[low_gate].mean():.3f}")
 
 
 if __name__ == '__main__':

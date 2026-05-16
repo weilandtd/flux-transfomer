@@ -1090,4 +1090,44 @@ def generate_experiment_mask(token_experiment_ids, batch_size, device,
 
     return token_mask
 
+
+def generate_metabolite_mask(compound_ids, batch_size, device, mask_prob=0.15):
+    """
+    Randomly mask entire metabolites (all isotopomers of a compound) per sample.
+
+    Finer-grained complement to generate_experiment_mask: while that function
+    drops whole tracer experiments, this one drops individual metabolites within
+    experiments, simulating metabolites that were not detected in the MS run.
+
+    Args:
+        compound_ids: (N,) int64 tensor — compound index for each token (shared across batch)
+        batch_size:   int
+        device:       torch device
+        mask_prob:    probability of masking each unique metabolite per sample
+
+    Returns:
+        mask: (batch_size, N) bool, True = valid / unmasked
+    """
+    compound_ids = compound_ids.to(device)
+    unique_comps = compound_ids.unique()
+    n_comps      = unique_comps.shape[0]
+    n_tokens     = compound_ids.shape[0]
+
+    token_mask = torch.ones(batch_size, n_tokens, dtype=torch.bool, device=device)
+    if mask_prob <= 0.0 or n_comps == 0:
+        return token_mask
+
+    # Per-sample, independently decide which metabolites to keep
+    comp_keep = torch.rand(batch_size, n_comps, device=device) >= mask_prob
+
+    # Ensure at least one metabolite is always unmasked per sample
+    all_masked = ~comp_keep.any(dim=1)
+    if all_masked.any():
+        rescue = torch.randint(n_comps, (int(all_masked.sum().item()),), device=device)
+        comp_keep[all_masked, rescue] = True
+
+    for i, comp_id in enumerate(unique_comps):
+        tok_idxs = (compound_ids == comp_id)
+        token_mask[:, tok_idxs] &= comp_keep[:, i].unsqueeze(1)
+
     return token_mask

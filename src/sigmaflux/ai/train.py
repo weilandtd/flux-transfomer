@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from sigmaflux.ai.data import generate_experiment_mask
+from sigmaflux.ai.data import generate_metabolite_mask
 
 
 def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10):
@@ -59,8 +59,7 @@ def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10)
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda', loss_function=None,
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
-                mask_prob=0.0, min_experiments=1, warmup_epochs=0,
-                y_l2_reg=0.0):
+                warmup_epochs=0, y_l2_reg=0.0, met_mask_prob=0.0):
     """
     Train a FluxDecoder model.
 
@@ -75,8 +74,6 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         gradient_clip: Max norm for gradient clipping (0 to disable)
         use_scheduler: Whether to use learning rate scheduler
         verbose: Whether to print training progress
-        mask_prob: Probability of masking experiments (0.0 = no masking)
-        min_experiments: Minimum experiments to keep when masking
         warmup_epochs: Number of epochs for linear LR warmup from 1% to 100% of
                        learning_rate (0 = disabled). After warmup, ReduceLROnPlateau
                        takes over if use_scheduler.
@@ -130,8 +127,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             print(f"LR warmup enabled: {warmup_epochs} epochs (1% → 100% of lr={learning_rate})")
         if use_scheduler:
             print("ReduceLROnPlateau scheduler enabled (after warmup)")
-        if mask_prob > 0:
-            print(f"Missing data augmentation enabled: mask_prob={mask_prob}, min_experiments={min_experiments}")
+        if met_mask_prob > 0:
+            print(f"Metabolite masking enabled: met_mask_prob={met_mask_prob}")
         if y_l2_reg > 0:
             print(f"y_norm L2 regularization enabled: lambda={y_l2_reg} (prevents unobservable-direction overfitting)")
 
@@ -166,15 +163,15 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                     print(f"CUDA memory after moving batch to GPU: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
 
             padding_mask = None
-            if mask_prob > 0:
-                valid_mask   = generate_experiment_mask(
-                    model.token_experiment_ids,
+            if met_mask_prob > 0:
+                met_valid    = generate_metabolite_mask(
+                    compound_ids[0],               # compound_ids shared across batch
                     batch_size=compound_ids.shape[0],
                     device=device,
-                    mask_prob=mask_prob,
-                    min_experiments=min_experiments,
+                    mask_prob=met_mask_prob,
                 )
-                padding_mask = ~valid_mask  # True = padded / ignored
+                met_padding  = ~met_valid
+                padding_mask = met_padding if padding_mask is None else (padding_mask | met_padding)
 
             optimizer.zero_grad()
             fixed_fluxes = None

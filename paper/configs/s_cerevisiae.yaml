@@ -1,12 +1,12 @@
-# SigmaFlux training configuration — Issatchenkia orientalis
-name: I_orientalis
-model_file: models/I_orientalis/imIsor_annotated.json
+# SigmaFlux training configuration — Saccharomyces cerevisiae
+name: S_cerevisiae
+model_file: models/S_cerevisiae/sc_annotated.json
 seed: 42
 device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 50000
+  n_samples: 25000
   thinning: 100
   processes: 4
   method: optgp       # optgp | achr
@@ -28,7 +28,6 @@ sampling:
     EX_etoh_e:   {lb: 0.0,  ub: 100.0}
     EX_ac_e:     {lb: 0.0,  ub: 100.0}
     EX_glyc_e:   {lb: 0.0,  ub: 100.0}
-    EX_succ_e:   {lb: 0.0,  ub: 100.0}
     # Essential macronutrients — unrestricted uptake
     EX_nh4_e:    {lb: -100.0, ub: 0.0}
     EX_pi_e:     {lb: -1000.0, ub: 0.0}
@@ -52,10 +51,6 @@ sampling:
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
   batch_size: 500
-  # Each entry is one tracer experiment. The tracer_id must correspond to a
-  # metabolite that is open in the media (i.e. has a non-zero EX_ reaction).
-  # Multiple entries with the same tracer_id but different labeling patterns
-  # represent mixed-label experiments (e.g. 50% U-13C + 50% 1,2-13C glucose).
   tracers:
     - tracer_id: glc__D_e
       labeling: [1, 1, 1, 1, 1, 1]
@@ -66,48 +61,38 @@ labeling:
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
-  output_model: imisor_transformer.pt
-  epochs: 50
-  batch_size: 32
+  output_model: sc_transformer.pt
+  epochs: 300
+  batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
   loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: 15000
+  max_samples: 30000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
-  num_attn_heads: 4       # n_head
+  num_attn_heads: 8       # n_head
   num_transformer_layers: 4
   dropout: 0.3
 
-  # Radial embedding dimensions (number of harmonics H per vocabulary).
-  # Resulting embedding vector length = 2*H.
-  # Set to null to auto-compute H = ceil(log2(N)) from vocab size.
-  h_compound: 16   # compounds  — full metabolic model vocab (~400 metabolites → 32-dim)
-  h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
-  h_tracer: 1      # tracer identities (1–2 tracers   →  2-dim)
+  # Radial embedding dimensions
+  h_compound: 16
+  h_label: 5
+  h_tracer: 1
 
-  # Missing-data augmentation: randomly mask entire tracer experiments during training.
-  mask_prob: 0.2
-  min_experiments: 1 #TODO does this still make sense with the token embeddings?
-  # Measured fluxes are passed directly to the transformer alongside labeling data.
-  # List the exchange reaction IDs whose fluxes will be measured experimentally.
+  # Missing-data augmentation: randomly mask individual metabolites per sample
+  met_mask_prob: 0.15
+
+  # Measured fluxes (soft input to fusion layer)
   measured_fluxes:
     - EX_glc__D_e
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
-    - EX_succ_e
     - BIOMASS
 
-  # Denoising autoencoder: proportional Gaussian noise added to measured fluxes
-  # during training only (0 = off). Forces model to cross-reference MID data
-  # with noisy v_known, learning to denoise at inference time.
-  flux_noise_std: 0.10
-  # L2 regularization on y_norm predictions (null-space mode only). Pulls
-  # unobservable y-components toward 0 (prior mean in normalized y-space),
-  # preventing overfitting in directions with no MID signal (e.g. sulfur pathway).
+  flux_noise_std: 0.01
   y_l2_reg: 0.05
