@@ -222,9 +222,18 @@ task.md
 # Data files - DO NOT COMMIT
 *.h5
 *.pkl
-training_data*/flux_samples.csv
-training_data*/maranas_model_prepared_for_mfa.json
 
-# Paper training output directories (dated runs + figures)
-paper/I_orientalis_*/
-paper/output/
+# Model checkpoints and generated matrices
+*.pt
+*.npz
+
+# Generated figures and reports
+*.pdf
+*.html
+
+# Training run directories (data, models, logs, analysis outputs)
+I_orientalis_*/
+S_cerevisiae_*/
+
+# Local tools/dashboards not part of the package
+metabolism_dashboard/
