@@ -299,6 +299,11 @@ def main(args):
 
     model_config = asdict(config)
 
+    # Token index: list of (Tracer, Metabolite, Isotopomer) tuples — defines
+    # the full token sequence the model was trained on. Stored so inference
+    # can reconstruct the token structure without needing the training HDF5 data.
+    token_index = list(labeling_df.index)   # list of (Tracer, Metabolite, Isotopomer)
+
     checkpoint = {
         "model_state_dict":     model.state_dict(),
         "model_config":         model_config,
@@ -306,6 +311,7 @@ def main(args):
                    if k not in ('compound_emb_table', 'label_emb_table', 'tracer_emb_table')},
         "tracer_combo_vocab":   tracer_combo_vocab,
         "token_experiment_ids": token_experiment_ids.tolist(),
+        "token_index":          token_index,
         "norm_stats":           norm_stats,
         "train_indices":        train_indices.tolist(),
         "val_indices":          val_indices.tolist(),
@@ -313,6 +319,7 @@ def main(args):
         "val_correlations":     val_correlations,
         "flux_names":           flux_names,
         "reversibility_names":  reversibility_df.index.tolist(),
+        "measured_fluxes":      args.measured_fluxes,
         "null_space_data": {
             "Z_free":           Z_full,              # (n_fluxes, 38) full null-space basis
             "free_idx":         free_idx,

@@ -1,0 +1,338 @@
+"""
+SigmaFlux inference engine.
+
+Loads a trained checkpoint + config and predicts fluxes from experimental
+MID measurements and (optionally) known exchange fluxes.
+
+Auto-masking: any metabolite in the trained model's token set that is absent
+from the user's df_L is automatically masked (excluded from attention).  The
+model treats it as if that metabolite was never measured, which is the correct
+behaviour when running on incomplete experimental data.
+"""
+
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+import torch
+import yaml
+from torch.utils.data import DataLoader
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)
+))))
+sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
+
+from sigmaflux.ai.data import (
+    build_radial_vocabs,
+    create_tracer_mapping,
+    load_data,
+    load_stoichiometric_matrix,
+    prepare_id_dataset,
+)
+from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+
+
+class SigmaFlux:
+    """
+    Inference wrapper for a trained FluxDecoder model.
+
+    Usage
+    -----
+    sf = SigmaFlux('paper/configs/i_orientalis.yaml',
+                   'I_orientalis_20260508/model/imisor_transformer.pt')
+
+    predictions = sf.predict(df_L, df_Vm)
+
+    Parameters
+    ----------
+    config : str
+        Path to the training config YAML (e.g. i_orientalis.yaml).
+    checkpoint : str
+        Path to the trained .pt model file.
+    device : str or None
+        'cuda', 'cpu', or None (auto-detect).
+    """
+
+    def __init__(self, config, checkpoint, device=None):
+        with open(config) as f:
+            self.cfg = yaml.safe_load(f)
+
+        self.ckpt = torch.load(checkpoint, map_location='cpu', weights_only=False)
+
+        if device is None:
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = torch.device(device)
+
+        # Tracer name → internal tracer string mapping.
+        # The internal string is Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}"
+        # which is what actually appears in the training labeling_df index.
+        # User-facing names come from config labeling.tracers[*].name.
+        self._tracer_name_to_id = {
+            t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
+            for t in self.cfg['labeling']['tracers']
+        }
+        self.tracer_names = list(self._tracer_name_to_id.keys())  # human-readable
+
+        # Flux / reversibility output names
+        self.flux_names        = self.ckpt.get('flux_names', [])
+        self.reversibility_names = self.ckpt.get('reversibility_names', self.flux_names)
+
+        # Measured flux reaction IDs expected in df_Vm.
+        # Fall back to config if not stored in checkpoint (older checkpoints).
+        self.measured_flux_ids = (
+            self.ckpt.get('measured_fluxes')
+            or self.cfg.get('training', {}).get('measured_fluxes')
+            or []
+        )
+
+        # ── Token skeleton ────────────────────────────────────────────────────
+        # Full list of (Tracer, Metabolite, Isotopomer) tuples the model was
+        # trained on.  Defines the exact token sequence for inference.
+        token_index = self.ckpt.get('token_index')
+        if token_index is not None:
+            self._token_index = token_index          # list of 3-tuples
+        else:
+            # Older checkpoint without token_index — load one training sample
+            print("Checkpoint does not contain token_index; "
+                  "loading one training sample to derive token structure ...")
+            data_dir = self.ckpt['data_dir']
+            labeling_df, _, _ = load_data(data_dir, max_samples=1)
+            self._token_index = list(labeling_df.index)
+
+        # Set of unique metabolite IDs the model knows about
+        self._known_metabolites = {tup[1] for tup in self._token_index}
+
+        # ── COBRA model (compound vocabulary) ─────────────────────────────────
+        cfg_dict   = self.ckpt['model_config']
+        model_json = self.ckpt.get('model_json')
+        _, self.cobra_model = load_stoichiometric_matrix(model_json)
+
+        # ── Reconstruct FluxDecoder from checkpoint ───────────────────────────
+        cfg = FluxDecoderConfig(**{
+            k: cfg_dict[k]
+            for k in FluxDecoderConfig.__dataclass_fields__
+            if k in cfg_dict
+        })
+        nsd       = self.ckpt['null_space_data']
+        token_ids = self.ckpt['model_state_dict']['token_experiment_ids']
+        self._model = FluxDecoder(
+            cfg,
+            stoichiometric_matrix=None,
+            token_experiment_ids=token_ids,
+            null_space_data=nsd,
+            fixed_flux_indices=nsd.get('fixed_idx', []),
+        )
+        self._model.load_state_dict(self.ckpt['model_state_dict'])
+        self._model.to(self.device)
+        self._model.eval()
+
+        self._cfg_dict = cfg_dict
+        self._nsd      = nsd
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    def predict(self, df_L, df_Vm=None, batch_size=64):
+        """
+        Predict fluxes from labeling data and measured exchange fluxes.
+
+        Parameters
+        ----------
+        df_L : pd.DataFrame
+            Labeling measurements.  Required columns:
+              'Tracer Name', 'Metabolite ID', 'Isotopomer', 'Fraction'
+
+            One row = one isotopomer measurement.
+            For multiple samples: add a 'Sample' column (integer 0, 1, ...).
+            If absent, all rows are treated as a single sample (Sample=0).
+
+            Metabolite IDs must match the COBRA model exactly (with compartment
+            suffix, e.g. 'pyr_c', 'akg_c' — run sf.expected_metabolites() to
+            see the full list).
+
+            Auto-masking: metabolites from the training token set that are
+            absent from df_L are automatically excluded from attention.  This
+            is the correct behaviour for metabolites not measured in your
+            experiment.  No manual masking flag needed.
+
+        df_Vm : pd.DataFrame or None
+            Measured exchange fluxes (optional, but use when available).
+            Required columns: 'Flux Name', 'Value'
+            For multiple samples: add a 'Sample' column matching df_L.
+
+            Flux names must match measured_fluxes in the config YAML.
+            Run sf.expected_measured_fluxes() to see the expected list.
+
+        batch_size : int
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: 'Flux Name', 'Value'
+            (plus 'Sample' if multiple samples were provided).
+        """
+        # Handle single-sample case
+        if 'Sample' not in df_L.columns:
+            df_L = df_L.copy()
+            df_L['Sample'] = 0
+            if df_Vm is not None and 'Sample' not in df_Vm.columns:
+                df_Vm = df_Vm.copy()
+                df_Vm['Sample'] = 0
+
+        samples   = sorted(df_L['Sample'].unique().tolist())
+        n_samples = len(samples)
+
+        # Convert human-readable tracer names → internal tracer IDs
+        user_tracers = set(df_L['Tracer Name'].unique())
+        unknown = user_tracers - set(self.tracer_names)
+        if unknown:
+            print(f"WARNING: unknown tracer name(s): {unknown}")
+            print(f"  Expected: {self.tracer_names}")
+        df_L = df_L.copy()
+        df_L['Tracer Name'] = df_L['Tracer Name'].map(self._tracer_name_to_id)
+
+        # Metabolites present in user data
+        user_metabolites = set(df_L['Metabolite ID'].unique())
+        masked_mets = self._known_metabolites - user_metabolites
+        if masked_mets:
+            print(f"Auto-masking {len(masked_mets)} metabolite(s) not in df_L: "
+                  f"{', '.join(sorted(masked_mets))}")
+
+        # ── Build full-skeleton labeling_df ───────────────────────────────────
+        # One column per sample; ALL training tokens present; zero where user
+        # has no measurement; those tokens will be masked below.
+        skeleton_index = pd.MultiIndex.from_tuples(
+            self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
+        )
+        labeling_df = pd.DataFrame(
+            0.0,
+            index   = skeleton_index,
+            columns = list(range(n_samples)),
+            dtype   = np.float32,
+        ).sort_index()   # sort MultiIndex for efficient .loc access
+
+        # Fill in user's values (Tracer Name already converted to internal ID)
+        for col_idx, s in enumerate(samples):
+            sub = df_L[df_L['Sample'] == s]
+            for _, row in sub.iterrows():
+                key = (row['Tracer Name'], row['Metabolite ID'], row['Isotopomer'])
+                if key in labeling_df.index:
+                    labeling_df.loc[key, col_idx] = np.float32(row['Fraction'])
+                else:
+                    print(f"  WARNING: token {key} not in training set — skipped")
+
+        # ── Flux DataFrames ───────────────────────────────────────────────────
+        flux_df, rev_df = self._build_flux_dfs(df_Vm, n_samples, samples)
+
+        # ── Vocabs ────────────────────────────────────────────────────────────
+        _, base_tracer_names = create_tracer_mapping(labeling_df)
+        vocabs = build_radial_vocabs(
+            self.cobra_model, labeling_df, base_tracer_names,
+            h_compound = self._cfg_dict.get('d_comp',   32) // 2,
+            h_label    = self._cfg_dict.get('d_label',  10) // 2,
+            h_tracer   = self._cfg_dict.get('d_tracer',  2) // 2,
+        )
+
+        (dataset, _, _, _, _) = prepare_id_dataset(
+            labeling_df, flux_df, rev_df,
+            vocabs           = vocabs,
+            train_indices    = list(range(n_samples)),
+            normalize        = True,
+            measured_fluxes  = self.measured_flux_ids or None,
+            norm_stats_input = self.ckpt.get('norm_stats'),
+        )
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+        # ── Build static padding mask for missing metabolites ─────────────────
+        # Token position j is masked if its metabolite was not in df_L.
+        met_index = labeling_df.index.get_level_values('Metabolite').tolist()
+        mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
+        # Shift by number of bypass tokens (prepended measured-flux tokens)
+        n_bypass = len(self.measured_flux_ids) if self.measured_flux_ids else 0
+        mask_positions = [j + n_bypass for j in mask_positions]
+
+        # ── Inference ─────────────────────────────────────────────────────────
+        all_flux, all_rev = [], []
+        with torch.no_grad():
+            for batch in loader:
+                (cids, lids, tids, fracs), _ = batch
+                cids  = cids.to(self.device)
+                lids  = lids.to(self.device)
+                tids  = tids.to(self.device)
+                fracs = fracs.to(self.device)
+                B     = cids.shape[0]
+
+                pmask = None
+                if mask_positions:
+                    pmask = torch.zeros(B, cids.shape[1], dtype=torch.bool,
+                                        device=self.device)
+                    pmask[:, mask_positions] = True
+
+                fixed_fluxes = None
+                if self._model.cfg.n_measured > 0:
+                    bypass = self._model.token_experiment_ids == -1
+                    fixed_fluxes = fracs[:, bypass, 0]
+
+                fp, rp = self._model(cids, lids, tids, fracs,
+                                     padding_mask=pmask,
+                                     fixed_fluxes=fixed_fluxes)
+                all_flux.append(fp.cpu())
+                all_rev.append(rp.cpu())
+
+        flux_arr = torch.cat(all_flux).numpy()
+        rev_arr  = torch.cat(all_rev).numpy()
+
+        return self._format_output(flux_arr, rev_arr, samples)
+
+    # ── Introspection helpers ─────────────────────────────────────────────────
+
+    def expected_metabolites(self):
+        """Metabolite IDs the model knows about (returns sorted list)."""
+        return sorted(self._known_metabolites)
+
+    def expected_tracers(self):
+        """Tracer experiment names from the config."""
+        return list(self.tracer_names)
+
+    def expected_measured_fluxes(self):
+        """Reaction IDs to provide in df_Vm."""
+        return list(self.measured_flux_ids)
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    def _build_flux_dfs(self, df_Vm, n_samples, samples):
+        flux_df = pd.DataFrame(
+            np.zeros((len(self.flux_names), n_samples), dtype=np.float32),
+            index   = self.flux_names,
+            columns = list(range(n_samples)),
+        )
+        rev_df = pd.DataFrame(
+            np.zeros((len(self.reversibility_names), n_samples), dtype=np.float32),
+            index   = self.reversibility_names,
+            columns = list(range(n_samples)),
+        )
+        if df_Vm is not None and not df_Vm.empty:
+            for col_idx, s in enumerate(samples):
+                sub = df_Vm[df_Vm['Sample'] == s][['Flux Name', 'Value']]
+                for _, row in sub.iterrows():
+                    rxn = row['Flux Name']
+                    if rxn in flux_df.index:
+                        flux_df.loc[rxn, col_idx] = np.float32(row['Value'])
+        return flux_df, rev_df
+
+    def _format_output(self, flux_arr, rev_arr, samples):
+        flux_names = self.flux_names or [f'flux_{i}' for i in range(flux_arr.shape[1])]
+        rev_names  = self.reversibility_names or [f'rev_{n}' for n in flux_names]
+
+        records = []
+        for s_idx, s in enumerate(samples):
+            for name, val in zip(flux_names, flux_arr[s_idx]):
+                records.append({'Sample': s, 'Flux Name': name, 'Value': float(val)})
+            for name, val in zip(rev_names, rev_arr[s_idx]):
+                records.append({'Sample': s, 'Flux Name': name, 'Value': float(val)})
+
+        result = pd.DataFrame(records)
+        if result['Sample'].nunique() == 1:
+            result = result.drop(columns='Sample')
+        return result
