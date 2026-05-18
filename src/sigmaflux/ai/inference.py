@@ -86,6 +86,7 @@ class SigmaFlux:
             or self.cfg.get('training', {}).get('measured_fluxes')
             or []
         )
+        self._batch_size = self.cfg.get('training', {}).get('batch_size', 64)
 
         # ── Token skeleton ────────────────────────────────────────────────────
         # Full list of (Tracer, Metabolite, Isotopomer) tuples the model was
@@ -133,7 +134,7 @@ class SigmaFlux:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def predict(self, df_L, df_Vm=None, batch_size=64):
+    def predict(self, df_L, df_Vm=None):
         """
         Predict fluxes from labeling data and measured exchange fluxes.
 
@@ -163,8 +164,6 @@ class SigmaFlux:
 
             Flux names must match measured_fluxes in the config YAML.
             Run sf.expected_measured_fluxes() to see the expected list.
-
-        batch_size : int
 
         Returns
         -------
@@ -242,7 +241,7 @@ class SigmaFlux:
             measured_fluxes  = self.measured_flux_ids or None,
             norm_stats_input = self.ckpt.get('norm_stats'),
         )
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 
         # ── Build static padding mask for missing metabolites ─────────────────
         # Token position j is masked if its metabolite was not in df_L.
