@@ -89,7 +89,6 @@ def main():
     parser.add_argument('--measured-fluxes', default=None, metavar='CSV',
                         help='df_Vm CSV file (optional)')
     parser.add_argument('--out',         default=None,   help='Output CSV (default: stdout)')
-    parser.add_argument('--batch-size',  type=int, default=64)
     parser.add_argument('--show-tracers', action='store_true',
                         help='Print expected tracer names and exit')
     parser.add_argument('--show-measured-fluxes', action='store_true',
@@ -120,7 +119,7 @@ def main():
     df_L = pd.read_csv(args.labeling)
     df_Vm = pd.read_csv(args.measured_fluxes) if args.measured_fluxes else None
 
-    result = sf.predict(df_L, df_Vm=df_Vm, batch_size=args.batch_size)
+    result = sf.predict(df_L, df_Vm=df_Vm)
 
     if args.out:
         result.to_csv(args.out, index=False)
