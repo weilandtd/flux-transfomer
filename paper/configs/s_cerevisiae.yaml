@@ -62,7 +62,7 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
-  epochs: 300
+  epochs: 100
   batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
@@ -70,7 +70,7 @@ training:
   scheduler: true
   loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: 30000
+  max_samples: 20000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
