@@ -47,7 +47,6 @@ Add a 'Sample' column (integer) to both CSVs.  The output will also have
 a 'Sample' column.  All samples are predicted in one forward pass.
 
 Usage
-cd /scratch/gpfs/MONA/Toki/MFA/sigmaflux
 
 python  paper/pipeline/run_inference.py \
     --config paper/configs/i_orientalis.yaml \
