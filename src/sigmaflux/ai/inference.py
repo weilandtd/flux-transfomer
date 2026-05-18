@@ -182,6 +182,13 @@ class SigmaFlux:
         samples   = sorted(df_L['Sample'].unique().tolist())
         n_samples = len(samples)
 
+        # Drop M+0 — training data never includes it (fractions sum to 1,
+        # so M+0 is fully determined by M+1…M+N and was excluded at generation time).
+        m0_rows = (df_L['Isotopomer'] == 'M+0').sum()
+        if m0_rows > 0:
+            print(f"Dropping {m0_rows} M+0 row(s) — M+0 is not used by the model.")
+            df_L = df_L[df_L['Isotopomer'] != 'M+0'].copy()
+
         # Convert human-readable tracer names → internal tracer IDs
         user_tracers = set(df_L['Tracer Name'].unique())
         unknown = user_tracers - set(self.tracer_names)
