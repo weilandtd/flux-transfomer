@@ -230,6 +230,7 @@ task.md
 # Generated figures and reports
 *.pdf
 *.html
+*.svg
 
 # Training run directories (data, models, logs, analysis outputs)
 I_orientalis_*/
