@@ -29,7 +29,7 @@ CHECKPOINT  = "paper/I_orientalis_20260508/model/imisor_transformer.pt"
 
 MID_FILE    = "data/I_orientalis/I_orientalis_C.xlsx"
 EXT_FILE    = "data/I_orientalis/I_orientalis_ExtFlux.xlsx"
-CONDITION   = "batch"           # C, N, P, or batch
+CONDITION   = "C"           # C, N, P, or B
 
 MAPPING_CSV = "models/I_orientalis/I_orientalis_mapping.csv"
 
