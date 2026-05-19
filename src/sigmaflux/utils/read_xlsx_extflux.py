@@ -91,14 +91,14 @@ def _build_records(rows, flux_cols, biomass_col, ex_lookup):
                       f"(lookup key '{lookup_key}'). Skipping.")
                 continue
             records.append({
-                'bio_replicate': bio_rep,
-                'flux_name':     ex_lookup[lookup_key],
-                'value':         float(row[col]),
+                'Sample':    bio_rep,
+                'Flux Name': ex_lookup[lookup_key],
+                'Value':     float(row[col]),
             })
         records.append({
-            'bio_replicate': bio_rep,
-            'flux_name':     'BIOMASS',
-            'value':         float(row[biomass_col]),
+            'Sample':    bio_rep,
+            'Flux Name': 'BIOMASS',
+            'Value':     float(row[biomass_col]),
         })
     return records
 
@@ -131,9 +131,9 @@ def read_xlsx_extflux(
 
     Returns
     -------
-    pd.DataFrame with columns [bio_replicate, flux_name, value].
+    pd.DataFrame with columns [Sample, Flux Name, Value].
         Exchange flux rows map to model reaction IDs (e.g. 'EX_glc__D_e').
-        Growth rate is stored as flux_name 'BIOMASS'.
+        Growth rate is stored as Flux Name 'BIOMASS'.
     """
     ex_lookup   = _build_exchange_lookup(model_json)
     xl          = pd.ExcelFile(xlsx_path)
@@ -143,14 +143,14 @@ def read_xlsx_extflux(
     biomass_col = _get_biomass_col(df)
     records     = _build_records(rows, flux_cols, biomass_col, ex_lookup)
 
-    df_out = pd.DataFrame(records, columns=['bio_replicate', 'flux_name', 'value'])
+    df_out = pd.DataFrame(records, columns=['Sample', 'Flux Name', 'Value'])
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename  = f"df_Vm_{organism}_{condition}_{timestamp}.csv"
     out_path  = f"{output_dir}/{filename}"
     df_out.to_csv(out_path, index=False)
     print(f"Wrote {len(df_out)} rows ({rows['bio_replicate'].nunique()} bio replicates, "
-          f"{df_out['flux_name'].nunique()} fluxes) -> {out_path}")
+          f"{df_out['Flux Name'].nunique()} fluxes) -> {out_path}")
 
     return df_out
 

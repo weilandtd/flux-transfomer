@@ -9,14 +9,14 @@ import pandas as pd
 # Hardcoded fallback mappings for experimental names that cannot be resolved.
 # Add new entries here as new datasets are encountered.
 MANUAL_OVERRIDES: dict[str, list[str]] = {
-    "PG":   ["3pg_c"],            # 3-phosphoglycerate 
+    "PG":   ["3pg_c"],            # 3-phosphoglycerate
     "FBP":  ["fdp_c"],            # fructose 1,6-bisphosphate
-    "IPPM": ["2ippm_c"],          # isopropylmalate 
-    "Suc":  ["succ_c", "succ_m"], # succinate 
+    "IPPM": ["2ippm_c"],          # isopropylmalate
+    "Suc":  ["succ_c", "succ_m"], # succinate
 }
 
 
-def build_metabolite_name_mapping(
+def build_data_name_maps(
     experimental_xlsx: str,
     model_amm_xlsx: str,
     output_csv: str = "metabolite_name_mapping.csv",
@@ -75,7 +75,7 @@ def build_metabolite_name_mapping(
         )
     exp_names = df_exp[compound_col].dropna().unique().tolist()
 
-    # ---- 3. Build base-name → model IDs lookup from AMM xlsx ----
+    # ---- 3. Build base-name -> model IDs lookup from AMM xlsx ----
     df_amm = pd.read_excel(model_amm_xlsx, sheet_name=amm_sheet)
     if met_col not in df_amm.columns:
         raise ValueError(
@@ -96,7 +96,7 @@ def build_metabolite_name_mapping(
         base = get_base(mid)
         base_to_ids.setdefault(base, []).append(mid)
 
-    # ---- 4. Match each experimental name → model IDs ----
+    # ---- 4. Match each experimental name -> model IDs ----
     records = []
     unmatched = []
 
@@ -129,7 +129,7 @@ def build_metabolite_name_mapping(
         print("WARNING: No model match found for the following experimental metabolites:")
         for name in unmatched:
             print(f"  {name}")
-        print("Add entries to MANUAL_OVERRIDES in data_name_maps.py to resolve.")
+        print("Add entries to MANUAL_OVERRIDES in build_data_name_maps.py to resolve.")
 
     # ---- 6. Write CSV ----
     df_out = pd.DataFrame(records, columns=["experimental_id", "model_id"])
@@ -150,7 +150,7 @@ if __name__ == "__main__":
                         help="Output CSV path (default: metabolite_name_mapping.csv)")
     args = parser.parse_args()
 
-    build_metabolite_name_mapping(
+    build_data_name_maps(
         args.experimental_xlsx,
         args.model_amm_xlsx,
         output_csv=args.output,
