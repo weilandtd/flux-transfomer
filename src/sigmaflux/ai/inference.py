@@ -55,7 +55,7 @@ class SigmaFlux:
         'cuda', 'cpu', or None (auto-detect).
     """
 
-    def __init__(self, config, checkpoint, device=None):
+    def __init__(self, config, checkpoint, device=None, data_dir=None):
         with open(config) as f:
             self.cfg = yaml.safe_load(f)
 
@@ -98,8 +98,8 @@ class SigmaFlux:
             # Older checkpoint without token_index — load one training sample
             print("Checkpoint does not contain token_index; "
                   "loading one training sample to derive token structure ...")
-            data_dir = self.ckpt['data_dir']
-            labeling_df, _, _ = load_data(data_dir, max_samples=1)
+            _data_dir = data_dir or self.ckpt['data_dir']
+            labeling_df, _, _ = load_data(_data_dir, max_samples=1)
             self._token_index = list(labeling_df.index)
 
         # Set of unique metabolite IDs the model knows about
@@ -108,6 +108,8 @@ class SigmaFlux:
         # ── COBRA model (compound vocabulary) ─────────────────────────────────
         cfg_dict   = self.ckpt['model_config']
         model_json = self.ckpt.get('model_json')
+        if not model_json or not os.path.exists(model_json):
+            model_json = self.cfg.get('model_file')
         _, self.cobra_model = load_stoichiometric_matrix(model_json)
 
         # ── Reconstruct FluxDecoder from checkpoint ───────────────────────────
