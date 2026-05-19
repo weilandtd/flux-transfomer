@@ -189,25 +189,3 @@ def read_xlsx_mid_data(
 
     return df
 
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Read MID xlsx into long-format df_L CSV.")
-    parser.add_argument("xlsx_path",   help="Path to experimental MID xlsx")
-    parser.add_argument("mapping_csv", help="Path to metabolite_name_mapping.csv")
-    parser.add_argument("organism",    help="Organism name (e.g. S_cervesiae)")
-    parser.add_argument("condition",   help="Condition prefix or label (e.g. P, N, batch)")
-    parser.add_argument("--output_dir",   default=".", help="Output directory (default: .)")
-    parser.add_argument("--batch_prefix", default=None,
-                        help="Organism code in batch sheet names (e.g. IO); auto-inferred if omitted")
-    args = parser.parse_args()
-
-    read_xlsx_mid_data(
-        xlsx_path    = args.xlsx_path,
-        mapping_csv  = args.mapping_csv,
-        organism     = args.organism,
-        condition    = args.condition,
-        output_dir   = args.output_dir,
-        batch_prefix = args.batch_prefix,
-    )

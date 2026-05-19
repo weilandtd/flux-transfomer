@@ -155,23 +155,3 @@ def read_xlsx_extflux(
     return df_out
 
 
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Read external flux measurements xlsx into long-format df_Vm CSV."
-    )
-    parser.add_argument("xlsx_path",  help="Path to external measurements xlsx")
-    parser.add_argument("model_json", help="Path to COBRApy JSON model")
-    parser.add_argument("organism",   help="Organism name (e.g. S_cervesiae)")
-    parser.add_argument("condition",  help="Condition row prefix (e.g. P, N, B)")
-    parser.add_argument("--output_dir", default=".", help="Output directory (default: .)")
-    args = parser.parse_args()
-
-    read_xlsx_extflux(
-        xlsx_path  = args.xlsx_path,
-        model_json = args.model_json,
-        organism   = args.organism,
-        condition  = args.condition,
-        output_dir = args.output_dir,
-    )
