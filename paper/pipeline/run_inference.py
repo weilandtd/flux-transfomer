@@ -89,13 +89,15 @@ def main():
     parser.add_argument('--measured-fluxes', default=None, metavar='CSV',
                         help='df_Vm CSV file (optional)')
     parser.add_argument('--out',         default=None,   help='Output CSV (default: stdout)')
+    parser.add_argument('--data-dir',    default=None,
+                        help='Path to HDF5 batch files dir (overrides checkpoint data_dir)')
     parser.add_argument('--show-tracers', action='store_true',
                         help='Print expected tracer names and exit')
     parser.add_argument('--show-measured-fluxes', action='store_true',
                         help='Print measured flux IDs to provide in df_Vm and exit')
     args = parser.parse_args()
 
-    sf = SigmaFlux(args.config, args.checkpoint)
+    sf = SigmaFlux(args.config, args.checkpoint, data_dir=args.data_dir)
 
     if args.show_tracers:
         print("Expected tracer names (use exactly these strings in df_L 'Tracer Name' column):")
