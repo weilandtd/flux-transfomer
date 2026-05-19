@@ -64,11 +64,11 @@ def _build_records(df: pd.DataFrame, tracer_name: str, bio_rep: int, met_map: di
         fraction   = float(row['fraction'])
         for model_id in met_map[exp_name]:
             records.append({
-                'tracer_name':   tracer_name,
-                'bio_replicate': bio_rep,
-                'metabolite_id': model_id,
-                'isotopomer':    isotopomer,
-                'fraction':      fraction,
+                'Tracer Name': tracer_name,
+                'Sample':      bio_rep,
+                'Metabolite ID': model_id,
+                'Isotopomer':  isotopomer,
+                'Fraction':    fraction,
             })
     return records
 
@@ -177,15 +177,15 @@ def read_xlsx_mid_data(
             )
 
     df = pd.DataFrame(records, columns=[
-        'tracer_name', 'bio_replicate', 'metabolite_id', 'isotopomer', 'fraction'
+        'Tracer Name', 'Sample', 'Metabolite ID', 'Isotopomer', 'Fraction'
     ])
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     filename  = f"df_L_{organism}_{condition}_{timestamp}.csv"
     out_path  = f"{output_dir}/{filename}"
     df.to_csv(out_path, index=False)
-    print(f"Wrote {len(df)} rows ({df['bio_replicate'].nunique()} bio replicates, "
-          f"{df['metabolite_id'].nunique()} metabolites) -> {out_path}")
+    print(f"Wrote {len(df)} rows ({df['Sample'].nunique()} bio replicates, "
+          f"{df['Metabolite ID'].nunique()} metabolites) -> {out_path}")
 
     return df
 
