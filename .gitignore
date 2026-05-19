@@ -238,3 +238,7 @@ S_cerevisiae_*/
 
 # Local tools/dashboards not part of the package
 metabolism_dashboard/
+
+# Temporary conversion/helper scripts (underscore-prefixed)
+data/_*
+*.csv
