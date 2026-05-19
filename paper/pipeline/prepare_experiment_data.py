@@ -141,7 +141,7 @@ def prepare_experiment_data(
     mapping_csv = os.path.join(output_dir, 'metabolite_name_mapping.csv')
 
     # ---- step 1: build metabolite name mapping ----
-    print("=== Step 1: build_data_name_maps ===")
+    print("Building metabolite name mapping...")
     build_data_name_maps(
         experimental_xlsx = mid_xlsx,
         model_amm_xlsx    = amm_xlsx,
@@ -150,7 +150,7 @@ def prepare_experiment_data(
     print()
 
     # ---- step 2: read MID data ----
-    print("=== Step 2: read_xlsx_mid_data ===")
+    print("Reading MID data...")
     read_xlsx_mid_data(
         xlsx_path   = mid_xlsx,
         mapping_csv = mapping_csv,
@@ -161,7 +161,7 @@ def prepare_experiment_data(
     print()
 
     # ---- step 3: read external fluxes ----
-    print("=== Step 3: read_xlsx_extflux ===")
+    print("Reading external fluxes...")
     read_xlsx_extflux(
         xlsx_path  = ext_xlsx,
         model_json = json_model,
