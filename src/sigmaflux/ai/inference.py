@@ -247,21 +247,27 @@ class SigmaFlux:
             vocabs           = vocabs,
             train_indices    = list(range(n_samples)),
             normalize        = True,
-            measured_fluxes  = self.measured_flux_ids or None,
+            measured_fluxes  = None,
             norm_stats_input = self.ckpt.get('norm_stats'),
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 
         # ── Build static padding mask for missing metabolites ─────────────────
-        # Token position j is masked if its metabolite was not in df_L.
         met_index = labeling_df.index.get_level_values('Metabolite').tolist()
         mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
-        # Shift by number of bypass tokens (prepended measured-flux tokens)
-        n_bypass = len(self.measured_flux_ids) if self.measured_flux_ids else 0
-        mask_positions = [j + n_bypass for j in mask_positions]
+
+        # ── Pre-build fixed_fluxes tensor (raw values, matching train.py) ─────
+        # Shape: (n_samples, n_measured) — sliced per batch in the loop below.
+        # Mirrors train.py: fixed_fluxes = targets[:, fixed_idx] (raw flux values).
+        _fixed_flux_raw = None
+        if self._model.cfg.n_measured > 0:
+            fixed_idx = list(self._nsd.get('fixed_idx', []))
+            fvals = flux_df.values[fixed_idx, :].T.copy()   # (n_samples, n_measured)
+            _fixed_flux_raw = torch.tensor(fvals, dtype=torch.float32)
 
         # ── Inference ─────────────────────────────────────────────────────────
         all_flux, all_rev = [], []
+        batch_offset = 0
         with torch.no_grad():
             for batch in loader:
                 (cids, lids, tids, fracs), _ = batch
@@ -278,15 +284,15 @@ class SigmaFlux:
                     pmask[:, mask_positions] = True
 
                 fixed_fluxes = None
-                if self._model.cfg.n_measured > 0:
-                    bypass = self._model.token_experiment_ids == -1
-                    fixed_fluxes = fracs[:, bypass, 0]
+                if _fixed_flux_raw is not None:
+                    fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
                 fp, rp = self._model(cids, lids, tids, fracs,
                                      padding_mask=pmask,
                                      fixed_fluxes=fixed_fluxes)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
+                batch_offset += B
 
         flux_arr = torch.cat(all_flux).numpy()
         rev_arr  = torch.cat(all_rev).numpy()
