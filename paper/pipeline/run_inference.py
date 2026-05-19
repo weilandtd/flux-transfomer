@@ -1,132 +1,95 @@
 """
-Predict fluxes from experimental MID measurements.
+Run flux inference for all bio-replicates in a single condition xlsx.
 
-Inputs
-------
-  df_L.csv   — labeling data (one row per isotopomer measurement)
-  df_Vm.csv  — measured exchange fluxes (optional)
+Edit the USER CONFIGURATION section below with your paths, then run:
 
-Output
-------
-  predictions.csv — Flux Name, Value (one row per reaction)
-
-Input CSV formats
------------------
-df_L:
-    Tracer Name,Metabolite ID,Isotopomer,Fraction
-    U-13C glucose (50%),pyr,M+0,0.452
-    U-13C glucose (50%),pyr,M+1,0.301
-    U-13C glucose (50%),pyr,M+2,0.183
-    U-13C glucose (50%),pyr,M+3,0.064
-    1,2-13C glucose (50%),pyr,M+0,0.210
-    ...
-
-    Tracer names must match names listed in the config YAML (labeling.tracers[*].name).
-    Metabolite IDs must match the COBRA model (e.g. pyr, akg, oaa, g6p, ...).
-    Isotopomers: M+0, M+1, M+2, ...
-
-    Metabolites absent from this file are automatically masked — the model
-    predicts without seeing their labeling data (robust behaviour trained via
-    met_mask_prob augmentation).
-
-df_Vm (optional — but use it if these were measured):
-    Flux Name,Value
-    EX_glc__D_e,-10.5
-    EX_etoh_e,3.2
-    EX_ac_e,0.1
-    EX_glyc_e,0.05
-    EX_succ_e,0.0
-    BIOMASS,0.15
-
-    Flux names must match the measured_fluxes list in the config YAML.
-    Use sf.expected_measured_fluxes() to see the full list.
-
-Multiple samples
-----------------
-Add a 'Sample' column (integer) to both CSVs.  The output will also have
-a 'Sample' column.  All samples are predicted in one forward pass.
-
-Usage
-
-python  paper/pipeline/run_inference.py \
-    --config paper/configs/i_orientalis.yaml \
-    --checkpoint I_orientalis_20260508/model/imisor_transformer.pt \
-    --labeling I_orientalis_20260508/analysis/example_df_L_single.csv \
-    --measured-fluxes I_orientalis_20260508/analysis/example_df_Vm_single.csv \
-    --out I_orientalis_20260508/analysis/example_predictions.csv
-
-    
-    # With measured fluxes:
-    python paper/pipeline/run_inference.py ... --measured-fluxes df_Vm.csv
-
-    # Show expected tracer names:
-    python paper/pipeline/run_inference.py ... --show-tracers
-
-    # Show measured flux IDs to provide in df_Vm:
-    python paper/pipeline/run_inference.py ... --show-measured-fluxes
+    .venv/bin/python paper/pipeline/run_inference.py
 """
 
-import argparse
 import os
 import sys
+from datetime import datetime
 
 import pandas as pd
+import yaml
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
 
 from sigmaflux.ai.inference import SigmaFlux
+from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    parser.add_argument('--config',      required=True,  help='Path to config YAML')
-    parser.add_argument('--checkpoint',  required=True,  help='Path to .pt checkpoint')
-    parser.add_argument('--labeling',    default=None,   help='df_L CSV file')
-    parser.add_argument('--measured-fluxes', default=None, metavar='CSV',
-                        help='df_Vm CSV file (optional)')
-    parser.add_argument('--out',         default=None,   help='Output CSV (default: stdout)')
-    parser.add_argument('--show-tracers', action='store_true',
-                        help='Print expected tracer names and exit')
-    parser.add_argument('--show-measured-fluxes', action='store_true',
-                        help='Print measured flux IDs to provide in df_Vm and exit')
-    args = parser.parse_args()
+# ============================================================
+# USER CONFIGURATION — edit these paths for your run
+# ============================================================
 
-    sf = SigmaFlux(args.config, args.checkpoint)
+CONFIG      = "paper/configs/i_orientalis.yaml"
+CHECKPOINT  = "paper/I_orientalis_20260508/model/imisor_transformer.pt"
 
-    if args.show_tracers:
-        print("Expected tracer names (use exactly these strings in df_L 'Tracer Name' column):")
-        for t in sf.expected_tracers():
-            print(f"  {t}")
-        return
+MID_FILE    = "data/I_orientalis/I_orientalis_C.xlsx"
+EXT_FILE    = "data/I_orientalis/I_orientalis_ExtFlux.xlsx"
+CONDITION   = "batch"           # C, N, P, or batch
 
-    if args.show_measured_fluxes:
-        ids = sf.expected_measured_fluxes()
-        if ids:
-            print("Measured flux IDs to provide in df_Vm 'Flux Name' column:")
-            for r in ids:
-                print(f"  {r}")
-        else:
-            print("This checkpoint has no measured_fluxes (df_Vm not needed).")
-        return
+MAPPING_CSV = "models/I_orientalis/I_orientalis_mapping.csv"
 
-    if args.labeling is None:
-        parser.error("--labeling is required (unless using --show-* flags)")
+ORGANISM    = "I_orientalis"
+OUT_DIR     = "paper/output"    # directory where predictions CSV is saved
 
-    df_L = pd.read_csv(args.labeling)
-    df_Vm = pd.read_csv(args.measured_fluxes) if args.measured_fluxes else None
+# ============================================================
+# END USER CONFIGURATION
+# ============================================================
 
-    result = sf.predict(df_L, df_Vm=df_Vm)
 
-    if args.out:
-        result.to_csv(args.out, index=False)
-        print(f"Saved → {args.out}  ({len(result)} rows)")
-    else:
-        print(result.to_string(index=False))
+def _inspect_mid_file(xlsx_path: str) -> tuple[list[str], list[int]]:
+    xl = pd.ExcelFile(xlsx_path)
+    tracers  = xl.sheet_names
+    df_first = xl.parse(tracers[0], nrows=1)
+    rep_cols = [c for c in df_first.columns if str(c).startswith('Rep_')]
+    bio_reps = sorted(int(str(c).split('_')[1]) for c in rep_cols)
+    return tracers, bio_reps
 
 
 if __name__ == '__main__':
-    main()
+    os.chdir(_REPO_ROOT)
+
+    def _p(rel: str) -> str:
+        return os.path.join(_REPO_ROOT, rel)
+
+    with open(_p(CONFIG)) as _f:
+        _cfg = yaml.safe_load(_f)
+    _flux_names = _cfg.get('training', {}).get('measured_fluxes', None)
+
+    _ckpt_path = _p(CHECKPOINT)
+    _data_dir  = os.path.join(os.path.dirname(os.path.dirname(_ckpt_path)), 'data')
+    sf = SigmaFlux(_p(CONFIG), _ckpt_path, data_dir=_data_dir)
+
+    tracers, bio_reps = _inspect_mid_file(_p(MID_FILE))
+    print(f"MID file:  {MID_FILE}")
+    print(f"Condition: {CONDITION}")
+    print(f"Tracers:   {tracers}")
+    print(f"Bio-reps:  {bio_reps}")
+    print()
+
+    df_L = read_xlsx_mid_data(
+        xlsx_path   = _p(MID_FILE),
+        mapping_csv = _p(MAPPING_CSV),
+    )
+    print()
+
+    df_Vm = read_xlsx_extflux(
+        xlsx_path  = _p(EXT_FILE),
+        condition  = CONDITION,
+        flux_names = _flux_names,
+    )
+    print()
+
+    print(f"Running inference ({df_L['Sample'].nunique()} bio-replicates)...")
+    result = sf.predict(df_L, df_Vm=df_Vm)
+
+    out_dir = _p(OUT_DIR)
+    os.makedirs(out_dir, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    out_path  = os.path.join(out_dir, f"predictions_{ORGANISM}_{CONDITION}_{timestamp}.csv")
+    result.to_csv(out_path, index=False)
+    print(f"Saved → {out_path}  ({len(result)} rows)")
