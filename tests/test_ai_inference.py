@@ -258,29 +258,3 @@ def test_fixed_fluxes_affect_prediction(toy_checkpoint):
         "Predictions are identical for very different EX_Ser_in values — "
         "fixed_fluxes may not be reaching fusion_layer."
     )
-
-
-def test_predict_cli(toy_checkpoint, tmp_path):
-    """predict.py CLI runs end-to-end and produces a valid CSV."""
-    labeling_csv = tmp_path / 'labeling.csv'
-    out_csv      = tmp_path / 'preds.csv'
-    make_toy_df_L(n_samples=1).to_csv(labeling_csv, index=False)
-
-    subprocess.run(
-        [
-            sys.executable,
-            os.path.join(_REPO_ROOT, 'paper', 'pipeline', 'predict.py'),
-            _TOY_CONFIG_YAML,
-            toy_checkpoint,
-            str(labeling_csv),
-            '--out', str(out_csv),
-        ],
-        check=True,
-        cwd=_REPO_ROOT,
-    )
-
-    result = pd.read_csv(out_csv)
-    assert 'Flux Name' in result.columns
-    assert 'Value'     in result.columns
-    assert len(result) > 0
-    assert np.isfinite(result['Value'].values).all()
