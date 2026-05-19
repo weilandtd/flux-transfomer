@@ -9,10 +9,12 @@ import pandas as pd
 # Hardcoded fallback mappings for experimental names that cannot be resolved.
 # Add new entries here as new datasets are encountered.
 MANUAL_OVERRIDES: dict[str, list[str]] = {
-    "PG":   ["3pg_c"],            # 3-phosphoglycerate
-    "FBP":  ["fdp_c"],            # fructose 1,6-bisphosphate
-    "IPPM": ["2ippm_c"],          # isopropylmalate
-    "Suc":  ["succ_c", "succ_m"], # succinate
+    "PG":     ["3pg_c"],
+    "FBP":    ["fdp_c"],
+    "IPPM":   ["2ippm_c"],
+    "Suc":    ["succ_c", "succ_m"],
+    "Citrl":  ["citr__L_c"],
+    "glucose": ["glc__D_c"],
 }
 
 
@@ -54,15 +56,25 @@ def build_data_name_maps(
     Unmatched experimental names are printed as warnings.
     """
 
-    # ---- 1. Find first condition subsheet in experimental xlsx ----
+    # ---- 1. Find a data sheet in experimental xlsx ----
+    # Supports both old format (sheet names like CU_1, N12_3) and new clean
+    # format (sheet names are tracer names, e.g. 'U-13C glucose (50%)').
     xl = pd.ExcelFile(experimental_xlsx)
     condition_sheet = next(
         (s for s in xl.sheet_names if re.match(r'^[A-Z]+_[0-9]+$', s)),
         None
     )
     if condition_sheet is None:
+        # New clean format: use first sheet that contains compound_col
+        for s in xl.sheet_names:
+            df_peek = pd.read_excel(experimental_xlsx, sheet_name=s, nrows=1)
+            if compound_col in df_peek.columns:
+                condition_sheet = s
+                break
+    if condition_sheet is None:
         raise ValueError(
-            f"No sheet matching [A-Z]+_[0-9]+ found in {experimental_xlsx}. "
+            f"No usable data sheet found in {experimental_xlsx}. "
+            f"Expected a sheet with a '{compound_col}' column. "
             f"Available sheets: {xl.sheet_names}"
         )
 
