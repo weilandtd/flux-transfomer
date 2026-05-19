@@ -139,19 +139,3 @@ def build_data_name_maps(
 
     return df_out
 
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Build metabolite name mapping CSV.")
-    parser.add_argument("experimental_xlsx", help="Path to experimental MID xlsx")
-    parser.add_argument("model_amm_xlsx", help="Path to model AMM xlsx")
-    parser.add_argument("--output", default="metabolite_name_mapping.csv",
-                        help="Output CSV path (default: metabolite_name_mapping.csv)")
-    args = parser.parse_args()
-
-    build_data_name_maps(
-        args.experimental_xlsx,
-        args.model_amm_xlsx,
-        output_csv=args.output,
-    )
