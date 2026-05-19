@@ -1,0 +1,15 @@
+name: toy_one_carbon
+model_file: models/toy/one_carbon_annotated.json
+device: cpu
+
+labeling:
+  tracers:
+    - name: labeled-Ser        # human-readable name used in df_L['Tracer Name']
+      tracer_id: Ser_in
+      labeling: "111"
+      enrichment: "0.1"
+
+training:
+  measured_fluxes:
+    - EX_Ser_in                # external serine supply rate
+  batch_size: 4
