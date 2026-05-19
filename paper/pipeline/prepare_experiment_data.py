@@ -6,9 +6,12 @@ read_xlsx_extflux in sequence, auto-discovering the required files from
 the data and model directories.
 
 Usage:
-    python paper/pipeline/prepare_experiment_data.py <data_dir> <model_dir> <condition>
-                                                     [--organism ORGANISM]
-                                                     [--output_dir OUTPUT_DIR]
+    python paper/pipeline/prepare_experiment_data.py \
+        <data_dir> \
+        <model_dir> \
+        <condition> \
+        [--organism ORGANISM] \
+        [--output_dir OUTPUT_DIR]
 
 Example:
     python paper/pipeline/prepare_experiment_data.py \\

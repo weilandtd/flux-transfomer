@@ -47,17 +47,14 @@ Add a 'Sample' column (integer) to both CSVs.  The output will also have
 a 'Sample' column.  All samples are predicted in one forward pass.
 
 Usage
-
-python  paper/pipeline/run_inference.py \
+-----
+python paper/pipeline/run_inference.py \
     --config paper/configs/i_orientalis.yaml \
-    --checkpoint I_orientalis_20260508/model/imisor_transformer.pt \
-    --labeling I_orientalis_20260508/analysis/example_df_L_single.csv \
-    --measured-fluxes I_orientalis_20260508/analysis/example_df_Vm_single.csv \
-    --out I_orientalis_20260508/analysis/example_predictions.csv
-
-    
-    # With measured fluxes:
-    python paper/pipeline/run_inference.py ... --measured-fluxes df_Vm.csv
+    --checkpoint <output_dir>/pretrained_model/imisor_transformer.pt \
+    --labeling <output_dir>/df_L_<organism>_<condition>_<timestamp>.csv \
+    --measured-fluxes <output_dir>/df_Vm_<organism>_<condition>_<timestamp>.csv \
+    --data-dir <output_dir>/pretrained_model \
+    --out <output_dir>/predictions.csv
 
     # Show expected tracer names:
     python paper/pipeline/run_inference.py ... --show-tracers
