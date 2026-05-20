@@ -202,6 +202,17 @@ class SigmaFlux:
 
         # Metabolites present in user data
         user_metabolites = set(df_L['Metabolite ID'].unique())
+
+        # Drop metabolites not in the training set (e.g. _m compartment variants
+        # absent from training data). Report once as a summary, not per-token.
+        unknown_mets = user_metabolites - self._known_metabolites
+        if unknown_mets:
+            print(f"Ignoring {len(unknown_mets)} metabolite(s) not in training set: "
+                  f"{', '.join(sorted(unknown_mets))}")
+            df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
+            user_metabolites -= unknown_mets
+
+        # Metabolites the model knows about but absent from df_L → auto-masked
         masked_mets = self._known_metabolites - user_metabolites
         if masked_mets:
             print(f"Auto-masking {len(masked_mets)} metabolite(s) not in df_L: "
@@ -227,8 +238,6 @@ class SigmaFlux:
                 key = (row['Tracer Name'], row['Metabolite ID'], row['Isotopomer'])
                 if key in labeling_df.index:
                     labeling_df.loc[key, col_idx] = np.float32(row['Fraction'])
-                else:
-                    print(f"  WARNING: token {key} not in training set — skipped")
 
         # ── Flux DataFrames ───────────────────────────────────────────────────
         flux_df, rev_df = self._build_flux_dfs(df_Vm, n_samples, samples)

@@ -292,6 +292,7 @@ def main(args):
         warmup_epochs     = args.warmup_epochs,
         y_l2_reg          = args.y_l2_reg,
         met_mask_prob     = args.met_mask_prob,
+        best_model_path   = args.output + '.best',
     )
 
     flux_names = flux_df.index.tolist()
