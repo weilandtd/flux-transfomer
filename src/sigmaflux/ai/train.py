@@ -4,6 +4,8 @@ Training utilities for flux prediction models.
 Provides training loops, loss functions, and optimization utilities.
 """
 
+import copy
+
 import torch
 import torch.nn as nn
 from tqdm import tqdm
@@ -59,7 +61,8 @@ def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10)
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda', loss_function=None,
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
-                warmup_epochs=0, y_l2_reg=0.0, met_mask_prob=0.0):
+                warmup_epochs=0, y_l2_reg=0.0, met_mask_prob=0.0,
+                best_model_path=None):
     """
     Train a FluxDecoder model.
 
@@ -141,6 +144,9 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
     train_losses = []
     val_losses   = [] if val_loader is not None else None
     grad_norms   = []
+
+    best_val_loss   = float('inf')
+    best_state_dict = copy.deepcopy(model.state_dict())
 
     iterator = tqdm(range(num_epochs), desc="Training") if verbose else range(num_epochs)
 
@@ -269,6 +275,15 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             avg_val_loss = val_epoch_loss / len(val_loader)
             val_losses.append(avg_val_loss)
 
+            if avg_val_loss < best_val_loss:
+                best_val_loss   = avg_val_loss
+                best_state_dict = copy.deepcopy(model.state_dict())
+                if best_model_path is not None:
+                    torch.save({'model_state_dict': best_state_dict,
+                                'epoch': epoch + 1,
+                                'val_loss': best_val_loss},
+                               best_model_path)
+
             # Per-epoch y-space R² (null-space mode only)
             y_r2_mean = y_r2_median = None
             if y_preds_ep:
@@ -308,5 +323,11 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
     if val_loader is not None:
         log['val_loss'] = val_losses
     log['grad_norm'] = grad_norms
+
+    # Restore best weights before returning so the caller saves the best model.
+    if val_loader is not None:
+        model.load_state_dict(best_state_dict)
+        if verbose:
+            tqdm.write(f"Restored best model (val_loss={best_val_loss:.6g})")
 
     return log
