@@ -41,6 +41,27 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
         except Exception:
             pass
 
+_AMINO_ACID_IDS: frozenset = frozenset({
+    'ala__L_c', 'arg__L_c', 'asn__L_c', 'asp__L_c', 'cys__L_c',
+    'gln__L_c', 'glu__L_c', 'gly_c',    'his__L_c', 'ile__L_c',
+    'leu__L_c', 'lys__L_c', 'met__L_c', 'phe__L_c', 'pro__L_c',
+    'ser__L_c', 'thr__L_c', 'trp__L_c', 'tyr__L_c', 'val__L_c',
+})
+_RNA_NTP_IDS: frozenset = frozenset({'ctp_c', 'gtp_c', 'utp_c'})  # atp_c handled separately
+_DNA_NTP_IDS: frozenset = frozenset({'datp_c', 'dctp_c', 'dgtp_c', 'dttp_c'})
+_CARB_IDS: frozenset = frozenset({
+    '13BDglucan_c', '16BDglucan_c', 'chtn_c', 'glycogen_c', 'mannan_c', 'tre_c',
+})
+_SHARED_MET_IDS: frozenset = frozenset({
+    'atp_c', 'adp_c', 'amp_c', 'pi_c', 'ppi_c', 'h2o_c', 'h_c',
+    'ca2_c', 'cu2_c', 'fe2_c', 'k_c', 'mg2_c', 'mn2_c', 'zn2_c', 'so4_c',
+})
+_BIOMASS_ENERGY_FRACS: dict = {
+    'PROTEIN_c': 0.50, 'CARB_c': 0.20, 'LIPID_c': 0.15, 'RNA_c': 0.12, 'DNA_c': 0.03,
+}
+BIOMASS_COMPONENT_IDS: tuple = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
+
+
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C'):
     """
     Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated
@@ -113,6 +134,8 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
 
     _remove_out_metabolites(model)
     _standardize_exchange_directions(model)
+    _split_biomass_into_components(model)
+    _add_atpm2_if_absent(model)
 
     if path_to_output is not None:
         cobra.io.save_json_model(model, str(path_to_output))
@@ -215,25 +238,87 @@ def _strip_out_from_atom_mapping(amm_str):
     return _strip_terms(lhs) + " -> " + _strip_terms(rhs)
 
 
+def _split_biomass_into_components(model) -> None:
+    """Replace BIOMASS with 5 macromolecular component sink reactions.
 
-    all_rxns = set(model.reactions)
-    for r in model.boundary: 
-        metabolite = list(r.metabolites.keys())[0]
-        metabolite_reaction = None 
-        for reaction in metabolite.reactions: 
-            if reaction in all_rxns and "atom_mapping" in reaction.annotation: 
-                metabolite_reaction = reaction
-                break 
-        if metabolite_reaction is not None: 
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
-            match = re.search(pattern, metabolite_reaction.annotation['atom_mapping'])
-            if match:
-                atom_map = match.group(1)
-                r.annotation['atom_mapping'] = insert_mapping_into_reaction(r.reaction, metabolite.id, atom_map)
-        else: 
-            
-            raise ValueError("Metabolite is not in the model")
+    Metabolites are classified into protein (amino acids), RNA (NTPs),
+    DNA (dNTPs), carbohydrate, and lipid (everything else non-shared).
+    Shared cofactors (ATP, ADP, Pi, PPi, H2O, H+, ions) are distributed
+    proportionally using _BIOMASS_ENERGY_FRACS.  ATP is split: the
+    RNA-nucleotide fraction (≈ UTP stoichiometry) goes to RNA_c; the
+    remainder (energy ATP) is distributed across all five components.
+    """
+    import cobra
 
+    if 'BIOMASS' not in {r.id for r in model.reactions}:
+        return
+
+    biomass = model.reactions.get_by_id('BIOMASS')
+    stoich: dict = {m.id: c for m, c in biomass.metabolites.items()}
+    lb, ub = biomass.bounds
+
+    # Separate specific and shared metabolites
+    amino_acids = {mid: c for mid, c in stoich.items() if mid in _AMINO_ACID_IDS}
+    rna_ntps    = {mid: c for mid, c in stoich.items() if mid in _RNA_NTP_IDS}
+    dna_ntps    = {mid: c for mid, c in stoich.items() if mid in _DNA_NTP_IDS}
+    carbs       = {mid: c for mid, c in stoich.items() if mid in _CARB_IDS}
+    lipids      = {
+        mid: c for mid, c in stoich.items()
+        if mid not in _AMINO_ACID_IDS | _RNA_NTP_IDS | _DNA_NTP_IDS | _CARB_IDS | _SHARED_MET_IDS
+    }
+
+    # ATP: separate RNA-nucleotide fraction (same magnitude as UTP) from energy ATP
+    utp_stoich: float  = stoich.get('utp_c', 0.0)
+    atp_rna: float     = utp_stoich                           # e.g. -0.1256 for SC
+    atp_energy: float  = stoich.get('atp_c', 0.0) - atp_rna  # remainder ≈ -102.86
+
+    # Seed component dicts
+    comps: dict = {
+        'PROTEIN_c': dict(amino_acids),
+        'RNA_c':     dict(rna_ntps) | {'atp_c': atp_rna},
+        'DNA_c':     dict(dna_ntps),
+        'LIPID_c':   dict(lipids),
+        'CARB_c':    dict(carbs),
+    }
+
+    # Distribute shared metabolites proportionally
+    for comp, frac in _BIOMASS_ENERGY_FRACS.items():
+        comps[comp]['atp_c'] = comps[comp].get('atp_c', 0.0) + atp_energy * frac
+        for mid in _SHARED_MET_IDS - {'atp_c'}:
+            val = stoich.get(mid, 0.0)
+            if val != 0.0:
+                comps[comp][mid] = comps[comp].get(mid, 0.0) + val * frac
+
+    # Build and register reactions
+    for rxn_id, met_coeffs in comps.items():
+        rxn = cobra.Reaction(rxn_id, lower_bound=lb, upper_bound=ub)
+        model.add_reactions([rxn])
+        rxn.add_metabolites({
+            model.metabolites.get_by_id(mid): coeff
+            for mid, coeff in met_coeffs.items()
+            if coeff != 0.0
+        })
+
+    model.remove_reactions([biomass])
+    print(f"Split BIOMASS into {BIOMASS_COMPONENT_IDS}")
+
+
+def _add_atpm2_if_absent(model) -> None:
+    """Add ATPM2_c (atp_c + h2o_c -> amp_c + ppi_c + h_c) if not present."""
+    import cobra
+
+    if 'ATPM2_c' in {r.id for r in model.reactions}:
+        return
+    rxn = cobra.Reaction('ATPM2_c', lower_bound=0, upper_bound=1000)
+    model.add_reactions([rxn])
+    rxn.add_metabolites({
+        model.metabolites.get_by_id('atp_c'): -1.0,
+        model.metabolites.get_by_id('h2o_c'): -1.0,
+        model.metabolites.get_by_id('amp_c'): +1.0,
+        model.metabolites.get_by_id('ppi_c'): +1.0,
+        model.metabolites.get_by_id('h_c'):   +1.0,
+    })
+    print("Added ATPM2_c: atp_c + h2o_c -> amp_c + ppi_c + h_c")
 
 
 def insert_mapping_into_reaction(reaction, compound_id, mapping):
