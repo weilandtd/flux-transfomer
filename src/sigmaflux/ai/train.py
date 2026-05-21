@@ -186,8 +186,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                              else model.fba_pro.fixed_idx)
                 fixed_fluxes = targets[:, fixed_idx]
 
-            # Denoising autoencoder: corrupt measured fluxes before they enter
-            # fusion_layer during training. Loss is always against clean targets.
+            # Denoising: corrupt measured fluxes before they enter rotation_fusion
+            # during training. Loss is always against clean targets.
             fixed_fluxes_input = fixed_fluxes
             if (model.training and fixed_fluxes is not None
                     and getattr(model, 'flux_noise_std', 0.0) > 0.0):
