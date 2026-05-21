@@ -68,15 +68,14 @@ def toy_checkpoint(tmp_path_factory):
     Build a complete FluxDecoder checkpoint on the toy model without training.
 
     The model has random weights but the correct stoichiometric structure,
-    null-space basis, and normalisation statistics.  Non-zero fusion_layer
-    weights are set so that fixed_fluxes visibly influence predictions.
+    null-space basis, and normalisation statistics.
     """
     S, cobra_model = load_stoichiometric_matrix(_TOY_MODEL_JSON)
     flux_names = [r.id for r in cobra_model.reactions]   # 23 reactions
     n_fluxes   = len(flux_names)
     n_samples  = 30
 
-    measured_fluxes = ['EX_Ser_in']
+    measured_fluxes = ['EX_Ser_in', 'EX_Gly_src']
     fixed_idx = [flux_names.index(r) for r in measured_fluxes]
     free_idx  = [i for i in range(n_fluxes) if i not in set(fixed_idx)]
 
@@ -123,22 +122,15 @@ def toy_checkpoint(tmp_path_factory):
     y_mean  = y_train.mean(dim=0).numpy()
     y_std   = y_train.std(dim=0).clamp_min(1e-6).numpy()
 
-    # Fixed-flux normalisation (EX_Ser_in column of targets)
-    t_fixed          = dataset.targets[:, fixed_idx]
-    fixed_flux_mean  = t_fixed.mean(dim=0).numpy()
-    fixed_flux_std   = t_fixed.std(dim=0).clamp_min(1e-6).numpy()
-
     obs_weights = np.ones(n_free, dtype=np.float32)
 
     null_space_data = dict(
-        Z_free          = Z_full,
-        free_idx        = free_idx,
-        fixed_idx       = fixed_idx,
-        y_mean          = y_mean,
-        y_std           = y_std,
-        obs_weights     = obs_weights,
-        fixed_flux_mean = fixed_flux_mean,
-        fixed_flux_std  = fixed_flux_std,
+        Z_free      = Z_full,
+        free_idx    = free_idx,
+        fixed_idx   = fixed_idx,
+        y_mean      = y_mean,
+        y_std       = y_std,
+        obs_weights = obs_weights,
     )
 
     # ── Build FluxDecoder ─────────────────────────────────────────────────────
@@ -161,20 +153,12 @@ def toy_checkpoint(tmp_path_factory):
 
     model = FluxDecoder(
         cfg,
-        stoichiometric_matrix = S,
         token_experiment_ids  = token_experiment_ids,
         compound_emb_table    = vocabs['compound_emb_table'],
         label_emb_table       = vocabs['label_emb_table'],
         tracer_emb_table      = tracer_combo_emb_table,
-        fixed_flux_indices    = fixed_idx,
         null_space_data       = null_space_data,
     )
-
-    # Give fusion_layer non-trivial weights so fixed_fluxes visibly affect output
-    if model.fusion_layer is not None:
-        with torch.no_grad():
-            model.fusion_layer.weight.fill_(0.5)
-            model.fusion_gate.fill_(2.0)   # sigmoid(2) ≈ 0.88
 
     # ── Assemble and save checkpoint ──────────────────────────────────────────
     checkpoint = {
@@ -239,22 +223,25 @@ def test_mass_balance(toy_checkpoint):
 
 def test_fixed_fluxes_affect_prediction(toy_checkpoint):
     """
-    Predictions change when df_Vm values differ.
+    Providing fixed_fluxes changes predictions vs. providing none.
 
-    This would silently fail if fixed_fluxes were double-normalised (the
-    bug fixed in inference.py) because the mangled signal would be near
-    constant regardless of the user-supplied value.
+    RotationFusion zeroes the non-S y-components of y_norm (those not
+    constrained by measured reactions), replacing y_raw's signal there.
+    Predictions with df_Vm therefore differ from predictions without it.
     """
     sf   = SigmaFlux(_TOY_CONFIG_YAML, toy_checkpoint)
     df_L = make_toy_df_L(n_samples=1)
 
-    df_Vm_lo = pd.DataFrame({'Sample': [0], 'Flux Name': ['EX_Ser_in'], 'Value': [0.01]})
-    df_Vm_hi = pd.DataFrame({'Sample': [0], 'Flux Name': ['EX_Ser_in'], 'Value': [50.0]})
+    df_Vm = pd.DataFrame({
+        'Sample':    [0, 0],
+        'Flux Name': ['EX_Ser_in', 'EX_Gly_src'],
+        'Value':     [1.0, 1.0],
+    })
 
-    res_lo = sf.predict(df_L, df_Vm=df_Vm_lo)['Value'].values
-    res_hi = sf.predict(df_L, df_Vm=df_Vm_hi)['Value'].values
+    res_no_vm   = sf.predict(df_L)['Value'].values
+    res_with_vm = sf.predict(df_L, df_Vm=df_Vm)['Value'].values
 
-    assert not np.allclose(res_lo, res_hi, atol=1e-6), (
-        "Predictions are identical for very different EX_Ser_in values — "
-        "fixed_fluxes may not be reaching fusion_layer."
+    assert not np.allclose(res_no_vm, res_with_vm, atol=1e-6), (
+        "Predictions are identical with and without measured fluxes — "
+        "fixed_fluxes may not be reaching rotation_fusion."
     )
