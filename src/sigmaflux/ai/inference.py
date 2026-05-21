@@ -122,10 +122,8 @@ class SigmaFlux:
         token_ids = self.ckpt['model_state_dict']['token_experiment_ids']
         self._model = FluxDecoder(
             cfg,
-            stoichiometric_matrix=None,
             token_experiment_ids=token_ids,
             null_space_data=nsd,
-            fixed_flux_indices=nsd.get('fixed_idx', []),
         )
         self._model.load_state_dict(self.ckpt['model_state_dict'])
         self._model.to(self.device)
