@@ -19,6 +19,8 @@ from cobra.io.json import load_json_model
 from cobra.sampling import sample
 from optlang.symbolics import Zero
 
+_BIOMASS_COMPONENTS = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -52,7 +54,8 @@ def apply_media(model, media_cfg):
 
 
 def constrain_growth(model, growth_cfg):
-    set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
+    for rxn_id in _BIOMASS_COMPONENTS:
+        set_bounds(model, rxn_id, growth_cfg["lb"], growth_cfg["ub"])
 
 
 def constrain_by_fva(model, fraction_of_optimum):
