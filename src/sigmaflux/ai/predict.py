@@ -60,19 +60,20 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask
     return torch.cat(all_predictions, dim=0)
 
 
-def create_ensemble(num_models, config, stoichiometric_matrix, token_experiment_ids,
-                    compound_emb_table=None, label_emb_table=None, tracer_emb_table=None):
+def create_ensemble(num_models, config, token_experiment_ids,
+                    compound_emb_table=None, label_emb_table=None, tracer_emb_table=None,
+                    null_space_data=None):
     """
     Create an ensemble of FluxDecoder models for uncertainty estimation.
 
     Args:
         num_models: Number of models in ensemble
         config: FluxDecoderConfig
-        stoichiometric_matrix: (m, n) stoichiometric matrix
         token_experiment_ids: (num_tokens,) int64 tensor
         compound_emb_table: frozen compound embedding weights
         label_emb_table: frozen label embedding weights
         tracer_emb_table: frozen tracer embedding weights
+        null_space_data: null-space dict (Z_free, free_idx, fixed_idx, y_mean, y_std, ...)
 
     Returns:
         models: list of FluxDecoder models
@@ -84,11 +85,11 @@ def create_ensemble(num_models, config, stoichiometric_matrix, token_experiment_
         print(f"Creating ensemble model {i+1}/{num_models}")
         model = FluxDecoder(
             config=config,
-            stoichiometric_matrix=stoichiometric_matrix,
             token_experiment_ids=token_experiment_ids,
             compound_emb_table=compound_emb_table,
             label_emb_table=label_emb_table,
             tracer_emb_table=tracer_emb_table,
+            null_space_data=null_space_data,
         )
         models.append(model)
 
