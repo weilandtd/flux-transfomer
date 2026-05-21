@@ -103,7 +103,11 @@ training:
     - EX_ac_e
     - EX_glyc_e
     - EX_succ_e
-    - BIOMASS
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+    - CARB_c
 
   # Denoising autoencoder: proportional Gaussian noise added to measured fluxes
   # during training only (0 = off). Forces model to cross-reference MID data

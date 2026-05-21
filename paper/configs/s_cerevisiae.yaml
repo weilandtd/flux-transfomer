@@ -92,7 +92,11 @@ training:
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
-    - BIOMASS
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+    - CARB_c
 
   flux_noise_std: 0.01
   y_l2_reg: 0.05
