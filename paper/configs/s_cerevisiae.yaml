@@ -1,6 +1,6 @@
 # SigmaFlux training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
-model_file: models/S_cerevisiae/sc_annotated.json
+model_file: models/S_cerevisiae/sc_annotated_hierarchical.json
 seed: 42
 device: auto  # auto | cpu | cuda
 
@@ -55,14 +55,16 @@ labeling:
     - tracer_id: glc__D_e
       labeling: [1, 1, 1, 1, 1, 1]
       enrichment: 0.5
+      name: "U-13C glucose (50%)"
     - tracer_id: glc__D_e
       labeling: [1, 1, 0, 0, 0, 0]
       enrichment: 0.5
+      name: "1,2-13C glucose (50%)"
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
-  epochs: 100
+  epochs: 170
   batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
@@ -70,7 +72,7 @@ training:
   scheduler: true
   loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: 20000
+  max_samples: 18000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -83,10 +85,12 @@ training:
   h_label: 5
   h_tracer: 1
 
-  # Missing-data augmentation: randomly mask individual metabolites per sample
+  # Missing-data augmentation
   met_mask_prob: 0.15
 
-  # Measured fluxes (soft input to fusion layer)
+  # Measured fluxes fed as soft inputs through the fusion layer.
+  # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
+  # via intermediate metabolites, so they're NOT independent null-space DOFs.
   measured_fluxes:
     - EX_glc__D_e
     - EX_etoh_e
@@ -100,3 +104,9 @@ training:
 
   flux_noise_std: 0.01
   y_l2_reg: 0.05
+
+  # Fluxes whose sign must be flipped when reading from the ExtFlux file.
+  # The ExtFlux xlsx stores glucose uptake as a positive number; the COBRA
+  # model convention is negative for uptake.
+  negate_fluxes:
+    - EX_glc__D_e

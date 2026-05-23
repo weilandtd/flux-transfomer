@@ -136,8 +136,8 @@ def main():
     import numpy as np
     from scipy import stats
 
-    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
-    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (n_rxn, n_basis)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (n_basis,)
 
     if Z.ndim == 2 and obs.size == Z.shape[1] and flux_names:
         name_to_idx = {n: i for i, n in enumerate(flux_names)}
@@ -188,13 +188,15 @@ def main():
     if gate_raw is None:
         return
 
-    gate_raw = gate_raw.float().numpy()           # (38,) raw logits
+    gate_raw = gate_raw.float().numpy()           # (n_basis,) raw logits
     gate     = 1.0 / (1.0 + np.exp(-gate_raw))   # sigmoid → (0,1)
 
-    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
-    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (n_rxn, n_basis)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (n_basis,)
 
-    print(f"\n=== Fusion gate  (gate→0: trust transformer/MID  |  gate→1: trust v_known/BIOMASS) ===")
+    measured = ckpt.get('measured_fluxes') or []
+    measured_label = ', '.join(measured) if measured else 'v_known'
+    print(f"\n=== Fusion gate  (gate→0: trust transformer/MID  |  gate→1: trust [{measured_label}]) ===")
     print(f"  mean gate = {gate.mean():.3f}   min = {gate.min():.3f}   max = {gate.max():.3f}")
 
     # Correlation: obs_weight vs gate (hypothesis: high obs → low gate)
@@ -212,7 +214,7 @@ def main():
 
     name_list = flux_names if flux_names else []
 
-    for rank, j in enumerate(order):
+    for j in order:
         g   = gate[j]
         bar = '█' * int(g * 20)
         ow  = f"{obs[j]:.3f}" if obs.size == gate.size else "  ─  "
