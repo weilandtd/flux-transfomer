@@ -10,80 +10,68 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class NullSpaceDecoder(nn.Module):
+
+
+class MeasuredFluxEncoder(nn.Module):
     """
-    Reconstructs the full flux vector from full null-space basis coefficients.
+    Projects measured fluxes into y-space for use by RotationFusion, with exact
+    flux recovery guaranteed after null-space reconstruction.
 
-    The null space of the full stoichiometric matrix S has dimension n_basis
-    (38 for the I. orientalis model). The model predicts y ∈ R^n_basis and
-    this module recovers the complete 386-dim flux vector via:
+    The naive projection b = v_measured @ Z_sub gives c_S = b_S in y-space, but
+    reconstruction V = c @ Z_full.T returns:
 
-        V = y @ Z_full.T
+        V[fixed_idx] = c_S @ Z_sub_S.T = v_measured @ (Z_sub_S @ Z_sub_S.T)
+                     = v_measured @ G
 
-    where Z_full is the orthonormal null-space basis of S (shape: n_fluxes × n_basis).
-    S @ V = 0 is guaranteed by construction. Measured fluxes enter via
-    MeasuredFluxEncoder + RotationFusion in FluxDecoder — not hard-enforced here.
+    where G = Z_sub_S @ Z_sub_S.T is the Gram matrix of the S-columns of Z_sub.
+    G ≠ I in general: diagonal entries < 1 (scale-down) and non-zero off-diagonal
+    entries (cross-contamination between measured reactions), causing systematic
+    under-prediction and sign errors at extreme flux ratios.
 
-    free_idx / fixed_idx are retained as informational metadata (used by
-    analysis scripts) but are not used in forward or encode_targets.
+    Fix: replace Z_sub with its left pseudo-inverse restricted to S-columns,
+
+        Z_pinv[:, S] = G⁻¹ @ Z_sub_S
+
+    so that the RotationFusion LS scale sets c_S = b_S = v_measured @ G⁻¹ @ Z_sub_S,
+    and reconstruction gives:
+
+        V[fixed_idx] = c_S @ Z_sub_S.T = v_measured @ G⁻¹ @ G = v_measured  (exact)
     """
 
-    def __init__(self, Z_free, free_idx, fixed_idx, n_fluxes,
-                 y_mean=None, y_std=None, obs_weights=None):
-        """
-        Args:
-            Z_free:      (n_fluxes, n_basis) orthonormal null-space basis of S
-                         (named Z_free for checkpoint compatibility; now holds Z_full)
-            free_idx:    list[int] — indices of free (non-measured) reactions (metadata)
-            fixed_idx:   list[int] — indices of measured reactions (metadata)
-            n_fluxes:    total number of reactions (e.g. 386)
-            y_mean:      (n_basis,) mean of y_true across training set (for normalization)
-            y_std:       (n_basis,) std  of y_true across training set (for normalization)
-            obs_weights: (n_basis,) observability weight per y-component = max|Pearson r|
-                         against all labeling features.
-        """
+    def __init__(self, Z_full, fixed_idx,  eps=1e-4):
         super().__init__()
-        self.n_fluxes = n_fluxes
-        self.register_buffer('Z_free',    torch.tensor(np.array(Z_free), dtype=torch.float32))
-        self.register_buffer('free_idx',  torch.tensor(list(free_idx),   dtype=torch.long))
-        self.register_buffer('fixed_idx', torch.tensor(list(fixed_idx),  dtype=torch.long))
+        self.fixed_idx = list(fixed_idx)
+        if not isinstance(Z_full, torch.Tensor):
+            Z_full = torch.tensor(Z_full, dtype=torch.float32)
+        self.register_buffer('Z_full', Z_full)
+        Z_np  = Z_full.numpy()
+        Z_sub = Z_np[np.array(list(fixed_idx)), :]
+        # Z_sub     = np.array(Z_sub)
+        col_norms = np.linalg.norm(Z_sub, axis=0)
+        S_mask    = col_norms > eps
+        self.register_buffer('S_idx', torch.tensor(np.where(S_mask)[0], dtype=torch.long))
 
-        n_basis = self.Z_free.shape[1]
-        _mean = np.zeros(n_basis)  if y_mean is None else np.array(y_mean)
-        _std  = np.ones(n_basis)   if y_std  is None else np.array(y_std)
-        _obs  = np.ones(n_basis)   if obs_weights is None else np.array(obs_weights, dtype=np.float32)
-        self.register_buffer('y_mean',      torch.tensor(_mean, dtype=torch.float32))
-        self.register_buffer('y_std',       torch.tensor(_std,  dtype=torch.float32))
-        self.register_buffer('obs_weights', torch.tensor(_obs,  dtype=torch.float32))
+        Z_sub_S = Z_sub[:, S_mask]            # (n_measured, |S|)
+        G       = Z_sub_S @ Z_sub_S.T         # (n_measured, n_measured) — small, PSD
+        G_inv   = np.linalg.inv(G)            # well-conditioned; n_measured is tiny (2–5)
 
-    @property
-    def n_basis(self):
-        return self.Z_free.shape[1]
+        # Z_pinv: (n_measured, n_basis) with S-columns = G⁻¹ @ Z_sub_S, rest = 0
+        Z_pinv             = np.zeros_like(Z_sub)
+        Z_pinv[:, S_mask]  = G_inv @ Z_sub_S
+        self.register_buffer('Z_pinv', torch.tensor(Z_pinv, dtype=torch.float32))
 
-    def forward(self, y_norm):
+    def forward(self, v_measured):
         """
         Args:
-            y_norm: (B, n_basis) normalized basis coefficients (model output, ~N(0,1))
+            v_measured: (B, n_measured) flux values in physical units
         Returns:
-            V: (B, n_fluxes) full reconstructed flux vector satisfying S@V=0
+            b: (B, n_basis)  b_S = v_measured @ G⁻¹ @ Z_sub_S; b_non-S = 0.
+               After RotationFusion LS scale: c_S = b_S → V[fixed_idx] = v_measured.
         """
-        y = y_norm * self.y_std + self.y_mean   # (B, n_basis) — unnormalize
-        return y @ self.Z_free.T                 # (B, n_fluxes)
+        return v_measured @ self.Z_pinv
 
-    def encode_targets(self, v_targets):
-        """
-        Project ground-truth flux vectors to normalized y-space for loss computation.
 
-        Returns y_norm = (y_true - y_mean) / y_std  ≈ N(0,1).
-        The model predicts y_norm; this function gives the matching target.
 
-        Args:
-            v_targets: (B, n_fluxes) ground-truth full flux vector
-        Returns:
-            y_norm: (B, n_basis) normalized y-space targets
-        """
-        y_full = v_targets @ self.Z_free          # (B, n_basis) — project onto null space
-        return (y_full - self.y_mean) / self.y_std
 
 
 @dataclass
@@ -101,7 +89,7 @@ class FluxDecoderConfig:
     n_fluxes:    int   = 0
     n_rev:       int   = 0
     n_measured:  int   = 0  # number of measured-flux bypass tokens
-    n_free:      int   = 0  # null-space basis dimension
+    n_free:      int   = 0  # null-space basis dimension (0 = use legacy FBAProProjection)
 
 
 class CrossAttention(nn.Module):
@@ -141,120 +129,6 @@ class CrossAttention(nn.Module):
         return out
 
 
-class MeasuredFluxEncoder(nn.Module):
-    """
-    Projects measured fluxes into y-space for use by RotationFusion, with exact
-    flux recovery guaranteed after null-space reconstruction.
-
-    The naive projection b = v_measured @ Z_sub gives c_S = b_S in y-space, but
-    reconstruction V = c @ Z_full.T returns:
-
-        V[fixed_idx] = c_S @ Z_sub_S.T = v_measured @ (Z_sub_S @ Z_sub_S.T)
-                     = v_measured @ G
-
-    where G = Z_sub_S @ Z_sub_S.T is the Gram matrix of the S-columns of Z_sub.
-    G ≠ I in general: diagonal entries < 1 (scale-down) and non-zero off-diagonal
-    entries (cross-contamination between measured reactions), causing systematic
-    under-prediction and sign errors at extreme flux ratios.
-
-    Fix: replace Z_sub with its left pseudo-inverse restricted to S-columns,
-
-        Z_pinv[:, S] = G⁻¹ @ Z_sub_S
-
-    so that the RotationFusion LS scale sets c_S = b_S = v_measured @ G⁻¹ @ Z_sub_S,
-    and reconstruction gives:
-
-        V[fixed_idx] = c_S @ Z_sub_S.T = v_measured @ G⁻¹ @ G = v_measured  (exact)
-    """
-
-    def __init__(self, Z_sub, eps=1e-4):
-        super().__init__()
-        Z_sub     = np.array(Z_sub)
-        col_norms = np.linalg.norm(Z_sub, axis=0)
-        S_mask    = col_norms > eps
-        self.register_buffer('S_idx', torch.tensor(np.where(S_mask)[0], dtype=torch.long))
-
-        Z_sub_S = Z_sub[:, S_mask]            # (n_measured, |S|)
-        G       = Z_sub_S @ Z_sub_S.T         # (n_measured, n_measured) — small, PSD
-        G_inv   = np.linalg.inv(G)            # well-conditioned; n_measured is tiny (2–5)
-
-        # Z_pinv: (n_measured, n_basis) with S-columns = G⁻¹ @ Z_sub_S, rest = 0
-        Z_pinv             = np.zeros_like(Z_sub)
-        Z_pinv[:, S_mask]  = G_inv @ Z_sub_S
-        self.register_buffer('Z_pinv', torch.tensor(Z_pinv, dtype=torch.float32))
-
-    def forward(self, v_measured):
-        """
-        Args:
-            v_measured: (B, n_measured) flux values in physical units
-        Returns:
-            b: (B, n_basis)  b_S = v_measured @ G⁻¹ @ Z_sub_S; b_non-S = 0.
-               After RotationFusion LS scale: c_S = b_S → V[fixed_idx] = v_measured.
-        """
-        return v_measured @ self.Z_pinv
-
-
-class RotationFusion(nn.Module):
-    """
-    Fuses a (labeling-informed, physical y-units) and b (measurement-informed, physical
-    y-units) by rotating a toward b on the S-subspace, then applying a least-squares scale.
-
-    Both inputs are in the same physical y-space — no normalization required.
-    b is produced by MeasuredFluxEncoder using the left pseudo-inverse of Z_sub_S,
-    so the LS scale step (step 4) hard-enforces V[fixed_idx] = v_measured exactly.
-
-    Steps:
-      1. Extract a_S, b_S at S_idx — y-components constrained by measurements
-      2. Embed unit vectors û (from â_S), v̂ (from b̂_S) into ℝ^n_basis
-      3. Batched Rodrigues rotation of a from û toward v̂:
-           Ra = a + (cθ-1)*((û·a)û + (ŵ·a)ŵ) + sθ*((û·a)ŵ - (ŵ·a)û)
-         where ŵ = (v̂ - cθ û)/sθ  (Gram-Schmidt unit vector)
-      4. Scale λ = (b_S · (Ra)_S) / ‖(Ra)_S‖²  → c_S = b_S exactly
-      5. Return c = λ * Ra  (physical y-units; V = c @ Z_full.T gives V[fixed_idx] = v_measured)
-    """
-
-    def __init__(self, S_idx):
-        super().__init__()
-        self.register_buffer('S_idx', torch.tensor(np.array(S_idx), dtype=torch.long))
-
-    def forward(self, a, b):
-        S = self.S_idx
-        a_S = a[:, S]
-        b_S = b[:, S]
-
-        norm_a = a_S.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-        norm_b = b_S.norm(dim=-1, keepdim=True).clamp(min=1e-8)
-
-        n_basis = a.shape[-1]
-        u = a.new_zeros(a.shape[0], n_basis)
-        v = a.new_zeros(a.shape[0], n_basis)
-        u[:, S] = a_S / norm_a   # "from": labeling direction
-        v[:, S] = b_S / norm_b   # "to":   measurement direction
-
-        ct = (u * v).sum(-1, keepdim=True).clamp(-1.0, 1.0)
-        st = (1.0 - ct**2).clamp(min=0.0).sqrt()
-
-        # near-parallel guard — skip rotation, keep a
-        parallel = (st < 1e-6).squeeze(-1)   # (B,) bool
-
-        st_safe = st.clamp(min=1e-8)
-        w = (v - ct * u) / st_safe           # (B, n_basis)
-
-        ua = (u * a).sum(-1, keepdim=True)
-        wa = (w * a).sum(-1, keepdim=True)
-
-        Ra = a + ua * ((ct - 1.0) * u + st * w) + wa * ((ct - 1.0) * w - st * u)
-
-        Ra[parallel] = a[parallel]
-
-        # LS scale: λ·Ra_S = b_S (exactly enforces measurement on S-subspace)
-        Ra_S    = Ra[:, S]
-        lam_num = (b_S * Ra_S).sum(-1, keepdim=True)
-        lam_den = (Ra_S * Ra_S).sum(-1, keepdim=True).clamp(min=1e-8)
-
-        return (lam_num / lam_den) * Ra
-
-
 class FluxDecoder(nn.Module):
     """
     Perceiver-IO–style cross-attention decoder for metabolic flux prediction.
@@ -268,8 +142,13 @@ class FluxDecoder(nn.Module):
       5. Linear(d_model → 1) + squeeze → per-query scalars (B, R)
       6. Split into flux basis / reversibilities; reconstruct full flux vector
 
-    R = n_free + n_rev  (n_free basis queries, n_rev reversibility queries);
-    full flux vector reconstructed via NullSpaceDecoder: V = y @ Z_full.T.
+    If n_free > 0 (null-space mode):
+      - R = n_free + n_rev  (n_free basis queries, n_rev reversibility queries)
+      - flux output is (B, n_free) basis coefficients y
+      - full flux vector reconstructed via NullSpaceDecoder: v = Z@y + correction
+    Else (legacy mode):
+      - R = n_fluxes + n_rev
+      - flux output is (B, n_fluxes), projected via FBAProProjection
     """
 
     def __init__(
@@ -279,7 +158,7 @@ class FluxDecoder(nn.Module):
         compound_emb_table=None,
         label_emb_table=None,
         tracer_emb_table=None,
-        null_space_data=None,   # dict with Z_free, free_idx, fixed_idx, y_mean, y_std, obs_weights
+        null_space_data=None,   # dict with Z_free, correction_T, free_idx, fixed_idx
     ):
         super().__init__()
         cfg = config
@@ -328,24 +207,25 @@ class FluxDecoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=cfg.n_layers)
 
-        self.null_decoder = NullSpaceDecoder(
-            Z_free      = null_space_data['Z_free'],
-            free_idx    = null_space_data['free_idx'],
-            fixed_idx   = null_space_data['fixed_idx'],
-            n_fluxes    = cfg.n_fluxes,
-            y_mean      = null_space_data.get('y_mean'),
-            y_std       = null_space_data.get('y_std'),
-            obs_weights = null_space_data.get('obs_weights'),
+        n_flux_queries = cfg.n_free   # 38 basis queries
+        # Additive correction: transformer owns y_raw; measured fluxes add a residual
+        # correction learned from v_known only. Residual design keeps the transformer
+        # signal intact — fusion_layer cannot learn to bypass y_raw.
+  
+        # project measured fluxes into latent x space 
+
+        self.known_flux_encoder = MeasuredFluxEncoder(
+            Z_full=null_space_data['Z_free'],
+            fixed_idx=null_space_data['fixed_idx'],
         )
-        n_flux_queries = cfg.n_free
-        if cfg.n_measured > 0:
-            nsd    = self.null_decoder
-            Z_sub  = nsd.Z_free.numpy()[np.array(list(null_space_data['fixed_idx'])), :]
-            self.flux_encoder    = MeasuredFluxEncoder(Z_sub=Z_sub)
-            self.rotation_fusion = RotationFusion(S_idx=self.flux_encoder.S_idx.numpy())
-        else:
-            self.flux_encoder    = None
-            self.rotation_fusion = None
+
+
+        # Scaling alignment: Scale with respect to the v_known, we learn alignment
+        # in the latent space "x", so that x = Sigma @ alignment_matrix  @ x_l 
+        # where, Sigma = diag(sigma), for sigma_i = x_m_i / x_l_i
+        # and alignment_matrix is a learnable parameter.
+    
+        self.alignment_matrix = nn.Parameter(torch.randn(cfg.n_free, cfg.n_free))
 
         # Flux query matrix — one row per output query
         n_outputs = n_flux_queries + cfg.n_rev
@@ -396,21 +276,18 @@ class FluxDecoder(nn.Module):
         logits = self.output_proj(out).squeeze(-1)   # (B, n_queries)
 
         n_free = self.cfg.n_free
-        y_raw           = logits[:, :n_free]
+        x_l    = logits[:, :n_free] 
         reversibilities = F.softplus(logits[:, n_free:])
 
-        if self.rotation_fusion is not None and fixed_fluxes is not None:
-            nsd    = self.null_decoder
-            y_a    = y_raw * nsd.y_std + nsd.y_mean          # unnormalize to physical y-space
-            b      = self.flux_encoder(fixed_fluxes)          # physical y-space
-            c_phys = self.rotation_fusion(y_a, b)             # physical y-space
-            fluxes = c_phys @ nsd.Z_free.T                    # direct reconstruction
-        else:
-            fluxes = self.null_decoder(y_raw)
+        x_m = self.known_flux_encoder(fixed_fluxes) if fixed_fluxes is not None else torch.zeros_like(x_l)
+        sigma = x_m / (x_l + 1e-6)  # avoid division by zero
+        Sigma = torch.diag_embed(sigma)
+        x = (Sigma @ self.alignment_matrix @ x_l.unsqueeze(-1)).squeeze(-1)
+        fluxes = x @ self.known_flux_encoder.Z_full.T
+
 
         fluxes          = torch.nan_to_num(fluxes, nan=0.0)
         reversibilities = torch.nan_to_num(reversibilities, nan=0.0)
-
         if return_attn:
             return fluxes, reversibilities, attn_weights
         return fluxes, reversibilities

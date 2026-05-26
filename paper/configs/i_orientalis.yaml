@@ -69,15 +69,15 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  epochs: 150
+  epochs: 100
   batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
-  loss: variance      # variance | mse
+  loss: mse      # variance | mse
   val_fraction: 0.2
-  max_samples: 25000
+  max_samples: 5000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -115,8 +115,3 @@ training:
   # preventing overfitting in directions with no MID signal (e.g. sulfur pathway).
   y_l2_reg: 0.05
 
-  # Fluxes whose sign must be flipped when reading from the ExtFlux file.
-  # The ExtFlux xlsx stores glucose uptake as a positive number; the COBRA
-  # model convention is negative for uptake.
-  negate_fluxes:
-    - EX_glc__D_e
