@@ -21,28 +21,28 @@ sampling:
   media:
     # Carbon source — mandatory uptake
     EX_glc__D_e: {lb: -20.0, ub: -1.0}
-    # Electron acceptor — mandatory uptake
-    EX_o2_e:     {lb: -100.0, ub: 0.0}
+    # Electron acceptor — Crabtree effect caps yeast O2 at ~10-15 mmol/gDW/h
+    EX_o2_e:     {lb: -20.0, ub: 0.0}
     # Carbon secretion products
-    EX_co2_e:    {lb: 0.0,  ub: 100.0}
-    EX_etoh_e:   {lb: 0.0,  ub: 100.0}
-    EX_ac_e:     {lb: 0.0,  ub: 100.0}
-    EX_glyc_e:   {lb: 0.0,  ub: 100.0}
-    # Essential macronutrients — unrestricted uptake
-    EX_nh4_e:    {lb: -100.0, ub: 0.0}
-    EX_pi_e:     {lb: -1000.0, ub: 0.0}
-    EX_so4_e:    {lb: -1000.0, ub: 0.0}
+    EX_co2_e:    {lb: 0.0,  ub: 60.0}
+    EX_etoh_e:   {lb: 0.0,  ub: 50.0}
+    EX_ac_e:     {lb: 0.0,  ub: 10.0}
+    EX_glyc_e:   {lb: 0.0,  ub: 10.0}
+    # Essential macronutrients — tightened to ~5-10x observed range
+    EX_nh4_e:    {lb: -20.0, ub: 0.0}
+    EX_pi_e:     {lb: -5.0, ub: 0.0}
+    EX_so4_e:    {lb: -1.0, ub: 0.0}
     # Water and proton — freely exchangeable
-    EX_h2o_e:    {lb: -100.0, ub: 100.0}
-    EX_h_e:      {lb: -100.0, ub: 100.0}
-    # Trace minerals — unrestricted uptake
-    EX_ca2_e:    {lb: -100.0, ub: 0.0}
-    EX_cu2_e:    {lb: -100.0, ub: 0.0}
-    EX_fe2_e:    {lb: -100.0, ub: 0.0}
-    EX_k_e:      {lb: -100.0, ub: 0.0}
-    EX_mg2_e:    {lb: -100.0, ub: 0.0}
-    EX_mn2_e:    {lb: -100.0, ub: 0.0}
-    EX_zn2_e:    {lb: -100.0, ub: 0.0}
+    EX_h2o_e:    {lb: -50.0, ub: 50.0}
+    EX_h_e:      {lb: -20.0, ub: 20.0}
+    # Trace minerals — tightened to ~5-10x observed range
+    EX_ca2_e:    {lb: -0.01, ub: 0.0}
+    EX_cu2_e:    {lb: -0.01, ub: 0.0}
+    EX_fe2_e:    {lb: -0.01, ub: 0.0}
+    EX_k_e:      {lb: -2.0, ub: 0.0}
+    EX_mg2_e:    {lb: -0.5, ub: 0.0}
+    EX_mn2_e:    {lb: -0.01, ub: 0.0}
+    EX_zn2_e:    {lb: -0.01, ub: 0.0}
 
   fva:
     enabled: false
@@ -64,7 +64,7 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
-  epochs: 170
+  epochs: 250
   batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
@@ -72,7 +72,7 @@ training:
   scheduler: true
   loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: 18000
+  max_samples: 25000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -105,8 +105,3 @@ training:
   flux_noise_std: 0.01
   y_l2_reg: 0.05
 
-  # Fluxes whose sign must be flipped when reading from the ExtFlux file.
-  # The ExtFlux xlsx stores glucose uptake as a positive number; the COBRA
-  # model convention is negative for uptake.
-  negate_fluxes:
-    - EX_glc__D_e
