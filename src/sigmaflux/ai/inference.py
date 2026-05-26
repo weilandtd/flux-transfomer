@@ -263,13 +263,18 @@ class SigmaFlux:
         met_index = labeling_df.index.get_level_values('Metabolite').tolist()
         mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
 
-        # ── Pre-build fixed_fluxes tensor (raw values, matching train.py) ─────
+        # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
+        # Normalize to match training if checkpoint used normalize_targets.
         # Shape: (n_samples, n_measured) — sliced per batch in the loop below.
-        # Mirrors train.py: fixed_fluxes = targets[:, fixed_idx] (raw flux values).
         _fixed_flux_raw = None
         if self._model.cfg.n_measured > 0:
             fixed_idx = list(self._nsd.get('fixed_idx', []))
             fvals = flux_df.values[fixed_idx, :].T.copy()   # (n_samples, n_measured)
+            _ns_ff = self.ckpt.get('norm_stats', {})
+            if 'flux_mean' in _ns_ff:
+                _fmean = np.array(_ns_ff['flux_mean'], dtype=np.float32)[fixed_idx]
+                _fstd  = np.array(_ns_ff['flux_std'],  dtype=np.float32)[fixed_idx]
+                fvals  = (fvals - _fmean) / _fstd
             _fixed_flux_raw = torch.tensor(fvals, dtype=torch.float32)
 
         # ── Inference ─────────────────────────────────────────────────────────
@@ -303,6 +308,14 @@ class SigmaFlux:
 
         flux_arr = torch.cat(all_flux).numpy()
         rev_arr  = torch.cat(all_rev).numpy()
+
+        _ns = self.ckpt.get('norm_stats', {})
+        if 'flux_mean' in _ns:
+            flux_arr = (flux_arr * np.array(_ns['flux_std'], dtype=np.float32)
+                        + np.array(_ns['flux_mean'], dtype=np.float32))
+        if 'rev_mean' in _ns:
+            rev_arr  = (rev_arr  * np.array(_ns['rev_std'],  dtype=np.float32)
+                        + np.array(_ns['rev_mean'],  dtype=np.float32))
 
         return self._format_output(flux_arr, rev_arr, samples)
 

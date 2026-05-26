@@ -6,7 +6,7 @@ AI module for metabolic flux prediction from labeling data.
 from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
 
 # Training
-from .train import train_model, var_norm_mse_loss
+from .train import train_model, evaluate_validation_correlations, var_norm_mse_loss
 
 # Prediction
 from .predict import (
@@ -48,6 +48,7 @@ __all__ = [
     'FluxDecoder',
     # Training
     'train_model',
+    'evaluate_validation_correlations',
     'var_norm_mse_loss',
     # Prediction
     'predict_fluxes',

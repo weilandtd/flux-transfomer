@@ -70,7 +70,6 @@ training:
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
-  loss: variance      # variance | mse
   val_fraction: 0.2
   max_samples: 25000
 
@@ -103,5 +102,6 @@ training:
     - CARB_c
 
   flux_noise_std: 0.01
-  y_l2_reg: 0.05
+  normalize: true   # standardize each flux to zero mean / unit std before training
+  loss: variance            # variance | mse
 

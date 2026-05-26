@@ -1,7 +1,5 @@
 """
 Training utilities for flux prediction models.
-
-Provides training loops, loss functions, and optimization utilities.
 """
 
 import copy
@@ -14,93 +12,213 @@ from sigmaflux.ai.data import generate_metabolite_mask
 
 
 def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10):
-    """
-    Variance-normalized MSE loss.
-
-    Computes MSE per feature and normalizes by precomputed feature variance.
-    This is essentially 1 - R² without mean-centering.
-
-    Important: variance must be precomputed from the full training dataset,
-    not computed per batch, to ensure consistent normalization.
-
-    Args:
-        predictions: (batch_size, num_features) predicted values
-        targets: (batch_size, num_features) target values
-        precomputed_variance: (num_features,) precomputed variance for each feature
-        epsilon: Small constant to avoid division by zero
-
-    Returns:
-        loss: Scalar loss averaged across all features
-
-    Example:
-        >>> # Precompute variance from training data
-        >>> train_variance = torch.var(train_targets, dim=0)
-        >>> # Create loss function with variance bound
-        >>> from functools import partial
-        >>> loss_fn = partial(var_norm_mse_loss, precomputed_variance=train_variance)
-        >>> # Use in training
-        >>> train_model(model, train_loader, loss_function=loss_fn)
-    """
+    """MSE per reaction divided by its precomputed training variance (≈1 - R²)."""
     precomputed_variance = precomputed_variance.to(
-        device=predictions.device,
-        dtype=predictions.dtype,
+        device=predictions.device, dtype=predictions.dtype
     )
-
-    # MSE per feature (across batch dimension)
     mse_per_feature = torch.mean((predictions - targets) ** 2, dim=0)
+    return torch.mean(mse_per_feature / (precomputed_variance + epsilon))
 
-    # Normalize MSE by precomputed variance
-    normalized_loss_per_feature = mse_per_feature / (precomputed_variance + epsilon)
 
-    # Average across all features
-    loss = torch.mean(normalized_loss_per_feature)
+def r2_score(predictions, targets):
+    predictions = predictions.detach().cpu()
+    targets     = targets.detach().cpu()
+    variable    = targets.std(dim=0) > 1e-8
+    if not variable.any():
+        return torch.zeros(0), 0
 
-    return loss
+    predictions = predictions[:, variable]
+    targets     = targets[:, variable]
+    ss_res = ((predictions - targets) ** 2).sum(dim=0)
+    ss_tot = ((targets - targets.mean(dim=0, keepdim=True)) ** 2).sum(dim=0)
+    r2     = 1.0 - ss_res / ss_tot.clamp_min(1e-12)
+    return torch.nan_to_num(r2, nan=0.0), int(variable.sum())
 
+
+def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=None):
+    model.eval()
+    flux_preds, flux_tgts, rev_preds, rev_tgts = [], [], [], []
+
+    with torch.no_grad():
+        for batch_data in val_loader:
+            (cids, lids, tids, fracs), targets = batch_data
+            cids    = cids.to(device)
+            lids    = lids.to(device)
+            tids    = tids.to(device)
+            fracs   = fracs.to(device)
+            targets = targets.to(device)
+
+            fixed_fluxes = None
+            if model.cfg.n_measured > 0:
+                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+            pred_flux, pred_rev = model(cids, lids, tids, fracs, None, fixed_fluxes)
+            flux_preds.append(pred_flux)
+            flux_tgts.append(targets[:, :flux_dim])
+            rev_preds.append(pred_rev)
+            rev_tgts.append(targets[:, flux_dim:])
+
+    all_flux_preds = torch.cat(flux_preds)
+    all_flux_tgts  = torch.cat(flux_tgts)
+    all_rev_preds  = torch.cat(rev_preds)
+    all_rev_tgts   = torch.cat(rev_tgts)
+
+    flux_r2, n_flux = r2_score(all_flux_preds, all_flux_tgts)
+    rev_r2,  n_rev  = r2_score(all_rev_preds,  all_rev_tgts)
+
+    result = {
+        "flux_mean":            float(flux_r2.mean())   if len(flux_r2) else 0.0,
+        "flux_median":          float(flux_r2.median()) if len(flux_r2) else 0.0,
+        "flux_n":               n_flux,
+        "reversibility_mean":   float(rev_r2.mean())    if len(rev_r2) else 0.0,
+        "reversibility_median": float(rev_r2.median())  if len(rev_r2) else 0.0,
+        "reversibility_n":      n_rev,
+    }
+
+    if flux_names is not None and len(flux_r2) > 0:
+        variable_mask = all_flux_tgts.std(dim=0) > 1e-8
+        var_names = [flux_names[i] for i, v in enumerate(variable_mask.tolist()) if v]
+        result["flux_r2_per_reaction"] = flux_r2.tolist()
+        result["flux_reaction_names"]  = var_names
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Training primitives
+# ---------------------------------------------------------------------------
+
+def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
+                 flux_loss_fn=None, rev_loss_fn=None):
+    """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
+    model.train()
+    if flux_loss_fn is None:
+        flux_loss_fn = nn.MSELoss()
+    if rev_loss_fn is None:
+        rev_loss_fn = nn.MSELoss()
+    total_loss      = 0.0
+    total_grad_norm = 0.0
+
+    for (compound_ids, label_ids, tracer_ids, fractions), targets in loader:
+        compound_ids = compound_ids.to(device)
+        label_ids    = label_ids.to(device)
+        tracer_ids   = tracer_ids.to(device)
+        fractions    = fractions.to(device)
+        targets      = targets.to(device)
+
+        padding_mask = None
+        if met_mask_prob > 0:
+            padding_mask = ~generate_metabolite_mask(
+                compound_ids[0],
+                batch_size=compound_ids.shape[0],
+                device=device,
+                mask_prob=met_mask_prob,
+            )
+
+        fixed_fluxes = None
+        if model.cfg.n_measured > 0:
+            fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+            noise_std = getattr(model, 'flux_noise_std', 0.0)
+            if noise_std > 0.0:
+                fixed_fluxes = fixed_fluxes + torch.randn_like(fixed_fluxes) * noise_std
+
+        optimizer.zero_grad()
+        flux_preds, rev_preds = model(
+            compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes
+        )
+
+        loss = (flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
+                + rev_loss_fn(rev_preds, targets[:, model.flux_dim:]))
+        loss.backward()
+
+        if gradient_clip > 0:
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                model.parameters(), max_norm=gradient_clip
+            ).item()
+        else:
+            grad_norm = sum(
+                p.grad.data.norm(2).item() ** 2
+                for p in model.parameters() if p.grad is not None
+            ) ** 0.5
+
+        optimizer.step()
+        total_loss      += loss.item()
+        total_grad_norm += grad_norm
+
+    n = len(loader)
+    return total_loss / n, total_grad_norm / n
+
+
+def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
+    """Run one validation epoch. Returns avg_loss."""
+    model.eval()
+    if flux_loss_fn is None:
+        flux_loss_fn = nn.MSELoss()
+    if rev_loss_fn is None:
+        rev_loss_fn = nn.MSELoss()
+    total_loss = 0.0
+
+    with torch.no_grad():
+        for (cids, lids, tids, fracs), targets in loader:
+            cids    = cids.to(device)
+            lids    = lids.to(device)
+            tids    = tids.to(device)
+            fracs   = fracs.to(device)
+            targets = targets.to(device)
+
+            fixed_fluxes = None
+            if model.cfg.n_measured > 0:
+                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+
+            flux_preds, rev_preds = model(cids, lids, tids, fracs, None, fixed_fluxes)
+            total_loss += (
+                flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
+                + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
+            ).item()
+
+    return total_loss / len(loader)
+
+
+# ---------------------------------------------------------------------------
+# Training orchestrator
+# ---------------------------------------------------------------------------
 
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
-                learning_rate=1e-3, device='cuda', loss_function=None,
+                learning_rate=1e-3, device='cuda',
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
                 warmup_epochs=0, met_mask_prob=0.0,
-                best_model_path=None):
+                loss_function=None):
     """
     Train a FluxDecoder model.
 
     Args:
-        model: FluxDecoder model
-        train_loader: DataLoader for training data (IDTokenizedDataset)
-        val_loader: Optional DataLoader for validation data
-        num_epochs: Number of training epochs
-        learning_rate: Learning rate for optimizer
-        device: Device to run training on ('cuda' or 'cpu')
-        loss_function: Loss function to use (default: nn.MSELoss())
-        gradient_clip: Max norm for gradient clipping (0 to disable)
-        use_scheduler: Whether to use learning rate scheduler
-        verbose: Whether to print training progress
-        warmup_epochs: Number of epochs for linear LR warmup from 1% to 100% of
-                       learning_rate (0 = disabled). After warmup, ReduceLROnPlateau
-                       takes over if use_scheduler.
+        model:          FluxDecoder model
+        train_loader:   DataLoader for training data
+        val_loader:     Optional DataLoader for validation data
+        num_epochs:     Number of training epochs
+        learning_rate:  Initial learning rate (Adam)
+        device:         'cuda' or 'cpu'
+        gradient_clip:  Max gradient norm (0 = disabled)
+        use_scheduler:  ReduceLROnPlateau after warmup
+        verbose:        Print progress
+        warmup_epochs:  Linear LR warmup epochs (0 = disabled)
+        met_mask_prob:  Per-epoch metabolite masking probability
+        loss_function:  callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
 
     Returns:
-        log: Dictionary with 'train_loss', 'val_loss', and 'grad_norm' lists
+        log: dict with 'train_loss', 'val_loss', 'grad_norm' lists
     """
     model.to(device)
 
-    if verbose:
-        param_device = next(model.parameters()).device
-        print(f"Model is on device: {param_device}")
-        if str(device) == 'cuda' and torch.cuda.is_available():
-            print(f"CUDA memory before training: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
-
-    if loss_function is None:
-        loss_function = nn.MSELoss()
-
     if isinstance(loss_function, dict):
-        flux_loss_fn         = loss_function['flux']
-        reversibility_loss_fn = loss_function['reversibility']
+        flux_loss_fn = loss_function.get('flux')
+        rev_loss_fn  = loss_function.get('reversibility')
     else:
-        flux_loss_fn         = loss_function
-        reversibility_loss_fn = loss_function
+        flux_loss_fn = loss_function
+        rev_loss_fn  = loss_function
+
+    if verbose:
+        name = getattr(flux_loss_fn, '__name__', type(flux_loss_fn).__name__) if flux_loss_fn else 'MSELoss'
+        print(f"Loss function: {name}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -115,175 +233,50 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6
         )
 
-    if verbose:
-        if isinstance(loss_function, dict):
-            print(f"Using loss function: {flux_loss_fn.__class__.__name__} (separate for flux/reversibility)")
-        else:
-            print(f"Using loss function: {loss_function.__class__.__name__}")
-        if gradient_clip > 0:
-            print(f"Gradient clipping enabled: max_norm={gradient_clip}")
-        if warmup_epochs > 0:
-            print(f"LR warmup enabled: {warmup_epochs} epochs (1% → 100% of lr={learning_rate})")
-        if use_scheduler:
-            print("ReduceLROnPlateau scheduler enabled (after warmup)")
-        if met_mask_prob > 0:
-            print(f"Metabolite masking enabled: met_mask_prob={met_mask_prob}")
-
-    log = {
-        'train_loss': [],
-        'val_loss': [] if val_loader is not None else None,
-        'grad_norm': [],
-    }
-
-    train_losses = []
-    val_losses   = [] if val_loader is not None else None
-    grad_norms   = []
-
+    train_losses, val_losses, grad_norms = [], [], []
     best_val_loss   = float('inf')
     best_state_dict = copy.deepcopy(model.state_dict())
 
     iterator = tqdm(range(num_epochs), desc="Training") if verbose else range(num_epochs)
 
     for epoch in iterator:
-        model.train()
-        epoch_loss     = 0.0
-        epoch_grad_norm = 0.0
-
-        for batch_idx, batch_data in enumerate(train_loader):
-            (compound_ids, label_ids, tracer_ids, fractions), targets = batch_data
-            compound_ids = compound_ids.to(device)
-            label_ids    = label_ids.to(device)
-            tracer_ids   = tracer_ids.to(device)
-            fractions    = fractions.to(device)
-            targets      = targets.to(device)
-
-            if epoch == 0 and batch_idx == 0 and verbose:
-                print(f"First batch — compound_ids device: {compound_ids.device}")
-                if str(device) == 'cuda':
-                    print(f"CUDA memory after moving batch to GPU: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
-
-            padding_mask = None
-            if met_mask_prob > 0:
-                met_valid    = generate_metabolite_mask(
-                    compound_ids[0],               # compound_ids shared across batch
-                    batch_size=compound_ids.shape[0],
-                    device=device,
-                    mask_prob=met_mask_prob,
-                )
-                met_padding  = ~met_valid
-                padding_mask = met_padding if padding_mask is None else (padding_mask | met_padding)
-
-            optimizer.zero_grad()
-            fixed_fluxes = None
-            if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
-
-            # Denoising autoencoder: corrupt measured fluxes before they enter
-            # fusion_layer during training. Loss is always against clean targets.
-            fixed_fluxes_input = fixed_fluxes
-            if (model.training and fixed_fluxes is not None
-                    and getattr(model, 'flux_noise_std', 0.0) > 0.0):
-                noise = torch.randn_like(fixed_fluxes) * model.flux_noise_std * fixed_fluxes.abs()
-                fixed_fluxes_input = fixed_fluxes + noise
-
-            flux_predictions, reversibility_predictions = model(
-                compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes_input
-            )
-
-            flux_targets          = targets[:, :model.flux_dim]
-            reversibility_targets = targets[:, model.flux_dim:]
-
-            flux_loss = flux_loss_fn(flux_predictions, flux_targets)
-            reversibility_loss = reversibility_loss_fn(reversibility_predictions, reversibility_targets)
-
-            loss = flux_loss + reversibility_loss
-            loss.backward()
-
-            if gradient_clip > 0:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=gradient_clip).item()
-            else:
-                grad_norm = sum(
-                    p.grad.data.norm(2).item() ** 2
-                    for p in model.parameters() if p.grad is not None
-                ) ** 0.5
-            epoch_grad_norm += grad_norm
-
-            optimizer.step()
-            epoch_loss += loss.item()
-
-        avg_epoch_loss     = epoch_loss / len(train_loader)
-        avg_epoch_grad_norm = epoch_grad_norm / len(train_loader)
-        train_losses.append(avg_epoch_loss)
-        grad_norms.append(avg_epoch_grad_norm)
+        train_loss, grad_norm = _train_epoch(
+            model, train_loader, optimizer, device, met_mask_prob, gradient_clip,
+            flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
+        )
+        train_losses.append(train_loss)
+        grad_norms.append(grad_norm)
 
         if val_loader is not None:
-            model.eval()
-            val_epoch_loss = 0.0
+            val_loss = _val_epoch(model, val_loader, device,
+                                  flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn)
+            val_losses.append(val_loss)
 
-            with torch.no_grad():
-                for val_batch in val_loader:
-                    (val_cids, val_lids, val_tids, val_fracs), val_targets = val_batch
-                    val_cids    = val_cids.to(device)
-                    val_lids    = val_lids.to(device)
-                    val_tids    = val_tids.to(device)
-                    val_fracs   = val_fracs.to(device)
-                    val_targets = val_targets.to(device)
-
-                    val_fixed_fluxes = None
-                    if model.cfg.n_measured > 0:
-                        val_fixed_fluxes = val_targets[:, model.known_flux_encoder.fixed_idx]
-                    val_flux_predictions, val_reversibility_predictions = model(
-                        val_cids, val_lids, val_tids, val_fracs, None, val_fixed_fluxes
-                    )
-                    val_flux_targets          = val_targets[:, :model.flux_dim]
-                    val_reversibility_targets = val_targets[:, model.flux_dim:]
-
-                    val_flux_loss = flux_loss_fn(val_flux_predictions, val_flux_targets)
-                    val_reversibility_loss = reversibility_loss_fn(
-                        val_reversibility_predictions, val_reversibility_targets
-                    )
-                    val_epoch_loss += (val_flux_loss + val_reversibility_loss).item()
-
-            avg_val_loss = val_epoch_loss / len(val_loader)
-            val_losses.append(avg_val_loss)
-
-            if avg_val_loss < best_val_loss:
-                best_val_loss   = avg_val_loss
+            if val_loss < best_val_loss:
+                best_val_loss   = val_loss
                 best_state_dict = copy.deepcopy(model.state_dict())
-                if best_model_path is not None:
-                    torch.save({'model_state_dict': best_state_dict,
-                                'epoch': epoch + 1,
-                                'val_loss': best_val_loss},
-                               best_model_path)
 
-            if warmup_scheduler is not None and epoch < warmup_epochs:
-                warmup_scheduler.step()
-            elif plateau_scheduler is not None:
-                plateau_scheduler.step(avg_val_loss)
-
-            if verbose:
-                iterator.set_postfix({'train_loss': f'{avg_epoch_loss:.4f}', 'val_loss': f'{avg_val_loss:.4f}', 'grad_norm': f'{avg_epoch_grad_norm:.4f}'})
-                tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Train: {avg_epoch_loss:.4f}, Val: {avg_val_loss:.4f}, GradNorm: {avg_epoch_grad_norm:.4f}")
+            scheduler_loss = val_loss
         else:
-            if warmup_scheduler is not None and epoch < warmup_epochs:
-                warmup_scheduler.step()
-            elif plateau_scheduler is not None:
-                plateau_scheduler.step(avg_epoch_loss)
+            scheduler_loss = train_loss
 
-            if verbose:
-                iterator.set_postfix({'train_loss': f'{avg_epoch_loss:.4f}', 'grad_norm': f'{avg_epoch_grad_norm:.4f}'})
-                if (epoch + 1) % 10 == 0:
-                    tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Train: {avg_epoch_loss:.4f}, GradNorm: {avg_epoch_grad_norm:.4f}")
+        if warmup_scheduler is not None and epoch < warmup_epochs:
+            warmup_scheduler.step()
+        elif plateau_scheduler is not None:
+            plateau_scheduler.step(scheduler_loss)
 
-    log['train_loss'] = train_losses
-    if val_loader is not None:
-        log['val_loss'] = val_losses
-    log['grad_norm'] = grad_norms
+        if verbose:
+            postfix = {'train': f'{train_loss:.4f}', 'grad': f'{grad_norm:.4f}'}
+            if val_loader is not None:
+                postfix['val'] = f'{val_loss:.4f}'
+            iterator.set_postfix(postfix)
 
-    # Restore best weights before returning so the caller saves the best model.
     if val_loader is not None:
         model.load_state_dict(best_state_dict)
         if verbose:
             tqdm.write(f"Restored best model (val_loss={best_val_loss:.6g})")
 
+    log = {'train_loss': train_losses, 'grad_norm': grad_norms}
+    if val_loader is not None:
+        log['val_loss'] = val_losses
     return log

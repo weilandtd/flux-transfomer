@@ -53,7 +53,10 @@ class MeasuredFluxEncoder(nn.Module):
 
         Z_sub_S = Z_sub[:, S_mask]            # (n_measured, |S|)
         G       = Z_sub_S @ Z_sub_S.T         # (n_measured, n_measured) — small, PSD
-        G_inv   = np.linalg.inv(G)            # well-conditioned; n_measured is tiny (2–5)
+        # Use pseudo-inverse: some measured reactions (e.g. biomass assembly) have near-zero
+        # null-space participation, making G rank-deficient. pinv zeroes those directions
+        # rather than inverting them, so x_m stays bounded for such reactions.
+        G_inv   = np.linalg.pinv(G, rcond=eps)
 
         # Z_pinv: (n_measured, n_basis) with S-columns = G⁻¹ @ Z_sub_S, rest = 0
         Z_pinv             = np.zeros_like(Z_sub)
@@ -207,28 +210,17 @@ class FluxDecoder(nn.Module):
         )
         self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=cfg.n_layers)
 
-        n_flux_queries = cfg.n_free   # 38 basis queries
-        # Additive correction: transformer owns y_raw; measured fluxes add a residual
-        # correction learned from v_known only. Residual design keeps the transformer
-        # signal intact — fusion_layer cannot learn to bypass y_raw.
-  
         # project measured fluxes into latent x space 
-
         self.known_flux_encoder = MeasuredFluxEncoder(
             Z_full=null_space_data['Z_free'],
             fixed_idx=null_space_data['fixed_idx'],
         )
 
-
-        # Scaling alignment: Scale with respect to the v_known, we learn alignment
-        # in the latent space "x", so that x = Sigma @ alignment_matrix  @ x_l 
-        # where, Sigma = diag(sigma), for sigma_i = x_m_i / x_l_i
-        # and alignment_matrix is a learnable parameter.
-    
-        self.alignment_matrix = nn.Parameter(torch.randn(cfg.n_free, cfg.n_free))
+        # Fusion gate for the known and learned flux components 
+        self.alpha = nn.Parameter( torch.ones(cfg.n_free) )
 
         # Flux query matrix — one row per output query
-        n_outputs = n_flux_queries + cfg.n_rev
+        n_outputs = cfg.n_free + cfg.n_rev
         self.flux_queries = nn.Parameter(torch.empty(n_outputs, cfg.d_model))
         nn.init.xavier_uniform_(self.flux_queries)
 
@@ -277,15 +269,16 @@ class FluxDecoder(nn.Module):
 
         n_free = self.cfg.n_free
         x_l    = logits[:, :n_free] 
+
+        # Revs are always non-negative, so apply softplus activation to the corresponding output logits
         reversibilities = F.softplus(logits[:, n_free:])
 
+        # Encode known fluxes into the same latent space as x_l
         x_m = self.known_flux_encoder(fixed_fluxes) if fixed_fluxes is not None else torch.zeros_like(x_l)
-        sigma = x_m / (x_l + 1e-6)  # avoid division by zero
-        Sigma = torch.diag_embed(sigma)
-        x = (Sigma @ self.alignment_matrix @ x_l.unsqueeze(-1)).squeeze(-1)
+
+        # Project from latent x space back to flux space using the full null-space basis Z_full
         fluxes = x @ self.known_flux_encoder.Z_full.T
-
-
+        
         fluxes          = torch.nan_to_num(fluxes, nan=0.0)
         reversibilities = torch.nan_to_num(reversibilities, nan=0.0)
         if return_attn:
