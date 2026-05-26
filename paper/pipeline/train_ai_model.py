@@ -39,13 +39,13 @@ def split_indices(n_samples, val_fraction, seed):
     return indices[:split], indices[split:]
 
 
-def build_loss_function(train_dataset, flux_dim, loss_name, min_variance=1.0):
+def build_loss_function(train_dataset, flux_dim, loss_name):
     if loss_name == "mse":
         return None
 
     targets = train_dataset.targets  # (num_samples, flux_dim + rev_dim)
-    flux_variance          = torch.var(targets[:, :flux_dim], dim=0).clamp_min(min_variance)
-    reversibility_variance = torch.var(targets[:, flux_dim:], dim=0).clamp_min(min_variance)
+    flux_variance          = torch.var(targets[:, :flux_dim], dim=0).clamp_min(1.0)
+    reversibility_variance = torch.var(targets[:, flux_dim:], dim=0).clamp_min(1.0)
 
     return {
         "flux":          partial(var_norm_mse_loss, precomputed_variance=flux_variance),
@@ -83,7 +83,9 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
 
             fixed_fluxes = None
             if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+                fixed_idx = (model.null_decoder.fixed_idx if model.null_decoder is not None
+                             else model.fba_pro.fixed_idx)
+                fixed_fluxes = targets[:, fixed_idx]
             pred_flux, pred_rev = model(cids, lids, tids, fracs, None, fixed_fluxes)
             flux_preds.append(pred_flux)
             flux_tgts.append(targets[:, :flux_dim])
@@ -127,14 +129,12 @@ def main(args):
     if device == "auto":
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    labeling_df, flux_df, reversibility_df = load_data(args.data_dir)
-    if args.max_samples is not None and args.max_samples < labeling_df.shape[1]:
-        rng = np.random.default_rng(args.seed)
-        idx = rng.permutation(labeling_df.shape[1])[:args.max_samples]
-        labeling_df      = labeling_df.iloc[:, idx]
-        flux_df          = flux_df.iloc[:, idx]
-        reversibility_df = reversibility_df.iloc[:, idx]
-        print(f"Randomly subsampled {args.max_samples} samples (seed={args.seed})")
+    labeling_df, flux_df, reversibility_df = load_data(args.data_dir, max_samples=args.max_samples)
+    if args.max_samples is not None:
+        labeling_df      = labeling_df.iloc[:, :args.max_samples]
+        flux_df          = flux_df.iloc[:, :args.max_samples]
+        reversibility_df = reversibility_df.iloc[:, :args.max_samples]
+        print(f"Using first {labeling_df.shape[1]} samples after --max-samples")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
@@ -265,17 +265,19 @@ def main(args):
     config.n_free = n_free_basis
 
     model = FluxDecoder(
-        config               = config,
-        token_experiment_ids = token_experiment_ids,
-        compound_emb_table   = vocabs['compound_emb_table'],
-        label_emb_table      = vocabs['label_emb_table'],
-        tracer_emb_table     = tracer_combo_emb_table,
-        null_space_data      = null_space_data,
+        config                = config,
+        stoichiometric_matrix = stoichiometric_matrix,
+        token_experiment_ids  = token_experiment_ids,
+        compound_emb_table    = vocabs['compound_emb_table'],
+        label_emb_table       = vocabs['label_emb_table'],
+        tracer_emb_table      = tracer_combo_emb_table,
+        fixed_flux_indices    = fixed_flux_indices,
+        null_space_data       = null_space_data,
     )
     # Noise injection magnitude for denoising autoencoder training (plain float, not a parameter)
     model.flux_noise_std = args.flux_noise_std
 
-    loss_function = build_loss_function(train_dataset, flux_dim, args.loss, min_variance= 0.1)
+    loss_function = build_loss_function(train_dataset, flux_dim, args.loss)
 
     log = train_model(
         model,
@@ -288,6 +290,7 @@ def main(args):
         gradient_clip     = args.gradient_clip,
         use_scheduler     = not args.no_scheduler,
         warmup_epochs     = args.warmup_epochs,
+        y_l2_reg          = args.y_l2_reg,
         met_mask_prob     = args.met_mask_prob,
         best_model_path   = args.output + '.best',
     )
@@ -390,5 +393,6 @@ if __name__ == "__main__":
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
         flux_noise_std         = t.get("flux_noise_std", 0.0),
+        y_l2_reg               = t.get("y_l2_reg", 0.0),
     )
     main(args)
