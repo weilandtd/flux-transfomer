@@ -61,8 +61,8 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask
 
 
 def create_ensemble(num_models, config, token_experiment_ids,
-                    compound_emb_table=None, label_emb_table=None, tracer_emb_table=None,
-                    null_space_data=None):
+                    compound_emb_table=None, label_emb_table=None,
+                    tracer_emb_table=None, null_space_data=None):
     """
     Create an ensemble of FluxDecoder models for uncertainty estimation.
 
@@ -73,7 +73,7 @@ def create_ensemble(num_models, config, token_experiment_ids,
         compound_emb_table: frozen compound embedding weights
         label_emb_table: frozen label embedding weights
         tracer_emb_table: frozen tracer embedding weights
-        null_space_data: null-space dict (Z_free, free_idx, fixed_idx, y_mean, y_std, ...)
+        null_space_data: dict with Z_free, fixed_idx, etc.
 
     Returns:
         models: list of FluxDecoder models
