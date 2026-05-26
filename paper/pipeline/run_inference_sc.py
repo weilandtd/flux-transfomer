@@ -123,8 +123,7 @@ if __name__ == '__main__':
 
     with open(_p(CONFIG)) as _f:
         _cfg = yaml.safe_load(_f)
-    _flux_names    = _cfg.get('training', {}).get('measured_fluxes', None)
-    _negate_fluxes = set(_cfg.get('training', {}).get('negate_fluxes', []))
+    _flux_names = _cfg.get('training', {}).get('measured_fluxes', None)
 
     _ckpt_path = _p(CHECKPOINT)
     _data_dir  = os.path.join(os.path.dirname(os.path.dirname(_ckpt_path)), 'data')
@@ -157,11 +156,6 @@ if __name__ == '__main__':
             return_errors    = True,
             growth_condition = gc,
         )
-
-        # Flip sign for fluxes where the xlsx uses opposite convention to the model
-        if _negate_fluxes:
-            mask = df_Vm['Flux Name'].isin(_negate_fluxes)
-            df_Vm.loc[mask, 'Value'] *= -1
 
         # Normalise sample IDs to 1-based within this GC
         for _df in (df_L, df_Vm, df_err):
