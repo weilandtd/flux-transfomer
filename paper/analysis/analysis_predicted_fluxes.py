@@ -61,9 +61,7 @@ def load_reference(ref_path, condition, config_path):
     uptake_rxns = {rxn for rxn, b in media_cfg.items() if b.get('ub', 1.0) <= 0}
 
     ref_idx = ref.set_index('id')
-    import re
-    pat = re.compile(rf'^{re.escape(condition)}(\d+)?_mfa$')
-    ref_cols = [c for c in ref.columns if pat.match(c)]
+    ref_cols = [c for c in ref.columns if c.startswith(condition) and c.endswith('_mfa')]
     ref_vals = ref_idx[ref_cols].copy()
     flip_mask = ref_vals.index.isin(uptake_rxns)
     ref_vals.loc[flip_mask] *= -1
@@ -94,6 +92,8 @@ def nullspace_correction(pred_df, checkpoint_path, extflux_path, config_path, co
 
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
+    negate = set(cfg.get('training', {}).get('negate_fluxes', []))
+
     # Load experimental measured flux values per condition
     df_exp = pd.read_excel(extflux_path)
     df_exp = df_exp[df_exp['Condition'].str.startswith(condition)].copy()
@@ -124,7 +124,10 @@ def nullspace_correction(pred_df, checkpoint_path, extflux_path, config_path, co
         exp_row = exp_row.iloc[0]
 
         # Build experimental target vector for the 6 measured fluxes
-        v_exp = np.array([exp_row[n] for n in measured_fluxes], dtype=np.float64)
+        v_exp = np.array([
+            -exp_row[n] if n in negate else exp_row[n]
+            for n in measured_fluxes
+        ], dtype=np.float64)
 
         for biorep in corrected[corrected['GrowthCondition'] == gc]['BioRep'].unique():
             mask = flux_rows & (corrected['GrowthCondition'] == gc) & (corrected['BioRep'] == biorep)
@@ -226,22 +229,25 @@ def main():
     if args.extflux:
         df_exp_k = pd.read_excel(os.path.join(_REPO_ROOT, args.extflux))
         df_exp_k = df_exp_k[df_exp_k['Condition'].str.startswith(args.condition)].copy()
+        with open(os.path.join(_REPO_ROOT, args.config)) as _f2:
+            _cfg2 = yaml.safe_load(_f2)
+        negate_k = set(_cfg2.get('training', {}).get('negate_fluxes', []))
         for i, nm in enumerate(n_k_all):
             if nm in df_exp_k.columns:
                 val = df_exp_k[nm].mean()
-                # Align sign with model prediction: ExtFlux files differ in convention
-                # (IO stores glucose as negative, SC as positive). Use the model's
-                # COBRA-convention prediction as the sign authority.
-                if p_k_raw[i] != 0 and np.sign(val) != np.sign(p_k_raw[i]):
-                    val = -val
-                r_k_all[i] = val
+                r_k_all[i] = -val if nm in negate_k else val
     valid_k = ~np.isnan(r_k_all)
     n_k_all = n_k_all[valid_k]
     p_k_raw = p_k_raw[valid_k]
     r_k_all = r_k_all[valid_k]
 
-    # ── Scale correction: use all known fluxes for slope ────────────────────────
-    slope_mask = np.ones(len(n_k_all), dtype=bool)
+    # ── Scale correction: use only glucose + biomass components for slope ───────
+    # Exclude other EX_ secretion products (EX_etoh_e, EX_ac_e, etc.) — they are
+    # noisier and less fundamental than glucose uptake + growth components.
+    slope_mask = np.array([
+        n == 'EX_glc__D_e' or not n.startswith('EX_')
+        for n in n_k_all
+    ])
     n_k_slope = n_k_all[slope_mask]
     p_k_slope = p_k_raw[slope_mask]
     r_k_slope = r_k_all[slope_mask]
@@ -256,13 +262,10 @@ def main():
         if abs(sk_pre) > 0.1:
             scale_factor = sk_pre
             print(f"\nScale correction: dividing all predictions by {scale_factor:.4f} "
-                  f"(slope from {len(r_k_slope)} known fluxes, "
+                  f"(slope from {len(r_k_slope)} fluxes: glucose + biomass components, "
                   f"intercept={ik_pre:.4f})")
-            # scale_factor = 1.0
             pred_mean = pred_mean / scale_factor
 
-    print("Scaling factor applied to all predictions:", scale_factor)
-    # scale_factor = 1.0
     p_k_all = p_k_raw / scale_factor
 
     print(f"\n── Known fluxes vs ExtFlux (after scale correction, n={len(n_k_all)}) ──")
