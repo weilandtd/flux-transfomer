@@ -26,6 +26,7 @@ from sigmaflux.ai.data import (
     create_tracer_mapping,
     load_stoichiometric_matrix,
     prepare_id_dataset,
+    radial_embedding_table,
 )
 from sigmaflux.ai.inference import SigmaFlux
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
@@ -108,7 +109,7 @@ def toy_checkpoint(tmp_path_factory):
         labeling_df, flux_df, rev_df,
         vocabs          = vocabs,
         train_indices   = list(range(n_samples)),
-        normalize       = True,
+        normalize       = False,
         measured_fluxes = None,
     )
 
@@ -133,6 +134,12 @@ def toy_checkpoint(tmp_path_factory):
         obs_weights = obs_weights,
     )
 
+    # ── Reaction and type embedding tables ───────────────────────────────────
+    h_reaction = 4                              # d_reaction = 8, fits in d_entity_lab=14
+    h_type     = 2                              # d_type = 4
+    reaction_emb_table = radial_embedding_table(n_fluxes, h_reaction)
+    type_emb_table     = radial_embedding_table(2, h_type)
+
     # ── Build FluxDecoder ─────────────────────────────────────────────────────
     cfg = FluxDecoderConfig(
         d_model     = 16,
@@ -147,8 +154,9 @@ def toy_checkpoint(tmp_path_factory):
         d_tracer    = vocabs['h_tracer']   * 2,
         n_fluxes    = n_fluxes,
         n_rev       = n_fluxes,
-        n_measured  = len(measured_fluxes),
         n_free      = n_free,
+        d_reaction  = h_reaction * 2,
+        d_type      = h_type     * 2,
     )
 
     model = FluxDecoder(
@@ -158,6 +166,8 @@ def toy_checkpoint(tmp_path_factory):
         label_emb_table       = vocabs['label_emb_table'],
         tracer_emb_table      = tracer_combo_emb_table,
         null_space_data       = null_space_data,
+        reaction_emb_table    = reaction_emb_table,
+        type_emb_table        = type_emb_table,
     )
 
     # ── Assemble and save checkpoint ──────────────────────────────────────────
