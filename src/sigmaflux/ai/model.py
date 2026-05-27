@@ -276,6 +276,9 @@ class FluxDecoder(nn.Module):
         # Encode known fluxes into the same latent space as x_l
         x_m = self.known_flux_encoder(fixed_fluxes) if fixed_fluxes is not None else torch.zeros_like(x_l)
 
+        # Fuse learned and measured flux bases with learnable gate
+        x = self.alpha * x_l + (1-self.alpha) * x_m
+
         # Project from latent x space back to flux space using the full null-space basis Z_full
         fluxes = x @ self.known_flux_encoder.Z_full.T
         
