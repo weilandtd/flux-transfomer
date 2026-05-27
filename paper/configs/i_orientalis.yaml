@@ -90,6 +90,7 @@ training:
   h_compound: 16   # compounds  — full metabolic model vocab (~400 metabolites → 32-dim)
   h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
   h_tracer: 1      # tracer identities (1–2 tracers   →  2-dim)
+  h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
 
   # Missing-data augmentation: randomly mask individual metabolites (all isotopomers
   # together) during training. Simulates metabolites not detected in the MS run.

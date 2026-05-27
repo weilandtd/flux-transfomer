@@ -62,6 +62,10 @@ class MeasuredFluxEncoder(nn.Module):
         Z_pinv             = np.zeros_like(Z_sub)
         Z_pinv[:, S_mask]  = G_inv @ Z_sub_S
         self.register_buffer('Z_pinv', torch.tensor(Z_pinv, dtype=torch.float32))
+        self.register_buffer(
+            'fixed_idx_t',
+            torch.tensor(list(fixed_idx), dtype=torch.long),
+        )
 
     def forward(self, v_measured):
         """
@@ -93,6 +97,7 @@ class FluxDecoderConfig:
     n_rev:       int   = 0
     n_measured:  int   = 0  # number of measured-flux bypass tokens
     n_free:      int   = 0  # null-space basis dimension (0 = use legacy FBAProProjection)
+    d_reaction:  int   = 0  # radial embedding dim per reaction; 0 = no flux tokens
 
 
 class CrossAttention(nn.Module):
@@ -161,7 +166,8 @@ class FluxDecoder(nn.Module):
         compound_emb_table=None,
         label_emb_table=None,
         tracer_emb_table=None,
-        null_space_data=None,   # dict with Z_free, correction_T, free_idx, fixed_idx
+        null_space_data=None,       # dict with Z_free, correction_T, free_idx, fixed_idx
+        reaction_emb_table=None,    # (n_fluxes, d_reaction) frozen radial table; None = no flux tokens
     ):
         super().__init__()
         cfg = config
@@ -195,6 +201,14 @@ class FluxDecoder(nn.Module):
         _load_frozen(self.compound_emb, compound_emb_table)
         _load_frozen(self.label_emb,    label_emb_table)
         _load_frozen(self.tracer_emb,   tracer_emb_table)
+
+        # Optional flux-token pathway — frozen reaction identity embeddings + separate projection
+        if cfg.d_reaction > 0:
+            assert reaction_emb_table is not None, \
+                "reaction_emb_table required when d_reaction > 0"
+            self.reaction_emb    = nn.Embedding(cfg.n_fluxes, cfg.d_reaction)
+            _load_frozen(self.reaction_emb, reaction_emb_table)
+            self.flux_token_proj = nn.Linear(cfg.d_reaction + 1, cfg.d_model)
 
         # Token encoder
         self.input_proj = nn.Linear(d_in, cfg.d_model)
@@ -254,10 +268,27 @@ class FluxDecoder(nn.Module):
         ], dim=-1)
 
         x = self.input_norm(self.input_proj(x))
+
+        B = x.shape[0]
+
+        # Inject flux tokens into the input sequence before self-attention
+        if fixed_fluxes is not None and self.cfg.d_reaction > 0:
+            fids   = self.known_flux_encoder.fixed_idx_t.unsqueeze(0).expand(B, -1)
+            r_emb  = self.reaction_emb(fids)                               # (B, n_measured, d_reaction)
+            fval   = fixed_fluxes.unsqueeze(-1)                            # (B, n_measured, 1)
+            x_flux = self.input_norm(
+                self.flux_token_proj(torch.cat([r_emb, fval], dim=-1))    # (B, n_measured, d_model)
+            )
+            x = torch.cat([x, x_flux], dim=1)                             # (B, N+n_measured, d_model)
+            if padding_mask is not None:
+                flux_pad = torch.zeros(
+                    B, fixed_fluxes.shape[1], dtype=torch.bool, device=x.device
+                )
+                padding_mask = torch.cat([padding_mask, flux_pad], dim=1)
+
         x = self.encoder(x, src_key_padding_mask=padding_mask)
         x = torch.nan_to_num(x, nan=0.0)
 
-        B = x.shape[0]
         q   = self.flux_queries.unsqueeze(0).expand(B, -1, -1)
         if return_attn:
             out, attn_weights = self.cross_attn(q, x, key_padding_mask=padding_mask,

@@ -125,7 +125,7 @@ class SigmaFlux:
             token_experiment_ids=token_ids,
             null_space_data=nsd,
         )
-        self._model.load_state_dict(self.ckpt['model_state_dict'])
+        self._model.load_state_dict(self.ckpt['model_state_dict'], strict=False)
         self._model.to(self.device)
         self._model.eval()
 

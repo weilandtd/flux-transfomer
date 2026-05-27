@@ -7,6 +7,7 @@ Example:
 
 import argparse
 import datetime
+import math
 import os
 from dataclasses import asdict
 from functools import partial
@@ -25,6 +26,7 @@ from sigmaflux.ai.data import (
     load_data,
     load_stoichiometric_matrix,
     prepare_id_dataset,
+    radial_embedding_table,
 )
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import evaluate_validation_correlations, train_model, var_norm_mse_loss
@@ -147,6 +149,13 @@ def main(args):
     flux_dim          = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
 
+    # Reaction radial embedding for flux tokens
+    h_reaction = args.h_reaction
+    if h_reaction is None:
+        h_reaction = max(1, math.ceil(math.log2(flux_dim)))
+    reaction_emb_table = radial_embedding_table(flux_dim, h_reaction)
+    print(f"  Reactions: {flux_dim} → H={h_reaction}, emb_dim={2*h_reaction}")
+
     config = FluxDecoderConfig(
         d_model     = args.combined_dim,
         n_heads     = args.num_attn_heads,
@@ -158,6 +167,7 @@ def main(args):
         d_comp      = vocabs['h_compound'] * 2,
         d_label     = vocabs['h_label'] * 2,
         d_tracer    = vocabs['h_tracer'] * 2,
+        d_reaction  = 2 * h_reaction,
         n_fluxes    = flux_dim,
         n_rev       = reversibility_dim,
         n_measured  = len(args.measured_fluxes) if args.measured_fluxes else 0,
@@ -229,6 +239,7 @@ def main(args):
         compound_emb_table   = vocabs['compound_emb_table'],
         label_emb_table      = vocabs['label_emb_table'],
         tracer_emb_table     = tracer_combo_emb_table,
+        reaction_emb_table   = reaction_emb_table,
         null_space_data      = null_space_data,
     )
     model.flux_noise_std = args.flux_noise_std
@@ -281,6 +292,7 @@ def main(args):
             "fixed_idx":        fixed_idx,
             "obs_weights":      obs_weights_np,
         },
+        "h_reaction":           h_reaction,
         "data_dir":             args.data_dir,
         "model_json":           args.model_json,
     }
@@ -341,6 +353,7 @@ if __name__ == "__main__":
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
+        h_reaction             = t.get("h_reaction"),
         flux_noise_std         = t.get("flux_noise_std", 0.0),
         normalize      = t.get("normalize", True),
         loss                   = t.get("loss", "variance"),
