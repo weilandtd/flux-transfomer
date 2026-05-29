@@ -1,6 +1,6 @@
 # SigmaFlux training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
-model_file: models/S_cerevisiae/sc_annotated_hierarchical.json
+model_file: models/S_cerevisiae/sc_annotated.json
 seed: 42
 device: auto  # auto | cpu | cuda
 
@@ -64,14 +64,14 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
-  epochs: 250
+  epochs: 150
   batch_size: 512
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
   val_fraction: 0.2
-  max_samples: 25000
+  max_samples: 5000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -83,9 +83,11 @@ training:
   h_compound: 16
   h_label: 5
   h_tracer: 1
+  h_type: 2        # token-type embedding (0=labeling, 1=flux → 4-dim, frozen)
 
   # Missing-data augmentation
-  met_mask_prob: 0.15
+  met_mask_prob: 0.1
+  flux_mask_prob: 0.1  # Randomly mask measured flux tokens during training
 
   # Measured fluxes fed as soft inputs through the fusion layer.
   # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
@@ -95,13 +97,12 @@ training:
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
-    - PROTEIN_c
-    - RNA_c
-    - DNA_c
-    - LIPID_c
-    - CARB_c
+    - BIOMASS
 
-  flux_noise_std: 0.01
-  normalize: true   # standardize each flux to zero mean / unit std before training
-  loss: variance            # variance | mse
+  flux_noise_std: 0.0
+  loss: variance          # variance | mse
+  flux_loss_space: mixed  # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  mixed_flux_weight: 0.1  # weight for flux-space loss when flux_loss_space=mixed (0.1 = 10% flux, 90% basis)
+  variance_min_cutoff: 0.1  # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+
 

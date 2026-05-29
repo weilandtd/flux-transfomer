@@ -31,7 +31,7 @@ from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 # ============================================================
 
 CONFIG      = "paper/configs/i_orientalis.yaml"
-CHECKPOINT  = "paper/.results/I_orientalis_20260523/imisor_transformer.pt"
+CHECKPOINT  = "./paper/.results/i_orientalis_20260526/imisor_transformer.pt"
 
 MID_FILE    = "data/I_orientalis/I_orientalis_C.xlsx"
 EXT_FILE    = "data/I_orientalis/I_orientalis_ExtFlux.xlsx"
