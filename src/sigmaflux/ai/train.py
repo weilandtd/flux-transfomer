@@ -4,11 +4,77 @@ Training utilities for flux prediction models.
 
 import copy
 
+import numpy as np
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 
 from sigmaflux.ai.data import generate_metabolite_mask
+
+
+class FluxNorm:
+    """
+    Per-reaction standardization of raw flux scalars.
+
+    Computed once from the complete flux data (all reactions × all samples)
+    and applied to measured_fluxes before they enter FluxDecoder as flux tokens.
+
+    Usage:
+        norm = FluxNorm(flux_df.values)           # (n_reactions, n_samples)
+        v_norm = norm(flux_val, flux_idx)          # (B, n_idx) → standardized
+    """
+
+    def __init__(self, flux_data):
+        data = torch.tensor(np.asarray(flux_data), dtype=torch.float32)  # (n_reactions, n_samples)
+        self.mean = data.mean(dim=1)             # (n_reactions,)
+        self.std  = data.std(dim=1).clamp_min(1e-6)
+
+    def __call__(self, flux_val, flux_idx):
+        """
+        Args:
+            flux_val:  (B, n_idx) tensor of raw flux values
+            flux_idx:  (n_idx,) int tensor/list of reaction indices
+        Returns:
+            (B, n_idx) standardized values
+        """
+        device = flux_val.device
+        mean = self.mean[flux_idx].to(device)
+        std  = self.std[flux_idx].to(device)
+        return (flux_val - mean) / std
+
+    def to_buffers(self):
+        """Return (mean, std) tensors for registering as model buffers."""
+        return self.mean.clone(), self.std.clone()
+
+
+class BasisSpaceLoss:
+    """
+    Loss wrapper that operates in null-space basis (y) space.
+
+    Projects both flux predictions and targets through Z_full before computing
+    the loss, compressing the 388-dim flux space down to 38-dim basis space.
+    This avoids the gradient amplification caused by Z_full.T having rows with
+    uneven norms (some reactions load heavily across many basis vectors).
+
+    Drop-in replacement for any flux loss function — same (predictions, targets)
+    call signature, no changes to the training loop required.
+
+    Args:
+        base_loss_fn: any callable (predictions, targets) -> scalar
+        Z_full:       (n_fluxes, n_free) null-space basis matrix
+    """
+
+    def __init__(self, base_loss_fn, Z_full):
+        self.base_loss_fn = base_loss_fn
+        if not isinstance(Z_full, torch.Tensor):
+            Z_full = torch.tensor(Z_full, dtype=torch.float32)
+        self.Z_full = Z_full
+
+    def __call__(self, flux_preds, targets_flux):
+        Z     = self.Z_full.to(device=flux_preds.device, dtype=flux_preds.dtype)
+        y_hat  = flux_preds   @ Z      # (B, n_free)
+        y_true = targets_flux @ Z      # (B, n_free)
+        return self.base_loss_fn(y_hat, y_true)
 
 
 def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10):
@@ -48,10 +114,10 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
             fracs   = fracs.to(device)
             targets = targets.to(device)
 
-            fixed_fluxes = None
-            if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
-            pred_flux, pred_rev = model(cids, lids, tids, fracs, None, fixed_fluxes)
+            measured_fluxes = None
+            if len(model.fixed_idx) > 0:
+                measured_fluxes = targets[:, model.fixed_idx]
+            pred_flux, pred_rev = model(cids, lids, tids, fracs, measured_fluxes=measured_fluxes)
             flux_preds.append(pred_flux)
             flux_tgts.append(targets[:, :flux_dim])
             rev_preds.append(pred_rev)
@@ -72,6 +138,8 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
         "reversibility_mean":   float(rev_r2.mean())    if len(rev_r2) else 0.0,
         "reversibility_median": float(rev_r2.median())  if len(rev_r2) else 0.0,
         "reversibility_n":      n_rev,
+        "val_predictions":      all_flux_preds.cpu().numpy(),
+        "val_actuals":          all_flux_tgts.cpu().numpy(),
     }
 
     if flux_names is not None and len(flux_r2) > 0:
@@ -88,7 +156,7 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
 # ---------------------------------------------------------------------------
 
 def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
-                 flux_loss_fn=None, rev_loss_fn=None):
+                 flux_mask_prob=0.0, flux_loss_fn=None, rev_loss_fn=None):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
     model.train()
     if flux_loss_fn is None:
@@ -105,29 +173,36 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
         fractions    = fractions.to(device)
         targets      = targets.to(device)
 
-        padding_mask = None
+        labeling_mask = None
         if met_mask_prob > 0:
-            padding_mask = ~generate_metabolite_mask(
+            labeling_mask = ~generate_metabolite_mask(
                 compound_ids[0],
                 batch_size=compound_ids.shape[0],
                 device=device,
                 mask_prob=met_mask_prob,
             )
 
-        fixed_fluxes = None
-        if model.cfg.n_measured > 0:
-            fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+        measured_fluxes = None
+        flux_mask = None
+        if len(model.fixed_idx) > 0:
+            measured_fluxes = targets[:, model.fixed_idx]
             noise_std = getattr(model, 'flux_noise_std', 0.0)
             if noise_std > 0.0:
-                fixed_fluxes = fixed_fluxes + torch.randn_like(fixed_fluxes) * noise_std
+                measured_fluxes = measured_fluxes + torch.randn_like(measured_fluxes) * noise_std
+            # Randomly mask flux tokens during training for robustness
+            if flux_mask_prob > 0:
+                B, n_fx = measured_fluxes.shape
+                flux_mask = torch.rand(B, n_fx, device=device) < flux_mask_prob
 
         optimizer.zero_grad()
         flux_preds, rev_preds = model(
-            compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes
+            compound_ids, label_ids, tracer_ids, fractions,
+            labeling_mask=labeling_mask,
+            measured_fluxes=measured_fluxes,
+            flux_mask=flux_mask,
         )
-
-        loss = (flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
-                + rev_loss_fn(rev_preds, targets[:, model.flux_dim:]))
+        flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
+        loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
         loss.backward()
 
         if gradient_clip > 0:
@@ -165,11 +240,11 @@ def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
             fracs   = fracs.to(device)
             targets = targets.to(device)
 
-            fixed_fluxes = None
-            if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, model.known_flux_encoder.fixed_idx]
+            measured_fluxes = None
+            if len(model.fixed_idx) > 0:
+                measured_fluxes = targets[:, model.fixed_idx]
 
-            flux_preds, rev_preds = model(cids, lids, tids, fracs, None, fixed_fluxes)
+            flux_preds, rev_preds = model(cids, lids, tids, fracs, measured_fluxes=measured_fluxes)
             total_loss += (
                 flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
                 + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
@@ -185,7 +260,7 @@ def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda',
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
-                warmup_epochs=0, met_mask_prob=0.0,
+                warmup_epochs=0, met_mask_prob=0.0, flux_mask_prob=0.0,
                 loss_function=None):
     """
     Train a FluxDecoder model.
@@ -202,6 +277,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         verbose:        Print progress
         warmup_epochs:  Linear LR warmup epochs (0 = disabled)
         met_mask_prob:  Per-epoch metabolite masking probability
+        flux_mask_prob: Per-epoch measured flux masking probability
         loss_function:  callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
 
     Returns:
@@ -242,6 +318,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
     for epoch in iterator:
         train_loss, grad_norm = _train_epoch(
             model, train_loader, optimizer, device, met_mask_prob, gradient_clip,
+            flux_mask_prob=flux_mask_prob,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
         )
         train_losses.append(train_loss)
