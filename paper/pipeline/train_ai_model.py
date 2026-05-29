@@ -15,6 +15,7 @@ from functools import partial
 import numpy as np
 import scipy.linalg
 import torch
+import torch.nn as nn
 import yaml
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,8 +29,9 @@ from sigmaflux.ai.data import (
     prepare_id_dataset,
     radial_embedding_table,
 )
+from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
-from sigmaflux.ai.train import evaluate_validation_correlations, train_model, var_norm_mse_loss
+from sigmaflux.ai.train import BasisSpaceLoss, FluxNorm, evaluate_validation_correlations, train_model, var_norm_mse_loss
 from sigmaflux.ai.utils import compute_sparse_nullspace
 
 
@@ -41,16 +43,77 @@ def split_indices(n_samples, val_fraction, seed):
     return indices[:split], indices[split:]
 
 
-def build_loss_function(train_dataset, flux_dim, loss_name):
+class MixedFluxLoss:
+    """Combines basis-space and flux-space losses."""
+
+    def __init__(self, basis_loss_fn, flux_loss_fn, flux_weight):
+        """
+        Args:
+            basis_loss_fn: loss function in basis space
+            flux_loss_fn:  loss function in flux space
+            flux_weight:   weight for flux-space loss (0-1); basis weight = (1 - flux_weight)
+        """
+        self.basis_loss_fn = basis_loss_fn
+        self.flux_loss_fn = flux_loss_fn
+        self.flux_weight = flux_weight
+        self.basis_weight = 1.0 - flux_weight
+
+    def __call__(self, pred, targets):
+        basis_loss = self.basis_loss_fn(pred, targets)
+        flux_loss = self.flux_loss_fn(pred, targets)
+        return self.basis_weight * basis_loss + self.flux_weight * flux_loss
+
+
+def build_loss_function(train_dataset, flux_dim, loss_name,
+                        flux_loss_space='flux', Z_full=None, y_train=None, mixed_flux_weight=0.1,
+                        variance_min_cutoff=0.1):
+    """
+    Build flux and reversibility loss functions.
+
+    Args:
+        train_dataset:   training dataset (used to compute per-feature variance)
+        flux_dim:        number of flux targets
+        loss_name:       'mse' or 'variance' (variance-normalized MSE)
+        flux_loss_space: 'flux', 'basis', or 'mixed' — train in reconstructed flux, null-space, or combination
+        Z_full:          (n_fluxes, n_free) null-space basis; required when flux_loss_space in ['basis', 'mixed']
+        y_train:         (n_train, n_free) pre-projected basis targets; used to compute
+                         y-space variance when loss_name='variance' and flux_loss_space='basis'
+        mixed_flux_weight: weight for flux-space loss when flux_loss_space='mixed'
+        variance_min_cutoff: min variance clamp (default 0.1); prevents division by zero and extreme weighting
+    """
+    targets = train_dataset.targets
+
+    rev_var = torch.var(targets[:, flux_dim:], dim=0).clamp_min(variance_min_cutoff)
+    rev_loss_fn = (nn.MSELoss() if loss_name == 'mse'
+                   else partial(var_norm_mse_loss, precomputed_variance=rev_var))
+
     if loss_name == 'mse':
-        return None  # train_model defaults to MSELoss
-    targets  = train_dataset.targets
-    flux_var = torch.var(targets[:, :flux_dim], dim=0).clamp_min(0.1)
-    rev_var  = torch.var(targets[:, flux_dim:], dim=0).clamp_min(0.1)
-    return {
-        'flux':          partial(var_norm_mse_loss, precomputed_variance=flux_var),
-        'reversibility': partial(var_norm_mse_loss, precomputed_variance=rev_var),
-    }
+        base_flux_loss = nn.MSELoss()
+    else:
+        flux_var = torch.var(targets[:, :flux_dim], dim=0).clamp_min(variance_min_cutoff)
+        base_flux_loss = partial(var_norm_mse_loss, precomputed_variance=flux_var)
+
+    if flux_loss_space == 'basis':
+        assert Z_full is not None, "Z_full required for flux_loss_space='basis'"
+        if loss_name == 'variance' and y_train is not None:
+            basis_var = torch.var(y_train, dim=0).clamp_min(variance_min_cutoff)
+            basis_loss = partial(var_norm_mse_loss, precomputed_variance=basis_var)
+        else:
+            basis_loss = base_flux_loss
+        flux_loss_fn = BasisSpaceLoss(basis_loss, Z_full)
+    elif flux_loss_space == 'mixed':
+        assert Z_full is not None, "Z_full required for flux_loss_space='mixed'"
+        if loss_name == 'variance' and y_train is not None:
+            basis_var = torch.var(y_train, dim=0).clamp_min(variance_min_cutoff)
+            basis_loss = partial(var_norm_mse_loss, precomputed_variance=basis_var)
+        else:
+            basis_loss = base_flux_loss
+        basis_loss_fn = BasisSpaceLoss(basis_loss, Z_full)
+        flux_loss_fn = MixedFluxLoss(basis_loss_fn, base_flux_loss, mixed_flux_weight)
+    else:  # flux_loss_space == 'flux'
+        flux_loss_fn = base_flux_loss
+
+    return {'flux': flux_loss_fn, 'reversibility': rev_loss_fn}
 
 
 def main(args):
@@ -92,22 +155,6 @@ def main(args):
     reversibility_df = reversibility_df.iloc[rev_variable_idx]
     print(f"Reversibilities: {len(rev_variable_idx)} variable / {_rv_std.shape[0]} total (dropped {_rv_std.shape[0] - len(rev_variable_idx)})")
 
-    norm_stats_input = None
-    if args.normalize:
-        _fv = flux_df.values.astype(np.float32)
-        flux_mean_all = _fv.mean(axis=1)
-        flux_std_all  = np.where(_fv.std(axis=1) < 1e-6, 1.0, _fv.std(axis=1))
-        _rv = reversibility_df.values.astype(np.float32)
-        rev_mean_all  = _rv.mean(axis=1)
-        rev_std_all   = np.where(_rv.std(axis=1) < 1e-6, 1.0, _rv.std(axis=1))
-        norm_stats_input = {
-            'flux_mean': flux_mean_all.tolist(),
-            'flux_std':  flux_std_all.tolist(),
-            'rev_mean':  rev_mean_all.tolist(),
-            'rev_std':   rev_std_all.tolist(),
-        }
-        print(f"Flux/rev norm stats computed from all {flux_df.shape[1]} samples")
-
     (train_dataset, norm_stats, token_experiment_ids,
      tracer_combo_vocab, tracer_combo_emb_table) = prepare_id_dataset(
         labeling_df,
@@ -116,8 +163,6 @@ def main(args):
         vocabs=vocabs,
         train_indices=train_indices,
         measured_fluxes=args.measured_fluxes,
-        normalize=args.normalize,
-        norm_stats_input=norm_stats_input,
     )
     (val_dataset, _, _, _, _) = prepare_id_dataset(
         labeling_df,
@@ -127,21 +172,12 @@ def main(args):
         train_indices=val_indices,
         measured_fluxes=args.measured_fluxes,
         norm_stats_input=norm_stats,
-        normalize=args.normalize,
     )
 
-    _fmean = norm_stats.get('flux_mean')
-    _fstd  = norm_stats.get('flux_std')
-    flux_mean_t = torch.tensor(_fmean, dtype=torch.float32) if _fmean is not None else None
-    flux_std_t  = torch.tensor(_fstd,  dtype=torch.float32) if _fstd  is not None else None
-
-    if _fmean is not None:
-        _tgt_f = train_dataset.targets[:, :flux_df.shape[0]]
-        _tgt_r = train_dataset.targets[:, flux_df.shape[0]:]
-        print(f"Flux targets:  mean=[{_tgt_f.mean(dim=0).min():.3f}, {_tgt_f.mean(dim=0).max():.3f}]  std=[{_tgt_f.std(dim=0).min():.3f}, {_tgt_f.std(dim=0).max():.3f}]")
-        print(f"Rev  targets:  mean=[{_tgt_r.mean(dim=0).min():.3f}, {_tgt_r.mean(dim=0).max():.3f}]  std=[{_tgt_r.std(dim=0).min():.3f}, {_tgt_r.std(dim=0).max():.3f}]")
-    else:
-        print("Targets NOT normalized (normalize=False)")
+    _tgt_f = train_dataset.targets[:, :flux_df.shape[0]]
+    _tgt_r = train_dataset.targets[:, flux_df.shape[0]:]
+    print(f"Flux targets:  mean=[{_tgt_f.mean(dim=0).min():.3f}, {_tgt_f.mean(dim=0).max():.3f}]  std=[{_tgt_f.std(dim=0).min():.3f}, {_tgt_f.std(dim=0).max():.3f}]")
+    print(f"Rev  targets:  mean=[{_tgt_r.mean(dim=0).min():.3f}, {_tgt_r.mean(dim=0).max():.3f}]  std=[{_tgt_r.std(dim=0).min():.3f}, {_tgt_r.std(dim=0).max():.3f}]")
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size, shuffle=False)
@@ -156,6 +192,11 @@ def main(args):
     reaction_emb_table = radial_embedding_table(flux_dim, h_reaction)
     print(f"  Reactions: {flux_dim} → H={h_reaction}, emb_dim={2*h_reaction}")
 
+    # Token-type radial embedding (frozen; 2 types: 0=labeling, 1=flux)
+    h_type = getattr(args, 'h_type', 2)
+    type_emb_table = radial_embedding_table(2, h_type)
+    print(f"  Token type: 2 → H={h_type}, emb_dim={2*h_type}")
+
     config = FluxDecoderConfig(
         d_model     = args.combined_dim,
         n_heads     = args.num_attn_heads,
@@ -168,9 +209,9 @@ def main(args):
         d_label     = vocabs['h_label'] * 2,
         d_tracer    = vocabs['h_tracer'] * 2,
         d_reaction  = 2 * h_reaction,
+        d_type      = 2 * h_type,
         n_fluxes    = flux_dim,
         n_rev       = reversibility_dim,
-        n_measured  = len(args.measured_fluxes) if args.measured_fluxes else 0,
     )
 
     fixed_flux_indices = None
@@ -185,7 +226,7 @@ def main(args):
     free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
     fixed_idx = fixed_flux_indices or []
 
-    Z_full       = compute_sparse_nullspace(stoichiometric_matrix)  # (n_fluxes, n_basis=38)
+    Z_full       = compute_sparse_nullspace(stoichiometric_matrix)  # varimax-rotated, orthonormal (n_fluxes, k)
     n_free_basis = Z_full.shape[1]
 
     print(f"Full null-space basis dimension: {n_free_basis}  (was {flux_dim - len(fixed_idx) - n_free_basis + n_free_basis} from S_free)")
@@ -222,16 +263,26 @@ def main(args):
     else:
         y_mean, y_std, obs_weights_np = None, None, None
 
-    # Builf the null-space data dict, which the model uses to reconstruct fluxes 
-    # the latent space 
+    # Builf the null-space data dict, which the model uses to reconstruct fluxes
+    # the latent space
     null_space_data = dict(
         Z_free          = Z_full,               # (n_fluxes, 38) — field name kept for compat
         free_idx        = free_idx,             # metadata: indices of non-measured reactions
         fixed_idx       = fixed_idx,            # metadata: indices of measured reactions
         obs_weights     = obs_weights_np,
+        y_mean          = y_mean,               # basis-space mean for denormalization
+        y_std           = y_std,                # basis-space std for denormalization
+        rev_variable_idx = rev_variable_idx.tolist(),  # indices of variable-reversibility reactions
     )
 
     config.n_free = n_free_basis
+
+    # Per-reaction flux normalization — computed from full dataset (all samples)
+    flux_norm = FluxNorm(flux_df.values)  # (n_reactions, n_samples)
+    flux_norm_stats = {
+        'mean': flux_norm.mean.numpy(),
+        'std':  flux_norm.std.numpy(),
+    }
 
     model = FluxDecoder(
         config               = config,
@@ -240,11 +291,21 @@ def main(args):
         label_emb_table      = vocabs['label_emb_table'],
         tracer_emb_table     = tracer_combo_emb_table,
         reaction_emb_table   = reaction_emb_table,
+        type_emb_table       = type_emb_table,
         null_space_data      = null_space_data,
+        flux_norm_stats      = flux_norm_stats,
     )
     model.flux_noise_std = args.flux_noise_std
 
-    loss_function = build_loss_function(train_dataset, flux_dim, args.loss)
+    y_train_for_loss = y_train if n_free_basis > 0 else None
+    loss_function = build_loss_function(
+        train_dataset, flux_dim, args.loss,
+        flux_loss_space = args.flux_loss_space,
+        Z_full          = Z_full if args.flux_loss_space in ['basis', 'mixed'] else None,
+        y_train         = y_train_for_loss,
+        mixed_flux_weight = args.mixed_flux_weight,
+        variance_min_cutoff = args.variance_min_cutoff,
+    )
 
     log = train_model(
         model,
@@ -257,11 +318,88 @@ def main(args):
         use_scheduler     = not args.no_scheduler,
         warmup_epochs     = args.warmup_epochs,
         met_mask_prob     = args.met_mask_prob,
+        flux_mask_prob    = args.flux_mask_prob,
         loss_function     = loss_function,
     )
 
     flux_names = flux_df.index.tolist()
     val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=flux_names)
+
+    # === Diagnostic: Reaction Learning Asymmetry Analysis ===
+    flux_r2_per_reaction = val_correlations.get('flux_r2_per_reaction', [])
+    if flux_r2_per_reaction:
+        flux_r2 = torch.tensor(flux_r2_per_reaction, dtype=torch.float32)
+        n_reactions_with_r2 = len(flux_r2)
+
+        high_r2_mask = flux_r2 > 0.5
+        med_r2_mask = (0.2 <= flux_r2) & (flux_r2 <= 0.5)
+        low_r2_mask = flux_r2 < 0.2
+
+        print(f"\n=== Reaction Learning Asymmetry ===")
+        print(f"High R² (>0.5): {high_r2_mask.sum().item()} reactions, median={flux_r2[high_r2_mask].median():.4f}")
+        print(f"Med R² (0.2-0.5): {med_r2_mask.sum().item()} reactions, median={flux_r2[med_r2_mask].median():.4f}")
+        print(f"Low R² (<0.2): {low_r2_mask.sum().item()} reactions, median={flux_r2[low_r2_mask].median():.4f}")
+        print(f"Overall: {(flux_r2 > 0).sum().item()} learn, {(flux_r2 <= 0).sum().item()} mislearn (R²<0)")
+
+        # Check if high-R² reactions are in measured flux list
+        measured_set = set(args.measured_fluxes) if args.measured_fluxes else set()
+        if measured_set and n_reactions_with_r2 <= len(flux_names):
+            high_r2_names = [flux_names[i] for i in range(n_reactions_with_r2) if high_r2_mask[i].item()]
+            high_in_measured = sum(1 for n in high_r2_names if n in measured_set)
+            print(f"High-R² reactions in measured_fluxes: {high_in_measured}/{len(high_r2_names)} ({100*high_in_measured/max(1, len(high_r2_names)):.1f}%)")
+
+            # Show which high-R² reactions are measured vs unmeasured
+            high_measured = [n for n in high_r2_names if n in measured_set]
+            high_unmeasured = [n for n in high_r2_names if n not in measured_set]
+            if high_unmeasured[:5]:
+                print(f"  High-R² unmeasured (examples): {', '.join(high_unmeasured[:5])}")
+
+        # Show reactions stuck at floor (0.13±0.005)
+        floor_mask = torch.abs(flux_r2 - 0.13) < 0.005
+        if floor_mask.sum() > 0:
+            print(f"Reactions stuck at R²≈0.13 floor: {floor_mask.sum().item()}")
+
+    # === Z Basis Conditioning and Sparsity ===
+    try:
+        Z_np = Z_full
+        Z_t = torch.tensor(Z_np, dtype=torch.float32)
+
+        # Condition number
+        U, S, Vt = torch.linalg.svd(Z_t, full_matrices=False)
+        condition = S[0] / S[-1]
+        rank_t = torch.linalg.matrix_rank(Z_t).item()
+
+        # Sparsity: fraction of elements with small magnitude
+        Z_sparse_frac = np.mean(np.abs(Z_np) < 0.01)  # % near-zero
+        Z_nnz = np.count_nonzero(Z_np) / Z_np.size  # % non-zero
+
+        # Check per-column concentration (max abs per column)
+        col_max_abs = np.max(np.abs(Z_np), axis=0)
+        col_concentration = np.mean(col_max_abs ** 2)  # "energy concentration"
+
+        print(f"\n=== Z Basis Properties ===")
+        print(f"Shape: {Z_np.shape}, Rank: {rank_t}/38")
+        print(f"Condition number: {condition:.2e}")
+        print(f"Sparsity: {100*Z_sparse_frac:.1f}% near-zero, {100*Z_nnz:.1f}% non-zero")
+        print(f"Singular values range: [{S[-1]:.2e}, {S[0]:.2e}]")
+        print(f"Column max abs: mean={col_max_abs.mean():.4f}, std={col_max_abs.std():.4f}")
+
+        # Check mass balance constraint
+        stoich_S, _ = load_stoichiometric_matrix(args.model_json)
+        residual = np.linalg.norm(stoich_S @ Z_np, 'fro')
+        print(f"Null-space check: ||S @ Z|| = {residual:.2e}")
+
+    except Exception as e:
+        print(f"Warning: Could not compute Z properties: {e}")
+
+    # === Labeling Signal & Attention Analysis ===
+    try:
+        flux_r2_per_reaction = val_correlations.get('flux_r2_per_reaction', [])
+        if flux_r2_per_reaction:
+            flux_r2_tensor = torch.tensor(flux_r2_per_reaction, dtype=torch.float32)
+            attn_df = diagnose_signal_bottleneck(model, val_loader, device, flux_names, flux_r2_tensor, labeling_df)
+    except Exception as e:
+        print(f"Warning: Could not run attention diagnostics: {e}")
 
     model_config = asdict(config)
 
@@ -287,12 +425,15 @@ def main(args):
         "reversibility_names":  reversibility_df.index.tolist(),
         "measured_fluxes":      args.measured_fluxes,
         "null_space_data": {
-            "Z_free":           Z_full,              # (n_fluxes, 38) full null-space basis
-            "free_idx":         free_idx,
-            "fixed_idx":        fixed_idx,
-            "obs_weights":      obs_weights_np,
+            "Z_free":            Z_full,
+            "free_idx":          free_idx,
+            "fixed_idx":         fixed_idx,
+            "obs_weights":       obs_weights_np,
+            "rev_variable_idx":  rev_variable_idx.tolist(),
         },
         "h_reaction":           h_reaction,
+        "h_type":               h_type,
+        "flux_norm_stats":      flux_norm_stats,
         "data_dir":             args.data_dir,
         "model_json":           args.model_json,
     }
@@ -349,13 +490,17 @@ if __name__ == "__main__":
         num_transformer_layers = t.get("num_transformer_layers", 4),
         dropout                = t.get("dropout", 0.3),
         met_mask_prob          = t.get("met_mask_prob", 0.0),
+        flux_mask_prob         = t.get("flux_mask_prob", 0.0),
         measured_fluxes        = measured_fluxes,
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
         h_reaction             = t.get("h_reaction"),
+        h_type                 = t.get("h_type", 2),
         flux_noise_std         = t.get("flux_noise_std", 0.0),
-        normalize      = t.get("normalize", True),
-        loss                   = t.get("loss", "variance"),
+        loss             = t.get("loss", "variance"),
+        flux_loss_space  = t.get("flux_loss_space", "flux"),
+        mixed_flux_weight = t.get("mixed_flux_weight", 0.1),
+        variance_min_cutoff = t.get("variance_min_cutoff", 0.1),
     )
     main(args)
