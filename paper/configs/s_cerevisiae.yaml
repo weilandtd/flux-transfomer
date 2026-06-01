@@ -1,6 +1,6 @@
 # SigmaFlux training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
-model_file: models/S_cerevisiae/sc_annotated.json
+model_file: models/S_cerevisiae/sc_annotated_hierarchical.json
 seed: 42
 device: auto  # auto | cpu | cuda
 
@@ -50,7 +50,7 @@ sampling:
 
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
-  batch_size: 500
+  batch_size: 512
   tracers:
     - tracer_id: glc__D_e
       labeling: [1, 1, 1, 1, 1, 1]
@@ -83,11 +83,12 @@ training:
   h_compound: 16
   h_label: 5
   h_tracer: 1
+  h_reaction: 8
   h_type: 2        # token-type embedding (0=labeling, 1=flux → 4-dim, frozen)
 
   # Missing-data augmentation
-  met_mask_prob: 0.1
-  flux_mask_prob: 0.1  # Randomly mask measured flux tokens during training
+  met_mask_prob: 0.2
+  flux_mask_prob: 0.2
 
   # Measured fluxes fed as soft inputs through the fusion layer.
   # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
@@ -97,12 +98,18 @@ training:
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
-    - BIOMASS
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+    - CARB_c
 
   flux_noise_std: 0.0
-  loss: variance          # variance | mse
-  flux_loss_space: mixed  # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  mixed_flux_weight: 0.1  # weight for flux-space loss when flux_loss_space=mixed (0.1 = 10% flux, 90% basis)
-  variance_min_cutoff: 0.1  # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  labeling_noise_std: 0.01  # Gaussian noise std (0 = disabled)
+  loss: variance               # variance | mse
+  flux_loss_space: mixed       # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  mixed_flux_weight: 0.35      # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  variance_min_cutoff: 0.1     # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
 
 
