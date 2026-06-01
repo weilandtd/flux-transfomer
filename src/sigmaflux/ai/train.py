@@ -152,13 +152,91 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
     return result
 
 
+def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
+    """
+    Apply Gaussian noise to isotopologue labeling fractions while maintaining sum=1 constraint.
+    Fully vectorized using segmented operations (no loops).
+
+    Args:
+        fractions: (batch_size, num_tokens, 1) tensor of stored fractions (M+1..M+n)
+        compound_ids: (num_tokens,) or (batch_size, num_tokens) tensor mapping tokens to metabolites
+        tracer_ids: (num_tokens,) or (batch_size, num_tokens) tensor mapping tokens to tracers
+        noise_std: scalar noise standard deviation
+
+    Returns:
+        noisy_fractions: (batch_size, num_tokens, 1) tensor with added noise, renormalized
+    """
+    if noise_std <= 0:
+        return fractions
+
+    B, num_tokens, _ = fractions.shape
+    device = fractions.device
+    dtype = fractions.dtype
+
+    # Handle both 1D and 2D ID tensors (batch may or may not stack them)
+    if compound_ids.dim() == 2:
+        compound_ids = compound_ids[0]  # Use first sample (same for all)
+    if tracer_ids.dim() == 2:
+        tracer_ids = tracer_ids[0]  # Use first sample (same for all)
+
+    # Create unique group ID for each token
+    max_tracer = tracer_ids.max().item() + 1
+    group_ids = compound_ids * max_tracer + tracer_ids  # (num_tokens,)
+    num_groups = group_ids.max().item() + 1
+
+    # Squeeze fractions
+    fracs = fractions.squeeze(-1)  # (B, num_tokens)
+
+    # Compute sum per group using segment reduction
+    fracs_flat = fracs.reshape(-1)  # (B*num_tokens,)
+    group_ids_expanded = group_ids.unsqueeze(0).expand(B, -1).reshape(-1)  # (B*num_tokens,)
+    batch_ids_expanded = torch.arange(B, device=device, dtype=torch.long).unsqueeze(1).expand(-1, num_tokens).reshape(-1)  # (B*num_tokens,)
+
+    # Create 2D index for scatter operations: (batch_id, group_id)
+    combined_idx = batch_ids_expanded * num_groups + group_ids_expanded
+
+    # Sum per (batch, group) using scatter_add
+    sums = torch.zeros(B * num_groups, device=device, dtype=dtype)
+    sums.scatter_add_(0, combined_idx, fracs_flat)
+    group_sums = sums.reshape(B, num_groups)  # (B, num_groups)
+
+    # Implicit M+0
+    m0_per_group = 1.0 - group_sums  # (B, num_groups)
+
+    # Add noise to stored fractions and M+0
+    noise_stored = torch.randn_like(fracs) * noise_std
+    noise_m0 = torch.randn(B, num_groups, device=device, dtype=dtype) * noise_std
+
+    noisy_stored = fracs + noise_stored  # (B, num_tokens)
+    noisy_m0 = m0_per_group + noise_m0  # (B, num_groups)
+
+    # Sum of noisy stored per group
+    noisy_flat = noisy_stored.reshape(-1)
+    sums_noisy = torch.zeros(B * num_groups, device=device, dtype=dtype)
+    sums_noisy.scatter_add_(0, combined_idx, noisy_flat)
+    noisy_stored_sum = sums_noisy.reshape(B, num_groups)  # (B, num_groups)
+
+    # Total per group
+    total_per_group = noisy_m0 + noisy_stored_sum  # (B, num_groups)
+    total_per_group = total_per_group.clamp(min=1e-10)
+
+    # Broadcast total back to token dimension: total_per_token[b, t] = total_per_group[b, group_ids[t]]
+    total_flat = total_per_group.reshape(-1).gather(0, combined_idx)  # (B*num_tokens,)
+    total_per_token = total_flat.reshape(B, num_tokens)  # (B, num_tokens)
+
+    # Renormalize fractions
+    noisy_fractions = (noisy_stored / total_per_token).clamp(0.0, 1.0).unsqueeze(-1)
+
+    return noisy_fractions
+
+
 # ---------------------------------------------------------------------------
 # Training primitives
 # ---------------------------------------------------------------------------
 
 def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
                  flux_mask_prob=0.0, flux_loss_fn=None, rev_loss_fn=None,
-                 measured_flux_loss_weight=0.0):
+                 measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
     model.train()
     if flux_loss_fn is None:
@@ -175,6 +253,9 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
         fractions    = fractions.to(device)
         targets      = targets.to(device)
 
+        if labeling_noise_std > 0:
+            fractions = apply_labeling_noise(fractions, compound_ids, tracer_ids, labeling_noise_std)
+
         labeling_mask = None
         if met_mask_prob > 0:
             labeling_mask = ~generate_metabolite_mask(
@@ -190,7 +271,9 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
             measured_fluxes = targets[:, model.fixed_idx]
             noise_std = getattr(model, 'flux_noise_std', 0.0)
             if noise_std > 0.0:
-                measured_fluxes = measured_fluxes + torch.randn_like(measured_fluxes) * noise_std
+                measured_fluxes = measured_fluxes * (
+                    1.0 + noise_std * torch.randn_like(measured_fluxes)
+                )
             # Randomly mask flux tokens during training for robustness
             if flux_mask_prob > 0:
                 B, n_fx = measured_fluxes.shape
@@ -267,7 +350,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda',
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
                 warmup_epochs=0, met_mask_prob=0.0, flux_mask_prob=0.0,
-                loss_function=None, measured_flux_loss_weight=0.0):
+                loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
     """
     Train a FluxDecoder model.
 
@@ -284,6 +367,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         warmup_epochs:  Linear LR warmup epochs (0 = disabled)
         met_mask_prob:  Per-epoch metabolite masking probability
         flux_mask_prob: Per-epoch measured flux masking probability
+        labeling_noise_std: Gaussian noise std for isotopologue fractions (0 = disabled)
         loss_function:  callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
 
     Returns:
@@ -327,6 +411,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             flux_mask_prob=flux_mask_prob,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
             measured_flux_loss_weight=measured_flux_loss_weight,
+            labeling_noise_std=labeling_noise_std,
         )
         train_losses.append(train_loss)
         grad_norms.append(grad_norm)

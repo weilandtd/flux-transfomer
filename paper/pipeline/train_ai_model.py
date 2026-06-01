@@ -337,6 +337,7 @@ def main(args):
         flux_norm_stats      = flux_norm_stats,
     )
     model.flux_noise_std = args.flux_noise_std
+    model.labeling_noise_std = args.labeling_noise_std
 
     y_train_for_loss = y_train if n_free_basis > 0 else None
     loss_function = build_loss_function(
@@ -360,6 +361,7 @@ def main(args):
         warmup_epochs              = args.warmup_epochs,
         met_mask_prob              = args.met_mask_prob,
         flux_mask_prob             = args.flux_mask_prob,
+        labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
         measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
     )
@@ -540,6 +542,7 @@ if __name__ == "__main__":
         h_reaction             = t.get("h_reaction"),
         h_type                 = t.get("h_type", 2),
         flux_noise_std         = t.get("flux_noise_std", 0.0),
+        labeling_noise_std     = t.get("labeling_noise_std", 0.0),
         loss                      = t.get("loss", "variance"),
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
