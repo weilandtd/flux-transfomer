@@ -7,6 +7,7 @@ import copy
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from tqdm import tqdm
 
 from sigmaflux.ai.data import generate_metabolite_mask
@@ -156,7 +157,8 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
 # ---------------------------------------------------------------------------
 
 def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
-                 flux_mask_prob=0.0, flux_loss_fn=None, rev_loss_fn=None):
+                 flux_mask_prob=0.0, flux_loss_fn=None, rev_loss_fn=None,
+                 measured_flux_loss_weight=0.0):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
     model.train()
     if flux_loss_fn is None:
@@ -203,6 +205,10 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
         )
         flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
         loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
+        if measured_flux_loss_weight > 0 and measured_fluxes is not None and len(model.fixed_idx) > 0:
+            meas_pred = flux_preds[:, model.fixed_idx]
+            meas_true = targets[:, model.fixed_idx]
+            loss = loss + measured_flux_loss_weight * F.mse_loss(meas_pred, meas_true)
         loss.backward()
 
         if gradient_clip > 0:
@@ -261,7 +267,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda',
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
                 warmup_epochs=0, met_mask_prob=0.0, flux_mask_prob=0.0,
-                loss_function=None):
+                loss_function=None, measured_flux_loss_weight=0.0):
     """
     Train a FluxDecoder model.
 
@@ -320,6 +326,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             model, train_loader, optimizer, device, met_mask_prob, gradient_clip,
             flux_mask_prob=flux_mask_prob,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
+            measured_flux_loss_weight=measured_flux_loss_weight,
         )
         train_losses.append(train_loss)
         grad_norms.append(grad_norm)

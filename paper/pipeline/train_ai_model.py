@@ -177,7 +177,29 @@ def main(args):
     _tgt_f = train_dataset.targets[:, :flux_df.shape[0]]
     _tgt_r = train_dataset.targets[:, flux_df.shape[0]:]
     print(f"Flux targets:  mean=[{_tgt_f.mean(dim=0).min():.3f}, {_tgt_f.mean(dim=0).max():.3f}]  std=[{_tgt_f.std(dim=0).min():.3f}, {_tgt_f.std(dim=0).max():.3f}]")
-    print(f"Rev  targets:  mean=[{_tgt_r.mean(dim=0).min():.3f}, {_tgt_r.mean(dim=0).max():.3f}]  std=[{_tgt_r.std(dim=0).min():.3f}, {_tgt_r.std(dim=0).max():.3f}]")
+    print(f"Rev  targets (raw): mean=[{_tgt_r.mean(dim=0).min():.3f}, {_tgt_r.mean(dim=0).max():.3f}]  median_overall={_tgt_r.median():.3f}  max={_tgt_r.max():.1f}")
+
+    # ── Reversibility log-space normalization ──────────────────────────────────
+    # Reversibilities span ~4 orders of magnitude (median ≈ 5, max ≈ 5000).
+    # Log1p + per-reaction z-score maps them to ~N(0,1), matching the basis-
+    # coefficient normalization already applied to flux predictions.
+    flux_dim_for_rev = flux_df.shape[0]
+    if flux_dim_for_rev < train_dataset.targets.shape[1]:
+        log1p_rev_train = torch.log1p(train_dataset.targets[:, flux_dim_for_rev:])
+        rev_log_mean    = log1p_rev_train.mean(dim=0)                        # (n_rev,)
+        rev_log_std     = log1p_rev_train.std(dim=0).clamp_min(1e-6)         # (n_rev,)
+        train_dataset.targets[:, flux_dim_for_rev:] = (
+            (log1p_rev_train - rev_log_mean) / rev_log_std
+        )
+        log1p_rev_val = torch.log1p(val_dataset.targets[:, flux_dim_for_rev:])
+        val_dataset.targets[:, flux_dim_for_rev:] = (
+            (log1p_rev_val - rev_log_mean) / rev_log_std
+        )
+        rev_log_mean_np = rev_log_mean.numpy()
+        rev_log_std_np  = rev_log_std.numpy()
+        print(f"Rev  targets (log1p-norm): mean_abs={rev_log_mean_np.mean():.3f}  std_range=[{rev_log_std_np.min():.3f}, {rev_log_std_np.max():.3f}]")
+    else:
+        rev_log_mean_np = rev_log_std_np = None
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader   = DataLoader(val_dataset,   batch_size=args.batch_size, shuffle=False)
@@ -255,10 +277,27 @@ def main(args):
         L_std_c = L_c.std(dim=0).clamp_min(1e-10)
         cov_yl  = (y_c.T @ L_c) / y_train.shape[0]                     # (38, n_meas)
         corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
-        obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) max|r|
-        obs_weights_np = obs_weights.numpy()
-        n_obs = int((obs_weights > 0.1).sum().item())
-        print(f"Observability: {n_obs}/{n_free_basis} y-components have max|r|>0.1 "
+        obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
+
+        # Extend observability to include measured fluxes — basis modes that are
+        # directly constrained by known fluxes are observable even if labeling alone
+        # cannot determine them.
+        if fixed_idx:
+            F_train  = train_tgts_flux[:, fixed_idx]                     # (n_train, n_fixed)
+            F_c      = F_train - F_train.mean(dim=0, keepdim=True)
+            F_std_c  = F_c.std(dim=0).clamp_min(1e-10)
+            cov_yF   = (y_c.T @ F_c) / y_train.shape[0]                 # (38, n_fixed)
+            corr_yF  = cov_yF / y_std_c.unsqueeze(1) / F_std_c.unsqueeze(0)
+            obs_from_flux   = corr_yF.abs().max(dim=1).values            # (38,)
+            obs_weights_all = torch.max(obs_weights, obs_from_flux)      # (38,) combined
+        else:
+            obs_weights_all = obs_weights
+
+        obs_weights_np = obs_weights_all.numpy()
+        n_obs_lab  = int((obs_weights > 0.1).sum().item())
+        n_obs_all  = int((obs_weights_all > 0.1).sum().item())
+        print(f"Observability (labeling only): {n_obs_lab}/{n_free_basis} max|r|>0.1")
+        print(f"Observability (labeling+flux): {n_obs_all}/{n_free_basis} max|r|>0.1 "
               f"; max|r| range=[{obs_weights_np.min():.3f}, {obs_weights_np.max():.3f}]")
     else:
         y_mean, y_std, obs_weights_np = None, None, None
@@ -266,13 +305,15 @@ def main(args):
     # Builf the null-space data dict, which the model uses to reconstruct fluxes
     # the latent space
     null_space_data = dict(
-        Z_free          = Z_full,               # (n_fluxes, 38) — field name kept for compat
-        free_idx        = free_idx,             # metadata: indices of non-measured reactions
-        fixed_idx       = fixed_idx,            # metadata: indices of measured reactions
-        obs_weights     = obs_weights_np,
-        y_mean          = y_mean,               # basis-space mean for denormalization
-        y_std           = y_std,                # basis-space std for denormalization
+        Z_free           = Z_full,               # (n_fluxes, 38) — field name kept for compat
+        free_idx         = free_idx,             # metadata: indices of non-measured reactions
+        fixed_idx        = fixed_idx,            # metadata: indices of measured reactions
+        obs_weights      = obs_weights_np,
+        y_mean           = y_mean,               # basis-space mean for denormalization
+        y_std            = y_std,                # basis-space std for denormalization
         rev_variable_idx = rev_variable_idx.tolist(),  # indices of variable-reversibility reactions
+        rev_log_mean     = rev_log_mean_np,      # per-reaction log1p mean for rev denormalization
+        rev_log_std      = rev_log_std_np,       # per-reaction log1p std for rev denormalization
     )
 
     config.n_free = n_free_basis
@@ -310,16 +351,17 @@ def main(args):
     log = train_model(
         model,
         train_loader,
-        val_loader        = val_loader,
-        num_epochs        = args.epochs,
-        learning_rate     = args.learning_rate,
-        device            = device,
-        gradient_clip     = args.gradient_clip,
-        use_scheduler     = not args.no_scheduler,
-        warmup_epochs     = args.warmup_epochs,
-        met_mask_prob     = args.met_mask_prob,
-        flux_mask_prob    = args.flux_mask_prob,
-        loss_function     = loss_function,
+        val_loader                 = val_loader,
+        num_epochs                 = args.epochs,
+        learning_rate              = args.learning_rate,
+        device                     = device,
+        gradient_clip              = args.gradient_clip,
+        use_scheduler              = not args.no_scheduler,
+        warmup_epochs              = args.warmup_epochs,
+        met_mask_prob              = args.met_mask_prob,
+        flux_mask_prob             = args.flux_mask_prob,
+        loss_function              = loss_function,
+        measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
     )
 
     flux_names = flux_df.index.tolist()
@@ -498,9 +540,10 @@ if __name__ == "__main__":
         h_reaction             = t.get("h_reaction"),
         h_type                 = t.get("h_type", 2),
         flux_noise_std         = t.get("flux_noise_std", 0.0),
-        loss             = t.get("loss", "variance"),
-        flux_loss_space  = t.get("flux_loss_space", "flux"),
-        mixed_flux_weight = t.get("mixed_flux_weight", 0.1),
-        variance_min_cutoff = t.get("variance_min_cutoff", 0.1),
+        loss                      = t.get("loss", "variance"),
+        flux_loss_space           = t.get("flux_loss_space", "flux"),
+        mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
+        variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
+        measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
     )
     main(args)

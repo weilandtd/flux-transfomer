@@ -260,6 +260,20 @@ class FluxDecoder(nn.Module):
             self.register_buffer('y_norm_mean', None)
             self.register_buffer('y_norm_std',  None)
 
+        # Reversibility log-space normalization statistics.
+        # Targets are normalized as: norm = (log1p(r) - mean) / std  → ~N(0,1).
+        # At inference: r = expm1(norm * std + mean).
+        _rev_log_mean = null_space_data.get('rev_log_mean')
+        _rev_log_std  = null_space_data.get('rev_log_std')
+        if _rev_log_mean is not None:
+            self.register_buffer('rev_norm_mean',
+                torch.tensor(_rev_log_mean, dtype=torch.float32))
+            self.register_buffer('rev_norm_std',
+                torch.tensor(_rev_log_std,  dtype=torch.float32))
+        else:
+            self.register_buffer('rev_norm_mean', None)
+            self.register_buffer('rev_norm_std',  None)
+
         # Flux query matrix
         n_outputs = cfg.n_free + cfg.n_rev
 
@@ -394,7 +408,14 @@ class FluxDecoder(nn.Module):
             x_l = x_l_raw
         fluxes = x_l @ self.Z_full.T
 
-        reversibilities = F.softplus(logits[:, n_free:])
+        rev_raw = logits[:, n_free:]
+        if self.rev_norm_mean is not None:
+            # Targets are z-scored log1p(r) ≈ N(0,1); output raw logit in the same space.
+            # Physical r conversion: torch.expm1(rev_raw * rev_norm_std + rev_norm_mean)
+            # — done externally (inference / evaluation) to avoid loss-space mismatch.
+            reversibilities = rev_raw
+        else:
+            reversibilities = F.softplus(rev_raw)
 
         fluxes          = torch.nan_to_num(fluxes,          nan=0.0)
         reversibilities = torch.nan_to_num(reversibilities, nan=0.0)
@@ -402,3 +423,9 @@ class FluxDecoder(nn.Module):
         if return_attn:
             return fluxes, reversibilities, attn_weights
         return fluxes, reversibilities
+
+    def rev_to_physical(self, rev_logit):
+        """Convert z-scored log1p predictions back to physical exchange flux ratios."""
+        if self.rev_norm_mean is not None:
+            return torch.expm1(rev_logit * self.rev_norm_std + self.rev_norm_mean).clamp_min(0.0)
+        return F.softplus(rev_logit)
