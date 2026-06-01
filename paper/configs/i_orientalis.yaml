@@ -113,14 +113,13 @@ training:
     - EX_glyc_e
     - EX_succ_e
 
-  # Denoising autoencoder: proportional Gaussian noise added to measured fluxes
-  # during training only (0 = off). Forces model to cross-reference MID data
-  # with noisy v_known, learning to denoise at inference time.
+
   flux_noise_std: 0.0
+  labeling_noise_std: 0.01  # Gaussian noise std (0 = disabled)
   loss: variance               # variance | mse
   flux_loss_space: mixed       # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   mixed_flux_weight: 0.35      # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1     # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
-  measured_flux_loss_weight: 1.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
+  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
 
 
