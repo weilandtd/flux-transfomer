@@ -27,16 +27,28 @@ Usage:
 
 import argparse
 import os
+import pathlib
 import sys
 
 import numpy as np
 import pandas as pd
 import torch
 import yaml
-import matplotlib
-matplotlib.use('Agg')
+import matplotlib as mpl
+import matplotlib.lines
 import matplotlib.pyplot as plt
+import seaborn as sns
 from scipy.stats import pearsonr, linregress
+
+mpl.use('Agg')
+mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
+
+COLORS = {
+    'no_fit':    '#AAAAAA',
+    'reference': '#888888',
+    'zero':      '#cccccc',
+    'gc_palette': ['#2C7BB6', '#D7191C', '#1A9641', '#F4A736', '#9B59B6'],
+}
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -52,7 +64,10 @@ def load_model_r2(checkpoint_path):
 
 
 def load_reference(ref_path, condition, config_path):
-    """Load reference MFA fluxes with sign-convention correction."""
+    """Load per-condition reference MFA fluxes with sign-convention correction.
+
+    Returns a wide DataFrame: index = reaction ID, columns = GrowthCondition int.
+    """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
 
@@ -62,12 +77,13 @@ def load_reference(ref_path, condition, config_path):
 
     ref_idx = ref.set_index('id')
     import re
-    pat = re.compile(rf'^{re.escape(condition)}(\d+)?_mfa$')
+    pat = re.compile(rf'^{re.escape(condition)}(\d+)_mfa$')
     ref_cols = [c for c in ref.columns if pat.match(c)]
     ref_vals = ref_idx[ref_cols].copy()
     flip_mask = ref_vals.index.isin(uptake_rxns)
     ref_vals.loc[flip_mask] *= -1
-    return ref_vals.mean(axis=1)
+    ref_vals.columns = [int(pat.match(c).group(1)) for c in ref_cols]
+    return ref_vals  # index=reaction, columns=GrowthCondition int
 
 
 def nullspace_correction(pred_df, checkpoint_path, extflux_path, config_path, condition,
@@ -180,7 +196,7 @@ def main():
     parser.add_argument('--condition', default='C', help='Condition prefix in reference (default: C)')
     parser.add_argument('--thresholds', default='0.0,0.3,0.5,0.7',
                         help='Comma-separated R² thresholds (default: 0.0,0.3,0.5,0.7,0.9)')
-    parser.add_argument('--out', default=None, help='Output PNG path (default: auto from predictions)')
+    parser.add_argument('--out', default=None, help='Output SVG path (default: auto from predictions)')
     parser.add_argument('--extflux', default=None,
                         help='ExtFlux xlsx with experimental measured fluxes (enables null-space correction)')
     parser.add_argument('--no-correction', action='store_true',
@@ -199,7 +215,9 @@ def main():
     # divide by 1.5
     # combined['Value'] /= 1.5
     model_r2 = load_model_r2(args.checkpoint)
-    ref_mean = load_reference(args.reference, args.condition, args.config)
+    ref_by_gc = load_reference(args.reference, args.condition, args.config)
+    ref_mean  = ref_by_gc.mean(axis=1)
+    ref_std   = ref_by_gc.std(axis=1).fillna(0)
 
     # Load measured (known) flux names from checkpoint for later highlighting
     _ckpt_tmp = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
@@ -212,12 +230,17 @@ def main():
             combined, args.checkpoint, args.extflux, args.config, args.condition,
             reg_lambda=args.reg_lambda)
 
-    # Average predictions across GCs and bio-replicates
-    pred_mean = (
-        combined[combined['Type'] == 'flux']
-        .groupby('Flux Name')['Value']
-        .mean()
-    )
+    # Aggregate predictions across GCs and bio-replicates
+    _flux_df  = combined[combined['Type'] == 'flux']
+    _flux_grp = _flux_df.groupby('Flux Name')['Value']
+    pred_mean = _flux_grp.mean()
+    pred_std  = _flux_grp.std().fillna(0)
+
+    # Per-condition predictions (mean and std across bio-replicates within each GC)
+    pred_by_gc     = (_flux_df.groupby(['GrowthCondition', 'Flux Name'])['Value']
+                      .mean().unstack('GrowthCondition'))
+    pred_std_by_gc = (_flux_df.groupby(['GrowthCondition', 'Flux Name'])['Value']
+                      .std().fillna(0).unstack('GrowthCondition'))
 
     # ── Known fluxes — load experimental ref from ExtFlux (not Shen et al) ─────
     n_k_all = np.array([n for n in measured_flux_names if n in pred_mean])
@@ -259,7 +282,10 @@ def main():
                   f"(slope from {len(r_k_slope)} known fluxes, "
                   f"intercept={ik_pre:.4f})")
             # scale_factor = 1.0
-            pred_mean = pred_mean / scale_factor
+            pred_mean      = pred_mean      / scale_factor
+            pred_std       = pred_std       / scale_factor
+            pred_by_gc     = pred_by_gc     / scale_factor
+            pred_std_by_gc = pred_std_by_gc / scale_factor
 
     print("Scaling factor applied to all predictions:", scale_factor)
     # scale_factor = 1.0
@@ -273,8 +299,10 @@ def main():
 
     # ── Build aligned arrays (after scale correction) ────────────────────────
     shared = pred_mean.index.intersection(ref_mean.index)
-    p = pred_mean[shared].values
-    r = ref_mean[shared].values
+    p      = pred_mean[shared].values
+    p_std  = pred_std[shared].values
+    r      = ref_mean[shared].values
+    r_std  = ref_std[shared].values
     rxn_r2 = np.array([model_r2.get(n, float('nan')) for n in shared])
 
     # Optional: drop reactions where |pred| or |ref| exceeds --max-flux
@@ -284,7 +312,10 @@ def main():
         if n_dropped:
             print(f"max-flux filter ({args.max_flux}): dropped {n_dropped} reactions "
                   f"({', '.join(shared[~flux_ok].tolist()[:5])}{'...' if n_dropped > 5 else ''})")
-        shared, p, r, rxn_r2 = shared[flux_ok], p[flux_ok], r[flux_ok], rxn_r2[flux_ok]
+        shared, p, p_std, r, r_std, rxn_r2 = (
+            shared[flux_ok], p[flux_ok], p_std[flux_ok],
+            r[flux_ok], r_std[flux_ok], rxn_r2[flux_ok]
+        )
 
     # ── Metrics per threshold ────────────────────────────────────────────────
     print(f"\nPredictions: {args.predictions}")
@@ -311,7 +342,7 @@ def main():
         (t for t in thresholds if (rxn_r2 >= t).sum() >= 2),
         key=lambda t: compute_metrics(p[rxn_r2 >= t], r[rxn_r2 >= t])['r2'],
     )
-    best_thr = 0.3
+    best_thr = 0.5
     mask = rxn_r2 >= best_thr
     abs_diff = np.abs(p - r)
 
@@ -323,81 +354,89 @@ def main():
             print(f"{shared[i]:<30}  {p[i]:>9.4f}  {r[i]:>9.4f}  "
                   f"{abs_diff[i]:>9.4f}  {rxn_r2[i]:>8.4f}")
 
-    # ── Correlation plot — single panel, R²_mdl ≥ best_thr ──────────────────
-    pf, rf = p[mask], r[mask]
-    nf = shared[mask]
-    adf = abs_diff[mask]
-    m_filt = compute_metrics(pf, rf)
+    # ── Correlation plot ─────────────────────────────────────────────────────
+    # ── Per-condition long-format DataFrame for plotting ─────────────────────
+    gc_list  = sorted(set(pred_by_gc.columns) & set(ref_by_gc.columns))
+    gc_colors = {gc: COLORS['gc_palette'][i % len(COLORS['gc_palette'])]
+                 for i, gc in enumerate(gc_list)}
 
-    # Linear regression fit (all filtered reactions)
-    slope, intercept, *_ = linregress(rf, pf)
-    # Axis limits include known fluxes (from ExtFlux) even if outside filtered set
-    all_vals = np.concatenate([pf, rf, p_k_all, r_k_all])
-    lim2 = max(np.abs(all_vals).max() * 1.1, 1.0)
-    fit_x = np.array([-lim2, lim2])
+    parts = []
+    for gc in gc_list:
+        gc_pred = pred_by_gc.reindex(shared)[gc].fillna(0)
+        gc_std  = pred_std_by_gc.reindex(shared)[gc].fillna(0)
+        gc_ref  = ref_by_gc.reindex(shared)[gc].fillna(0)
+        parts.append(pd.DataFrame({
+            'GrowthCondition': str(gc),
+            'ref':      np.abs(gc_ref.values),
+            'pred':     np.abs(gc_pred.values),
+            'pred_std': gc_std.values,
+            'fit':      mask,
+        }))
+    df_plot = pd.concat(parts, ignore_index=True)
+    df_plot = df_plot[(df_plot['ref'] > 0) & (df_plot['pred'] > 0)]
 
-    plt.rcParams.update({
-        'font.family': 'sans-serif',
-        'font.size': 13,
-        'axes.titlesize': 14,
-        'axes.labelsize': 13,
-        'xtick.labelsize': 12,
-        'ytick.labelsize': 12,
-        'legend.fontsize': 12,
-    })
+    fit_pts = df_plot[df_plot['fit']]
+    m_filt  = compute_metrics(fit_pts['pred'].values, fit_pts['ref'].values)
 
-    fig, ax = plt.subplots(figsize=(7, 7))
+    pos_vals = df_plot[['ref', 'pred']].values.ravel()
+    lim_lo   = 0.1
+    lim_hi   = pos_vals.max() * 2.0
+    fit_x    = np.array([lim_lo, lim_hi])
 
-    ax.scatter(rf, pf, s=30, alpha=0.60, color='#3A7DBF', zorder=3,
-               edgecolors='white', linewidths=0.4, label='All reactions')
+    fig, ax = plt.subplots(figsize=(3.5, 3.5))
 
-    ax.plot(fit_x, fit_x, color='#888888', lw=1.3, ls='--', alpha=0.7,
-            label='y = x  (ideal)', zorder=2)
-    ax.plot(fit_x, slope * fit_x + intercept, color='#E05C3A', lw=1.8,
-            label=f'Fit:  y = {slope:.2f}x + {intercept:.2f}', zorder=4)
+    # Grey: not identifiable (all GCs together)
+    sns.scatterplot(data=df_plot[~df_plot['fit']], x='ref', y='pred', ax=ax,
+                    s=12, alpha=0.4, color=COLORS['no_fit'],
+                    edgecolor='none', zorder=2, legend=False)
 
-    ax.axhline(0, color='#cccccc', lw=0.8, zorder=1)
-    ax.axvline(0, color='#cccccc', lw=0.8, zorder=1)
-    ax.set_xlim(-lim2, lim2)
-    ax.set_ylim(-lim2, lim2)
+    # Colored by GrowthCondition: identifiable reactions
+    for gc in gc_list:
+        sub = df_plot[df_plot['fit'] & (df_plot['GrowthCondition'] == str(gc))]
+        sns.scatterplot(data=sub, x='ref', y='pred', ax=ax,
+                        s=15, alpha=0.85, color=gc_colors[gc],
+                        edgecolor='none', zorder=4, label=f'GC {gc}', legend=False)
+        # Error bars (prediction uncertainty across bio-replicates)
+        x_b = sub['ref'].values
+        y_b = sub['pred'].values
+        ys  = sub['pred_std'].values
+        ax.errorbar(x_b, y_b,
+                    yerr=[np.minimum(ys, y_b - lim_lo).clip(0), ys],
+                    fmt='none', color=gc_colors[gc], alpha=0.3, lw=0.6, zorder=3)
 
-    # Annotate top outliers
-    top_f = list(np.argsort(-adf)[:8])
-    for i in top_f:
-        ax.annotate(nf[i], xy=(rf[i], pf[i]), fontsize=7.5, color='#C0392B',
-                    ha='left', va='bottom', xytext=(6, 4),
-                    textcoords='offset points',
-                    arrowprops=dict(arrowstyle='-', color='#E8A89C', lw=0.7))
-    ax.scatter(rf[top_f], pf[top_f], s=40, color='#C0392B', zorder=5,
-               edgecolors='white', linewidths=0.5, alpha=0.9)
+    ax.plot(fit_x, fit_x, color=COLORS['reference'], lw=1.0, ls='--', zorder=1)
 
-    ax.set_xlabel('Reference MFA  [mmol gDW⁻¹ h⁻¹]')
-    ax.set_ylabel('SigmaFlux prediction  [mmol gDW⁻¹ h⁻¹]')
-    ax.set_title(
-        f'SigmaFlux vs. Reference MFA  '
-        f'(R²_mdl ≥ {best_thr},  n = {m_filt["n"]})',
-        pad=10,
-    )
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.set_xlim(lim_lo, lim_hi)
+    ax.set_ylim(lim_lo, lim_hi)
 
-    stats_text = (
-        f"Pearson  $r$ = {m_filt['pearson']:+.3f}\n"
-        f"$R^2$ = {m_filt['r2']:+.3f}\n"
-        f"RMSE = {m_filt['rmse']:.3f}\n"
-        f"mean|Δ| = {m_filt['mean_abs_diff']:.3f}"
-    )
-    ax.text(0.04, 0.97, stats_text, transform=ax.transAxes,
-            fontsize=11, va='top', linespacing=1.6,
-            bbox=dict(facecolor='white', alpha=0.85, edgecolor='#cccccc',
-                      boxstyle='round,pad=0.4'))
+    ax.set_xlabel('Reference MFA\n[mmol gDW⁻¹ h⁻¹]')
+    ax.set_ylabel('SigmaFlux\n[mmol gDW⁻¹ h⁻¹]')
 
-    ax.legend(loc='lower right', framealpha=0.85, edgecolor='#cccccc')
-    ax.grid(True, alpha=0.15, linestyle='-')
+    # Legend: one entry per GC + R² annotation
+    handles = [mpl.lines.Line2D([0], [0], marker='o', color='w',
+                                 markerfacecolor=gc_colors[gc], markersize=5,
+                                 label=f'GC {gc}')
+               for gc in gc_list]
+    ax.legend(handles=handles, frameon=False, fontsize=8,
+              loc='upper left', bbox_to_anchor=(0.0, 1.0))
+
+    ax.text(0.97, 0.03, f"$R^2$ = {m_filt['r2']:.3f}",
+            transform=ax.transAxes, fontsize=9, va='bottom', ha='right',
+            bbox=dict(facecolor='white', alpha=0.85, edgecolor=COLORS['zero'],
+                      boxstyle='round,pad=0.3'))
+
     ax.set_aspect('equal')
+    sns.despine(ax=ax)
 
     fig.tight_layout()
-    out = args.out or args.predictions.replace('.csv', '_analysis.png')
-    fig.savefig(out, dpi=180, bbox_inches='tight')
-    print(f"\nPlot saved → {out}")
+
+    pred_path = pathlib.Path(args.predictions)
+    out_path = pathlib.Path(args.out) if args.out else pred_path.parent / (pred_path.stem + '_analysis.svg')
+    out_path.parent.mkdir(exist_ok=True)
+    fig.savefig(out_path, bbox_inches='tight')
+    print(f"\nPlot saved → {out_path}")
 
 
 if __name__ == '__main__':
