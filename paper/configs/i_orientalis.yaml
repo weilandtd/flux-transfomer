@@ -6,14 +6,14 @@ device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 30000
-  thinning: 200
-  processes: 4
+  n_samples: 5000
+  thinning: 1000
+  processes: 8
   method: optgp       # optgp | achr
 
   growth:
-    lb: 0.1
-    ub: 0.5
+    lb: 0.01
+    ub: 0.35
 
   # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
   # Convention (after standardization): met_e →  i.e. positive flux = secretion,
@@ -76,7 +76,7 @@ training:
   gradient_clip: 1.0
   scheduler: true
   val_fraction: 0.2
-  max_samples: 5000
+  max_samples: null
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
