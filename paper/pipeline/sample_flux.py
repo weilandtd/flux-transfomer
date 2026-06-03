@@ -13,6 +13,7 @@ import datetime
 import os
 
 import cobra
+import pandas as pd
 import yaml
 from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
@@ -57,8 +58,8 @@ def constrain_growth(model, growth_cfg):
     set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
 
 
-def constrain_by_fva(model, fraction_of_optimum):
-    fva = flux_variability_analysis(model, fraction_of_optimum=fraction_of_optimum)
+def constrain_by_fva(model):
+    fva = flux_variability_analysis(model, fraction_of_optimum=0)
     epsilon = 1e-6
     zero_reactions = []
 
@@ -73,14 +74,91 @@ def constrain_by_fva(model, fraction_of_optimum):
     orphaned_metabolites = [metabolite for metabolite in model.metabolites if len(metabolite.reactions) == 0]
     model.remove_metabolites(orphaned_metabolites)
 
-    return len(zero_reactions), len(orphaned_metabolites)
+    return len(zero_reactions), len(orphaned_metabolites), fva
+
+
+def check_sampling_coverage(samples, fva, key_reactions=None):
+    common = [r for r in samples.columns if r in fva.index]
+    obs_min = samples[common].min(axis=0)
+    obs_max = samples[common].max(axis=0)
+    fva_range = fva.loc[common, "maximum"] - fva.loc[common, "minimum"]
+    variable_mask = fva_range > 1e-6
+    coverage = (obs_max - obs_min)[variable_mask] / fva_range[variable_mask]
+
+    print("\n--- Bound Coverage Analysis ---")
+    print(f"Reactions compared: {len(common)} (FVA variable: {variable_mask.sum()})")
+    print(f"Coverage (obs range / FVA range):")
+    print(f"  Median : {coverage.median():.3f}")
+    print(f"  Mean   : {coverage.mean():.3f}")
+    print(f"  > 90%  : {(coverage > 0.9).sum()} reactions")
+    print(f"  < 10%  : {(coverage < 0.1).sum()} reactions")
+
+    poor = coverage[coverage < 0.1].sort_values()
+    if len(poor) > 0:
+        print("\nPoorly covered reactions (coverage < 10%):")
+        fva_lo = fva.loc[poor.index, "minimum"]
+        fva_hi = fva.loc[poor.index, "maximum"]
+        for rxn_id in poor.index:
+            print(f"  {rxn_id:<40s}  cov={poor[rxn_id]:.3f}  FVA=[{fva_lo[rxn_id]:.4f}, {fva_hi[rxn_id]:.4f}]  obs=[{obs_min[rxn_id]:.4f}, {obs_max[rxn_id]:.4f}]")
+
+    if key_reactions:
+        print("\nKey reaction stats:")
+        for rxn_id in key_reactions:
+            if rxn_id not in samples.columns:
+                print(f"  {rxn_id}: not in samples (pruned as zero-flux)")
+                continue
+            obs_lo, obs_hi = obs_min[rxn_id], obs_max[rxn_id]
+            obs_std = samples[rxn_id].std()
+            if rxn_id in fva.index:
+                fva_lo = fva.loc[rxn_id, "minimum"]
+                fva_hi = fva.loc[rxn_id, "maximum"]
+                fva_rng = fva_hi - fva_lo
+                cov = (obs_hi - obs_lo) / fva_rng if fva_rng > 1e-6 else float("nan")
+                print(f"  {rxn_id}:")
+                print(f"    FVA bounds : [{fva_lo:.4f}, {fva_hi:.4f}]  width={fva_rng:.4f}")
+                print(f"    Obs range  : [{obs_lo:.4f}, {obs_hi:.4f}]  width={obs_hi - obs_lo:.4f}")
+                print(f"    Obs std    : {obs_std:.4f}")
+                print(f"    Coverage   : {cov:.3f}")
 
 
 def summarize_variation(samples):
-    std = samples.std(axis=0)
-    print(f"Variable reactions > 1e-8: {(std > 1e-8).sum()} / {samples.shape[1]}")
-    print("Top variable reactions:")
-    print(std.sort_values(ascending=False).head(20).to_string())
+    stats = pd.DataFrame({
+        "min": samples.min(axis=0),
+        "max": samples.max(axis=0),
+        "std": samples.std(axis=0),
+    }).sort_values("std", ascending=False)
+    print(f"Variable reactions > 1e-8: {(stats['std'] > 1e-8).sum()} / {samples.shape[1]}")
+    print("Flux summary (sorted by std):")
+    print(stats.to_string(float_format=lambda x: f"{x:10.4f}"))
+
+
+def screen_nonessential(model):
+    """Return IDs of reactions whose knockout leaves the prepared model feasible."""
+    nonessential = []
+    essential = []
+    for rxn in model.reactions:
+        with model:
+            rxn.bounds = (0, 0)
+            if model.optimize().status == "optimal":
+                nonessential.append(rxn.id)
+            else:
+                essential.append(rxn.id)
+    print(f"Essentiality screen: {len(nonessential)} non-essential, {len(essential)} essential / {len(model.reactions)} total reactions")
+    print("Essential reactions:")
+    for rxn_id in essential:
+        print(f"  {rxn_id}")
+    return nonessential
+
+
+def _do_sample(model, s, seed):
+    return sample(
+        model,
+        n=s["n_samples"],
+        thinning=s["thinning"],
+        processes=s["processes"],
+        method=s["method"],
+        seed=seed,
+    )
 
 
 def main(cfg, output_dir_override=None):
@@ -102,28 +180,41 @@ def main(cfg, output_dir_override=None):
 
     model.objective = Zero
 
-    if s.get("fva", {}).get("enabled", False):
-        removed_reactions, removed_metabolites = constrain_by_fva(model, s["fva"]["fraction"])
+    fva_result = None
+    if s.get("fva", False):
+        removed_reactions, removed_metabolites, fva_result = constrain_by_fva(model)
         print(f"Removed {removed_reactions} zero-FVA reactions and {removed_metabolites} orphaned metabolites")
 
     prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, prepared_model_path)
     print(f"Saved prepared model: {prepared_model_path}")
 
-    print(f"Sampling {s['n_samples']} flux distributions...")
-    samples = sample(
-        model,
-        n=s["n_samples"],
-        thinning=s["thinning"],
-        processes=s["processes"],
-        method=s["method"],
-        seed=cfg["seed"],
-    )
+    if s.get("ko", False) and s["growth"]["lb"] == 0:
+        print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
+
+    print(f"Sampling {s['n_samples']} flux distributions (WT)...")
+    all_samples = [_do_sample(model, s, cfg["seed"])]
+
+    if s.get("ko", False):
+        nonessential = screen_nonessential(model)
+        total = (1 + len(nonessential)) * s["n_samples"]
+        print(f"Total samples to generate: {total} (WT + {len(nonessential)} KOs × {s['n_samples']})")
+        for i, rxn_id in enumerate(nonessential):
+            print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({s['n_samples']} samples)")
+            with model:
+                model.reactions.get_by_id(rxn_id).bounds = (0, 0)
+                all_samples.append(_do_sample(model, s, cfg["seed"] + i + 1))
+        samples = pd.concat(all_samples, ignore_index=True)
+        print(f"Combined samples: {len(samples)} total ({len(nonessential)} KOs + WT)")
+    else:
+        samples = all_samples[0]
 
     samples_path = os.path.join(output_dir, "flux_samples.csv")
     samples.to_csv(samples_path)
     print(f"Saved flux samples: {samples_path} shape={samples.shape}")
     summarize_variation(samples)
+    if fva_result is not None:
+        check_sampling_coverage(samples, fva_result, key_reactions=["EX_glc__D_e"])
 
 
 if __name__ == "__main__":
