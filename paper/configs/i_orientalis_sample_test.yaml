@@ -1,0 +1,40 @@
+# SigmaFlux config — I. orientalis, sampling test only
+# Uses 200 samples / thinning=100 / 2 processes to verify FVA + coverage output quickly.
+name: I_orientalis
+model_file: models/I_orientalis/imIsor_annotated_hierarchical.json
+seed: 42
+device: auto
+
+sampling:
+  n_samples: 200
+  thinning: 100
+  processes: 8
+  method: optgp
+  fva: true # Constraint the model by FVA
+  ko: true # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
+
+  growth:
+    lb: 0.01
+    ub: 0.5
+
+  media:
+    EX_glc__D_e: {lb: -12.0, ub: -1.0}
+    EX_o2_e:     {lb: -100.0, ub: 0.0}
+    EX_co2_e:    {lb: 0.0,  ub: 100.0}
+    EX_etoh_e:   {lb: 0.0,  ub: 100.0}
+    EX_ac_e:     {lb: 0.0,  ub: 100.0}
+    EX_glyc_e:   {lb: 0.0,  ub: 100.0}
+    EX_succ_e:   {lb: 0.0,  ub: 100.0}
+    EX_nh4_e:    {lb: -100.0, ub: 0.0}
+    EX_pi_e:     {lb: -100.0, ub: 0.0}
+    EX_so4_e:    {lb: -100.0, ub: 0.0}
+    EX_h2o_e:    {lb: -100.0, ub: 100.0}
+    EX_h_e:      {lb: -100.0, ub: 100.0}
+    EX_ca2_e:    {lb: -100.0, ub: 0.0}
+    EX_cu2_e:    {lb: -100.0, ub: 0.0}
+    EX_fe2_e:    {lb: -100.0, ub: 0.0}
+    EX_k_e:      {lb: -100.0, ub: 0.0}
+    EX_mg2_e:    {lb: -100.0, ub: 0.0}
+    EX_mn2_e:    {lb: -100.0, ub: 0.0}
+    EX_zn2_e:    {lb: -100.0, ub: 0.0}
+

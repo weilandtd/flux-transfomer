@@ -11,8 +11,11 @@ sampling:
   processes: 4
   method: optgp       # optgp | achr
 
+  fva: true # Constraint the model by FVA
+  ko: false # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
+
   growth:
-    lb: 0.1
+    lb: 0.01
     ub: 0.5
 
   # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
@@ -44,9 +47,6 @@ sampling:
     EX_mn2_e:    {lb: -0.01, ub: 0.0}
     EX_zn2_e:    {lb: -0.01, ub: 0.0}
 
-  fva:
-    enabled: false
-    fraction: 0.1
 
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
