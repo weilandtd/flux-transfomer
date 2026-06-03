@@ -519,9 +519,12 @@ if __name__ == "__main__":
 
     measured_fluxes = t.get("measured_fluxes") or None
 
+    _prepared = os.path.join(output_dir, "model_prepared_for_mfa.json")
+    _default  = os.path.join(_REPO_ROOT, cfg["model_file"]) if not os.path.isabs(cfg["model_file"]) else cfg["model_file"]
+
     args = argparse.Namespace(
         data_dir               = output_dir,
-        model_json             = os.path.join(_REPO_ROOT, cfg["model_file"]) if not os.path.isabs(cfg["model_file"]) else cfg["model_file"],
+        model_json             = _prepared if os.path.isfile(_prepared) else _default,
         output                 = output_model,
         device                 = cfg.get("device", "auto"),
         seed                   = cfg.get("seed", 42),
