@@ -2,8 +2,6 @@ import re
 from sigmaflux.expansion.utils import emu_to_bin
 from sigmaflux.expansion.emu import EMU, OriginSet
 
-from collections import OrderedDict
-
 
 class MissingAtomMappingError(Exception):
     pass
@@ -29,8 +27,8 @@ class AtomMapping(object):
         # TODO Consistency check
         # for met_id, atom_ids in atom_mappings.items():
         #     stoich = rxn.metabolites.get_by_id(met_id)
-        self.product_mappings = OrderedDict(products_atom_mappings)
-        self.educt_mappings = OrderedDict(educts_atom_mappings)
+        self.product_mappings = products_atom_mappings  # list of (met_id, mapping_str)
+        self.educt_mappings = educts_atom_mappings       # list of (met_id, mapping_str)
 
         self.rxn = rxn
 
@@ -62,7 +60,7 @@ class AtomMapping(object):
         origin_emus_rev = set()
    
         # Find the origin EMUS that can make the target EMU if the reaction can go forward
-        if self.forward &  (target_emu.id in self.product_mappings):
+        if self.forward and any(k == target_emu.id for k, _ in self.product_mappings):
 
             # Compute the origin set for the target emu
             the_origin_set = compute_origin_emu_set(target_emu, self.product_mappings, self.educt_mappings, self.rxn)
@@ -79,7 +77,7 @@ class AtomMapping(object):
 
 
         # Find the origin EMUS that can make the target EMU if the reaction can go reverse
-        if self.reverse & (target_emu.id in self.educt_mappings):
+        if self.reverse and any(k == target_emu.id for k, _ in self.educt_mappings):
             the_origin_set_rev = compute_origin_emu_set(target_emu, self.educt_mappings, self.product_mappings, self.rxn)
             # We add the origin set to the set of origin sets
             origin_emus_rev.add(OriginSet(the_origin_set_rev))
@@ -154,7 +152,7 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
         [type]: [description]
     """
     # Define the target emu
-    target_mapping = product_mappings[target_emu.id]
+    target_mapping = next(v for k, v in product_mappings if k == target_emu.id)
     if sym >= 0:
         # Rearrange the target_mapping according to the symetry
         # e.g. symetry[1] = ('ABC', 'ACB') means ACB is the same as ABC
@@ -184,10 +182,10 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
         print(f"Error in atom mapping for {target_emu.metabolite} | Check if mapped inconsitently")
         return OriginSet()
 
-    the_orign_emu = set()
+    the_orign_emu = []
 
     # For each educt find the corresponding emu
-    for educt, educt_mapping in educt_mappings.items():
+    for educt, educt_mapping in educt_mappings:
         # Apply find product -> educt mapping
         # p1 (abc) <- e1 (ab) + e2 (c) 
         # product emu 23 -> 011 -> e1 01 + e2 1
@@ -214,7 +212,7 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
             # Find the metabolite object%debug
             educt_metabolite = next(m for m in reaction.metabolites if m.id == educt)
             new = EMU(educt_metabolite, mids)
-            the_orign_emu.add(new)
+            the_orign_emu.append(new)
 
     # Convert to origin set type 
     return OriginSet(the_orign_emu)
