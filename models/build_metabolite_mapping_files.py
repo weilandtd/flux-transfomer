@@ -25,18 +25,23 @@ from sigmaflux.utils import build_data_name_maps
 ORGANISMS = [
     {
         "name": "I_orientalis",
-        # Any clean MID xlsx for this organism (used to extract compound names).
-        # A single-condition file is sufficient; all conditions share the same
-        # compound list.
-        "mid_xlsx":   "data/I_orientalis/I_orientalis_C.xlsx",
-        # Atom Mapping Model xlsx for the organism.
+        "mid_xlsx": [
+            "data/I_orientalis/I_orientalis_C.xlsx",
+            "data/I_orientalis/I_orientalis_N.xlsx",
+            "data/I_orientalis/I_orientalis_P.xlsx",
+            "data/I_orientalis/I_orientalis_batch.xlsx",
+        ],
         "amm_xlsx":   "models/I_orientalis/imIsor_AMM.xlsx",
-        # Output mapping CSV (referenced by --mapping-csv in other scripts).
         "output_csv": "models/I_orientalis/I_orientalis_mapping.csv",
     },
     {
         "name": "S_cerevisiae",
-        "mid_xlsx":   "data/S_cervesiae/S_cerevisiae_C.xlsx",
+        "mid_xlsx": [
+            "data/S_cervesiae/S_cerevisiae_C.xlsx",
+            "data/S_cervesiae/S_cerevisiae_N.xlsx",
+            "data/S_cervesiae/S_cerevisiae_P.xlsx",
+            "data/S_cervesiae/S_cerevisiae_batch.xlsx",
+        ],
         "amm_xlsx":   "models/S_cerevisiae/scAMM.xlsx",
         "output_csv": "models/S_cerevisiae/S_cerevisiae_mapping.csv",
     },
