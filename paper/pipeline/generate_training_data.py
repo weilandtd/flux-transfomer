@@ -19,14 +19,27 @@ Example:
 import argparse
 import datetime
 import os
-import re
 
+# Pin thread counts to the SLURM allocation before any BLAS/OpenMP library
+# is imported.  Without this, PyTorch/OpenBLAS spawn as many threads as there
+# are physical cores on the node, causing heavy contention when multiple jobs
+# share the node and producing the large per-iteration time variance seen in
+# practice.
+_n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
+os.environ.setdefault("OMP_NUM_THREADS", str(_n_threads))
+os.environ.setdefault("MKL_NUM_THREADS", str(_n_threads))
+os.environ.setdefault("OPENBLAS_NUM_THREADS", str(_n_threads))
+os.environ.setdefault("NUMEXPR_NUM_THREADS", str(_n_threads))
+
+import numpy as np
 import yaml
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
 import torch
+torch.set_num_threads(_n_threads)
+torch.set_num_interop_threads(1)
 from cobra.io.json import load_json_model
 from tqdm import tqdm
 
