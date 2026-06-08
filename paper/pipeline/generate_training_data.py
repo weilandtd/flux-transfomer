@@ -49,19 +49,6 @@ from sigmaflux.core.model import MFAModel
 from sigmaflux.expansion.emu import EMU
 
 
-MEASURED_METABOLITE_IDS = [
-    "glc__D_c", "g6p_c", "f6p_c", "fdp_c", "dhap_c", "g3p_c", "3pg_c", "pep_c", "pyr_c",
-    "cit_c", "akg_c", "succ_c", "fum_c", "mal__L_c",
-    "6pgc_c", "r5p_c", "s7p_c", "e4p_c",
-    "glyc3p_c", "3mob_c", "2ippm_c", "orot_c",
-    "ala__L_c", "arg__L_c", "asp__L_c", "gln__L_c", "glu__L_c", "gly_c",
-    "his__L_c", "ile__L_c", "leu__L_c", "lys__L_c", "met__L_c",
-    "phe__L_c", "pro__L_c", "ser__L_c", "thr__L_c", "trp__L_c", "tyr__L_c", "val__L_c",
-    "citr__L_c", "orn_c",
-    "atp_c", "amp_c", "imp_c", "ump_c", "utp_c", "dgmp_c",
-    "gam6p_c",
-]
-
 
 def validate_tracers(tracer_cfg, media_cfg):
     """Check that every tracer metabolite has an open exchange reaction in the media.
@@ -90,26 +77,6 @@ def validate_tracers(tracer_cfg, media_cfg):
             "Tracer/media incompatibility — the following tracers cannot enter the network:\n"
             + "\n".join(errors)
         )
-
-
-def infer_atom_pattern(model, met_id):
-    patterns = []
-    for reaction in model.metabolites.get_by_id(met_id).reactions:
-        atom_mapping = reaction.annotation.get("atom_mapping", "")
-        pattern = r"\b{}\s*\(([^)]+)\)".format(re.escape(met_id))
-        patterns.extend(re.findall(pattern, atom_mapping))
-
-    if not patterns:
-        return ""
-
-    return atom_pattern_for_size(max(len(pattern) for pattern in patterns))
-
-
-def atom_pattern_for_size(n_carbons):
-    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    if n_carbons <= len(alphabet):
-        return alphabet[:n_carbons]
-    return "".join(f"a{i}" for i in range(1, n_carbons + 1))
 
 
 def resolve_device(device_arg):
@@ -147,25 +114,16 @@ def build_targets(mfa_model):
     measured_metabolites = []
     metabolite_atom_patterns = {}
 
-    for met_id in MEASURED_METABOLITE_IDS:
-        try:
-            metabolite = mfa_model.metabolites.get_by_id(met_id)
-            atom_pattern = metabolite.annotation.get("atom_pattern", "")
-            if len(atom_pattern) == 0:
-                atom_pattern = infer_atom_pattern(mfa_model, met_id)
-            if len(atom_pattern) == 0:
-                print(f"WARNING: {met_id} has no atom mapping, skipping")
-                continue
-
-            metabolite.annotation["atom_pattern"] = atom_pattern
-            metabolite_atom_patterns[metabolite.id] = atom_pattern
-            targets.add(EMU(metabolite, list(range(1, len(atom_pattern) + 1))))
-            measured_metabolites.append(metabolite)
-        except KeyError:
-            print(f"WARNING: {met_id} not found in model, skipping")
+    for metabolite in mfa_model.metabolites:
+        atom_pattern = metabolite.annotation.get("atom_pattern", "")
+        if not atom_pattern:
+            continue
+        metabolite_atom_patterns[metabolite.id] = atom_pattern
+        targets.add(EMU(metabolite, list(range(1, len(atom_pattern) + 1))))
+        measured_metabolites.append(metabolite)
 
     if not targets:
-        raise ValueError("No EMU targets were built. Check measured metabolites and atom mappings.")
+        raise ValueError("No EMU targets found. Check model atom_pattern annotations.")
 
     print(f"Targets: {len(targets)} EMUs from {len(measured_metabolites)} metabolites")
     return targets, measured_metabolites, metabolite_atom_patterns
@@ -180,7 +138,6 @@ def build_labeling_index(mfa_model, experiments, measured_metabolites, metabolit
         for metabolite in measured_metabolites:
             metabolite_ix = mfa_model._metabolite_hash[metabolite.id]
             atom_pattern = metabolite_atom_patterns[metabolite.id]
-
             for isotopomer_ix in range(1, len(atom_pattern) + 1):
                 ix = create_data_index(mfa_model, exp_ix, isotopomer_ix, metabolite_ix)
                 labeling_to.append(ix)
