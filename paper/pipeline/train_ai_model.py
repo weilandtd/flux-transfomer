@@ -31,7 +31,10 @@ from sigmaflux.ai.data import (
 )
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
-from sigmaflux.ai.train import BasisSpaceLoss, FluxNorm, evaluate_validation_correlations, train_model, var_norm_mse_loss
+from sigmaflux.ai.train import (
+    BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
+    evaluate_validation_correlations, train_model, var_norm_mse_loss,
+)
 from sigmaflux.ai.utils import compute_sparse_nullspace
 
 
@@ -135,6 +138,17 @@ def main(args):
         reversibility_df = reversibility_df.iloc[:, idx]
         print(f"Randomly subsampled {args.max_samples} samples (seed={args.seed})")
 
+    if getattr(args, 'exclude_extracellular', False):
+        n_before = labeling_df.shape[0]
+        mask = ~labeling_df.index.get_level_values('Metabolite').str.endswith('_e')
+        labeling_df = labeling_df.loc[mask]
+        print(f"Excluded extracellular tokens: {n_before} → {labeling_df.shape[0]}")
+
+    if getattr(args, 'compartment_mix', False):
+        n_before = labeling_df.shape[0]
+        labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
+        print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
+
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
 
@@ -206,6 +220,17 @@ def main(args):
 
     flux_dim          = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
+
+    n_tracers           = len(base_tracer_names)
+    n_labeling_per_tracer = labeling_df.shape[0] // max(n_tracers, 1)
+    n_bypass            = len(args.measured_fluxes) if args.measured_fluxes else 0
+    print(f"\n=== Input / Output Summary ===")
+    print(f"Samples:       train={len(train_dataset):>6,}  val={len(val_dataset):>6,}")
+    print(f"Input tokens:  labeling={labeling_df.shape[0]:>5,}"
+          f"  ({n_labeling_per_tracer} per tracer × {n_tracers} tracers)"
+          f"  bypass_flux={n_bypass}")
+    print(f"Targets:       flux={flux_dim}  reversibility={reversibility_dim}")
+    print()
 
     # Reaction radial embedding for flux tokens
     h_reaction = args.h_reaction
@@ -338,6 +363,16 @@ def main(args):
     )
     model.flux_noise_std = args.flux_noise_std
     model.labeling_noise_std = args.labeling_noise_std
+
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\n=== Model Size ===")
+    print(f"Total parameters:     {total_params:>10,}")
+    print(f"Trainable parameters: {trainable_params:>10,}")
+    for name, module in model.named_children():
+        n = sum(p.numel() for p in module.parameters())
+        print(f"  {name:<30s} {n:>10,}")
+    print()
 
     y_train_for_loss = y_train if n_free_basis > 0 else None
     loss_function = build_loss_function(
@@ -555,5 +590,7 @@ if __name__ == "__main__":
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
         measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
+        compartment_mix        = t.get("compartment_mix", False),
+        exclude_extracellular  = t.get("exclude_extracellular", False),
     )
     main(args)

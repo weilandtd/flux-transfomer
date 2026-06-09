@@ -3,14 +3,60 @@ Training utilities for flux prediction models.
 """
 
 import copy
+import re
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
 from sigmaflux.ai.data import generate_metabolite_mask
+
+
+def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
+    """
+    Merge tokens that differ only by compartment suffix (_c, _m, …) by mixing
+    their labeling fractions with per-sample Dirichlet weights.
+
+    For all compartment variants: a ~ U(0,1) mixture for two compartments;
+    Dirichlet(1,…,1) for more. Returns a DataFrame with the same columns but fewer rows.
+    """
+    rng = np.random.default_rng(seed)
+
+    tracers     = labeling_df.index.get_level_values('Tracer')
+    metabolites = labeling_df.index.get_level_values('Metabolite')
+    isotopomers = labeling_df.index.get_level_values('Isotopomer')
+
+    base_metabolites = [re.sub(r'_[a-z]$', '', m) for m in metabolites]
+
+    groups = {}
+    for i, (t, bm, iso) in enumerate(zip(tracers, base_metabolites, isotopomers)):
+        groups.setdefault((t, bm, iso), []).append(i)
+
+    values = labeling_df.to_numpy()  # (n_tokens, n_samples)
+    n_samples = values.shape[1]
+    new_rows = []
+    new_index = []
+
+    for (tracer, base_met, iso), indices in groups.items():
+        if len(indices) == 1:
+            row = values[indices[0]]
+        else:
+            n_comp = len(indices)
+            weights = rng.dirichlet(np.ones(n_comp), size=n_samples)  # (n_samples, n_comp)
+            compartment_vals = values[indices]  # (n_comp, n_samples)
+            row = (weights * compartment_vals.T).sum(axis=1)  # (n_samples,)
+        new_rows.append(row)
+        new_index.append((tracer, base_met, iso))
+
+    new_index = pd.MultiIndex.from_tuples(new_index, names=['Tracer', 'Metabolite', 'Isotopomer'])
+    return pd.DataFrame(
+        np.array(new_rows, dtype=np.float32),
+        index=new_index,
+        columns=labeling_df.columns,
+    )
 
 
 class FluxNorm:
