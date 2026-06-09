@@ -213,6 +213,14 @@ def main(args):
     print("Preparing MFAModel...")
     mfa_model.prepare(experiments, targets=targets, with_backward=False)
 
+    # After pruning, restrict output to metabolites that actually exist in the EMU network.
+    # mfa_model.emu_met_filter is keyed by subnet size and contains only post-pruning EMUs.
+    emu_met_ids = {emu.id for emus in mfa_model.emu_met_filter.values() for emu in emus}
+    before = len(measured_metabolites)
+    measured_metabolites = [m for m in measured_metabolites if m.id in emu_met_ids]
+    metabolite_atom_patterns = {k: v for k, v in metabolite_atom_patterns.items() if k in emu_met_ids}
+    print(f"Metabolites after EMU network pruning: {len(measured_metabolites)} (removed {before - len(measured_metabolites)})")
+
     labeling_to, labeling_index = build_labeling_index(
         mfa_model,
         experiments,
