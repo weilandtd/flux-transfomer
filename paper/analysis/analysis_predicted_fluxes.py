@@ -50,6 +50,13 @@ COLORS = {
     'gc_palette': ['#2C7BB6', '#D7191C', '#1A9641', '#F4A736', '#9B59B6'],
 }
 
+# Reactions with |flux| below this value are excluded from the log-log plot.
+FLUX_MIN_ABS = 1e-6
+
+# Reactions with model validation R² below this threshold are treated as
+# unidentifiable and shown in grey on the plot.
+R2_IDENTIFIABLE = 0.3
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -66,7 +73,8 @@ def load_model_r2(checkpoint_path):
 def load_reference(ref_path, condition, config_path):
     """Load per-condition reference MFA fluxes with sign-convention correction.
 
-    Returns a wide DataFrame: index = reaction ID, columns = GrowthCondition int.
+    Returns (ref_vals, ref_lb, ref_ub): each a wide DataFrame indexed by reaction ID,
+    columns = GrowthCondition int.  lb/ub are the MFA 95%-CI bounds from the xlsx.
     """
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
@@ -77,13 +85,21 @@ def load_reference(ref_path, condition, config_path):
 
     ref_idx = ref.set_index('id')
     import re
-    pat = re.compile(rf'^{re.escape(condition)}(\d+)_mfa$')
-    ref_cols = [c for c in ref.columns if pat.match(c)]
-    ref_vals = ref_idx[ref_cols].copy()
-    flip_mask = ref_vals.index.isin(uptake_rxns)
-    ref_vals.loc[flip_mask] *= -1
-    ref_vals.columns = [int(pat.match(c).group(1)) for c in ref_cols]
-    return ref_vals  # index=reaction, columns=GrowthCondition int
+    pat     = re.compile(rf'^{re.escape(condition)}(\d+)_mfa$')
+    pat_lb  = re.compile(rf'^{re.escape(condition)}(\d+)_mfaLB$')
+    pat_ub  = re.compile(rf'^{re.escape(condition)}(\d+)_mfaUB$')
+
+    def _extract(p):
+        cols = [c for c in ref.columns if p.match(c)]
+        vals = ref_idx[cols].copy()
+        vals.loc[vals.index.isin(uptake_rxns)] *= -1
+        vals.columns = [int(p.match(c).group(1)) for c in cols]
+        return vals
+
+    ref_vals = _extract(pat)
+    ref_lb   = _extract(pat_lb)
+    ref_ub   = _extract(pat_ub)
+    return ref_vals, ref_lb, ref_ub
 
 
 def nullspace_correction(pred_df, checkpoint_path, extflux_path, config_path, condition,
@@ -215,7 +231,7 @@ def main():
     # divide by 1.5
     # combined['Value'] /= 1.5
     model_r2 = load_model_r2(args.checkpoint)
-    ref_by_gc = load_reference(args.reference, args.condition, args.config)
+    ref_by_gc, ref_lb_by_gc, ref_ub_by_gc = load_reference(args.reference, args.condition, args.config)
     ref_mean  = ref_by_gc.mean(axis=1)
     ref_std   = ref_by_gc.std(axis=1).fillna(0)
 
@@ -246,9 +262,13 @@ def main():
     n_k_all = np.array([n for n in measured_flux_names if n in pred_mean])
     p_k_raw = np.array([pred_mean[n] for n in n_k_all])
     r_k_all = np.full(len(n_k_all), np.nan)
+    gc_dilution: dict[int, float] = {}
     if args.extflux:
         df_exp_k = pd.read_excel(os.path.join(_REPO_ROOT, args.extflux))
         df_exp_k = df_exp_k[df_exp_k['Condition'].str.startswith(args.condition)].copy()
+        df_exp_k['_gc'] = df_exp_k['Condition'].str.extract(r'(\d+)').astype(int)
+        if 'BIOMASS' in df_exp_k.columns:
+            gc_dilution = df_exp_k.groupby('_gc')['BIOMASS'].mean().to_dict()
         for i, nm in enumerate(n_k_all):
             if nm in df_exp_k.columns:
                 val = df_exp_k[nm].mean()
@@ -342,7 +362,7 @@ def main():
         (t for t in thresholds if (rxn_r2 >= t).sum() >= 2),
         key=lambda t: compute_metrics(p[rxn_r2 >= t], r[rxn_r2 >= t])['r2'],
     )
-    best_thr = 0.5
+    best_thr = R2_IDENTIFIABLE
     mask = rxn_r2 >= best_thr
     abs_diff = np.abs(p - r)
 
@@ -365,9 +385,16 @@ def main():
         gc_pred = pred_by_gc.reindex(shared)[gc].fillna(0)
         gc_std  = pred_std_by_gc.reindex(shared)[gc].fillna(0)
         gc_ref  = ref_by_gc.reindex(shared)[gc].fillna(0)
+        gc_lb   = ref_lb_by_gc.reindex(shared)[gc].fillna(gc_ref) if gc in ref_lb_by_gc.columns else gc_ref
+        gc_ub   = ref_ub_by_gc.reindex(shared)[gc].fillna(gc_ref) if gc in ref_ub_by_gc.columns else gc_ref
+        ref_abs = np.abs(gc_ref.values)
+        lb_abs  = np.minimum(np.abs(gc_lb.values), np.abs(gc_ub.values))
+        ub_abs  = np.maximum(np.abs(gc_lb.values), np.abs(gc_ub.values))
         parts.append(pd.DataFrame({
             'GrowthCondition': str(gc),
-            'ref':      np.abs(gc_ref.values),
+            'ref':      ref_abs,
+            'ref_lo':   (ref_abs - lb_abs).clip(0),
+            'ref_hi':   (ub_abs  - ref_abs).clip(0),
             'pred':     np.abs(gc_pred.values),
             'pred_std': gc_std.values,
             'fit':      mask,
@@ -379,7 +406,7 @@ def main():
     m_filt  = compute_metrics(fit_pts['pred'].values, fit_pts['ref'].values)
 
     pos_vals = df_plot[['ref', 'pred']].values.ravel()
-    lim_lo   = 0.1
+    lim_lo   = FLUX_MIN_ABS
     lim_hi   = pos_vals.max() * 2.0
     fit_x    = np.array([lim_lo, lim_hi])
 
@@ -396,11 +423,13 @@ def main():
         sns.scatterplot(data=sub, x='ref', y='pred', ax=ax,
                         s=15, alpha=0.85, color=gc_colors[gc],
                         edgecolor='none', zorder=4, label=f'GC {gc}', legend=False)
-        # Error bars (prediction uncertainty across bio-replicates)
-        x_b = sub['ref'].values
-        y_b = sub['pred'].values
-        ys  = sub['pred_std'].values
+        x_b  = sub['ref'].values
+        y_b  = sub['pred'].values
+        ys   = sub['pred_std'].values
+        xlo  = sub['ref_lo'].values
+        xhi  = sub['ref_hi'].values
         ax.errorbar(x_b, y_b,
+                    xerr=[xlo, xhi],
                     yerr=[np.minimum(ys, y_b - lim_lo).clip(0), ys],
                     fmt='none', color=gc_colors[gc], alpha=0.3, lw=0.6, zorder=3)
 
@@ -414,13 +443,14 @@ def main():
     ax.set_xlabel('Reference MFA\n[mmol gDW⁻¹ h⁻¹]')
     ax.set_ylabel('SigmaFlux\n[mmol gDW⁻¹ h⁻¹]')
 
-    # Legend: one entry per GC + R² annotation
+    # Legend: one entry per GC with dilution rate label, placed outside plot
     handles = [mpl.lines.Line2D([0], [0], marker='o', color='w',
                                  markerfacecolor=gc_colors[gc], markersize=5,
-                                 label=f'GC {gc}')
+                                 label=(f'D={gc_dilution[gc]:.2f} h⁻¹' if gc in gc_dilution
+                                        else f'GC {gc}'))
                for gc in gc_list]
     ax.legend(handles=handles, frameon=False, fontsize=8,
-              loc='upper left', bbox_to_anchor=(0.0, 1.0))
+              loc='upper left', bbox_to_anchor=(1.02, 1.0), borderaxespad=0)
 
     ax.text(0.97, 0.03, f"$R^2$ = {m_filt['r2']:.3f}",
             transform=ax.transAxes, fontsize=9, va='bottom', ha='right',
@@ -430,7 +460,6 @@ def main():
     ax.set_aspect('equal')
     sns.despine(ax=ax)
 
-    fig.tight_layout()
 
     pred_path = pathlib.Path(args.predictions)
     out_path = pathlib.Path(args.out) if args.out else pred_path.parent / (pred_path.stem + '_analysis.svg')
