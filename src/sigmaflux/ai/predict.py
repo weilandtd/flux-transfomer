@@ -8,7 +8,7 @@ import torch
 from tqdm import tqdm
 
 
-def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask=False):
+def predict_fluxes(model, data_loader, device='cuda', verbose=True):
     """
     Generate flux predictions from tokenized labeling data.
 
@@ -17,8 +17,6 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask
         data_loader: DataLoader yielding IDTokenizedDataset batches
         device: Device to run on ('cuda' or 'cpu')
         verbose: Whether to show progress bar
-        extract_mask: Whether to automatically detect and use masks from data
-            (based on zero-valued fractions)
 
     Returns:
         predictions: (num_samples, flux_dim + reversibility_dim) tensor
@@ -38,20 +36,14 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True, extract_mask
             tracer_ids   = tracer_ids.to(device)
             fractions    = fractions.to(device)
 
-            padding_mask = None
-            if extract_mask:
-                from sigmaflux.ai.data import extract_mask_from_data
-                # fractions is (batch, N, 1); extract_mask_from_data uses tokens[:, :, -1]
-                valid_mask   = extract_mask_from_data(fractions, model.token_experiment_ids)
-                padding_mask = ~valid_mask
-
             fixed_fluxes = None
             if model.cfg.n_measured > 0:
                 bypass_mask  = model.token_experiment_ids == -1
                 fixed_fluxes = fractions[:, bypass_mask, 0]
 
             flux_predictions, reversibility_predictions = model(
-                compound_ids, label_ids, tracer_ids, fractions, padding_mask, fixed_fluxes
+                compound_ids, label_ids, tracer_ids, fractions,
+                measured_fluxes=fixed_fluxes,
             )
             predictions = torch.cat([flux_predictions, reversibility_predictions], dim=1)
 
@@ -96,7 +88,7 @@ def create_ensemble(num_models, config, token_experiment_ids,
     return models
 
 
-def ensemble_predict(models, data_loader, device='cuda', verbose=True, extract_mask=False):
+def ensemble_predict(models, data_loader, device='cuda', verbose=True):
     """
     Generate predictions from an ensemble of models with uncertainty estimation.
 
@@ -105,7 +97,6 @@ def ensemble_predict(models, data_loader, device='cuda', verbose=True, extract_m
         data_loader: DataLoader with IDTokenizedDataset batches
         device: Device to run on ('cuda' or 'cpu')
         verbose: Whether to show progress
-        extract_mask: Whether to automatically detect and use masks from data
 
     Returns:
         mean_predictions: (num_samples, flux_dim + reversibility_dim) — ensemble mean
@@ -119,7 +110,6 @@ def ensemble_predict(models, data_loader, device='cuda', verbose=True, extract_m
             print(f"Ensemble model {i+1}/{len(models)} predictions...")
         predictions = predict_fluxes(
             model, data_loader, device=device, verbose=verbose,
-            extract_mask=extract_mask,
         )
         all_model_predictions.append(predictions)
 

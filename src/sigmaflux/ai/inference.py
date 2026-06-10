@@ -3,11 +3,6 @@ SigmaFlux inference engine.
 
 Loads a trained checkpoint + config and predicts fluxes from experimental
 MID measurements and (optionally) known exchange fluxes.
-
-Auto-masking: any metabolite in the trained model's token set that is absent
-from the user's df_L is automatically masked (excluded from attention).  The
-model treats it as if that metabolite was never measured, which is the correct
-behaviour when running on incomplete experimental data.
 """
 
 import os
@@ -167,11 +162,6 @@ class SigmaFlux:
             suffix, e.g. 'pyr_c', 'akg_c' — run sf.expected_metabolites() to
             see the full list).
 
-            Auto-masking: metabolites from the training token set that are
-            absent from df_L are automatically excluded from attention.  This
-            is the correct behaviour for metabolites not measured in your
-            experiment.  No manual masking flag needed.
-
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes (optional, but use when available).
             Required columns: 'Flux Name', 'Value'
@@ -225,15 +215,9 @@ class SigmaFlux:
             df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
             user_metabolites -= unknown_mets
 
-        # Metabolites the model knows about but absent from df_L → auto-masked
-        masked_mets = self._known_metabolites - user_metabolites
-        if masked_mets:
-            print(f"Auto-masking {len(masked_mets)} metabolite(s) not in df_L: "
-                  f"{', '.join(sorted(masked_mets))}")
-
         # ── Build full-skeleton labeling_df ───────────────────────────────────
         # One column per sample; ALL training tokens present; zero where user
-        # has no measurement; those tokens will be masked below.
+        # has no measurement.
         skeleton_index = pd.MultiIndex.from_tuples(
             self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
         )
@@ -273,10 +257,6 @@ class SigmaFlux:
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 
-        # ── Build static padding mask for missing metabolites ─────────────────
-        met_index = labeling_df.index.get_level_values('Metabolite').tolist()
-        mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
-
         # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
         # Normalize to match training if checkpoint used normalize_targets.
         # Shape: (n_samples, n_measured) — sliced per batch in the loop below.
@@ -306,18 +286,11 @@ class SigmaFlux:
                 fracs = fracs.to(self.device)
                 B     = cids.shape[0]
 
-                pmask = None
-                if mask_positions:
-                    pmask = torch.zeros(B, cids.shape[1], dtype=torch.bool,
-                                        device=self.device)
-                    pmask[:, mask_positions] = True
-
                 fixed_fluxes = None
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     labeling_mask=pmask,
                                      measured_fluxes=fixed_fluxes)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
