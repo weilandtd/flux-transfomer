@@ -7,7 +7,7 @@ device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 30000
+  n_samples: 5000
   thinning: 100
   processes: 8
   method: optgp       # optgp | achr
@@ -69,7 +69,7 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  epochs: 100
+  epochs: 150
   batch_size: 256
   learning_rate: 0.001
   warmup_epochs: 5
@@ -79,7 +79,7 @@ training:
   max_samples: 5000
 
   # Architecture (FluxDecoder cross-attention decoder)
-  combined_dim: 256       # d_model
+  combined_dim: 128       # d_model
   num_attn_heads: 8       # n_head
   num_transformer_layers: 4
   dropout: 0.3
@@ -93,11 +93,12 @@ training:
   h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  # Missing-data augmentation: randomly mask individual metabolites (all isotopomers
-  # together) during training. Simulates metabolites not detected in the MS run.
-  met_mask_prob: 0.6
-  flux_mask_prob: 0.2
-  compartment_mix: true        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
+  # Token window: fixed sequence length per forward pass. All measured flux tokens
+  # are included first (each with prob 1-flux_token_dropout per batch), then the
+  # remaining slots are filled with met tokens sampled by token_information weights.
+  token_window: 512
+  flux_token_dropout: 0.2
+  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
 
   # Measured fluxes fed as soft inputs through the fusion layer.
@@ -116,11 +117,12 @@ training:
     - EX_succ_e
 
   flux_noise_std: 0.05
-  labeling_noise_std: 0.01  # Gaussian noise std (0 = disabled)
-  loss: variance               # variance | mse
-  flux_loss_space: mixed       # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  mixed_flux_weight: 0.2      # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
-  variance_min_cutoff: 0.1     # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
+  loss: variance                  # variance | mse
+  flux_loss_space: mixed          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  mixed_flux_weight: 0.2         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
+  n_pca_components: 50            # number of PCs used to score token informativeness for validation selection
 
 
