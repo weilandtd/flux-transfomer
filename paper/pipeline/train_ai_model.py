@@ -304,6 +304,24 @@ def main(args):
         corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
         obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
 
+        # max|r| per token across all null-space basis components — used as
+        # training sampling weights. Bounded in [0, 1] and matches the definition
+        # stored in the checkpoint and plotted by plot_token_information.py.
+        token_information_maxr = corr_yl.abs().max(dim=0).values        # (n_meas,)
+        print(f"Token max|r|: min={token_information_maxr.min():.3f}, "
+              f"max={token_information_maxr.max():.3f}, "
+              f"median={token_information_maxr.median():.3f}")
+
+        # PCA-based token importance: sum of squared loadings across top k PCs,
+        # weighted by variance (S^2). Used only for deterministic validation top-K.
+        _U, _S, _Vh = torch.linalg.svd(L_c, full_matrices=False)       # _Vh: (r, n_met)
+        k = min(args.n_pca_components, _S.shape[0])
+        token_information_pca = (_Vh[:k] ** 2 * _S[:k, None] ** 2).sum(dim=0)  # (n_met,)
+        _var_k     = (_S[:k] ** 2).sum().item()
+        _var_total = (_S ** 2).sum().item()
+        print(f"PCA token importance: top-{k} PCs explain "
+              f"{100 * _var_k / _var_total:.1f}% of labeling variance")
+
         # Extend observability to include measured fluxes — basis modes that are
         # directly constrained by known fluxes are observable even if labeling alone
         # cannot determine them.
@@ -326,6 +344,7 @@ def main(args):
               f"; max|r| range=[{obs_weights_np.min():.3f}, {obs_weights_np.max():.3f}]")
     else:
         y_mean, y_std, obs_weights_np = None, None, None
+        token_information_maxr, token_information_pca = None, None
 
     # Builf the null-space data dict, which the model uses to reconstruct fluxes
     # the latent space
@@ -394,8 +413,10 @@ def main(args):
         gradient_clip              = args.gradient_clip,
         use_scheduler              = not args.no_scheduler,
         warmup_epochs              = args.warmup_epochs,
-        met_mask_prob              = args.met_mask_prob,
-        flux_mask_prob             = args.flux_mask_prob,
+        token_window               = args.token_window,
+        flux_token_dropout         = args.flux_token_dropout,
+        token_information          = token_information_maxr,
+        token_information_val      = token_information_pca,
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
         measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
@@ -514,6 +535,7 @@ def main(args):
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
         },
+        "token_information":    token_information_maxr.numpy() if token_information_maxr is not None else None,
         "h_reaction":           h_reaction,
         "h_type":               h_type,
         "flux_norm_stats":      flux_norm_stats,
@@ -575,8 +597,8 @@ if __name__ == "__main__":
         num_attn_heads         = t.get("num_attn_heads", 4),
         num_transformer_layers = t.get("num_transformer_layers", 4),
         dropout                = t.get("dropout", 0.3),
-        met_mask_prob          = t.get("met_mask_prob", 0.0),
-        flux_mask_prob         = t.get("flux_mask_prob", 0.0),
+        token_window           = t.get("token_window", 512),
+        flux_token_dropout     = t.get("flux_token_dropout", 0.0),
         measured_fluxes        = measured_fluxes,
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
@@ -592,5 +614,6 @@ if __name__ == "__main__":
         measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
         compartment_mix        = t.get("compartment_mix", False),
         exclude_extracellular  = t.get("exclude_extracellular", False),
+        n_pca_components       = t.get("n_pca_components", 50),
     )
     main(args)

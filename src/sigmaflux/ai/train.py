@@ -12,7 +12,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from sigmaflux.ai.data import generate_metabolite_mask
 
 
 def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
@@ -37,6 +36,19 @@ def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.Da
 
     values = labeling_df.to_numpy()  # (n_tokens, n_samples)
     n_samples = values.shape[1]
+
+    # Draw one weight vector per (tracer, base_metabolite) so all isotopomers
+    # of the same metabolite are mixed with the same compartment fractions.
+    comp_counts = {}
+    for (t, bm, iso), idxs in groups.items():
+        comp_counts.setdefault((t, bm), len(idxs))
+
+    metabolite_weights = {
+        (t, bm): rng.dirichlet(np.ones(n_comp), size=n_samples)
+        for (t, bm), n_comp in comp_counts.items()
+        if n_comp > 1
+    }
+
     new_rows = []
     new_index = []
 
@@ -44,9 +56,8 @@ def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.Da
         if len(indices) == 1:
             row = values[indices[0]]
         else:
-            n_comp = len(indices)
-            weights = rng.dirichlet(np.ones(n_comp), size=n_samples)  # (n_samples, n_comp)
-            compartment_vals = values[indices]  # (n_comp, n_samples)
+            weights = metabolite_weights[(tracer, base_met)]  # (n_samples, n_comp)
+            compartment_vals = values[indices]                 # (n_comp, n_samples)
             row = (weights * compartment_vals.T).sum(axis=1)  # (n_samples,)
         new_rows.append(row)
         new_index.append((tracer, base_met, iso))
@@ -280,8 +291,9 @@ def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
 # Training primitives
 # ---------------------------------------------------------------------------
 
-def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
-                 flux_mask_prob=0.0, flux_loss_fn=None, rev_loss_fn=None,
+def _train_epoch(model, loader, optimizer, device, gradient_clip,
+                 token_window=512, flux_token_dropout=0.0, token_information=None,
+                 flux_loss_fn=None, rev_loss_fn=None,
                  measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
     model.train()
@@ -302,35 +314,51 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
         if labeling_noise_std > 0:
             fractions = apply_labeling_noise(fractions, compound_ids, tracer_ids, labeling_noise_std)
 
-        labeling_mask = None
-        if met_mask_prob > 0:
-            labeling_mask = ~generate_metabolite_mask(
-                compound_ids[0],
-                batch_size=compound_ids.shape[0],
-                device=device,
-                mask_prob=met_mask_prob,
-            )
-
-        measured_fluxes = None
-        flux_mask = None
-        if len(model.fixed_idx) > 0:
-            measured_fluxes = targets[:, model.fixed_idx]
+        # ── Flux token dropout ────────────────────────────────────────────────
+        measured_fluxes   = None
+        measured_flux_ids = None
+        n_fx = len(model.fixed_idx)
+        if n_fx > 0:
+            all_mf = targets[:, model.fixed_idx]
             noise_std = getattr(model, 'flux_noise_std', 0.0)
             if noise_std > 0.0:
-                measured_fluxes = measured_fluxes * (
-                    1.0 + noise_std * torch.randn_like(measured_fluxes)
-                )
-            # Randomly mask flux tokens during training for robustness
-            if flux_mask_prob > 0:
-                B, n_fx = measured_fluxes.shape
-                flux_mask = torch.rand(B, n_fx, device=device) < flux_mask_prob
+                all_mf = all_mf * (1.0 + noise_std * torch.randn_like(all_mf))
+            if flux_token_dropout > 0.0:
+                keep = torch.bernoulli(
+                    torch.full((n_fx,), 1.0 - flux_token_dropout, device=device)
+                ).bool()
+                if not keep.any():
+                    keep[torch.randint(n_fx, (1,), device=device)] = True
+                fx_sel = keep.nonzero(as_tuple=True)[0]
+            else:
+                fx_sel = torch.arange(n_fx, device=device)
+            measured_fluxes   = all_mf[:, fx_sel]
+            measured_flux_ids = model.fixed_idx_t[fx_sel]
+
+        # ── Met token biased subsampling ──────────────────────────────────────
+        n_all_met    = compound_ids.shape[1]
+        n_fx_sel     = fx_sel.shape[0] if measured_fluxes is not None else 0
+        n_met_window = min(token_window - n_fx_sel, n_all_met)
+
+        if token_information is not None and n_met_window < n_all_met:
+            probs   = token_information.to(device) + 1e-6
+            probs   = probs / probs.sum()
+            met_sel = torch.multinomial(probs, n_met_window, replacement=False)
+        else:
+            met_sel = torch.arange(n_all_met, device=device)
+
+        perm         = torch.randperm(len(met_sel), device=device)
+        met_sel      = met_sel[perm]
+        compound_ids = compound_ids[:, met_sel]
+        label_ids    = label_ids[:, met_sel]
+        tracer_ids   = tracer_ids[:, met_sel]
+        fractions    = fractions[:, met_sel]
 
         optimizer.zero_grad()
         flux_preds, rev_preds = model(
             compound_ids, label_ids, tracer_ids, fractions,
-            labeling_mask=labeling_mask,
             measured_fluxes=measured_fluxes,
-            flux_mask=flux_mask,
+            measured_flux_ids=measured_flux_ids,
         )
         flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
         loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
@@ -358,7 +386,8 @@ def _train_epoch(model, loader, optimizer, device, met_mask_prob, gradient_clip,
     return total_loss / n, total_grad_norm / n
 
 
-def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
+def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None,
+               token_window=512, token_information=None, token_information_val=None):
     """Run one validation epoch. Returns avg_loss."""
     model.eval()
     if flux_loss_fn is None:
@@ -366,6 +395,7 @@ def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
     if rev_loss_fn is None:
         rev_loss_fn = nn.MSELoss()
     total_loss = 0.0
+    val_scores = token_information_val if token_information_val is not None else token_information
 
     with torch.no_grad():
         for (cids, lids, tids, fracs), targets in loader:
@@ -378,6 +408,18 @@ def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
             measured_fluxes = None
             if len(model.fixed_idx) > 0:
                 measured_fluxes = targets[:, model.fixed_idx]
+
+            n_all_met    = cids.shape[1]
+            n_fx_sel     = measured_fluxes.shape[1] if measured_fluxes is not None else 0
+            n_met_window = min(token_window - n_fx_sel, n_all_met)
+
+            if val_scores is not None and n_met_window < n_all_met:
+                scores  = val_scores.to(device)
+                met_sel = torch.topk(scores, n_met_window, largest=True, sorted=False).indices
+                cids  = cids[:, met_sel]
+                lids  = lids[:, met_sel]
+                tids  = tids[:, met_sel]
+                fracs = fracs[:, met_sel]
 
             flux_preds, rev_preds = model(cids, lids, tids, fracs, measured_fluxes=measured_fluxes)
             total_loss += (
@@ -395,26 +437,30 @@ def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
 def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 learning_rate=1e-3, device='cuda',
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
-                warmup_epochs=0, met_mask_prob=0.0, flux_mask_prob=0.0,
+                warmup_epochs=0, token_window=512, flux_token_dropout=0.0,
+                token_information=None, token_information_val=None,
                 loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
     """
     Train a FluxDecoder model.
 
     Args:
-        model:          FluxDecoder model
-        train_loader:   DataLoader for training data
-        val_loader:     Optional DataLoader for validation data
-        num_epochs:     Number of training epochs
-        learning_rate:  Initial learning rate (Adam)
-        device:         'cuda' or 'cpu'
-        gradient_clip:  Max gradient norm (0 = disabled)
-        use_scheduler:  ReduceLROnPlateau after warmup
-        verbose:        Print progress
-        warmup_epochs:  Linear LR warmup epochs (0 = disabled)
-        met_mask_prob:  Per-epoch metabolite masking probability
-        flux_mask_prob: Per-epoch measured flux masking probability
-        labeling_noise_std: Gaussian noise std for isotopologue fractions (0 = disabled)
-        loss_function:  callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
+        model:                 FluxDecoder model
+        train_loader:          DataLoader for training data
+        val_loader:            Optional DataLoader for validation data
+        num_epochs:            Number of training epochs
+        learning_rate:         Initial learning rate (Adam)
+        device:                'cuda' or 'cpu'
+        gradient_clip:         Max gradient norm (0 = disabled)
+        use_scheduler:         ReduceLROnPlateau after warmup
+        verbose:               Print progress
+        warmup_epochs:         Linear LR warmup epochs (0 = disabled)
+        token_window:          Hard cap on total tokens per forward pass
+        flux_token_dropout:    Per-batch probability each flux token is excluded
+        token_information:     (n_met,) tensor; training sampling weights (e.g. max|r|)
+        token_information_val: (n_met,) tensor; validation top-K scores (e.g. PCA); falls
+                               back to token_information when None
+        labeling_noise_std:    Gaussian noise std for isotopologue fractions (0 = disabled)
+        loss_function:         callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
 
     Returns:
         log: dict with 'train_loss', 'val_loss', 'grad_norm' lists
@@ -453,8 +499,10 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
 
     for epoch in iterator:
         train_loss, grad_norm = _train_epoch(
-            model, train_loader, optimizer, device, met_mask_prob, gradient_clip,
-            flux_mask_prob=flux_mask_prob,
+            model, train_loader, optimizer, device, gradient_clip,
+            token_window=token_window,
+            flux_token_dropout=flux_token_dropout,
+            token_information=token_information,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
             measured_flux_loss_weight=measured_flux_loss_weight,
             labeling_noise_std=labeling_noise_std,
@@ -464,7 +512,10 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
 
         if val_loader is not None:
             val_loss = _val_epoch(model, val_loader, device,
-                                  flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn)
+                                  flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
+                                  token_window=token_window,
+                                  token_information=token_information,
+                                  token_information_val=token_information_val)
             val_losses.append(val_loss)
 
             if val_loss < best_val_loss:
