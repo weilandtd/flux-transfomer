@@ -315,8 +315,8 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
             fractions = apply_labeling_noise(fractions, compound_ids, tracer_ids, labeling_noise_std)
 
         # ── Flux token dropout ────────────────────────────────────────────────
-        measured_fluxes   = None
-        measured_flux_ids = None
+        measured_fluxes = None
+        flux_mask       = None
         n_fx = len(model.fixed_idx)
         if n_fx > 0:
             all_mf = targets[:, model.fixed_idx]
@@ -329,26 +329,18 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
                 ).bool()
                 if not keep.any():
                     keep[torch.randint(n_fx, (1,), device=device)] = True
-                fx_sel = keep.nonzero(as_tuple=True)[0]
-            else:
-                fx_sel = torch.arange(n_fx, device=device)
-            measured_fluxes   = all_mf[:, fx_sel]
-            measured_flux_ids = model.fixed_idx_t[fx_sel]
+                all_mf    = all_mf * keep.float()
+                flux_mask = (~keep).unsqueeze(0).expand(compound_ids.shape[0], -1)
+            measured_fluxes = all_mf
 
-        # ── Met token biased subsampling ──────────────────────────────────────
+        # ── Met token top-K selection ─────────────────────────────────────────
         n_all_met    = compound_ids.shape[1]
-        n_fx_sel     = fx_sel.shape[0] if measured_fluxes is not None else 0
-        n_met_window = min(token_window - n_fx_sel, n_all_met)
-
+        n_met_window = min(token_window - n_fx, n_all_met)
         if token_information is not None and n_met_window < n_all_met:
-            probs   = token_information.to(device) + 1e-6
-            probs   = probs / probs.sum()
-            met_sel = torch.multinomial(probs, n_met_window, replacement=False)
+            scores  = token_information.to(device)
+            met_sel = torch.topk(scores, n_met_window, largest=True, sorted=False).indices
         else:
             met_sel = torch.arange(n_all_met, device=device)
-
-        perm         = torch.randperm(len(met_sel), device=device)
-        met_sel      = met_sel[perm]
         compound_ids = compound_ids[:, met_sel]
         label_ids    = label_ids[:, met_sel]
         tracer_ids   = tracer_ids[:, met_sel]
@@ -358,7 +350,7 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
         flux_preds, rev_preds = model(
             compound_ids, label_ids, tracer_ids, fractions,
             measured_fluxes=measured_fluxes,
-            measured_flux_ids=measured_flux_ids,
+            flux_mask=flux_mask,
         )
         flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
         loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
@@ -456,9 +448,9 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         warmup_epochs:         Linear LR warmup epochs (0 = disabled)
         token_window:          Hard cap on total tokens per forward pass
         flux_token_dropout:    Per-batch probability each flux token is excluded
-        token_information:     (n_met,) tensor; training sampling weights (e.g. max|r|)
-        token_information_val: (n_met,) tensor; validation top-K scores (e.g. PCA); falls
-                               back to token_information when None
+        token_information:     (n_met,) tensor; top-K selection scores for training (e.g. max|r|)
+        token_information_val: (n_met,) tensor; top-K selection scores for validation (e.g. PCA);
+                               falls back to token_information when None
         labeling_noise_std:    Gaussian noise std for isotopologue fractions (0 = disabled)
         loss_function:         callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
 
