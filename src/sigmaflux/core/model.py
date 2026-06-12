@@ -30,16 +30,17 @@ class MFAModel(TorchModule, Model):
     Class for an MFA model
     """
     @time_function
-    def __init__(self, model, name, 
+    def __init__(self, model, name,
                  device=None,
                  min_flux=1e-4,
                  mu0=1.0,
                  lambda0=1.0,
                  n_processes=1,
-                 n_samples=10, 
+                 n_samples=10,
                  initial_flux_distribution=None,
                  dtype=torch.float64,
-                 max_reversibility_ratio=10.0):
+                 max_reversibility_ratio=10.0,
+                 seed=None):
         """
 
         :param model: cobra.Model annotated with atom transitions
@@ -80,7 +81,7 @@ class MFAModel(TorchModule, Model):
         # If no intial value provided sample
         if initial_flux_distribution is None: 
             # Sample a mean flux distribution to initialize the model
-            flux_sample = sample(model, n_samples, processes=n_processes)
+            flux_sample = sample(model, n_samples, processes=n_processes, seed=seed)
             initial_fluxes = flux_sample.mean()
         
         else:
