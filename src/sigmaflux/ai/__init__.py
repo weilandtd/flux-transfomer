@@ -3,10 +3,10 @@ AI module for metabolic flux prediction from labeling data.
 """
 
 # Model
-from .model import FBAProProjection, CrossAttention, FluxDecoderConfig, FluxDecoder
+from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
 
 # Training
-from .train import train_model, var_norm_mse_loss
+from .train import train_model, evaluate_validation_correlations, var_norm_mse_loss
 
 # Prediction
 from .predict import (
@@ -43,12 +43,12 @@ __all__ = [
     # Math utilities
     'compute_sparse_nullspace',
     # Model
-    'FBAProProjection',
     'CrossAttention',
     'FluxDecoderConfig',
     'FluxDecoder',
     # Training
     'train_model',
+    'evaluate_validation_correlations',
     'var_norm_mse_loss',
     # Prediction
     'predict_fluxes',

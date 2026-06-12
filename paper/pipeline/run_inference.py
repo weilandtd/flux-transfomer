@@ -31,7 +31,7 @@ from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 # ============================================================
 
 CONFIG      = "paper/configs/i_orientalis.yaml"
-CHECKPOINT  = "paper/.results/I_orientalis_20260519/imisor_transformer.pt"
+CHECKPOINT  = "./paper/.results/i_orientalis_20260603/imisor_transformer.pt"
 
 MID_FILE    = "data/I_orientalis/I_orientalis_C.xlsx"
 EXT_FILE    = "data/I_orientalis/I_orientalis_ExtFlux.xlsx"
@@ -40,7 +40,7 @@ CONDITION   = "C"           # C, N, P, or B
 MAPPING_CSV = "models/I_orientalis/I_orientalis_mapping.csv"
 
 ORGANISM    = "I_orientalis"
-OUT_DIR     = "paper/output"    # directory where predictions CSV is saved
+OUT_DIR     = "paper/.results/i_orientalis_20260603/output"    # directory where predictions CSV is saved
 
 # Flux sampling — perturb GLC_IN within its measurement error bounds
 FLUX_TO_SAMPLE    = "EX_glc__D_e"  # reaction whose flux is perturbed
@@ -182,9 +182,16 @@ if __name__ == '__main__':
         result['GrowthCondition'] = gc
         result['Condition']       = CONDITION
 
+        # Tag flux vs reversibility rows (same Flux Name used for both)
+        n_flux = len(sf.flux_names)
+        result['Type'] = (
+            result.groupby('Sample', sort=False).cumcount()
+                  .lt(n_flux).map({True: 'flux', False: 'reversibility'})
+        )
+
         agg = (
             result
-            .groupby(['Condition', 'GrowthCondition', 'BioRep', 'Flux Name'],
+            .groupby(['Condition', 'GrowthCondition', 'BioRep', 'Type', 'Flux Name'],
                      sort=False)['Value']
             .mean()
             .reset_index()

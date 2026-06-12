@@ -212,6 +212,10 @@ def calc_emu_input(emu_states, emu_inputs, mid_inputs, ):
     return emu_inputs
 
 
+# Invariant: every component of a multi-element OriginSet must be a core node
+# (present in core_met_ix for its subnet size).  This is guaranteed by
+# EMUExpansion._prune_orphaned_edges(); a KeyError here means the prune step
+# was skipped or a new code path bypasses it.
 def convolution(core_met_ix, emu_states, origin_set, device, dtype):
     """
     emu_states matrix is a dictionary of # of subnets torch tensors with # of core emu x # of mids

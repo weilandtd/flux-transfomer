@@ -3,11 +3,6 @@ SigmaFlux inference engine.
 
 Loads a trained checkpoint + config and predicts fluxes from experimental
 MID measurements and (optionally) known exchange fluxes.
-
-Auto-masking: any metabolite in the trained model's token set that is absent
-from the user's df_L is automatically masked (excluded from attention).  The
-model treats it as if that metabolite was never measured, which is the correct
-behaviour when running on incomplete experimental data.
 """
 
 import os
@@ -118,16 +113,29 @@ class SigmaFlux:
             for k in FluxDecoderConfig.__dataclass_fields__
             if k in cfg_dict
         })
-        nsd       = self.ckpt['null_space_data']
-        token_ids = self.ckpt['model_state_dict']['token_experiment_ids']
+        # Enrich null_space_data with normalization buffers from the state_dict.
+        # Older checkpoints omit y_mean/y_std/rev_log_mean/rev_log_std from the
+        # null_space_data dict even though the trained model weights have them.
+        # PyTorch's load_state_dict(strict=False) cannot promote a None buffer to
+        # a tensor, so we must seed the constructor with the correct values.
+        nsd = dict(self.ckpt['null_space_data'])
+        sd  = self.ckpt['model_state_dict']
+        if nsd.get('y_mean') is None and sd.get('y_norm_mean') is not None:
+            nsd['y_mean'] = sd['y_norm_mean'].numpy()
+            nsd['y_std']  = sd['y_norm_std'].numpy()
+        if nsd.get('rev_log_mean') is None and sd.get('rev_norm_mean') is not None:
+            nsd['rev_log_mean'] = sd['rev_norm_mean'].numpy()
+            nsd['rev_log_std']  = sd['rev_norm_std'].numpy()
+
+        token_ids       = sd['token_experiment_ids']
+        flux_norm_stats = self.ckpt.get('flux_norm_stats')
         self._model = FluxDecoder(
             cfg,
-            stoichiometric_matrix=None,
             token_experiment_ids=token_ids,
             null_space_data=nsd,
-            fixed_flux_indices=nsd.get('fixed_idx', []),
+            flux_norm_stats=flux_norm_stats,
         )
-        self._model.load_state_dict(self.ckpt['model_state_dict'])
+        self._model.load_state_dict(self.ckpt['model_state_dict'], strict=False)
         self._model.to(self.device)
         self._model.eval()
 
@@ -153,11 +161,6 @@ class SigmaFlux:
             Metabolite IDs must match the COBRA model exactly (with compartment
             suffix, e.g. 'pyr_c', 'akg_c' — run sf.expected_metabolites() to
             see the full list).
-
-            Auto-masking: metabolites from the training token set that are
-            absent from df_L are automatically excluded from attention.  This
-            is the correct behaviour for metabolites not measured in your
-            experiment.  No manual masking flag needed.
 
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes (optional, but use when available).
@@ -212,15 +215,9 @@ class SigmaFlux:
             df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
             user_metabolites -= unknown_mets
 
-        # Metabolites the model knows about but absent from df_L → auto-masked
-        masked_mets = self._known_metabolites - user_metabolites
-        if masked_mets:
-            print(f"Auto-masking {len(masked_mets)} metabolite(s) not in df_L: "
-                  f"{', '.join(sorted(masked_mets))}")
-
         # ── Build full-skeleton labeling_df ───────────────────────────────────
         # One column per sample; ALL training tokens present; zero where user
-        # has no measurement; those tokens will be masked below.
+        # has no measurement.
         skeleton_index = pd.MultiIndex.from_tuples(
             self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
         )
@@ -253,25 +250,28 @@ class SigmaFlux:
 
         (dataset, _, _, _, _) = prepare_id_dataset(
             labeling_df, flux_df, rev_df,
-            vocabs           = vocabs,
-            train_indices    = list(range(n_samples)),
-            normalize        = True,
-            measured_fluxes  = None,
-            norm_stats_input = self.ckpt.get('norm_stats'),
+            vocabs          = vocabs,
+            train_indices   = list(range(n_samples)),
+            normalize       = False,   # targets not used at inference time
+            measured_fluxes = None,
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 
-        # ── Build static padding mask for missing metabolites ─────────────────
-        met_index = labeling_df.index.get_level_values('Metabolite').tolist()
-        mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
-
-        # ── Pre-build fixed_fluxes tensor (raw values, matching train.py) ─────
+        # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
+        # Normalize to match training if checkpoint used normalize_targets.
         # Shape: (n_samples, n_measured) — sliced per batch in the loop below.
-        # Mirrors train.py: fixed_fluxes = targets[:, fixed_idx] (raw flux values).
         _fixed_flux_raw = None
-        if self._model.cfg.n_measured > 0:
+        if len(self._model.fixed_idx) > 0:
             fixed_idx = list(self._nsd.get('fixed_idx', []))
             fvals = flux_df.values[fixed_idx, :].T.copy()   # (n_samples, n_measured)
+            # Only apply norm_stats normalization when the model has no internal FluxNorm
+            # (i.e., trained with normalize=True so targets were pre-normalized).
+            if self._model.flux_norm_mean is None:
+                _ns_ff = self.ckpt.get('norm_stats', {})
+                if 'flux_mean' in _ns_ff:
+                    _fmean = np.array(_ns_ff['flux_mean'], dtype=np.float32)[fixed_idx]
+                    _fstd  = np.array(_ns_ff['flux_std'],  dtype=np.float32)[fixed_idx]
+                    fvals  = (fvals - _fmean) / _fstd
             _fixed_flux_raw = torch.tensor(fvals, dtype=torch.float32)
 
         # ── Inference ─────────────────────────────────────────────────────────
@@ -286,25 +286,29 @@ class SigmaFlux:
                 fracs = fracs.to(self.device)
                 B     = cids.shape[0]
 
-                pmask = None
-                if mask_positions:
-                    pmask = torch.zeros(B, cids.shape[1], dtype=torch.bool,
-                                        device=self.device)
-                    pmask[:, mask_positions] = True
-
                 fixed_fluxes = None
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     padding_mask=pmask,
-                                     fixed_fluxes=fixed_fluxes)
+                                     measured_fluxes=fixed_fluxes)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
                 batch_offset += B
 
         flux_arr = torch.cat(all_flux).numpy()
         rev_arr  = torch.cat(all_rev).numpy()
+
+        # Flux: already denormalized inside model.forward() via y_norm_mean/std
+        # (basis coefficients → physical mmol/gDW/h via Z_full.T).
+
+        # Reversibility: decode from z-scored log1p space → physical values.
+        # model.forward() returns raw z-score logits when rev_norm_mean is set.
+        _rev_log_mean = self._nsd.get('rev_log_mean')
+        if _rev_log_mean is not None:
+            _rev_log_mean = np.array(_rev_log_mean, dtype=np.float32)
+            _rev_log_std  = np.array(self._nsd['rev_log_std'], dtype=np.float32)
+            rev_arr = np.expm1(rev_arr * _rev_log_std + _rev_log_mean).clip(0)
 
         return self._format_output(flux_arr, rev_arr, samples)
 

@@ -622,15 +622,15 @@ class TokenizedDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
-                    train_indices=None, normalize=True, measured_fluxes=None,
-                    norm_stats_input=None):
+                    train_indices=None, measured_fluxes=None,
+                    norm_stats_input=None, normalize=False):
     """
     Prepare a TokenizedDataset from DataFrames using radial-embedding tokenization.
 
     Each row of labeling_df becomes one token: [compound_emb | label_emb |
-    tracer_emb | fraction].  Optionally, measured bypass fluxes are prepended
-    as extra tokens with zero ID embeddings and the normalised flux value in
-    the fraction slot.
+    tracer_emb | fraction].  Measured flux tokens are built separately inside
+    FluxDecoder.forward() using reaction embeddings — they are NOT prepended
+    here.
 
     Args:
         labeling_df: DataFrame with labeling data (MultiIndex: Tracer/Metabolite/Isotopomer).
@@ -638,16 +638,17 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
         reversibility_df: DataFrame with reversibility data.
         vocabs: dict from build_radial_vocabs.
         train_indices: Sample indices to use (None = all).
-        normalize: Whether to log-transform and standardise labeling fractions.
-        measured_fluxes: List of reaction IDs whose fluxes are prepended as
-            bypass tokens, or None to disable.
+        normalize: Whether to standardise flux/reversibility targets.
+        measured_fluxes: Accepted for API compatibility; no longer used to build
+            bypass tokens. Measured flux values are present in the targets tensor
+            and passed to forward() at training time.
         norm_stats_input: Pre-computed normalisation stats (for inference/val).
 
     Returns:
         dataset: TokenizedDataset
         norm_stats: dict with normalisation statistics
         token_experiment_ids: (num_tokens,) int64 tensor mapping tokens to
-            experiment indices (-1 = bypass token, never masked)
+            experiment indices
     """
     if train_indices is None:
         train_indices = range(labeling_df.shape[1])
@@ -659,29 +660,7 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     # ------------------------------------------------------------------
     labeling_data = labeling_df.values[:, train_indices].T  # (num_samples, num_tokens)
 
-    if normalize:
-        eps = 1e-9
-        labeling_data = np.log(np.clip(labeling_data, 0, None) + eps)
-
-        if norm_stats_input is not None:
-            mean = float(norm_stats_input['labeling_mean'])
-            std = float(norm_stats_input['labeling_std'])
-            if std < 1e-12:
-                std = 1.0
-            labeling_data = (labeling_data - mean) / std
-            norm_stats = norm_stats_input.copy()
-            norm_stats['labeling_std'] = std
-        else:
-            mean = labeling_data.mean()
-            std = labeling_data.std()
-            if std < 1e-12:
-                std = 1.0
-            labeling_data = (labeling_data - mean) / std
-            norm_stats = {'labeling_mean': mean, 'labeling_std': std}
-
-        labeling_data = np.nan_to_num(labeling_data, nan=0.0, posinf=0.0, neginf=0.0)
-    else:
-        norm_stats = {}
+    norm_stats = {}
 
     # ------------------------------------------------------------------
     # 2. Token static features and experiment IDs
@@ -692,72 +671,52 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     static_dim = token_dim - 1
 
     # ------------------------------------------------------------------
-    # 3. Measured bypass flux tokens (optional)
+    # 3. Targets — normalize flux, then slice bypass tokens from it
     # ------------------------------------------------------------------
-    bypass_fractions = None
+    flux_data = flux_df.values[:, train_indices].T        # (num_samples, n_fluxes)
+    rev_data  = reversibility_df.values[:, train_indices].T
+
+    if normalize:
+        if norm_stats_input is None:
+            # Compute from current slice (used when caller doesn't pre-compute stats)
+            norm_stats_input = {
+                'flux_mean': flux_data.mean(axis=0).tolist(),
+                'flux_std':  np.where(flux_data.std(axis=0) < 1e-6, 1.0,
+                                      flux_data.std(axis=0)).tolist(),
+                'rev_mean':  rev_data.mean(axis=0).tolist(),
+                'rev_std':   np.where(rev_data.std(axis=0) < 1e-6, 1.0,
+                                      rev_data.std(axis=0)).tolist(),
+            }
+        flux_mean = np.array(norm_stats_input['flux_mean'], dtype=np.float32)
+        flux_std  = np.array(norm_stats_input['flux_std'],  dtype=np.float32)
+        rev_mean  = np.array(norm_stats_input['rev_mean'],  dtype=np.float32)
+        rev_std   = np.array(norm_stats_input['rev_std'],   dtype=np.float32)
+        norm_stats['flux_mean'] = norm_stats_input['flux_mean']
+        norm_stats['flux_std']  = norm_stats_input['flux_std']
+        norm_stats['rev_mean']  = norm_stats_input['rev_mean']
+        norm_stats['rev_std']   = norm_stats_input['rev_std']
+        flux_data = (flux_data - flux_mean) / flux_std
+        rev_data  = (rev_data  - rev_mean)  / rev_std
+        print(f"Flux targets normalized: "
+              f"mean range=[{flux_data.mean(axis=0).min():.4f}, {flux_data.mean(axis=0).max():.4f}], "
+              f"std range=[{flux_data.std(axis=0).min():.4f}, {flux_data.std(axis=0).max():.4f}]")
+        print(f"Rev targets normalized:  "
+              f"mean range=[{rev_data.mean(axis=0).min():.4f}, {rev_data.mean(axis=0).max():.4f}], "
+              f"std range=[{rev_data.std(axis=0).min():.4f}, {rev_data.std(axis=0).max():.4f}]")
+
+    # ------------------------------------------------------------------
+    # 4. Assemble static features and experiment IDs (labeling tokens only)
+    # ------------------------------------------------------------------
     if measured_fluxes:
-        measured_fluxes_data, feature_names = extract_measured_fluxes(
-            flux_df, train_indices, reaction_ids=measured_fluxes
-        )
+        print(f"Extracted {len(measured_fluxes)} measured fluxes as bypass tokens: {measured_fluxes}")
 
-        if measured_fluxes_data is not None and len(feature_names) > 0:
-            if normalize:
-                if norm_stats_input is not None and 'measured_fluxes_mean' in norm_stats_input:
-                    bypass_mean = np.array(norm_stats_input['measured_fluxes_mean'])
-                    bypass_std = np.array(norm_stats_input['measured_fluxes_std'])
-
-                    if len(bypass_mean) != measured_fluxes_data.shape[1]:
-                        raise ValueError(
-                            f"Measured-fluxes normalisation stats dimension mismatch: "
-                            f"expected {len(bypass_mean)} features but got "
-                            f"{measured_fluxes_data.shape[1]}."
-                        )
-                    norm_stats['measured_fluxes_mean'] = norm_stats_input['measured_fluxes_mean']
-                    norm_stats['measured_fluxes_std'] = norm_stats_input['measured_fluxes_std']
-                    if 'measured_fluxes_feature_names' in norm_stats_input:
-                        norm_stats['measured_fluxes_feature_names'] = \
-                            norm_stats_input['measured_fluxes_feature_names']
-                else:
-                    bypass_mean = measured_fluxes_data.mean(axis=0)
-                    bypass_std = measured_fluxes_data.std(axis=0)
-                    bypass_std = np.where(bypass_std < 1e-6, 1.0, bypass_std)
-                    norm_stats['measured_fluxes_mean'] = bypass_mean.tolist()
-                    norm_stats['measured_fluxes_std'] = bypass_std.tolist()
-                    norm_stats['measured_fluxes_feature_names'] = feature_names
-
-                measured_fluxes_data = (measured_fluxes_data - bypass_mean) / bypass_std
-
-            bypass_fractions = measured_fluxes_data  # (num_samples, num_bypass)
-            print(f"Extracted {len(feature_names)} measured fluxes as bypass tokens: {feature_names}")
-
-    # ------------------------------------------------------------------
-    # 4. Assemble static features and experiment IDs across all tokens
-    # ------------------------------------------------------------------
-    if bypass_fractions is not None:
-        num_bypass = bypass_fractions.shape[1]
-        bypass_static = np.zeros((num_bypass, static_dim), dtype=np.float32)
-        bypass_exp_ids = np.full(num_bypass, -1, dtype=np.int64)
-
-        all_static = np.concatenate([bypass_static, static_features], axis=0)
-        all_exp_ids = np.concatenate([bypass_exp_ids, token_experiment_ids_np])
-        all_fractions = np.concatenate([bypass_fractions, labeling_data], axis=1)
-    else:
-        all_static = static_features
-        all_exp_ids = token_experiment_ids_np
-        all_fractions = labeling_data
-
-    # ------------------------------------------------------------------
-    # 5. Targets
-    # ------------------------------------------------------------------
-    flux_data = flux_df.values[:, train_indices].T
-    rev_data = reversibility_df.values[:, train_indices].T
     targets = np.hstack([flux_data, rev_data])
 
     # ------------------------------------------------------------------
-    # 6. Build dataset
+    # 5. Build dataset
     # ------------------------------------------------------------------
-    dataset = TokenizedDataset(all_static, all_fractions, targets)
-    token_experiment_ids = torch.tensor(all_exp_ids, dtype=torch.int64)
+    dataset = TokenizedDataset(static_features, labeling_data, targets)
+    token_experiment_ids = torch.tensor(token_experiment_ids_np, dtype=torch.int64)
 
     return dataset, norm_stats, token_experiment_ids
 
@@ -994,8 +953,8 @@ class IDTokenizedDataset(Dataset):
 
 
 def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
-                       train_indices=None, normalize=True, measured_fluxes=None,
-                       norm_stats_input=None):
+                       train_indices=None, measured_fluxes=None,
+                       norm_stats_input=None, normalize=False):
     """
     Prepare an IDTokenizedDataset for use with FluxDecoder.
 
@@ -1016,22 +975,13 @@ def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     float_dataset, norm_stats, token_experiment_ids = prepare_dataset(
         labeling_df, flux_df, reversibility_df, vocabs,
         train_indices=train_indices,
-        normalize=normalize,
         measured_fluxes=measured_fluxes,
         norm_stats_input=norm_stats_input,
+        normalize=normalize,
     )
 
     compound_ids, label_ids, tracer_ids, _, tracer_combo_vocab, tracer_combo_emb_table = \
         build_id_token_features(labeling_df, vocabs)
-
-    # Prepend zero IDs for bypass tokens (prepended first in prepare_dataset)
-    n_total  = float_dataset.static.shape[0]
-    n_bypass = n_total - len(labeling_df)
-    if n_bypass > 0:
-        z            = np.zeros(n_bypass, dtype=np.int64)
-        compound_ids = np.concatenate([z, compound_ids])
-        label_ids    = np.concatenate([z, label_ids])
-        tracer_ids   = np.concatenate([z, tracer_ids])
 
     fractions = float_dataset.fractions.numpy()  # (num_samples, n_total)
     targets   = float_dataset.targets.numpy()

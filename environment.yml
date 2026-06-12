@@ -1,0 +1,28 @@
+name: sigmaflux
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - libstdcxx-ng>=12
+  - pip
+  - pip:
+    - torch>=2.0
+    - numpy>=1.24
+    - pandas>=2.0
+    - scipy>=1.10
+    - cobra>=0.29
+    - networkx>=3.0
+    - optlang>=1.8
+    - tqdm>=4.0
+    - matplotlib>=3.7
+    - h5py>=3.8
+    - tables>=3.8
+    - openpyxl
+    - pyyaml>=6.0
+    - pytest>=7.0
+    - pytest-cov
+    - ruff
+    - mypy
+    - seaborn>=0.13
+    - scikit-learn>=1.3

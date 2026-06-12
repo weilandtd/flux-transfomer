@@ -1,18 +1,23 @@
 # SigmaFlux training configuration — Issatchenkia orientalis
 name: I_orientalis
-model_file: models/I_orientalis/imIsor_annotated.json
-seed: 42
+model_file: models/I_orientalis/imIsor_annotated_hierarchical.json
+mapping_csv: models/I_orientalis/I_orientalis_mapping.csv
+seed: 21
 device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 50000
-  thinning: 200
-  processes: 4
-  method: optgp       # optgp | achr
+  n_samples: 10000
+  thinning: 1000
+  processes: 8
+  method: hopsy        # hopsy | optgp | achr
+  hopsy_proposal: billiard_adaptive_metropolis
+  rounding: true
+  fva: true # Constraint the model by FVA
+  ko: false # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
 
   growth:
-    lb: 0.1
+    lb: 0.01
     ub: 0.5
 
   # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
@@ -20,7 +25,7 @@ sampling:
   # negative flux = uptake.
   media:
     # Carbon source — mandatory uptake
-    EX_glc__D_e: {lb: -20.0, ub: -1.0}
+    EX_glc__D_e: {lb: -12.0, ub: -1.0}
     # Electron acceptor — mandatory uptake
     EX_o2_e:     {lb: -100.0, ub: 0.0}
     # Carbon secretion products
@@ -31,8 +36,8 @@ sampling:
     EX_succ_e:   {lb: 0.0,  ub: 100.0}
     # Essential macronutrients — unrestricted uptake
     EX_nh4_e:    {lb: -100.0, ub: 0.0}
-    EX_pi_e:     {lb: -1000.0, ub: 0.0}
-    EX_so4_e:    {lb: -1000.0, ub: 0.0}
+    EX_pi_e:     {lb: -100.0, ub: 0.0}
+    EX_so4_e:    {lb: -100.0, ub: 0.0}
     # Water and proton — freely exchangeable
     EX_h2o_e:    {lb: -100.0, ub: 100.0}
     EX_h_e:      {lb: -100.0, ub: 100.0}
@@ -45,9 +50,6 @@ sampling:
     EX_mn2_e:    {lb: -100.0, ub: 0.0}
     EX_zn2_e:    {lb: -100.0, ub: 0.0}
 
-  fva:
-    enabled: false
-    fraction: 0.1
 
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
@@ -69,15 +71,14 @@ labeling:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  epochs: 200
-  batch_size: 512
+  epochs: 150
+  batch_size: 256
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
-  loss: variance      # variance | mse
   val_fraction: 0.2
-  max_samples: 25000
+  max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -91,25 +92,39 @@ training:
   h_compound: 16   # compounds  — full metabolic model vocab (~400 metabolites → 32-dim)
   h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
   h_tracer: 1      # tracer identities (1–2 tracers   →  2-dim)
+  h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
+  h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  # Missing-data augmentation: randomly mask individual metabolites (all isotopomers
-  # together) during training. Simulates metabolites not detected in the MS run.
-  met_mask_prob: 0.15
-  # Measured fluxes are passed directly to the transformer alongside labeling data.
-  # List the exchange reaction IDs whose fluxes will be measured experimentally.
+  # Token window: fixed sequence length per forward pass. All measured flux tokens
+  # are included first (each with prob 1-flux_token_dropout per batch), then the
+  # remaining slots are filled with met tokens sampled by token_information weights.
+  token_window: 1024
+  flux_token_dropout: 0.2
+  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
+  exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
+
+  # Measured fluxes fed as soft inputs through the fusion layer.
+  # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
+  # via intermediate metabolites, so they're NOT independent null-space DOFs.
   measured_fluxes:
     - EX_glc__D_e
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+    - CARB_c
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e
     - EX_succ_e
-    - BIOMASS
 
-  # Denoising autoencoder: proportional Gaussian noise added to measured fluxes
-  # during training only (0 = off). Forces model to cross-reference MID data
-  # with noisy v_known, learning to denoise at inference time.
-  flux_noise_std: 0.01
-  # L2 regularization on y_norm predictions (null-space mode only). Pulls
-  # unobservable y-components toward 0 (prior mean in normalized y-space),
-  # preventing overfitting in directions with no MID signal (e.g. sulfur pathway).
-  y_l2_reg: 0.05
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
+  loss: variance                  # variance | mse
+  flux_loss_space: mixed          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  mixed_flux_weight: 0.235        # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
+  n_pca_components: 50            # number of PCs used to score token informativeness for validation selection
+
+

@@ -99,6 +99,17 @@ def main():
     else:
         print()
 
+    # Overall R² across all samples and fluxes
+    if 'val_predictions' in vc and 'val_actuals' in vc:
+        import numpy as np
+        preds = np.array(vc['val_predictions'], dtype=float).flatten()
+        actuals = np.array(vc['val_actuals'], dtype=float).flatten()
+        ss_res = np.sum((actuals - preds) ** 2)
+        ss_tot = np.sum((actuals - np.mean(actuals)) ** 2)
+        overall_r2 = 1.0 - (ss_res / ss_tot) if ss_tot > 0 else np.nan
+        print(f"\n=== Overall R² (all samples × all fluxes) ===")
+        print(f"  R² = {overall_r2:+.4f}")
+
     EQ_WIDTH = 72  # truncate long equations to keep lines readable
 
     def fmt_eq(name):
@@ -106,6 +117,46 @@ def main():
         if len(eq) > EQ_WIDTH:
             eq = eq[:EQ_WIDTH - 1] + '…'
         return eq
+
+    # Central carbon metabolism R²
+    try:
+        import json
+        central_carbon_file = 'models/I_orientalis/central_carbon_metabolism.json'
+        if os.path.exists(central_carbon_file):
+            with open(central_carbon_file, 'r') as f:
+                cc_data = json.load(f)
+            cc_reactions = set(cc_data.get('reaction_ids', []))
+
+            # Filter reactions by central carbon metabolism IDs
+            cc_pairs = [(r2, n) for r2, n in pairs if n in cc_reactions]
+
+            if cc_pairs:
+                cc_r2 = [r2 for r2, _ in cc_pairs]
+                cc_mean = sum(cc_r2) / len(cc_r2)
+                cc_median = sorted(cc_r2)[len(cc_r2) // 2]
+
+                print(f"\n=== Central Carbon Metabolism R² (n={len(cc_pairs)}) ===")
+                print(f"  Mean R²   = {cc_mean:+.4f}")
+                print(f"  Median R² = {cc_median:+.4f}")
+                print(f"  Subsystems: {', '.join(cc_data.get('central_carbon_subsystems', []))}")
+
+                # Show per-reaction breakdown for central carbon
+                cc_learned = [(r2, n) for r2, n in cc_pairs if 0 <= r2 <= 0.9999]
+                cc_bad = [(r2, n) for r2, n in cc_pairs if r2 < 0]
+                cc_trivial = [(r2, n) for r2, n in cc_pairs if r2 > 0.9999]
+
+                print(f"  R²≈1.0  (trivially pinned): {len(cc_trivial)}")
+                print(f"  R²∈[0,1) (learned)       : {len(cc_learned)}")
+                print(f"  R²<0    (poorly predicted): {len(cc_bad)}")
+
+                if cc_learned:
+                    cc_learned_sorted = sorted(cc_learned, key=lambda x: -x[0])
+                    print(f"\n  Central carbon reactions (best → worst):")
+                    for r2, name in cc_learned_sorted:
+                        eq = fmt_eq(name)
+                        print(f"    {name:<30}  {r2:+.4f}  │  {eq}")
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        pass  # Central carbon file not found or invalid JSON
 
     # Show the genuinely learned reactions sorted best → worst
     if learned:
@@ -136,8 +187,8 @@ def main():
     import numpy as np
     from scipy import stats
 
-    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
-    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (n_rxn, n_basis)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (n_basis,)
 
     if Z.ndim == 2 and obs.size == Z.shape[1] and flux_names:
         name_to_idx = {n: i for i, n in enumerate(flux_names)}
@@ -188,13 +239,15 @@ def main():
     if gate_raw is None:
         return
 
-    gate_raw = gate_raw.float().numpy()           # (38,) raw logits
+    gate_raw = gate_raw.float().numpy()           # (n_basis,) raw logits
     gate     = 1.0 / (1.0 + np.exp(-gate_raw))   # sigmoid → (0,1)
 
-    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (386, 38)
-    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (38,)
+    Z   = np.array(nsd.get('Z_free',      []), dtype=float)   # (n_rxn, n_basis)
+    obs = np.array(nsd.get('obs_weights', []), dtype=float)   # (n_basis,)
 
-    print(f"\n=== Fusion gate  (gate→0: trust transformer/MID  |  gate→1: trust v_known/BIOMASS) ===")
+    measured = ckpt.get('measured_fluxes') or []
+    measured_label = ', '.join(measured) if measured else 'v_known'
+    print(f"\n=== Fusion gate  (gate→0: trust transformer/MID  |  gate→1: trust [{measured_label}]) ===")
     print(f"  mean gate = {gate.mean():.3f}   min = {gate.min():.3f}   max = {gate.max():.3f}")
 
     # Correlation: obs_weight vs gate (hypothesis: high obs → low gate)
@@ -212,7 +265,7 @@ def main():
 
     name_list = flux_names if flux_names else []
 
-    for rank, j in enumerate(order):
+    for j in order:
         g   = gate[j]
         bar = '█' * int(g * 20)
         ow  = f"{obs[j]:.3f}" if obs.size == gate.size else "  ─  "

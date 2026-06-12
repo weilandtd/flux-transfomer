@@ -39,7 +39,7 @@ def test_no_redundant_edges(path, name, dataset):
     flux_data = FluxData(mfa_model, make_test_flux_data(model, dataset=dataset))
 
     if dataset == 'yeast':
-        tracer = Tracer(mfa_model.metabolites.glc__D_out, 0.1, [1, 1, 1, 1, 1, 1])
+        tracer = Tracer(mfa_model.metabolites.glc__D_e, 0.1, [1, 1, 1, 1, 1, 1])
     else:
         tracer = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1])
 

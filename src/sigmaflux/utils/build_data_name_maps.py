@@ -9,17 +9,20 @@ import pandas as pd
 # Hardcoded fallback mappings for experimental names that cannot be resolved.
 # Add new entries here as new datasets are encountered.
 MANUAL_OVERRIDES: dict[str, list[str]] = {
-    "PG":     ["3pg_c"],
-    "FBP":    ["fdp_c"],
-    "IPPM":   ["2ippm_c"],
-    "Suc":    ["succ_c", "succ_m"],
-    "Citrl":  ["citr__L_c"],
+    "PG":    ["3pg_c"],
+    "FBP":   ["fdp_c"],
+    "IPPM":  ["2ippm_c"],
+    "Suc":   ["succ_c", "succ_m"],
+    "Citrl": ["citr__L_c"],
     "glucose": ["glc__D_c"],
+    "GAP":   ["g3p_c"],
+    "PG6":   ["6pgc_c"],
+    "aKV":   ["3mob_c", "3mob_m"],
 }
 
 
 def build_data_name_maps(
-    experimental_xlsx: str,
+    experimental_xlsx: str | list[str],
     model_amm_xlsx: str,
     output_csv: str = "metabolite_name_mapping.csv",
     compound_col: str = "Compound",
@@ -33,9 +36,10 @@ def build_data_name_maps(
 
     Parameters
     ----------
-    experimental_xlsx : str
-        Path to experimental MID xlsx. The first sheet matching [A-Z]+_[0-9]+
-        (e.g. NU_1, C12_1) is used to extract unique compound names.
+    experimental_xlsx : str | list[str]
+        Path(s) to experimental MID xlsx. Compound names are unioned across all
+        files. The first sheet matching [A-Z]+_[0-9]+ (e.g. NU_1, C12_1) is
+        used per file; falls back to first sheet containing compound_col.
     model_amm_xlsx : str
         Path to model atom mapping xlsx. Sheet 'Atom Transition', column
         metAbbreviation supplies all model metabolite IDs.
@@ -56,36 +60,37 @@ def build_data_name_maps(
     Unmatched experimental names are printed as warnings.
     """
 
-    # ---- 1. Find a data sheet in experimental xlsx ----
-    # Supports both old format (sheet names like CU_1, N12_3) and new clean
-    # format (sheet names are tracer names, e.g. 'U-13C glucose (50%)').
-    xl = pd.ExcelFile(experimental_xlsx)
-    condition_sheet = next(
-        (s for s in xl.sheet_names if re.match(r'^[A-Z]+_[0-9]+$', s)),
-        None
-    )
-    if condition_sheet is None:
-        # New clean format: use first sheet that contains compound_col
-        for s in xl.sheet_names:
-            df_peek = pd.read_excel(experimental_xlsx, sheet_name=s, nrows=1)
-            if compound_col in df_peek.columns:
-                condition_sheet = s
-                break
-    if condition_sheet is None:
-        raise ValueError(
-            f"No usable data sheet found in {experimental_xlsx}. "
-            f"Expected a sheet with a '{compound_col}' column. "
-            f"Available sheets: {xl.sheet_names}"
-        )
+    # ---- 1 & 2. Extract unique compound names across all xlsx files ----
+    xlsx_paths = [experimental_xlsx] if isinstance(experimental_xlsx, str) else experimental_xlsx
+    exp_names_set: set = set()
 
-    # ---- 2. Extract unique experimental metabolite names ----
-    df_exp = pd.read_excel(experimental_xlsx, sheet_name=condition_sheet)
-    if compound_col not in df_exp.columns:
-        raise ValueError(
-            f"Column '{compound_col}' not found in sheet '{condition_sheet}'. "
-            f"Available columns: {list(df_exp.columns)}"
+    for xlsx_path in xlsx_paths:
+        xl = pd.ExcelFile(xlsx_path)
+        condition_sheet = next(
+            (s for s in xl.sheet_names if re.match(r'^[A-Z]+_[0-9]+$', s)),
+            None
         )
-    exp_names = df_exp[compound_col].dropna().unique().tolist()
+        if condition_sheet is None:
+            for s in xl.sheet_names:
+                df_peek = pd.read_excel(xlsx_path, sheet_name=s, nrows=1)
+                if compound_col in df_peek.columns:
+                    condition_sheet = s
+                    break
+        if condition_sheet is None:
+            raise ValueError(
+                f"No usable data sheet found in {xlsx_path}. "
+                f"Expected a sheet with a '{compound_col}' column. "
+                f"Available sheets: {xl.sheet_names}"
+            )
+        df_exp = pd.read_excel(xlsx_path, sheet_name=condition_sheet)
+        if compound_col not in df_exp.columns:
+            raise ValueError(
+                f"Column '{compound_col}' not found in sheet '{condition_sheet}'. "
+                f"Available columns: {list(df_exp.columns)}"
+            )
+        exp_names_set.update(df_exp[compound_col].dropna().unique().tolist())
+
+    exp_names = sorted(exp_names_set)
 
     # ---- 3. Build base-name -> model IDs lookup from AMM xlsx ----
     df_amm = pd.read_excel(model_amm_xlsx, sheet_name=amm_sheet)
