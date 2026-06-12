@@ -9,7 +9,9 @@ sampling:
   n_samples: 200
   thinning: 100
   processes: 8
-  method: optgp
+  method: hopsy        # hopsy | optgp | achr
+  hopsy_proposal: billiard_walk
+  rounding: true
   fva: true # Constraint the model by FVA
   ko: true # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
 

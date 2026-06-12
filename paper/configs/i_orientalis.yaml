@@ -2,15 +2,17 @@
 name: I_orientalis
 model_file: models/I_orientalis/imIsor_annotated_hierarchical.json
 mapping_csv: models/I_orientalis/I_orientalis_mapping.csv
-seed: 42
+seed: 21
 device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 5000
-  thinning: 100
+  n_samples: 10000
+  thinning: 1000
   processes: 8
-  method: optgp       # optgp | achr
+  method: hopsy        # hopsy | optgp | achr
+  hopsy_proposal: billiard_adaptive_metropolis
+  rounding: true
   fva: true # Constraint the model by FVA
   ko: false # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
 
@@ -76,7 +78,7 @@ training:
   gradient_clip: 1.0
   scheduler: true
   val_fraction: 0.2
-  max_samples: 5000
+  max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -96,7 +98,7 @@ training:
   # Token window: fixed sequence length per forward pass. All measured flux tokens
   # are included first (each with prob 1-flux_token_dropout per batch), then the
   # remaining slots are filled with met tokens sampled by token_information weights.
-  token_window: 512
+  token_window: 1024
   flux_token_dropout: 0.2
   compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
@@ -120,7 +122,7 @@ training:
   labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
   loss: variance                  # variance | mse
   flux_loss_space: mixed          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  mixed_flux_weight: 0.2         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  mixed_flux_weight: 0.235        # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
   n_pca_components: 50            # number of PCs used to score token informativeness for validation selection

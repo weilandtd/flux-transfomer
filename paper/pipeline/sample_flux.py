@@ -15,14 +15,32 @@ import os
 import cobra
 import pandas as pd
 import yaml
-from cobra.flux_analysis import flux_variability_analysis
+from cobra.flux_analysis import find_blocked_reactions, flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
+
+try:
+    from cobra.sampling import HopsySampler
+except ImportError:
+    HopsySampler = None
 from optlang.symbolics import Zero
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 _BIOMASS_COMPONENTS = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
+
+# Mapping from YAML-friendly names to hopsy proposal class names.
+_HOPSY_PROPOSALS = {
+    "uniform_coordinate_hit_and_run": "UniformCoordinateHitAndRunProposal",  # default
+    "uniform_hit_and_run": "UniformHitAndRunProposal",
+    "gaussian_coordinate_hit_and_run": "GaussianCoordinateHitAndRunProposal",
+    "gaussian_hit_and_run": "GaussianHitAndRunProposal",
+    "billiard_walk": "BilliardWalkProposal",
+    "billiard_adaptive_metropolis": "BilliardAdaptiveMetropolisProposal",
+    "adaptive_metropolis": "AdaptiveMetropolisProposal",
+    "dikin_walk": "DikinWalkProposal",
+    "ball_walk": "BallWalkProposal",
+}
 
 
 def resolve_path(path):
@@ -151,12 +169,33 @@ def screen_nonessential(model):
 
 
 def _do_sample(model, s, seed):
+    method = s.get("method", "hopsy")
+    if method == "hopsy":
+        if HopsySampler is None:
+            raise ImportError("HopsySampler not available; install dev cobrapy+hopsy or set method: optgp")
+        import hopsy as _hopsy
+        proposal_key = s.get("hopsy_proposal", "uniform_coordinate_hit_and_run")
+        if proposal_key not in _HOPSY_PROPOSALS:
+            raise ValueError(f"Unknown hopsy_proposal '{proposal_key}'; valid: {list(_HOPSY_PROPOSALS)}")
+        proposal_cls = getattr(_hopsy, _HOPSY_PROPOSALS[proposal_key])
+        sol = model.optimize()
+        assert sol.status == "optimal", f"Model infeasible before sampling: {sol.status}"
+        sampler = HopsySampler(
+            model,
+            sampler=proposal_cls,
+            thinning=s["thinning"],
+            processes=s["processes"],
+            nproj=s.get("nproj"),
+            seed=seed,
+            rounding=s.get("rounding", True),
+        )
+        return sampler.sample(s["n_samples"])
     return sample(
         model,
         n=s["n_samples"],
         thinning=s["thinning"],
         processes=s["processes"],
-        method=s["method"],
+        method=method,
         seed=seed,
     )
 
@@ -180,10 +219,21 @@ def main(cfg, output_dir_override=None):
 
     model.objective = Zero
 
-    fva_result = None
-    if s.get("fva", False):
-        removed_reactions, removed_metabolites, fva_result = constrain_by_fva(model)
-        print(f"Removed {removed_reactions} zero-FVA reactions and {removed_metabolites} orphaned metabolites")
+    # Remove structurally blocked reactions (zero flux capacity) before saving the model
+    blocked = find_blocked_reactions(model)
+    model.remove_reactions(blocked, remove_orphans=True)
+    print(f"Removed {len(blocked)} blocked reactions")
+
+    # Tighten bounds via FVA and remove fixed reactions (degenerate polytope dimensions)
+    fva_result = flux_variability_analysis(model, fraction_of_optimum=0.0)
+    fixed = []
+    for rxn_id, row in fva_result.iterrows():
+        if abs(row["maximum"] - row["minimum"]) < 1e-9:
+            fixed.append(model.reactions.get_by_id(rxn_id))
+        else:
+            model.reactions.get_by_id(rxn_id).bounds = (row["minimum"], row["maximum"])
+    model.remove_reactions(fixed, remove_orphans=True)
+    print(f"Removed {len(fixed)} fixed reactions; tightened remaining bounds")
 
     prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, prepared_model_path)
