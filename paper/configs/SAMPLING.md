@@ -39,13 +39,28 @@ Only used when `method: hopsy`. Requires dev cobrapy + hopsy installed.
 | `dikin_walk` | Geometry-aware; better for ill-conditioned polytopes |
 | `ball_walk` | Uniform ball steps |
 
+## Stratified sampling
+
+Replaces the old single-pool + subsample approach. For each (reaction, bin) pair, a short
+MCMC chain is run with that reaction constrained to its bin, guaranteeing every bin is
+seeded. IPF then draws `n_samples` quasi-uniformly from the stratified pool.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `false` | Enable stratified sampling |
+| `n_subsamples` | int | — | MCMC samples per (reaction, bin) stratum |
+| `n_bins` | int | `5` | Equal-width bins along each measured reaction's FVA range |
+| `reactions` | list or null | `null` | Reactions to stratify over; null → `training.measured_fluxes` |
+
+`n_samples` at the top level sets the **final output count** (not a pool size).
+
 ## Example
 
 ```yaml
 seed: 42
 
 sampling:
-  n_samples: 5000
+  n_samples: 5000          # final output
   thinning: 100
   processes: 8
   method: hopsy
@@ -61,6 +76,11 @@ sampling:
     EX_glc__D_e: {lb: -12.0, ub: -1.0}
     EX_o2_e:     {lb: -100.0, ub: 0.0}
     # ...
+  stratified_sampling:
+    enabled: true
+    n_subsamples: 500
+    n_bins: 5
+    reactions: null
 ```
 
 To fall back to optgp (e.g. on a machine without hopsy), change `method: optgp` and remove the hopsy-specific fields.

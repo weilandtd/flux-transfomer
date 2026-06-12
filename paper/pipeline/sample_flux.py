@@ -13,9 +13,10 @@ import datetime
 import os
 
 import cobra
+import numpy as np
 import pandas as pd
 import yaml
-from cobra.flux_analysis import find_blocked_reactions, flux_variability_analysis
+from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
 
@@ -80,17 +81,23 @@ def constrain_by_fva(model):
     fva = flux_variability_analysis(model, fraction_of_optimum=0)
     epsilon = 1e-6
     zero_reactions = []
+    fixed_count = 0
 
     for reaction_id, row in fva.iterrows():
         reaction = model.reactions.get_by_id(reaction_id)
         if row["minimum"] > -epsilon and row["maximum"] < epsilon:
             zero_reactions.append(reaction)
         else:
-            reaction.bounds = (row["minimum"] - epsilon, row["maximum"] + epsilon)
+            new_lb = max(reaction.lower_bound, row["minimum"] - epsilon)
+            new_ub = min(reaction.upper_bound, row["maximum"] + epsilon)
+            reaction.bounds = (new_lb, new_ub)
+            if abs(row["maximum"] - row["minimum"]) < 1e-9:
+                fixed_count += 1
 
     model.remove_reactions(zero_reactions)
     orphaned_metabolites = [metabolite for metabolite in model.metabolites if len(metabolite.reactions) == 0]
     model.remove_metabolites(orphaned_metabolites)
+    print(f"  Fixed (non-zero, min≈max) reactions kept: {fixed_count}")
 
     return len(zero_reactions), len(orphaned_metabolites), fva
 
@@ -139,6 +146,91 @@ def check_sampling_coverage(samples, fva, key_reactions=None):
                 print(f"    Coverage   : {cov:.3f}")
 
 
+def diagnose_pool_coverage(samples, fva, reactions, n_bins, label="Pool"):
+    """
+    Per-reaction bin occupancy diagnostic. Reports observed FVA coverage,
+    bin fill rate, and boundary bin counts (first/last bin) for each reaction.
+    """
+    present = [r for r in reactions if r in samples.columns and r in fva.index]
+    if not present:
+        print(f"[{label}] WARNING: no measured reactions found in samples/fva")
+        return
+
+    lo = fva.loc[present, "minimum"].values
+    hi = fva.loc[present, "maximum"].values
+    width = np.where(hi - lo > 1e-9, hi - lo, 1.0)
+
+    vals = samples[present].to_numpy()
+    obs_cov = np.clip((vals.max(axis=0) - vals.min(axis=0)) / width, 0, 1)
+
+    norm = np.clip((vals - lo) / width, 0, 1)
+    bin_asgn = (norm * n_bins).astype(int).clip(0, n_bins - 1)
+
+    print(f"\n--- {label}: coverage diagnostic ({len(samples)} samples, {n_bins} bins/rxn) ---")
+    print(f"  {'Reaction':<30s}  {'ObsCov':>7s}  {'Filled':>8s}  {'Empty':>6s}  {'MinCnt':>7s}  {'MaxCnt':>7s}")
+    for i, rxn in enumerate(present):
+        counts = np.bincount(bin_asgn[:, i], minlength=n_bins)
+        n_occ = (counts > 0).sum()
+        print(f"  {rxn:<30s}  {obs_cov[i]:>7.3f}  {n_occ:>4d}/{n_bins:<3d}  {n_bins - n_occ:>6d}  {counts[0]:>7d}  {counts[-1]:>7d}")
+
+
+def _ipf_weights(bin_asgn, n_bins, n_iter=30):
+    """
+    Iterative Proportional Fitting: weights w_i such that for every reaction f
+    and bin b the weighted fraction equals 1/n_bins (uniform marginal).
+    """
+    n = len(bin_asgn)
+    w = np.ones(n, dtype=np.float64) / n
+    target = 1.0 / n_bins
+    for _ in range(n_iter):
+        for f in range(bin_asgn.shape[1]):
+            bins_f = bin_asgn[:, f]
+            bin_sums = np.bincount(bins_f, weights=w, minlength=n_bins)
+            scale = np.where(bin_sums[bins_f] > 1e-15, target / bin_sums[bins_f], 0.0)
+            w *= scale
+        w /= w.sum()
+    return w
+
+
+def draw_quasi_uniform(samples, fva, n_final, n_bins, reactions):
+    """
+    IPF-weighted draw from `samples` targeting uniform marginals for each reaction.
+    Returns a DataFrame of n_final rows drawn without replacement (with replacement
+    only if the pool is smaller than n_final).
+    """
+    present = [r for r in reactions if r in samples.columns and r in fva.index]
+    if not present:
+        return samples.sample(min(n_final, len(samples)), random_state=0).reset_index(drop=True)
+
+    lo = fva.loc[present, "minimum"].values
+    hi = fva.loc[present, "maximum"].values
+    width = np.where(hi - lo > 1e-9, hi - lo, 1.0)
+
+    samples_np = samples.to_numpy()
+    present_cols = np.array([samples.columns.get_loc(r) for r in present])
+    norm = np.clip((samples_np[:, present_cols] - lo) / width, 0, 1)
+    bin_asgn = (norm * n_bins).astype(int).clip(0, n_bins - 1)
+
+    weights = _ipf_weights(bin_asgn, n_bins)
+    rng = np.random.default_rng(0)
+    replace = len(samples_np) < n_final
+    chosen = rng.choice(len(samples_np), n_final, replace=replace, p=weights)
+    result_np = samples_np[chosen]
+
+    result_asgn = (np.clip((result_np[:, present_cols] - lo) / width, 0, 1) * n_bins).astype(int).clip(0, n_bins - 1)
+    print(f"\n--- Quasi-uniform draw ({len(present)} reactions × {n_bins} bins, n={n_final}) ---")
+    print(f"  {'Reaction':<30s}  {'Pool':>10s}  {'Final':>10s}  {'Uniformity':>10s}")
+    for f_idx, rxn in enumerate(present):
+        pool_cov = (np.bincount(bin_asgn[:, f_idx], minlength=n_bins) > 0).sum()
+        final_cnt = np.bincount(result_asgn[:, f_idx], minlength=n_bins).astype(float)
+        final_cov = (final_cnt > 0).sum()
+        p = final_cnt[final_cnt > 0] / final_cnt.sum()
+        uniformity = (-np.sum(p * np.log2(p))) / np.log2(final_cov) if final_cov > 1 else 0.0
+        print(f"  {rxn:<30s}  {pool_cov:>4d}/{n_bins}     {final_cov:>4d}/{n_bins}     {uniformity:>10.3f}")
+
+    return pd.DataFrame(result_np, columns=samples.columns)
+
+
 def summarize_variation(samples):
     stats = pd.DataFrame({
         "min": samples.min(axis=0),
@@ -166,6 +258,38 @@ def screen_nonessential(model):
     for rxn_id in essential:
         print(f"  {rxn_id}")
     return nonessential
+
+
+def _do_sample_n(model, s, n_samples, seed):
+    return _do_sample(model, dict(s, n_samples=n_samples), seed)
+
+
+def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
+    """
+    For each variable measured reaction, run one constrained MCMC chain per bin.
+    Returns a DataFrame containing all strata concatenated.
+    """
+    all_strata = []
+    for rxn_id in reactions:
+        if rxn_id not in model.reactions or rxn_id not in fva.index:
+            continue
+        lo = fva.loc[rxn_id, "minimum"]
+        hi = fva.loc[rxn_id, "maximum"]
+        if hi - lo < 1e-9:
+            continue
+        bin_width = (hi - lo) / n_bins
+        for b in range(n_bins):
+            bin_lo = lo + b * bin_width
+            bin_hi = lo + (b + 1) * bin_width
+            with model:
+                rxn = model.reactions.get_by_id(rxn_id)
+                rxn.bounds = (max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi))
+                if model.optimize().status != "optimal":
+                    print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — infeasible")
+                    continue
+                all_strata.append(_do_sample_n(model, s, n_subsamples, seed + b))
+        print(f"  [stratify] {rxn_id}: {n_bins} strata × {n_subsamples} samples")
+    return pd.concat(all_strata, ignore_index=True)
 
 
 def _do_sample(model, s, seed):
@@ -219,21 +343,23 @@ def main(cfg, output_dir_override=None):
 
     model.objective = Zero
 
-    # Remove structurally blocked reactions (zero flux capacity) before saving the model
-    blocked = find_blocked_reactions(model)
-    model.remove_reactions(blocked, remove_orphans=True)
-    print(f"Removed {len(blocked)} blocked reactions")
+    n_zero, n_orphan, fva_result = constrain_by_fva(model)
+    print(f"Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; tightened remaining bounds with ±1e-6")
 
-    # Tighten bounds via FVA and remove fixed reactions (degenerate polytope dimensions)
-    fva_result = flux_variability_analysis(model, fraction_of_optimum=0.0)
-    fixed = []
-    for rxn_id, row in fva_result.iterrows():
-        if abs(row["maximum"] - row["minimum"]) < 1e-9:
-            fixed.append(model.reactions.get_by_id(rxn_id))
-        else:
-            model.reactions.get_by_id(rxn_id).bounds = (row["minimum"], row["maximum"])
-    model.remove_reactions(fixed, remove_orphans=True)
-    print(f"Removed {len(fixed)} fixed reactions; tightened remaining bounds")
+    measured_rxns = cfg.get("training", {}).get("measured_fluxes", [])
+    sub_rxns = s.get("stratified_sampling", {}).get("reactions") or measured_rxns
+    if sub_rxns:
+        print("\nModel bounds seen by sampler (after FVA tightening):")
+        for rxn_id in sub_rxns:
+            if rxn_id in model.reactions:
+                r = model.reactions.get_by_id(rxn_id)
+                fva_lo = fva_result.loc[rxn_id, "minimum"] if rxn_id in fva_result.index else float("nan")
+                fva_hi = fva_result.loc[rxn_id, "maximum"] if rxn_id in fva_result.index else float("nan")
+                match = abs(r.lower_bound - fva_lo) < 2e-6 and abs(r.upper_bound - fva_hi) < 2e-6
+                flag = "" if match else "  *** MISMATCH ***"
+                print(f"  {rxn_id:<30s}  bounds=[{r.lower_bound:8.4f}, {r.upper_bound:8.4f}]  FVA=[{fva_lo:8.4f}, {fva_hi:8.4f}]{flag}")
+            else:
+                print(f"  {rxn_id:<30s}  REMOVED (zero-flux by FVA)")
 
     prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, prepared_model_path)
@@ -242,22 +368,36 @@ def main(cfg, output_dir_override=None):
     if s.get("ko", False) and s["growth"]["lb"] == 0:
         print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
 
-    print(f"Sampling {s['n_samples']} flux distributions (WT)...")
-    all_samples = [_do_sample(model, s, cfg["seed"])]
+    strat_cfg = s.get("stratified_sampling", {})
+    n_final = s["n_samples"]
 
-    if s.get("ko", False):
-        nonessential = screen_nonessential(model)
-        total = (1 + len(nonessential)) * s["n_samples"]
-        print(f"Total samples to generate: {total} (WT + {len(nonessential)} KOs × {s['n_samples']})")
-        for i, rxn_id in enumerate(nonessential):
-            print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({s['n_samples']} samples)")
-            with model:
-                model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                all_samples.append(_do_sample(model, s, cfg["seed"] + i + 1))
-        samples = pd.concat(all_samples, ignore_index=True)
-        print(f"Combined samples: {len(samples)} total ({len(nonessential)} KOs + WT)")
+    if strat_cfg.get("enabled", False):
+        n_bins = strat_cfg.get("n_bins", 5)
+        n_subsamples = strat_cfg["n_subsamples"]
+        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × {n_subsamples} samples/stratum...")
+        all_strata = [stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
+        if s.get("ko", False):
+            nonessential = screen_nonessential(model)
+            for i, rxn_id in enumerate(nonessential):
+                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
+                with model:
+                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
+                    all_strata.append(stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
+        samples = pd.concat(all_strata, ignore_index=True)
+        print(f"Stratified pool: {len(samples)} samples")
+        diagnose_pool_coverage(samples, fva_result, sub_rxns, n_bins, label="Stratified pool")
+        samples = draw_quasi_uniform(samples, fva_result, n_final, n_bins, sub_rxns)
     else:
-        samples = all_samples[0]
+        print(f"Sampling {n_final} flux distributions (WT)...")
+        all_samples = [_do_sample(model, s, cfg["seed"])]
+        if s.get("ko", False):
+            nonessential = screen_nonessential(model)
+            for i, rxn_id in enumerate(nonessential):
+                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({n_final} samples)")
+                with model:
+                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
+                    all_samples.append(_do_sample(model, s, cfg["seed"] + i + 1))
+        samples = pd.concat(all_samples, ignore_index=True) if len(all_samples) > 1 else all_samples[0]
 
     samples_path = os.path.join(output_dir, "flux_samples.csv")
     samples.to_csv(samples_path)

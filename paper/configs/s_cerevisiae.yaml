@@ -6,14 +6,24 @@ device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 5000
-  thinning: 1000
+  n_samples: 5000   # final output written to flux_samples.csv
+  thinning: 100
   processes: 8
   method: hopsy        # hopsy | optgp | achr
-  hopsy_proposal: billiard_walk
+  hopsy_proposal: uniform_coordinate_hit_and_run
   rounding: true
-  fva: true # Constraint the model by FVA
-  ko: false # Sample each nonessential single-gene KO as well  n_samples x (1 + num_nonessential_KOs) 
+  nproj: null
+  fva: true
+  ko: false
+
+  # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
+  # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
+  # reactions: null falls back to training.measured_fluxes.
+  stratified_sampling:
+    enabled: true
+    n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
+    n_bins: 5                     # equal-width bins along each measured reaction's FVA range
+    reactions: null               # null → training.measured_fluxes; or explicit list
 
   growth:
     lb: 0.01
