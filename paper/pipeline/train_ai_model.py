@@ -13,6 +13,7 @@ from dataclasses import asdict
 from functools import partial
 
 import numpy as np
+import pandas as pd
 import scipy.linalg
 import torch
 import torch.nn as nn
@@ -148,6 +149,21 @@ def main(args):
         n_before = labeling_df.shape[0]
         labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
         print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
+
+    # Fisher/D-optimal token selection (replaces corr_yl top-K): keep only the
+    # (Metabolite, Isotopomer) tokens flagged in the selection CSV, across all
+    # tracers. See paper/analysis/informative_tokens.py.
+    if getattr(args, 'keep_tokens', None):
+        sel = pd.read_csv(args.keep_tokens)
+        col = args.keep_tokens_column
+        keep = set(zip(sel.loc[sel[col], "metabolite_id"], sel.loc[sel[col], "isotopomer"]))
+        n_before = labeling_df.shape[0]
+        met = labeling_df.index.get_level_values('Metabolite')
+        iso = labeling_df.index.get_level_values('Isotopomer')
+        mask = [(m, i) in keep for m, i in zip(met, iso)]
+        labeling_df = labeling_df.loc[mask]
+        print(f"Kept Fisher-selected tokens ['{col}']: {n_before} → {labeling_df.shape[0]} "
+              f"({len(keep)} unique (met,M+k) × tracers)")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
@@ -615,5 +631,7 @@ if __name__ == "__main__":
         compartment_mix        = t.get("compartment_mix", False),
         exclude_extracellular  = t.get("exclude_extracellular", False),
         n_pca_components       = t.get("n_pca_components", 50),
+        keep_tokens            = t.get("keep_tokens"),
+        keep_tokens_column     = t.get("keep_tokens_column", "selected"),
     )
     main(args)

@@ -30,6 +30,7 @@ from sigmaflux.ai.data import (
     load_data,
     load_stoichiometric_matrix,
     prepare_id_dataset,
+    radial_embedding_table,
 )
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 
@@ -63,6 +64,15 @@ def main():
 
     # ── Rebuild data (for vocabs + val samples) ───────────────────────────────
     labeling_df, flux_df, reversibility_df = load_data(data_dir, max_samples=args.n_samples * 2)
+
+    # Restrict to the exact tokens the model was trained on, in the saved order,
+    # so the labeling sequence and the radial label vocab match the checkpoint
+    # (training may have filtered to a Fisher-selected token subset).
+    token_index = ckpt.get('token_index')
+    if token_index is not None:
+        labeling_df = labeling_df.loc[token_index]
+        print(f"Restricted to {labeling_df.shape[0]} trained tokens (from checkpoint token_index)")
+
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     _, cobra_model       = load_stoichiometric_matrix(model_json)
 
@@ -76,11 +86,10 @@ def main():
     )
 
     val_indices = np.arange(min(args.n_samples, labeling_df.shape[1]))
-    (val_dataset, _, _, tracer_combo_vocab, _) = prepare_id_dataset(
+    (val_dataset, _, _, tracer_combo_vocab, tracer_combo_emb_table) = prepare_id_dataset(
         labeling_df, flux_df, reversibility_df,
         vocabs=vocabs,
         train_indices=val_indices,
-        normalize=True,
         measured_fluxes=ckpt.get('measured_fluxes'),
         norm_stats_input=ckpt.get('norm_stats'),
     )
@@ -90,12 +99,23 @@ def main():
     cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__
                                if k in cfg_dict})
     token_experiment_ids_tensor = ckpt['model_state_dict']['token_experiment_ids']
+
+    # Rebuild the frozen reaction/type radial tables exactly as training did
+    # (deterministic given (N, H)); load_state_dict restores the learned weights.
+    flux_dim_ck        = len(flux_names) or cfg.n_fluxes
+    reaction_emb_table = radial_embedding_table(flux_dim_ck, ckpt['h_reaction'])
+    type_emb_table     = radial_embedding_table(2, ckpt['h_type'])
+
     model = FluxDecoder(
         cfg,
-        stoichiometric_matrix = None,
-        token_experiment_ids  = token_experiment_ids_tensor,
-        null_space_data       = nsd,
-        fixed_flux_indices    = nsd.get('fixed_idx', []),
+        token_experiment_ids = token_experiment_ids_tensor,
+        compound_emb_table   = vocabs['compound_emb_table'],
+        label_emb_table      = vocabs['label_emb_table'],
+        tracer_emb_table     = tracer_combo_emb_table,
+        reaction_emb_table   = reaction_emb_table,
+        type_emb_table       = type_emb_table,
+        null_space_data      = nsd,
+        flux_norm_stats      = ckpt.get('flux_norm_stats'),
     )
     model.load_state_dict(ckpt['model_state_dict'])
     model.eval()
@@ -121,13 +141,12 @@ def main():
             lids  = lids.to(device)
             tids  = tids.to(device)
             fracs = fracs.to(device)
-            fixed_fluxes = None
-            if model.cfg.n_measured > 0:
-                fixed_fluxes = targets[:, nsd.get('fixed_idx', [])].to(device)
+            measured_fluxes = None
+            if len(model.fixed_idx) > 0:
+                measured_fluxes = targets[:, model.fixed_idx].to(device)
 
             _, _, attn = model(cids, lids, tids, fracs,
-                               padding_mask=None,
-                               fixed_fluxes=fixed_fluxes,
+                               measured_fluxes=measured_fluxes,
                                return_attn=True)
             batch_sum = attn.cpu().sum(dim=0).numpy()   # (38, N)
             attn_sum  = batch_sum if attn_sum is None else attn_sum + batch_sum
@@ -152,6 +171,10 @@ def main():
         trac = tracer_combo_vocab[t]                 if t < len(tracer_combo_vocab) else str(t)
         trac_short = trac.replace('glc__D_e_', '').replace('_0.5', '')
         token_labels.append(f"{met} {iso} [{trac_short}]")
+
+    # Bypass measured-flux tokens are appended after the labeling tokens.
+    for fname in (ckpt.get('measured_fluxes') or []):
+        token_labels.append(f"{fname} [flux]")
 
     # ── Gate values + top-flux labels per y-dim ───────────────────────────────
     Z        = np.array(nsd.get('Z_free', []), dtype=float)   # (386, 38)
