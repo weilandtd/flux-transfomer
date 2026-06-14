@@ -31,16 +31,19 @@ def main(args):
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    fc               = cfg.get("features", {})
-    n_samples        = fc.get("n_samples", 10000)
-    subsample_n      = fc.get("subsample_n", None)
-    noise_std        = fc.get("noise_std", 0.02)
-    gain_threshold   = fc.get("gain_threshold", 0.01)
-    budget           = fc.get("budget", None)
-    run_mi_audit     = fc.get("run_mi_audit", False)
-    restrict         = fc.get("restrict_to_mapped", False)
-    out_name         = fc.get("output", "features.csv")
-    seed             = cfg.get("seed", 42)
+    fc                  = cfg.get("features", {})
+    n_samples           = fc.get("n_samples", 10000)
+    subsample_n         = fc.get("subsample_n", None)
+    noise_std           = fc.get("noise_std", 0.02)
+    gain_threshold      = fc.get("gain_threshold", 0.01)
+    rel_gain_threshold  = fc.get("rel_gain_threshold", 0.05)
+    n_permutations      = fc.get("n_permutations", 5)
+    budget              = fc.get("budget", None)
+    token_filter        = fc.get("token_filter", "significant")
+    run_mi_audit        = fc.get("run_mi_audit", False)
+    restrict            = fc.get("restrict_to_mapped", False)
+    out_name            = fc.get("output", "features.csv")
+    seed                = cfg.get("seed", 42)
 
     output_path = os.path.join(args.data_dir, out_name)
 
@@ -83,29 +86,36 @@ def main(args):
         theta, token_states,
         noise_std=noise_std,
         gain_threshold=gain_threshold,
+        rel_gain_threshold=rel_gain_threshold,
+        n_permutations=n_permutations,
         budget=budget,
+        token_filter=token_filter,
         run_mi_audit=run_mi_audit,
     )
 
     df.to_csv(output_path, index=False)
 
-    n_sig = int(df["significant"].sum())
-    n_sel = int(df["selected"].sum())
+    n_included = int(df["included"].sum())
+    n_sig      = int(df["significant"].sum())
+    n_sel      = summary.get("n_selected", 0)
 
     print("\n=======================  FEATURE SELECTION SUMMARY  =======================")
     print(f"Free-flux directions                     : {summary['n_free_flux_directions']}")
     eff_rank = summary.get("effective_rank")
     if eff_rank is not None:
         print(f"Effective rank                           : {eff_rank:.2f}")
-    print(f"Noise std                                : {summary['noise_std']}")
-    print(f"Null significance floor (nats)           : {summary.get('null_floor_nats', 0.0):.4f}")
+    print(f"Noise std (σ)                            : {noise_std}")
+    print(f"Null floor (nats, {n_permutations} permutations)      : {summary.get('null_floor_nats', 0.0):.4f}")
+    print(f"Gain threshold (abs / rel)               : {gain_threshold} / {rel_gain_threshold}")
+    print(f"Token filter                             : {token_filter}")
     print("-" * 74)
     print(f"TOTAL candidate tokens                   : {len(df)}")
-    print(f"  ... significant (info > null floor)    : {n_sig}")
-    print(f"  ... selected (greedy D-optimal subset) : {n_sel}")
-    if n_sel > 0:
-        print(f"  unique metabolites among selected      : "
-              f"{df.loc[df['selected'], 'metabolite_id'].nunique()}")
+    print(f"  ... significant (standalone > floor)   : {n_sig}")
+    print(f"  ... greedy D-optimal selected          : {n_sel}")
+    print(f"  ... INCLUDED in training ({token_filter:10s}) : {n_included}")
+    if n_included > 0:
+        print(f"  unique metabolites included            : "
+              f"{df.loc[df['included'], 'metabolite_id'].nunique()}")
     print("-" * 74)
 
     ev = summary.get("eigenvalues", [])

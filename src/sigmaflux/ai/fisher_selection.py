@@ -648,6 +648,8 @@ def rank_from_samples(
     noise_std: float = 0.02,
     budget: int = None,
     gain_threshold: float = 1e-3,
+    rel_gain_threshold: float = 0.05,
+    n_permutations: int = 5,
     run_mi_audit: bool = True,
     calibrate_null: bool = True,
     null_seed: int = 12345,
@@ -680,7 +682,7 @@ def rank_from_samples(
     if calibrate_null and len(theta) >= 20:
         rng = np.random.default_rng(null_seed)
         null_vals = []
-        for _ in range(5):  # several permutations -> stable, conservative floor
+        for _ in range(n_permutations):
             perm = rng.permutation(len(theta))
             null_grams = empirical_sensitivity_grams(theta[perm], token_states, seed=int(rng.integers(1 << 30)))
             null_sel = greedy_d_optimal(null_grams, theta, noise_std=noise_std,
@@ -698,7 +700,7 @@ def rank_from_samples(
         grams, theta, token_states, theta, theta.shape[1], noise_std,
         budget, gain_threshold, run_mi_audit,
         "empirical(samples)", len(theta), null_floor=null_floor,
-        rel_gain_threshold=0.05)
+        rel_gain_threshold=rel_gain_threshold)
 
 
 def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,

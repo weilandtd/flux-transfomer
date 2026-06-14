@@ -87,11 +87,13 @@ features:
   token_selection_method: fisher    # pca | maxr | fisher
   token_dropout: 0.2                # per-token labeling dropout during training
 
-  # Advanced overrides (sensible defaults in code — omit unless tuning):
-  # n_samples: 10000
-  # noise_std: 0.02
-  # gain_threshold: 0.01
-  # n_pca_components: 50            # only used when token_selection_method: pca
+  # Fisher selection parameters — all values that determine which tokens are included:
+  noise_std: 0.02            # assumed labeling noise std (σ) for Fisher Gram weighting
+  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
+  rel_gain_threshold: 0.05   # stop greedy when next gain < this fraction of the first gain
+  n_permutations: 5          # null-calibration permutations used to set significance floor
+  token_filter: significant  # significant | selected — which tokens are passed to training
+  budget: null               # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:

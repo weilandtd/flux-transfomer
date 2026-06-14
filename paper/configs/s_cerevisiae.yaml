@@ -37,30 +37,30 @@ sampling:
   # Convention (after standardization): met_e →  i.e. positive flux = secretion,
   # negative flux = uptake.
   media:
-    # Carbon source — mandatory uptake
+    # Carbon source — wider interval than IO (-12) to cover Crabtree range
     EX_glc__D_e: {lb: -20.0, ub: -1.0}
-    # Electron acceptor — Crabtree effect caps yeast O2 at ~10-15 mmol/gDW/h
-    EX_o2_e:     {lb: -20.0, ub: 0.0}
+    # Electron acceptor
+    EX_o2_e:     {lb: -100.0, ub: 0.0}
     # Carbon secretion products
-    EX_co2_e:    {lb: 0.0,  ub: 60.0}
-    EX_etoh_e:   {lb: 0.0,  ub: 50.0}
-    EX_ac_e:     {lb: 0.0,  ub: 10.0}
-    EX_glyc_e:   {lb: 0.0,  ub: 10.0}
-    # Essential macronutrients — tightened to ~5-10x observed range
-    EX_nh4_e:    {lb: -20.0, ub: 0.0}
-    EX_pi_e:     {lb: -5.0, ub: 0.0}
-    EX_so4_e:    {lb: -1.0, ub: 0.0}
+    EX_co2_e:    {lb: 0.0,  ub: 100.0}
+    EX_etoh_e:   {lb: 0.0,  ub: 100.0}
+    EX_ac_e:     {lb: 0.0,  ub: 100.0}
+    EX_glyc_e:   {lb: 0.0,  ub: 100.0}
+    # Essential macronutrients
+    EX_nh4_e:    {lb: -100.0, ub: 0.0}
+    EX_pi_e:     {lb: -100.0, ub: 0.0}
+    EX_so4_e:    {lb: -100.0, ub: 0.0}
     # Water and proton — freely exchangeable
-    EX_h2o_e:    {lb: -50.0, ub: 50.0}
-    EX_h_e:      {lb: -20.0, ub: 20.0}
-    # Trace minerals — tightened to ~5-10x observed range
-    EX_ca2_e:    {lb: -0.01, ub: 0.0}
-    EX_cu2_e:    {lb: -0.01, ub: 0.0}
-    EX_fe2_e:    {lb: -0.01, ub: 0.0}
-    EX_k_e:      {lb: -2.0, ub: 0.0}
-    EX_mg2_e:    {lb: -0.5, ub: 0.0}
-    EX_mn2_e:    {lb: -0.01, ub: 0.0}
-    EX_zn2_e:    {lb: -0.01, ub: 0.0}
+    EX_h2o_e:    {lb: -100.0, ub: 100.0}
+    EX_h_e:      {lb: -100.0, ub: 100.0}
+    # Trace minerals
+    EX_ca2_e:    {lb: -100.0, ub: 0.0}
+    EX_cu2_e:    {lb: -100.0, ub: 0.0}
+    EX_fe2_e:    {lb: -100.0, ub: 0.0}
+    EX_k_e:      {lb: -100.0, ub: 0.0}
+    EX_mg2_e:    {lb: -100.0, ub: 0.0}
+    EX_mn2_e:    {lb: -100.0, ub: 0.0}
+    EX_zn2_e:    {lb: -100.0, ub: 0.0}
 
 
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
@@ -82,11 +82,13 @@ features:
   token_selection_method: fisher    # pca | maxr | fisher
   token_dropout: 0.1                # per-token labeling dropout during training
 
-  # Advanced overrides (sensible defaults in code — omit unless tuning):
-  # n_samples: 10000
-  # noise_std: 0.02
-  # gain_threshold: 0.01
-  # n_pca_components: 50            # only used when token_selection_method: pca
+  # Fisher selection parameters — all values that determine which tokens are included:
+  noise_std: 0.02            # assumed labeling noise std (σ) for Fisher Gram weighting
+  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
+  rel_gain_threshold: 0.05   # stop greedy when next gain < this fraction of the first gain
+  n_permutations: 5          # null-calibration permutations used to set significance floor
+  token_filter: significant  # significant | selected — which tokens are passed to training
+  budget: null               # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:

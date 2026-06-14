@@ -42,31 +42,31 @@ def compute_token_scores(L_c, method='pca', n_components=50, y_c=None, y_std_c=N
 def load_fisher_token_scores(
     features_csv: str, labeling_df
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Load pre-computed Fisher scores and selection mask aligned to labeling_df row order.
+    """Load pre-computed Fisher scores and inclusion mask aligned to labeling_df row order.
 
     Reads features.csv produced by extract_informative_features.py and returns:
-      - (n_tokens,) tensor of marginal_gain_nats scores
-      - (n_tokens,) bool tensor marking the D-optimal selected subset
+      - (n_tokens,) tensor of marginal_nats scores
+      - (n_tokens,) bool tensor marking the tokens included for training
 
-    Tokens absent from the CSV receive score 0.0 and selected=False.
+    Tokens absent from the CSV receive score 0.0 and included=False.
 
     Args:
         features_csv: path to features.csv
         labeling_df:  DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer)
 
     Returns:
-        scores:        (n_tokens,) float tensor of marginal_gain_nats scores
-        selected_mask: (n_tokens,) bool tensor — True for D-optimal selected tokens
+        scores:        (n_tokens,) float tensor of marginal_nats scores
+        included_mask: (n_tokens,) bool tensor — True for tokens passed to training
     """
     feat = pd.read_csv(features_csv)
     score_map: dict = {}
-    selected_set: set = set()
+    included_set: set = set()
     for _, row in feat.iterrows():
         key = (row["metabolite_id"], row["isotopomer"])
-        v = row["marginal_gain_nats"]
+        v = row["marginal_nats"]
         score_map[key] = 0.0 if v != v else float(v)
-        if row.get("selected", False):
-            selected_set.add(key)
+        if row.get("included", False):
+            included_set.add(key)
 
     mets = labeling_df.index.get_level_values('Metabolite')
     isos = labeling_df.index.get_level_values('Isotopomer')
@@ -74,16 +74,16 @@ def load_fisher_token_scores(
         [score_map.get((m, i), 0.0) for m, i in zip(mets, isos)],
         dtype=torch.float32,
     )
-    selected_mask = torch.tensor(
-        [(m, i) in selected_set for m, i in zip(mets, isos)],
+    included_mask = torch.tensor(
+        [(m, i) in included_set for m, i in zip(mets, isos)],
         dtype=torch.bool,
     )
     n_matched = sum(1 for m, i in zip(mets, isos) if (m, i) in score_map)
-    n_sel = int(selected_mask.sum().item())
+    n_inc = int(included_mask.sum().item())
     print(f"Fisher scores loaded from {features_csv}: "
           f"{n_matched}/{len(scores)} tokens matched, "
-          f"{n_sel} D-optimal selected")
-    return scores, selected_mask
+          f"{n_inc} included")
+    return scores, included_mask
 
 
 def compute_sparse_nullspace(

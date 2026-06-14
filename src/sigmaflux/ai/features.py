@@ -97,35 +97,56 @@ def select_informative_tokens(
     token_states: dict,
     noise_std: float = 0.02,
     gain_threshold: float = 0.01,
+    rel_gain_threshold: float = 0.05,
+    n_permutations: int = 5,
     budget: int | None = None,
+    token_filter: str = "significant",
     run_mi_audit: bool = False,
 ):
     """Rank and select tokens by Fisher/D-optimal information about free fluxes.
 
     Args:
-        theta:           (n, d) free-flux coordinates.
-        token_states:    dict keyed "met_id|M+k" → (n, n_tracers).
-        noise_std:       Labeling measurement noise std for Fisher estimation.
-        gain_threshold:  Stop greedy selection when marginal gain < this (nats).
-        budget:          Hard cap on selected token count (None = unlimited).
-        run_mi_audit:    Run MI / nonlinearity audit (slow).
+        theta:               (n, d) free-flux coordinates.
+        token_states:        dict keyed "met_id|M+k" → (n, n_tracers).
+        noise_std:           Labeling measurement noise std for Fisher estimation.
+        gain_threshold:      Absolute stop threshold for greedy selection (nats).
+        rel_gain_threshold:  Stop when next gain < this fraction of the first gain.
+        n_permutations:      Null-calibration permutations to set significance floor.
+        budget:              Hard cap on token count (None = unlimited).
+        token_filter:        'significant' | 'selected' — which tokens are marked
+                             included (the training gate).
+        run_mi_audit:        Run MI / nonlinearity audit (slow).
 
     Returns:
-        df:      per-token DataFrame with columns token, metabolite_id, isotopomer,
-                 selected, significant, greedy_rank, marginal_gain_nats,
-                 standalone_gain_nats, fisher_trace [+ MI columns if audit].
+        df:      per-token DataFrame with columns metabolite_id, isotopomer,
+                 included, significant, rank, standalone_nats, marginal_nats
+                 [+ MI columns if audit].
         summary: dict from rank_from_samples.
     """
     df, summary = fisher_selection.rank_from_samples(
         theta, token_states,
         noise_std=noise_std,
         gain_threshold=gain_threshold,
+        rel_gain_threshold=rel_gain_threshold,
+        n_permutations=n_permutations,
         budget=budget,
         run_mi_audit=run_mi_audit,
     )
-    df = df.rename(columns={"metabolite": "token"})
-    df[["metabolite_id", "isotopomer"]] = df["token"].str.split("|", expand=True)
-    front = ["token", "metabolite_id", "isotopomer", "selected", "significant",
-             "greedy_rank", "marginal_gain_nats", "standalone_gain_nats"]
+    df[["metabolite_id", "isotopomer"]] = df["metabolite"].str.split("|", expand=True)
+    df = df.drop(columns=["metabolite", "fisher_trace"])
+    df = df.rename(columns={
+        "greedy_rank":        "rank",
+        "marginal_gain_nats": "marginal_nats",
+        "standalone_gain_nats": "standalone_nats",
+    })
+    if token_filter == "significant":
+        df["included"] = df["significant"]
+    elif token_filter == "selected":
+        df["included"] = df["selected"]
+    else:
+        raise ValueError(f"token_filter must be 'significant' or 'selected', got {token_filter!r}")
+    df = df.drop(columns=["selected"])
+    front = ["metabolite_id", "isotopomer", "included", "significant", "rank",
+             "standalone_nats", "marginal_nats"]
     df = df[front + [c for c in df.columns if c not in front]]
     return df, summary
