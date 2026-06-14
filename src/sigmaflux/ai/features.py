@@ -20,7 +20,6 @@ def build_theta_and_token_states(
     reversibility_df: pd.DataFrame | None = None,
     subsample_n: int | None = None,
     seed: int = 42,
-    skip_constraints: list | None = None,
 ):
     """Project fluxes onto the null-space basis and build per-token MID arrays.
 
@@ -35,7 +34,6 @@ def build_theta_and_token_states(
                           informative about reaction reversibility.
         subsample_n:      If set, randomly subsample this many from the first n_samples.
         seed:             RNG seed for the subsample permutation.
-
     Returns:
         theta:        (n, d) or (n, d+n_rev) free-flux (+ reversibility) coordinates.
         token_states: dict keyed "met_id|M+k" → (n, n_tracers) array.
@@ -44,10 +42,6 @@ def build_theta_and_token_states(
     model = load_json_model(model_json)
     reaction_ids = [r.id for r in model.reactions]
     S = create_stoichiometric_matrix(model)
-    if skip_constraints:
-        from sigmaflux.ai.utils import drop_constraint_rows
-        metabolite_ids = [m.id for m in model.metabolites]
-        S = drop_constraint_rows(S, metabolite_ids, reaction_ids, skip_constraints)
     Z = np.asarray(compute_sparse_nullspace(S), dtype=np.float64)  # (n_rxn, d)
     d = Z.shape[1]
 

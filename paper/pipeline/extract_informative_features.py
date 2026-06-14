@@ -41,7 +41,6 @@ def main(args):
     restrict         = fc.get("restrict_to_mapped", False)
     out_name         = fc.get("output", "features.csv")
     seed             = cfg.get("seed", 42)
-    skip_constraints = []  # feature selection always uses the original constrained Z
 
     output_path = os.path.join(args.data_dir, out_name)
 
@@ -70,7 +69,6 @@ def main(args):
         labeling_df, flux_df, model_json, n_samples,
         reversibility_df=reversibility_df,
         subsample_n=subsample_n, seed=seed,
-        skip_constraints=skip_constraints,
     )
     print(f"  free-flux directions d = {d}; candidate tokens = {len(token_states)}; "
           f"samples = {theta.shape[0]}")

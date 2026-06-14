@@ -37,7 +37,7 @@ from sigmaflux.ai.train import (
     BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
-from sigmaflux.ai.utils import compute_sparse_nullspace, drop_constraint_rows
+from sigmaflux.ai.utils import compute_sparse_nullspace
 
 
 def split_indices(n_samples, val_fraction, seed):
@@ -187,12 +187,6 @@ def main(args):
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
-    if args.skip_constraints:
-        metabolite_ids = [m.id for m in cobra_model.metabolites]
-        reaction_ids   = [r.id for r in cobra_model.reactions]
-        stoichiometric_matrix = drop_constraint_rows(
-            stoichiometric_matrix, metabolite_ids, reaction_ids, args.skip_constraints
-        )
 
     vocabs = build_radial_vocabs(
         cobra_model,
@@ -572,7 +566,6 @@ def main(args):
             "y_std":             y_std,
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
-            "skip_constraints":  args.skip_constraints,
         },
         "token_information":      token_information.numpy() if token_information is not None else None,
         "token_selection_method": getattr(args, 'token_selection_method', 'pca'),
@@ -653,7 +646,6 @@ if __name__ == "__main__":
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
         measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
-        skip_constraints          = t.get("skip_constraints") or [],
         compartment_mix           = t.get("compartment_mix", False),
         exclude_extracellular     = t.get("exclude_extracellular", False),
         # Feature selection (from features: config section)

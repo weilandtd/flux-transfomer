@@ -5,6 +5,12 @@ mapping_csv: models/S_cerevisiae/S_cerevisiae_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
+# Reactions removed from the model after FVA (sampling and MFA use the uncoupled
+# subspace). FVA is still run with these reactions active so their bounds inform
+# the remaining reactions before they are dropped.
+skip_constraints:
+  - BIOMASS
+
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
   n_samples: 10000   # final output written to flux_samples.csv
@@ -134,11 +140,3 @@ training:
   #mixed_flux_weight: 1.0          # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
-
-  # Reactions whose pseudo-metabolite coupling rows are removed from S before
-  # computing the training null-space basis Z. Feature selection always uses
-  # the original constrained Z (flux samples reflect those constraints).
-  skip_constraints:
-    - BIOMASS
-
-

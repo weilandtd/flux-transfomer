@@ -28,8 +28,6 @@ from optlang.symbolics import Zero
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_BIOMASS_COMPONENTS = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
-
 # Mapping from YAML-friendly names to hopsy proposal class names.
 _HOPSY_PROPOSALS = {
     "uniform_coordinate_hit_and_run": "UniformCoordinateHitAndRunProposal",  # default
@@ -75,6 +73,25 @@ def apply_media(model, media_cfg):
 
 def constrain_growth(model, growth_cfg):
     set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
+
+
+def drop_skip_constraints(model, skip_constraints):
+    """Remove listed reactions and any dead-end product metabolites from the model.
+
+    After removing e.g. BIOMASS, pseudo-metabolites that were only consumed by
+    BIOMASS become production-only sinks. At steady state this forces their
+    producers to zero flux, making sampling infeasible. Removing them frees the
+    component reactions to vary within their FVA-tightened bounds.
+    """
+    to_remove = [model.reactions.get_by_id(r) for r in skip_constraints if r in model.reactions]
+    model.remove_reactions(to_remove, remove_orphans=True)
+    # Find metabolites that are now only produced and never consumed (dead-end sinks).
+    sink_mets = [m for m in model.metabolites if all(r.metabolites[m] > 0 for r in m.reactions)]
+    if sink_mets:
+        model.remove_metabolites(sink_mets)
+    print(f"Dropped {len(to_remove)} skip-constraints reaction(s): {[r.id for r in to_remove]}")
+    if sink_mets:
+        print(f"  Removed {len(sink_mets)} dead-end metabolite(s): {[m.id for m in sink_mets]}")
 
 
 def constrain_by_fva(model):
@@ -345,6 +362,10 @@ def main(cfg, output_dir_override=None):
 
     n_zero, n_orphan, fva_result = constrain_by_fva(model)
     print(f"Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; tightened remaining bounds with ±1e-6")
+
+    skip_constraints = cfg.get("skip_constraints", [])
+    if skip_constraints:
+        drop_skip_constraints(model, skip_constraints)
 
     measured_rxns = cfg.get("training", {}).get("measured_fluxes", [])
     sub_rxns = s.get("stratified_sampling", {}).get("reactions") or measured_rxns

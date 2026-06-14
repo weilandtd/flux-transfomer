@@ -192,32 +192,3 @@ def compute_sparse_nullspace(
         prev_obj = obj
 
     return Z
-
-
-def drop_constraint_rows(
-    S: np.ndarray,
-    metabolite_ids: list,
-    reaction_ids: list,
-    skip_reactions: list,
-) -> np.ndarray:
-    """Remove pseudo-metabolite coupling rows for each reaction in skip_reactions.
-
-    For each named reaction, finds metabolites consumed by it that appear in
-    exactly 2 reactions total (the coupling producer + this consumer). Those
-    rows are removed from S, expanding the null-space by one dimension per
-    removed row and making the corresponding component fluxes independent DOFs.
-    """
-    keep = np.ones(S.shape[0], dtype=bool)
-    n_connections = np.count_nonzero(S, axis=1)
-    for rxn_id in skip_reactions:
-        try:
-            col = reaction_ids.index(rxn_id)
-        except ValueError:
-            print(f"skip_constraints: reaction '{rxn_id}' not found — skipped")
-            continue
-        consumed = S[:, col] < 0
-        coupling = np.where(consumed & (n_connections == 2))[0]
-        dropped = [metabolite_ids[i] for i in coupling]
-        print(f"skip_constraints[{rxn_id}]: removing {len(coupling)} rows: {dropped}")
-        keep[coupling] = False
-    return S[keep]
