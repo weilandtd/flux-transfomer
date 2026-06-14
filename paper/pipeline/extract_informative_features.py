@@ -40,6 +40,7 @@ def main(args):
     n_permutations      = fc.get("n_permutations", 5)
     budget              = fc.get("budget", None)
     token_filter        = fc.get("token_filter", "significant")
+    include_rev         = fc.get("include_reversibilities", True)
     run_mi_audit        = fc.get("run_mi_audit", False)
     restrict            = fc.get("restrict_to_mapped", False)
     out_name            = fc.get("output", "features.csv")
@@ -70,7 +71,7 @@ def main(args):
 
     theta, token_states, d = feat_lib.build_theta_and_token_states(
         labeling_df, flux_df, model_json, n_samples,
-        reversibility_df=reversibility_df,
+        reversibility_df=reversibility_df if include_rev else None,
         subsample_n=subsample_n, seed=seed,
     )
     print(f"  free-flux directions d = {d}; candidate tokens = {len(token_states)}; "

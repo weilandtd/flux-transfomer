@@ -87,8 +87,9 @@ features:
   gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
   rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
   n_permutations: 10         # null-calibration permutations used to set significance floor
-  token_filter: significant  # significant | selected — which tokens are passed to training
-  budget: null               # hard cap on token count (null = uncapped)
+  token_filter: significant       # significant | selected — which tokens are passed to training
+  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
+  budget: null                    # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
