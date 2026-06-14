@@ -26,6 +26,102 @@ def time_function(func):
 
 
 
+_AMINO_ACID_IDS: frozenset = frozenset({
+    'ala__L_c', 'arg__L_c', 'asn__L_c', 'asp__L_c', 'cys__L_c',
+    'gln__L_c', 'glu__L_c', 'gly_c',    'his__L_c', 'ile__L_c',
+    'leu__L_c', 'lys__L_c', 'met__L_c', 'phe__L_c', 'pro__L_c',
+    'ser__L_c', 'thr__L_c', 'trp__L_c', 'tyr__L_c', 'val__L_c',
+})
+_RNA_NTP_IDS: frozenset = frozenset({'ctp_c', 'gtp_c', 'utp_c'})  # atp_c handled separately
+_DNA_NTP_IDS: frozenset = frozenset({'datp_c', 'dctp_c', 'dgtp_c', 'dttp_c'})
+_CARB_IDS: frozenset = frozenset({
+    '13BDglucan_c', '16BDglucan_c', 'chtn_c', 'glycogen_c', 'mannan_c', 'tre_c',
+})
+_SHARED_MET_IDS: frozenset = frozenset({
+    'atp_c', 'adp_c', 'amp_c', 'pi_c', 'ppi_c', 'h2o_c', 'h_c',
+    'ca2_c', 'cu2_c', 'fe2_c', 'k_c', 'mg2_c', 'mn2_c', 'zn2_c', 'so4_c',
+})
+_BIOMASS_ENERGY_FRACS: dict = {
+    'PROTEIN_c': 0.50, 'CARB_c': 0.20, 'LIPID_c': 0.15, 'RNA_c': 0.12, 'DNA_c': 0.03,
+}
+BIOMASS_COMPONENT_IDS: tuple = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
+
+
+def redistribute_biomass_energy(model) -> None:
+    """Move ATP/cofactor stoichiometry from BIOMASS into the 5 component reactions.
+
+    The SC hierarchical model keeps all energy (ATP, H2O, ions) in the BIOMASS
+    reaction while component reactions (PROTEIN_c etc.) only carry building-block
+    metabolites.  After skip_constraints drops BIOMASS during sampling, these
+    reactions become energy-decoupled drains and labeling loses all sensitivity
+    to their fluxes — causing feature selection to fail.
+
+    This function redistributes the shared cofactors from BIOMASS to each
+    component reaction proportionally via _BIOMASS_ENERGY_FRACS, scaled so the
+    net stoichiometric flux balance is unchanged.  The BIOMASS reaction is then
+    stripped to only bm_* pseudo-metabolites.
+    """
+    rxn_ids = {r.id for r in model.reactions}
+    if 'BIOMASS' not in rxn_ids:
+        print("redistribute_biomass_energy: BIOMASS not found, skipping")
+        return
+    if not all(c in rxn_ids for c in BIOMASS_COMPONENT_IDS):
+        missing = [c for c in BIOMASS_COMPONENT_IDS if c not in rxn_ids]
+        print(f"redistribute_biomass_energy: missing component reactions {missing}, skipping")
+        return
+
+    biomass = model.reactions.get_by_id('BIOMASS')
+    stoich = {m.id: c for m, c in biomass.metabolites.items()}
+
+    # Identify bm_* pseudo-metabolite stoichiometry (consumed by BIOMASS)
+    bm_fracs = {mid: abs(c) for mid, c in stoich.items() if mid.startswith('bm_')}
+
+    # Shared energy cofactors to redistribute (everything except bm_* pseudo-metabolites)
+    energy_stoich = {mid: c for mid, c in stoich.items() if not mid.startswith('bm_')}
+
+    # RNA-specific ATP: the portion of ATP that goes with RNA NTPs (proxy: UTP stoich)
+    utp_stoich = stoich.get('utp_c', 0.0)   # e.g. -0.1256 for SC
+    atp_total = energy_stoich.get('atp_c', 0.0)
+    atp_rna_specific = utp_stoich            # ATP co-consumed with RNA NTP synthesis
+    atp_energy = atp_total - atp_rna_specific  # energy ATP to distribute by fracs
+
+    comp_to_bm = {
+        'PROTEIN_c': 'bm_protein_c',
+        'RNA_c':     'bm_rna_c',
+        'DNA_c':     'bm_dna_c',
+        'LIPID_c':   'bm_lipid_c',
+        'CARB_c':    'bm_carb_c',
+    }
+
+    for comp_id, frac in _BIOMASS_ENERGY_FRACS.items():
+        bm_id = comp_to_bm[comp_id]
+        bm_frac = bm_fracs.get(bm_id, 0.0)
+        if bm_frac == 0.0:
+            continue
+        rxn = model.reactions.get_by_id(comp_id)
+        additions = {}
+        # Distribute all shared metabolites by energy fraction, scaled per component flux unit
+        for mid, coeff in energy_stoich.items():
+            if mid == 'atp_c':
+                # Energy ATP share
+                additions[mid] = additions.get(mid, 0.0) + atp_energy * frac / bm_frac
+            else:
+                additions[mid] = additions.get(mid, 0.0) + coeff * frac / bm_frac
+        # RNA-specific ATP goes entirely to RNA_c
+        if comp_id == 'RNA_c' and atp_rna_specific != 0.0:
+            additions['atp_c'] = additions.get('atp_c', 0.0) + atp_rna_specific / bm_frac
+
+        met_map = {model.metabolites.get_by_id(mid): coeff
+                   for mid, coeff in additions.items() if coeff != 0.0}
+        rxn.add_metabolites(met_map)
+
+    # Strip all non-bm_* metabolites from BIOMASS
+    remove_from_biomass = {m: -c for m, c in biomass.metabolites.items()
+                           if not m.id.startswith('bm_')}
+    biomass.add_metabolites(remove_from_biomass)
+    print(f"redistribute_biomass_energy: distributed energy to {list(BIOMASS_COMPONENT_IDS)}")
+
+
 def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'):
 
     atom_mapping_annotation = pd.read_csv(annotation_file)

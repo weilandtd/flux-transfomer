@@ -80,7 +80,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only consider metabolites in mapping_csv
   token_selection_method: fisher    # pca | maxr | fisher
-  token_dropout: 0.2                # per-token labeling dropout during training
+  token_dropout: 0.1                # per-token labeling dropout during training
 
   # Advanced overrides (sensible defaults in code — omit unless tuning):
   # n_samples: 10000

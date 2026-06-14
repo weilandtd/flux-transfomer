@@ -120,7 +120,7 @@ training:
   h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  flux_token_dropout: 0.2
+  flux_token_dropout: 0.1
   compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
 
