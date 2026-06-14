@@ -1,18 +1,16 @@
 # SigmaFlux training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
 model_file: models/S_cerevisiae/sc_annotated_hierarchical.json
+mapping_csv: models/S_cerevisiae/S_cerevisiae_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 5000   # final output written to flux_samples.csv
+  n_samples: 10000   # final output written to flux_samples.csv
   thinning: 100
   processes: 8
-  method: hopsy        # hopsy | optgp | achr
-  hopsy_proposal: uniform_coordinate_hit_and_run
-  rounding: true
-  nproj: null
+  method: optgp        # hopsy | optgp | achr
   fva: true
   ko: false
 
@@ -22,7 +20,7 @@ sampling:
   stratified_sampling:
     enabled: true
     n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
-    n_bins: 5                     # equal-width bins along each measured reaction's FVA range
+    n_bins: 10                    # equal-width bins along each measured reaction's FVA range
     reactions: null               # null → training.measured_fluxes; or explicit list
 
   growth:
@@ -72,6 +70,18 @@ labeling:
       enrichment: 0.5
       name: "1,2-13C glucose (50%)"
 
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only consider metabolites in mapping_csv
+  token_selection_method: fisher    # pca | maxr | fisher
+  token_dropout: 0.2                # per-token labeling dropout during training
+
+  # Advanced overrides (sensible defaults in code — omit unless tuning):
+  # n_samples: 10000
+  # noise_std: 0.02
+  # gain_threshold: 0.01
+  # n_pca_components: 50            # only used when token_selection_method: pca
+
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
@@ -82,7 +92,7 @@ training:
   gradient_clip: 1.0
   scheduler: true
   val_fraction: 0.2
-  max_samples: 5000
+  max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model
@@ -99,10 +109,6 @@ training:
   h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  # Token window: fixed sequence length per forward pass. All measured flux tokens
-  # are included first (each with prob 1-flux_token_dropout per batch), then the
-  # remaining slots are filled with met tokens sampled by token_information weights.
-  token_window: 512
   flux_token_dropout: 0.2
   compartment_mix: false       # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
@@ -124,10 +130,15 @@ training:
   flux_noise_std: 0.05
   labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
   loss: variance                  # variance | mse
-  flux_loss_space: mixed          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  mixed_flux_weight: 0.35         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  flux_loss_space: flux          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  #mixed_flux_weight: 1.0          # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
-  n_pca_components: 50            # number of PCs used to score token informativeness for validation selection
+
+  # Reactions whose pseudo-metabolite coupling rows are removed from S before
+  # computing the training null-space basis Z. Feature selection always uses
+  # the original constrained Z (flux samples reflect those constraints).
+  skip_constraints:
+    - BIOMASS
 
 

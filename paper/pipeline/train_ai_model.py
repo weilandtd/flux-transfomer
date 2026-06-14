@@ -30,13 +30,14 @@ from sigmaflux.ai.data import (
     prepare_id_dataset,
     radial_embedding_table,
 )
+from sigmaflux.ai.utils import compute_token_scores, load_fisher_token_scores
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import (
     BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
-from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.ai.utils import compute_sparse_nullspace, drop_constraint_rows
 
 
 def split_indices(n_samples, val_fraction, seed):
@@ -120,6 +121,29 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
     return {'flux': flux_loss_fn, 'reversibility': rev_loss_fn}
 
 
+def _print_token_selection(token_information, labeling_df, fixed_idx, method,
+                           features_csv=None, n_original=None):
+    """Print a summary of the token scoring method and pool size."""
+    n_fx  = len(fixed_idx) if fixed_idx else 0
+    n_all = labeling_df.shape[0]
+
+    if method == 'fisher' and features_csv:
+        method_label = f"Fisher/D-optimal (pre-computed: {features_csv})"
+        pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
+        if n_original is not None and n_original != n_all:
+            pool_str += f"  [filtered from {n_original}]"
+    elif token_information is not None:
+        method_label = method
+        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
+    else:
+        method_label = "all tokens (no scoring)"
+        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
+
+    print(f"\n=== Token Selection ===")
+    print(f"Method:  {method_label}")
+    print(f"Pool:    {pool_str}")
+
+
 def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -150,23 +174,25 @@ def main(args):
         labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
         print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
 
-    # Fisher/D-optimal token selection (replaces corr_yl top-K): keep only the
-    # (Metabolite, Isotopomer) tokens flagged in the selection CSV, across all
-    # tracers. See paper/analysis/informative_tokens.py.
-    if getattr(args, 'keep_tokens', None):
-        sel = pd.read_csv(args.keep_tokens)
-        col = args.keep_tokens_column
-        keep = set(zip(sel.loc[sel[col], "metabolite_id"], sel.loc[sel[col], "isotopomer"]))
-        n_before = labeling_df.shape[0]
-        met = labeling_df.index.get_level_values('Metabolite')
-        iso = labeling_df.index.get_level_values('Isotopomer')
-        mask = [(m, i) in keep for m, i in zip(met, iso)]
-        labeling_df = labeling_df.loc[mask]
-        print(f"Kept Fisher-selected tokens ['{col}']: {n_before} → {labeling_df.shape[0]} "
-              f"({len(keep)} unique (met,M+k) × tracers)")
+    n_tokens_all = labeling_df.shape[0]
+    if getattr(args, 'token_selection_method', 'pca') == 'fisher':
+        if not os.path.isfile(args.features_csv):
+            raise FileNotFoundError(
+                f"token_selection_method='fisher' requires features.csv at "
+                f"{args.features_csv}. Run extract_informative_features.py first."
+            )
+        _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
+        labeling_df = labeling_df[_fisher_mask.numpy()]
+        print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
     stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
+    if args.skip_constraints:
+        metabolite_ids = [m.id for m in cobra_model.metabolites]
+        reaction_ids   = [r.id for r in cobra_model.reactions]
+        stoichiometric_matrix = drop_constraint_rows(
+            stoichiometric_matrix, metabolite_ids, reaction_ids, args.skip_constraints
+        )
 
     vocabs = build_radial_vocabs(
         cobra_model,
@@ -320,23 +346,15 @@ def main(args):
         corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
         obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
 
-        # max|r| per token across all null-space basis components — used as
-        # training sampling weights. Bounded in [0, 1] and matches the definition
-        # stored in the checkpoint and plotted by plot_token_information.py.
-        token_information_maxr = corr_yl.abs().max(dim=0).values        # (n_meas,)
-        print(f"Token max|r|: min={token_information_maxr.min():.3f}, "
-              f"max={token_information_maxr.max():.3f}, "
-              f"median={token_information_maxr.median():.3f}")
-
-        # PCA-based token importance: sum of squared loadings across top k PCs,
-        # weighted by variance (S^2). Used only for deterministic validation top-K.
-        _U, _S, _Vh = torch.linalg.svd(L_c, full_matrices=False)       # _Vh: (r, n_met)
-        k = min(args.n_pca_components, _S.shape[0])
-        token_information_pca = (_Vh[:k] ** 2 * _S[:k, None] ** 2).sum(dim=0)  # (n_met,)
-        _var_k     = (_S[:k] ** 2).sum().item()
-        _var_total = (_S ** 2).sum().item()
-        print(f"PCA token importance: top-{k} PCs explain "
-              f"{100 * _var_k / _var_total:.1f}% of labeling variance")
+        token_sel_method = getattr(args, 'token_selection_method', 'pca')
+        if token_sel_method == 'fisher':
+            token_information = None  # selection already applied via labeling_df filter above
+        else:
+            token_information = compute_token_scores(
+                L_c, method=token_sel_method,
+                n_components=getattr(args, 'n_pca_components', 50),
+                y_c=y_c, y_std_c=y_std_c,
+            )
 
         # Extend observability to include measured fluxes — basis modes that are
         # directly constrained by known fluxes are observable even if labeling alone
@@ -360,7 +378,7 @@ def main(args):
               f"; max|r| range=[{obs_weights_np.min():.3f}, {obs_weights_np.max():.3f}]")
     else:
         y_mean, y_std, obs_weights_np = None, None, None
-        token_information_maxr, token_information_pca = None, None
+        token_information = None
 
     # Builf the null-space data dict, which the model uses to reconstruct fluxes
     # the latent space
@@ -419,6 +437,13 @@ def main(args):
         variance_min_cutoff = args.variance_min_cutoff,
     )
 
+    _print_token_selection(
+        token_information, labeling_df, fixed_idx,
+        method=getattr(args, 'token_selection_method', 'pca'),
+        features_csv=getattr(args, 'features_csv', None),
+        n_original=n_tokens_all,
+    )
+
     log = train_model(
         model,
         train_loader,
@@ -429,10 +454,9 @@ def main(args):
         gradient_clip              = args.gradient_clip,
         use_scheduler              = not args.no_scheduler,
         warmup_epochs              = args.warmup_epochs,
-        token_window               = args.token_window,
         flux_token_dropout         = args.flux_token_dropout,
-        token_information          = token_information_maxr,
-        token_information_val      = token_information_pca,
+        labeling_token_dropout     = getattr(args, 'labeling_token_dropout', 0.0),
+        token_information          = token_information,
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
         measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
@@ -500,9 +524,7 @@ def main(args):
         print(f"Singular values range: [{S[-1]:.2e}, {S[0]:.2e}]")
         print(f"Column max abs: mean={col_max_abs.mean():.4f}, std={col_max_abs.std():.4f}")
 
-        # Check mass balance constraint
-        stoich_S, _ = load_stoichiometric_matrix(args.model_json)
-        residual = np.linalg.norm(stoich_S @ Z_np, 'fro')
+        residual = np.linalg.norm(stoichiometric_matrix @ Z_np, 'fro')
         print(f"Null-space check: ||S @ Z|| = {residual:.2e}")
 
     except Exception as e:
@@ -550,8 +572,10 @@ def main(args):
             "y_std":             y_std,
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
+            "skip_constraints":  args.skip_constraints,
         },
-        "token_information":    token_information_maxr.numpy() if token_information_maxr is not None else None,
+        "token_information":      token_information.numpy() if token_information is not None else None,
+        "token_selection_method": getattr(args, 'token_selection_method', 'pca'),
         "h_reaction":           h_reaction,
         "h_type":               h_type,
         "flux_norm_stats":      flux_norm_stats,
@@ -587,6 +611,7 @@ if __name__ == "__main__":
         cfg = yaml.safe_load(f)
 
     t = cfg.get("training", {})
+    f = cfg.get("features", {})
     output_dir   = cli.data_dir or f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
     output_model = os.path.join(output_dir, t.get("output_model", "transformer.pt"))
 
@@ -613,8 +638,8 @@ if __name__ == "__main__":
         num_attn_heads         = t.get("num_attn_heads", 4),
         num_transformer_layers = t.get("num_transformer_layers", 4),
         dropout                = t.get("dropout", 0.3),
-        token_window           = t.get("token_window", 512),
         flux_token_dropout     = t.get("flux_token_dropout", 0.0),
+        labeling_token_dropout = f.get("token_dropout", 0.0),
         measured_fluxes        = measured_fluxes,
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
@@ -628,10 +653,12 @@ if __name__ == "__main__":
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
         measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
-        compartment_mix        = t.get("compartment_mix", False),
-        exclude_extracellular  = t.get("exclude_extracellular", False),
-        n_pca_components       = t.get("n_pca_components", 50),
-        keep_tokens            = t.get("keep_tokens"),
-        keep_tokens_column     = t.get("keep_tokens_column", "selected"),
+        skip_constraints          = t.get("skip_constraints") or [],
+        compartment_mix           = t.get("compartment_mix", False),
+        exclude_extracellular     = t.get("exclude_extracellular", False),
+        # Feature selection (from features: config section)
+        token_selection_method = f.get("token_selection_method", "pca"),
+        n_pca_components       = f.get("n_pca_components", 50),
+        features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
     main(args)
