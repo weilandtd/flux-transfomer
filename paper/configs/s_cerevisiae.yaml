@@ -83,10 +83,10 @@ features:
   token_dropout: 0.1                # per-token labeling dropout during training
 
   # Fisher selection parameters — all values that determine which tokens are included:
-  noise_std: 0.02            # assumed labeling noise std (σ) for Fisher Gram weighting
+  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
   gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
-  rel_gain_threshold: 0.05   # stop greedy when next gain < this fraction of the first gain
-  n_permutations: 5          # null-calibration permutations used to set significance floor
+  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
+  n_permutations: 10         # null-calibration permutations used to set significance floor
   token_filter: significant  # significant | selected — which tokens are passed to training
   budget: null               # hard cap on token count (null = uncapped)
 
