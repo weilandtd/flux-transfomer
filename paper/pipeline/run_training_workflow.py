@@ -2,16 +2,17 @@
 Run the full SigmaFlux training workflow driven by a YAML config file.
 
 Steps executed in order:
-  1. sample_flux.py            — sample flux distributions from the COBRA model
-  2. generate_training_data.py — simulate isotope labeling for each flux sample
-  3. train_ai_model.py         — train the labeling-to-flux transformer
+  1. sample_flux.py                     — sample flux distributions from the COBRA model
+  2. generate_training_data.py          — simulate isotope labeling for each flux sample
+  3. extract_informative_features.py    — Fisher/D-optimal token selection → features.csv
+  4. train_ai_model.py                  — train the labeling-to-flux transformer
 
 Usage (works from any directory):
-    python paper/run_training_workflow.py --config paper/io_config.yaml
+    python paper/pipeline/run_training_workflow.py --config paper/configs/i_orientalis.yaml
 
 Individual steps can be skipped if their outputs already exist:
-    python paper/run_training_workflow.py --config paper/io_config.yaml \\
-        --skip-sampling --skip-generate
+    python paper/pipeline/run_training_workflow.py --config ... \\
+        --skip-sampling --skip-generate --skip-features
 """
 
 import argparse
@@ -44,6 +45,7 @@ def main():
     parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
     parser.add_argument("--skip-sampling", action="store_true", help="Skip flux sampling (reuse existing flux_samples.csv)")
     parser.add_argument("--skip-generate", action="store_true", help="Skip labeling simulation (reuse existing HDF5 files)")
+    parser.add_argument("--skip-features", action="store_true", help="Skip feature extraction (reuse existing features.csv)")
     parser.add_argument("--skip-train", action="store_true", help="Skip model training")
     parser.add_argument("--data-dir", default=None, help="Data directory containing HDF5 files (default: <name>_YYYYMMDD)")
     args = parser.parse_args()
@@ -74,14 +76,25 @@ def main():
     else:
         run_step([python, os.path.join(_PAPER_DIR, "generate_training_data.py"), "--config", config_path])
 
-    # ── Step 3: Train the transformer ────────────────────────────────────────
+    # ── Step 3: Extract informative features ─────────────────────────────────
+    features_csv = os.path.join(output_dir,
+                                cfg.get("features", {}).get("output", "features.csv"))
+    if args.skip_features or os.path.isfile(features_csv):
+        print(f"\n[Step 3] Skipping feature extraction "
+              f"({'--skip-features' if args.skip_features else 'features.csv exists'}).")
+    else:
+        run_step([python, os.path.join(_PAPER_DIR, "extract_informative_features.py"),
+                  "--config", config_path, "--data-dir", output_dir])
+
+    # ── Step 4: Train the transformer ────────────────────────────────────────
     if args.skip_train:
-        print("\n[Step 3] Skipping model training.")
+        print("\n[Step 4] Skipping model training.")
     else:
         run_step([python, os.path.join(_PAPER_DIR, "train_ai_model.py"),
                   "--config", config_path, "--data-dir", output_dir])
 
     print("\nWorkflow complete.")
+    print(f"Features CSV : {features_csv}")
     print(f"Trained model: {output_model}")
 
 

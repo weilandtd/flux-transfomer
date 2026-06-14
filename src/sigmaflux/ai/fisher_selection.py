@@ -1,11 +1,11 @@
 """
-Which metabolite labelings are informative for flux estimation?
-================================================================
+Fisher information and D-optimal greedy selection of informative labeling tokens.
+==================================================================================
 
-This module answers, from the *forward simulator alone* (no estimator
-training), the experimental-design question: given a set of reactions, which
-metabolites' isotope labelings (MIDs) most reduce the uncertainty in the
-estimated net fluxes, and what is the minimal informative subset?
+Answers, from the *forward simulator or generated samples alone* (no estimator
+training), the experimental-design question: which metabolite isotopologue tokens
+most reduce uncertainty in the estimated free fluxes, and what is the minimal
+non-redundant informative subset?
 
 Framework
 ---------

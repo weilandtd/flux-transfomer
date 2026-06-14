@@ -16,8 +16,8 @@ from .predict import (
     train_ensemble
 )
 
-# Math utilities
-from .utils import compute_sparse_nullspace
+# Utilities (null-space, token scoring, file conversion)
+from .utils import compute_sparse_nullspace, compute_token_scores, load_fisher_token_scores
 
 # Data utilities
 from .data import (
@@ -40,8 +40,10 @@ from .data import (
 )
 
 __all__ = [
-    # Math utilities
+    # Utilities
     'compute_sparse_nullspace',
+    'compute_token_scores',
+    'load_fisher_token_scores',
     # Model
     'CrossAttention',
     'FluxDecoderConfig',
