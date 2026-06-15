@@ -91,9 +91,9 @@ features:
   noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
   gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
   rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
-  n_permutations: 10         # null-calibration permutations used to set significance floor
-  token_filter: significant       # significant | selected — which tokens are passed to training
-  include_reversibilities: false  # append log1p-z-scored reversibilities to θ for feature selection
+  n_permutations: 10              # null-calibration permutations used to set significance floor
+  token_filter: selected          # significant | selected — which tokens are passed to training
+  include_reversibilities: true    # append log1p-z-scored reversibilities to θ for feature selection
   budget: null                    # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
@@ -145,8 +145,9 @@ training:
   flux_noise_std: 0.05
   labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
   loss: variance                  # variance | mse
-  flux_loss_space: flux          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  #mixed_flux_weight: 1.0          # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
+  null_space_type: targeted       # targeted | varimax — which null-space basis to use
+  flux_loss_space: basis          # basis | flux | basis — train in null-space, reconstructed flux, or combination
+  #mixed_flux_weight: 0.0         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
 
