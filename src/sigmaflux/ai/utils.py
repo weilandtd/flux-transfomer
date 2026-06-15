@@ -88,6 +88,41 @@ def load_fisher_token_scores(
     return scores, included_mask
 
 
+def _varimax_rotate(Z: np.ndarray, max_iter: int = 1000, tol: float = 1e-6) -> np.ndarray:
+    """Varimax (Kaiser 1958) orthogonal rotation applied in-place to columns of Z.
+
+    Maximises sum of per-column variances of squared loadings via pairwise Jacobi
+    sweeps.  Input columns must already have unit norm; the rotation preserves norms
+    and the span of the columns.
+    """
+    n_rxn, k = Z.shape
+    if k <= 1:
+        return Z
+
+    prev_obj = -np.inf
+    for _ in range(max_iter):
+        for p in range(k - 1):
+            for q in range(p + 1, k):
+                u = Z[:, p] ** 2 - Z[:, q] ** 2
+                v = 2.0 * Z[:, p] * Z[:, q]
+                A, B = u.sum(), v.sum()
+                C = (u**2 - v**2).sum()
+                D = (2.0 * u * v).sum()
+                num = D - 2.0 * A * B / n_rxn
+                den = C - (A**2 - B**2) / n_rxn
+                theta = np.arctan2(num, den) / 4.0
+                c, s = np.cos(theta), np.sin(theta)
+                Z[:, [p, q]] = Z[:, [p, q]] @ np.array([[c, -s], [s, c]])
+
+        col_sq = Z ** 2
+        obj = (n_rxn * (col_sq ** 2).sum(axis=0) - col_sq.sum(axis=0) ** 2).sum()
+        if abs(obj - prev_obj) < tol:
+            break
+        prev_obj = obj
+
+    return Z
+
+
 def compute_sparse_nullspace(
     S: np.ndarray,
     max_iter: int = 1000,
@@ -146,54 +181,8 @@ def compute_sparse_nullspace(
         Orthonormal null-space basis after Varimax rotation. Columns
         span null(S) and are sparser than the raw SVD basis.
     """
-    # --- initial orthonormal null-space basis from SVD ---
-    Z = scipy.linalg.null_space(S)   # (n_rxn, k)
-    n_rxn, k = Z.shape
-
-    # rotation is a no-op for a 1-D (or empty) null space
-    if k <= 1:
-        return Z
-
-    prev_obj = -np.inf
-
-    for _ in range(max_iter):
-        # --- one full Jacobi sweep over all column pairs ---
-        for p in range(k - 1):
-            for q in range(p + 1, k):
-                # quantities needed for the closed-form Kaiser angle
-                u = Z[:, p] ** 2 - Z[:, q] ** 2   # element-wise difference of squared loadings
-                v = 2.0 * Z[:, p] * Z[:, q]        # element-wise cross term
-
-                A = u.sum()
-                B = v.sum()
-                C = (u**2 - v**2).sum()
-                D = (2.0 * u * v).sum()
-
-                # Kaiser (1958) optimal rotation angle for this column pair;
-                # the /n_rxn terms apply the column-normalisation correction
-                num = D - 2.0 * A * B / n_rxn
-                den = C - (A**2 - B**2) / n_rxn
-                theta = np.arctan2(num, den) / 4.0
-
-                c, s = np.cos(theta), np.sin(theta)
-
-                # in-place 2×2 orthogonal Jacobi rotation;
-                # preserves column norms and the null-space span
-                rot2 = np.array([[c, -s],
-                                 [s,  c]])
-                Z[:, [p, q]] = Z[:, [p, q]] @ rot2
-
-        # --- Varimax objective: sum of per-column variances of squared loadings ---
-        # higher value ↔ sparser columns
-        col_sq = Z**2                                          # (n_rxn, k)
-        obj = (n_rxn * (col_sq**2).sum(axis=0)
-               - col_sq.sum(axis=0)**2).sum()
-
-        if abs(obj - prev_obj) < tol:
-            break
-        prev_obj = obj
-
-    return Z
+    Z = scipy.linalg.null_space(S)   # (n_rxn, k) — unit-norm columns from SVD
+    return _varimax_rotate(Z, max_iter=max_iter, tol=tol)
 
 
 def compute_targeted_nullspace(
@@ -322,6 +311,16 @@ def compute_targeted_nullspace(
     # which controls both the initial loss scale and gradient magnitude during training.
     col_norms = np.linalg.norm(Z, axis=0)
     Z = Z / col_norms
+
+    # Apply Varimax rotation to the non-target free columns.
+    # The target rows of those columns are all zero by construction (LU identity block),
+    # so any orthogonal rotation within the free subspace keeps those zeros intact —
+    # separability is fully preserved.  The rotation maximises sparsity of the free
+    # dimensions so they concentrate on specific metabolic pathways rather than being
+    # arbitrary LU artefacts.
+    n_targets = len(target_reactions)
+    if n - r > n_targets + 1:
+        Z[:, n_targets:] = _varimax_rotate(Z[:, n_targets:].copy())
 
     return Z, {
         'separable': True,
