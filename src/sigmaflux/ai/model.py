@@ -37,10 +37,10 @@ class ScalarFeatureEncoder(nn.Module):
 		  features: (..., 4) with [x, log(|x|+1), x², sign(x)]
 		"""
 		log_feat = torch.log(torch.abs(x) + 1)
-		quad_feat = x ** 2
+		abs_feat = torch.abs(x)
 		sign_feat = torch.sign(x)
 
-		return torch.stack([x, log_feat, quad_feat, sign_feat], dim=-1)
+		return torch.stack([x, log_feat, abs_feat, sign_feat], dim=-1)
 
 	def forward(self, x):
 		"""
