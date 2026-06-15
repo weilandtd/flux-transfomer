@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import pandas as pd
 import scipy.linalg
@@ -192,3 +194,141 @@ def compute_sparse_nullspace(
         prev_obj = obj
 
     return Z
+
+
+def compute_targeted_nullspace(
+    S: np.ndarray,
+    reaction_names: list,
+    target_reactions: list,
+    tol: float = 1e-10,
+    warn_cond_threshold: float = 1e8,
+):
+    """Build a structured null-space basis that gives each target reaction its own DOF.
+
+    For each target reaction t, the returned Z satisfies Z[t, j_t] = 1 and
+    Z[t, j≠j_t] = 0 (identity block on targets), so the corresponding basis
+    coefficient y[j_t] directly represents that reaction's flux with no
+    cross-reaction amplification.
+
+    Parameters
+    ----------
+    S : np.ndarray, shape (m, n)
+        Stoichiometric matrix (metabolites × reactions).
+    reaction_names : list[str], length n
+        Ordered reaction identifiers matching S columns.
+    target_reactions : list[str]
+        Reactions that must each receive their own basis dimension.
+    tol : float
+        Relative tolerance for rank determination and mass-balance check.
+    warn_cond_threshold : float
+        Log a warning when cond(S_D) exceeds this value.
+
+    Returns
+    -------
+    Z : np.ndarray, shape (n, n-r), or None if separability check fails
+    status : dict with keys
+        separable       bool   — False means targets are stoichiometrically coupled
+        fallback_reason str    — set when separable=False
+        cond_SD         float  — condition number of the dependent block (0 when failed)
+        target_indices  list   — column indices of target reactions in S
+        dep_cols        list   — column indices chosen as the dependent block
+        free_cols       list   — column indices of free DOFs (targets first)
+    """
+    m, n = S.shape
+
+    # Step 0 — validate inputs
+    try:
+        target_idx = [reaction_names.index(r) for r in target_reactions]
+    except ValueError as e:
+        raise ValueError(f"compute_targeted_nullspace: {e}") from None
+
+    Z_raw = scipy.linalg.null_space(S)   # (n, k)
+    k = Z_raw.shape[1]
+    if k == 0:
+        return None, {
+            'separable': False,
+            'fallback_reason': 'null space is empty (S is square and full-rank)',
+            'cond_SD': 0.0, 'target_indices': target_idx,
+            'dep_cols': [], 'free_cols': [],
+        }
+    if len(target_reactions) > k:
+        raise ValueError(
+            f"compute_targeted_nullspace: {len(target_reactions)} targets but "
+            f"null-space dimension is only {k}"
+        )
+
+    # Step 1 — separability check: target rows must span a full-rank subspace in null(S)
+    G = Z_raw[target_idx, :]             # (|T|, k)
+    rank_G = np.linalg.matrix_rank(G, tol=tol * np.linalg.norm(G))
+    if rank_G < len(target_reactions):
+        return None, {
+            'separable': False,
+            'fallback_reason': (
+                f'targets are stoichiometrically coupled: '
+                f'rank(G)={rank_G} < {len(target_reactions)}'
+            ),
+            'cond_SD': 0.0, 'target_indices': target_idx,
+            'dep_cols': [], 'free_cols': [],
+        }
+
+    # Step 2 — identify r = rank(S) independent metabolite rows via QR on S.T
+    # scipy.linalg.qr with pivoting=True: S.T[:, piv] = Q @ R  →  piv gives column
+    # ordering of S.T, i.e. row ordering of S, by decreasing pivot magnitude.
+    _, R_qr, piv_met = scipy.linalg.qr(S.T, pivoting=True)
+    diag = np.abs(np.diag(R_qr))
+    r = int(np.sum(diag > tol * diag[0]))      # rank(S)
+    indep_met_idx = piv_met[:r]
+    Sr = S[indep_met_idx, :]                   # (r, n)
+
+    # Step 3 — among non-target columns, pick r most independent ones as the
+    # dependent block S_D.  Column-pivoted QR on Sr restricted to non-target cols.
+    non_target_cols = [i for i in range(n) if i not in set(target_idx)]
+    Sr_nt = Sr[:, non_target_cols]             # (r, n - |T|)
+    _, R2, piv2 = scipy.linalg.qr(Sr_nt, pivoting=True)
+    dep_cols = [non_target_cols[piv2[i]] for i in range(r)]
+    S_D = Sr[:, dep_cols]                      # (r, r)
+
+    cond_SD = float(np.linalg.cond(S_D))
+    if cond_SD > warn_cond_threshold:
+        warnings.warn(
+            f"compute_targeted_nullspace: cond(S_D) = {cond_SD:.2e} exceeds "
+            f"warn_cond_threshold={warn_cond_threshold:.2e}. "
+            f"Predictions for some reactions may be numerically unreliable."
+        )
+
+    # Step 4 — free DOFs: targets first, then remaining non-pivot non-target cols
+    remaining_free = [non_target_cols[piv2[i]] for i in range(r, len(non_target_cols))]
+    free_cols = target_idx + remaining_free    # length = n - r
+    S_free = Sr[:, free_cols]                 # (r, n - r)
+
+    # Step 5 — solve S_D @ X = -S_free  (LU with partial pivoting via np.linalg.solve)
+    X = np.linalg.solve(S_D, -S_free)         # (r, n - r)
+
+    # Step 6 — assemble Z: identity on free rows, LU solution on dependent rows
+    Z = np.zeros((n, n - r))
+    Z[dep_cols, :] = X
+    Z[free_cols, :] = np.eye(n - r)
+
+    residual = float(np.abs(S @ Z).max())
+    if residual > 1e-6:
+        warnings.warn(
+            f"compute_targeted_nullspace: max |S @ Z| = {residual:.2e} — "
+            f"mass balance may not hold to expected tolerance."
+        )
+
+    # Normalize columns to unit norm.  The target-block zeros are preserved exactly
+    # (dividing by a positive scalar never turns a zero nonzero).  Column norms of
+    # order 1 bound the Gram matrix G = Z.T @ Z to diagonal 1 / off-diagonal ≤ 1,
+    # which controls both the initial loss scale and gradient magnitude during training.
+    col_norms = np.linalg.norm(Z, axis=0)
+    Z = Z / col_norms
+
+    return Z, {
+        'separable': True,
+        'fallback_reason': '',
+        'cond_SD': cond_SD,
+        'col_norms': col_norms,
+        'target_indices': target_idx,
+        'dep_cols': dep_cols,
+        'free_cols': free_cols,
+    }
