@@ -37,7 +37,7 @@ from sigmaflux.ai.train import (
     BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
-from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.ai.utils import compute_sparse_nullspace, compute_targeted_nullspace
 
 
 def split_indices(n_samples, val_fraction, seed):
@@ -186,7 +186,13 @@ def main(args):
         print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
-    stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(args.model_json)
+
+    # Load stoichiometric matrix from the MFA-prepared model in the data directory.
+    # The prepared model has BIOMASS/skip-constraint reactions removed and its
+    # reaction ordering matches flux_df exactly — the annotated model_file does not.
+    import os as _os
+    _prepared = _os.path.join(args.data_dir, 'model_prepared_for_mfa.json')
+    stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(_prepared)
 
     vocabs = build_radial_vocabs(
         cobra_model,
@@ -309,20 +315,51 @@ def main(args):
     free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
     fixed_idx = fixed_flux_indices or []
 
-    Z_full       = compute_sparse_nullspace(stoichiometric_matrix)  # varimax-rotated, orthonormal (n_fluxes, k)
+    use_targeted = (
+        args.null_space_type == 'targeted'
+        and args.measured_fluxes
+    )
+    if use_targeted:
+        rxn_names = list(flux_df.index)
+        Z_full, basis_status = compute_targeted_nullspace(
+            stoichiometric_matrix,
+            reaction_names=rxn_names,
+            target_reactions=args.measured_fluxes,
+        )
+        if not basis_status['separable']:
+            print(f"WARNING: targeted basis failed ({basis_status['fallback_reason']}); "
+                  f"falling back to Varimax basis")
+            Z_full = compute_sparse_nullspace(stoichiometric_matrix)
+        else:
+            n_t = len(args.measured_fluxes)
+            print(f"Targeted basis: {n_t} measured reaction DOF(s) at cols 0–{n_t - 1}, "
+                  f"cond(S_D)={basis_status['cond_SD']:.2e}")
+    else:
+        print(f"Null-space basis: Varimax (null_space_type={args.null_space_type!r})")
+        Z_full = compute_sparse_nullspace(stoichiometric_matrix)
     n_free_basis = Z_full.shape[1]
 
-    print(f"Full null-space basis dimension: {n_free_basis}  (was {flux_dim - len(fixed_idx) - n_free_basis + n_free_basis} from S_free)")
+    print(f"Full null-space basis dimension: {n_free_basis}")
+
+    # Z_proj: recovers true null-space coordinates  y = v @ Z_proj  (v = y @ Z_full.T).
+    # For orthonormal Z (Varimax fallback): G = I → Z_proj = Z_full (no change).
+    # For column-normalised targeted Z: G is a Gram matrix; bounded condition number.
+    _G = Z_full.T @ Z_full
+    print(f"Basis Gram cond: {np.linalg.cond(_G):.2e}")
+    if np.allclose(_G, np.eye(_G.shape[0]), atol=1e-6):
+        Z_proj = Z_full
+    else:
+        Z_proj = Z_full @ np.linalg.solve(_G, np.eye(_G.shape[0]))
 
     # ── Compute y normalization and observability weights from training data ──
-    # y_true = v_targets @ Z_full  (project all flux targets onto null-space basis)
+    # y_true = v_targets @ Z_proj  (proper coordinates for the null-space basis)
     # Normalize so the model predicts y_norm ≈ N(0,1) — clean gradient signal.
     # obs_weights[i] = max|Pearson r(y_i, labeling_j)| across all labeling features.
     if n_free_basis > 0:
         train_tgts      = train_dataset.targets                          # (n_train, flux+rev)
-        train_tgts_flux = train_tgts[:, :flux_dim]                       # (n_train, 386)
-        Z_t             = torch.tensor(Z_full, dtype=torch.float32)
-        y_train         = train_tgts_flux @ Z_t                          # (n_train, 38)
+        train_tgts_flux = train_tgts[:, :flux_dim]                       # (n_train, n_rxn)
+        Z_proj_t        = torch.tensor(Z_proj, dtype=torch.float32)
+        y_train         = train_tgts_flux @ Z_proj_t                     # (n_train, k)
         y_mean          = y_train.mean(dim=0).numpy()
         y_std           = y_train.std(dim=0).clamp_min(1e-6).numpy()
         print(f"y_true stats: mean_abs={np.abs(y_mean).mean():.2f}, "
@@ -425,7 +462,7 @@ def main(args):
     loss_function = build_loss_function(
         train_dataset, flux_dim, args.loss,
         flux_loss_space = args.flux_loss_space,
-        Z_full          = Z_full if args.flux_loss_space in ['basis', 'mixed'] else None,
+        Z_full          = Z_proj if args.flux_loss_space in ['basis', 'mixed'] else None,
         y_train         = y_train_for_loss,
         mixed_flux_weight = args.mixed_flux_weight,
         variance_min_cutoff = args.variance_min_cutoff,
@@ -634,6 +671,7 @@ if __name__ == "__main__":
         flux_token_dropout     = t.get("flux_token_dropout", 0.0),
         labeling_token_dropout = f.get("token_dropout", 0.0),
         measured_fluxes        = measured_fluxes,
+        null_space_type        = t.get("null_space_type", "targeted"),
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
