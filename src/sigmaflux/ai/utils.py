@@ -331,3 +331,365 @@ def compute_targeted_nullspace(
         'dep_cols': dep_cols,
         'free_cols': free_cols,
     }
+
+
+def compute_ica_nullspace(
+    S: np.ndarray,
+    flux_samples: np.ndarray,
+    *,
+    seed: int = 42,
+) -> tuple[np.ndarray, dict]:
+    """Build a null-space basis informed by ICA on steady-state flux samples.
+
+    The leading k columns are statistically independent flux modes found by a single
+    FastICA run on the variance-active null-space subspace; the remaining d-k columns
+    complete the basis. The result always satisfies S @ Z = 0 and rank(Z) = d.
+
+    The effective sampling rank (n_active) is estimated from the sample covariance
+    eigenspectrum using a machine-epsilon threshold — no user tuning required.
+    FastICA's internal PCA whitening then operates on the n_active-dimensional
+    well-conditioned subspace.
+
+    Parameters
+    ----------
+    S : np.ndarray, shape (m, n)
+        Stoichiometric matrix (metabolites × reactions).
+    flux_samples : np.ndarray, shape (n_samples, n_reactions)
+        Steady-state flux samples satisfying S @ v ≈ 0. Typically flux_df.values.T.
+    seed : int
+        Random seed for FastICA initialisation.
+
+    Returns
+    -------
+    Z : np.ndarray, shape (n, d)
+        Null-space basis. Leading k columns are ICA modes; remaining d-k complete
+        the basis. Columns are orthonormal (Gram ≈ I).
+    status : dict with keys
+        n_ica_components  int   — number of ICA modes (k)
+        n_complement      int   — number of complement columns (d - k)
+        n_active          int   — effective sampling rank fed to ICA
+        fallback          bool  — True if FastICA failed (Varimax used instead)
+    """
+    from sklearn.decomposition import FastICA  # local import — optional dependency
+
+    n = S.shape[1]
+    N = scipy.linalg.null_space(S)   # (n, d), orthonormal
+    d = N.shape[1]
+
+    if d == 0:
+        return np.zeros((n, 0)), {
+            'n_ica_components': 0, 'n_complement': 0, 'n_active': 0, 'fallback': False,
+        }
+
+    # Project training samples into null-space coordinates
+    Y = flux_samples @ N    # (n_samples, d)
+    n_samples = Y.shape[0]
+
+    # Effective rank: count eigenvalues of the sample covariance above machine-epsilon.
+    # Null-space directions with near-zero variance are unexplored by the sampler and
+    # would become noise for ICA; the complement step fills those dimensions instead.
+    Y_c = Y - Y.mean(axis=0)
+    cov = (Y_c.T @ Y_c) / max(n_samples - 1, 1)
+    eigvals = np.linalg.eigvalsh(cov)[::-1]   # descending
+    eps_thresh = np.finfo(float).eps * d * eigvals[0]
+    n_active = max(1, int(np.sum(eigvals > eps_thresh)))
+    n_ica_req = min(n_active, n_samples - 1)
+    print(f"ICA null-space: effective rank {n_active}/{d}")
+
+    # Single FastICA run — sklearn's internal PCA whitening operates on the n_ica_req
+    # leading principal components, giving ICA a full-rank well-conditioned input.
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            ica = FastICA(n_components=n_ica_req, random_state=seed)
+            ica.fit(Y)
+        modes = N @ ica.components_.T   # (n, n_ica_req), already in null(S) by construction
+    except Exception:
+        Z_fb = compute_sparse_nullspace(S)
+        return Z_fb, {
+            'n_ica_components': 0, 'n_complement': d, 'n_active': n_active, 'fallback': True,
+        }
+
+    # Orthonormalize ICA block via thin QR
+    Q_ica, _ = np.linalg.qr(modes)      # (n, n_ica_req), orthonormal columns
+    k_ica = np.linalg.matrix_rank(Q_ica)
+    Q_ica = Q_ica[:, :k_ica]
+
+    # Fill remaining d - k_ica dimensions with the orthogonal complement
+    n_complement = d - k_ica
+    if n_complement > 0:
+        R = N - Q_ica @ (Q_ica.T @ N)      # (n, d); columns span complement in null(S)
+        U_r, _, _ = np.linalg.svd(R, full_matrices=False)
+        Q_complement = U_r[:, :n_complement]
+        Z = np.hstack([Q_ica, Q_complement])
+    else:
+        Z = Q_ica.copy()
+
+    # Sign convention: largest-|value| element positive per column
+    for j in range(Z.shape[1]):
+        if Z[np.argmax(np.abs(Z[:, j])), j] < 0:
+            Z[:, j] = -Z[:, j]
+    col_norms = np.linalg.norm(Z, axis=0)
+    col_norms[col_norms < 1e-14] = 1.0
+    Z = Z / col_norms
+
+    residual_max = float(np.abs(S @ Z).max())
+    assert residual_max <= 1e-8, (
+        f"compute_ica_nullspace: max|S @ Z| = {residual_max:.2e}"
+    )
+    assert np.linalg.matrix_rank(Z) == d, (
+        f"compute_ica_nullspace: rank(Z) = {np.linalg.matrix_rank(Z)} != d = {d}"
+    )
+
+    print(f"ICA null-space: {k_ica} ICA modes, {n_complement} complement")
+    return Z, {
+        'n_ica_components': k_ica,
+        'n_complement': n_complement,
+        'n_active': n_active,
+        'fallback': False,
+    }
+
+
+
+def detect_parallel_reaction_groups(
+    S: np.ndarray,
+    reaction_names: list,
+    cofactor_metabolites: list | None = None,
+    cos_threshold: float = 0.99,
+) -> list[list[str]]:
+    """Find groups of reactions with stoichiometrically equivalent carbon backbones.
+
+    Two reactions are considered parallel if their stoichiometric columns are nearly
+    proportional (cosine similarity ≥ cos_threshold) after zeroing out cofactor rows.
+    Within each group the reactions carry the same carbon flux pattern and cannot be
+    individually resolved from ¹³C labeling data — only the sum direction (net flux)
+    is observable.
+
+    Parameters
+    ----------
+    S : np.ndarray, shape (m, n)
+        Stoichiometric matrix (metabolites × reactions).
+    reaction_names : list[str], length n
+        Ordered reaction identifiers matching S columns.
+    cofactor_metabolites : list[str] | None
+        Metabolite IDs (row labels of S) to mask before computing similarities.
+        When None, all rows are used and the threshold will primarily catch
+        reactions identical up to stoichiometric coefficient scaling.
+    cos_threshold : float
+        Minimum absolute cosine similarity to declare reactions parallel.
+
+    Returns
+    -------
+    groups : list[list[str]]
+        Each inner list contains ≥ 2 reaction names that are stoichiometrically
+        parallel.  Reactions with no parallel partner are omitted.
+    """
+    n = S.shape[1]
+    S_masked = S.copy().astype(float)
+
+    if cofactor_metabolites is not None:
+        # Zero out cofactor rows so ATP/NAD usage differences are ignored
+        met_to_row = {name: i for i, name in enumerate(
+            getattr(S, '_metabolite_names', range(S.shape[0]))
+        )}
+        for met in cofactor_metabolites:
+            row = met_to_row.get(met)
+            if row is not None:
+                S_masked[row, :] = 0.0
+
+    # Column norms (avoid division by zero)
+    col_norms = np.linalg.norm(S_masked, axis=0)
+    col_norms[col_norms < 1e-12] = 1.0
+    S_norm = S_masked / col_norms[np.newaxis, :]   # (m, n) — unit-norm columns
+
+    # Pairwise cosine similarities (use matrix product: n×n)
+    cos_sim = S_norm.T @ S_norm   # (n, n)
+
+    # Union-find for grouping
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(x, y):
+        px, py = find(x), find(y)
+        if px != py:
+            parent[px] = py
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if abs(cos_sim[i, j]) >= cos_threshold:
+                union(i, j)
+
+    # Collect groups with ≥ 2 members
+    from collections import defaultdict
+    groups_dict: dict = defaultdict(list)
+    for i in range(n):
+        groups_dict[find(i)].append(reaction_names[i])
+
+    return [sorted(members) for members in groups_dict.values() if len(members) >= 2]
+
+
+def compute_targeted_ica_nullspace(
+    S: np.ndarray,
+    flux_samples: np.ndarray,
+    reaction_names: list,
+    target_reactions: list,
+    *,
+    seed: int = 42,
+) -> tuple[np.ndarray, dict]:
+    """Build a null-space basis combining identity DOFs for measured reactions with ICA free modes.
+
+    The first k columns give each target reaction its own independent DOF (identity block).
+    The remaining d-k columns are ICA-ordered statistically independent directions within
+    the free subspace, sorted by descending variance-based observability score so that
+    directions well-sampled by the flux prior come before the SVD complement.
+
+    Falls back to `compute_ica_nullspace` if target reactions are stoichiometrically
+    coupled (not separable).  Falls back to the Varimax targeted basis if FastICA fails.
+
+    Parameters
+    ----------
+    S : np.ndarray, shape (m, n)
+        Stoichiometric matrix (metabolites × reactions).
+    flux_samples : np.ndarray, shape (n_samples, n_reactions)
+        Steady-state flux samples satisfying S @ v ≈ 0. Typically flux_df.values.T.
+    reaction_names : list[str], length n
+        Ordered reaction identifiers matching S columns.
+    target_reactions : list[str]
+        Measured reactions that must each receive their own basis dimension.
+    seed : int
+        Random seed for FastICA initialisation.
+
+    Returns
+    -------
+    Z : np.ndarray, shape (n, d)
+        Null-space basis.  First k columns have identity block on target rows.
+        Columns k: are sorted by descending variance-obs score (ICA modes first,
+        SVD complement last).
+    status : dict with keys
+        separable          bool      — False means fell back to ica_informed
+        cond_SD            float     — condition number of dependent block (0 if fallback)
+        target_indices     list      — column indices of target reactions in S
+        n_ica_free         int       — number of ICA modes in the free subspace
+        n_complement_free  int       — number of SVD complement columns
+        n_active_free      int       — effective sampling rank of the free subspace
+        fallback           bool      — True if FastICA failed (Varimax free cols kept)
+        obs_scores_free    np.ndarray | None  — variance-based obs scores for free cols
+    """
+    from sklearn.decomposition import FastICA
+
+    # ── Step 1: targeted construction ────────────────────────────────────────
+    Z_targ, tgt_status = compute_targeted_nullspace(S, reaction_names, target_reactions)
+    if not tgt_status['separable']:
+        print(f"targeted_ica: separability failed ({tgt_status['fallback_reason']}); "
+              f"falling back to ica_informed")
+        Z_fb, ica_status = compute_ica_nullspace(S, flux_samples, seed=seed)
+        return Z_fb, {
+            'separable': False, 'cond_SD': 0.0, 'target_indices': tgt_status['target_indices'],
+            'n_ica_free': ica_status['n_ica_components'],
+            'n_complement_free': ica_status['n_complement'],
+            'n_active_free': ica_status['n_active'],
+            'fallback': False,
+        }
+
+    n_targets = len(target_reactions)
+    d = Z_targ.shape[1]
+    n_free = d - n_targets
+
+    # ── Step 2: trivial case — no free subspace to rotate ────────────────────
+    if n_free < 2:
+        return Z_targ, {
+            'separable': True, 'cond_SD': tgt_status['cond_SD'],
+            'target_indices': tgt_status['target_indices'],
+            'n_ica_free': 0, 'n_complement_free': n_free,
+            'n_active_free': n_free, 'fallback': False,
+        }
+
+    # ── Step 3: orthonormal basis of the free subspace ───────────────────────
+    # Z_targ[:, n_targets:] has zeros on target rows; QR preserves that property.
+    Q_free, _ = np.linalg.qr(Z_targ[:, n_targets:])   # (n, n_free), orthonormal
+
+    # ── Step 4: free coordinates and eigendecomposition (shared across steps 5 & 6) ──
+    Y_free = flux_samples @ Q_free            # (n_samples, n_free)
+    Y_c_free = Y_free - Y_free.mean(axis=0)
+    cov_free = (Y_c_free.T @ Y_c_free) / max(Y_c_free.shape[0] - 1, 1)
+    eigvals_asc, eigvecs = np.linalg.eigh(cov_free)  # ascending order
+    eigvals = eigvals_asc[::-1]                        # descending
+
+    # ── Step 5: effective rank of free subspace ───────────────────────────────
+    eps_thresh = np.finfo(float).eps * n_free * eigvals[0]
+    n_active = max(1, int(np.sum(eigvals > eps_thresh)))
+    n_ica_req = min(n_active, Y_free.shape[0] - 1)
+    print(f"targeted_ica: free subspace effective rank {n_active}/{n_free}")
+
+    # ── Step 6: manual PCA-whitening + FastICA ────────────────────────────────
+    # Pre-whiten Y_free using the top n_ica_req eigenvectors so we can pass a
+    # labeling-informed w_init in the whitened space (see plan §3C).
+    top_order = np.argsort(eigvals_asc)[::-1][:n_ica_req]   # descending-variance indices
+    V_pca = eigvecs[:, top_order]                             # (n_free, n_ica_req)
+    D_pca = np.maximum(eigvals_asc[top_order], 1e-10)        # (n_ica_req,) positive
+    W_wh  = V_pca / np.sqrt(D_pca)[np.newaxis, :]            # (n_free, n_ica_req) whitening
+    Y_w   = Y_c_free @ W_wh                                  # (n_samples, n_ica_req)
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            ica = FastICA(n_components=n_ica_req, random_state=seed, whiten=False)
+            ica.fit(Y_w)
+        # ICA components_ is (n_ica_req, n_ica_req) un-mixing in whitened space.
+        # Modes in reaction null-space: Q_free @ W_wh @ mixing_matrix
+        modes = Q_free @ (W_wh @ ica.components_.T)   # (n, n_ica_req), zeros on target rows ✓
+    except Exception:
+        print("targeted_ica: FastICA failed; keeping Varimax free columns")
+        return Z_targ, {
+            'separable': True, 'cond_SD': tgt_status['cond_SD'],
+            'target_indices': tgt_status['target_indices'],
+            'n_ica_free': 0, 'n_complement_free': n_free,
+            'n_active_free': n_active, 'fallback': True,
+        }
+
+    # ── Step 7: QR-orthonormalize ICA modes ──────────────────────────────────
+    Q_ica_free, _ = np.linalg.qr(modes)
+    k_ica = np.linalg.matrix_rank(Q_ica_free)
+    Q_ica_free = Q_ica_free[:, :k_ica]
+
+    # ── Step 8: SVD complement within the free subspace ──────────────────────
+    n_comp = n_free - k_ica
+    if n_comp > 0:
+        R = Q_free - Q_ica_free @ (Q_ica_free.T @ Q_free)
+        U_r, _, _ = np.linalg.svd(R, full_matrices=False)
+        Z_free_block = np.hstack([Q_ica_free, U_r[:, :n_comp]])
+    else:
+        Z_free_block = Q_ica_free.copy()
+
+    # ── Step 9: sign-fix on free block ───────────────────────────────────────
+    for j in range(Z_free_block.shape[1]):
+        if Z_free_block[np.argmax(np.abs(Z_free_block[:, j])), j] < 0:
+            Z_free_block[:, j] *= -1
+
+    # ── Step 10: assemble, normalize, validate ───────────────────────────────
+    Z = np.hstack([Z_targ[:, :n_targets], Z_free_block])
+    col_norms = np.linalg.norm(Z, axis=0)
+    col_norms[col_norms < 1e-14] = 1.0
+    Z = Z / col_norms
+
+    assert np.abs(S @ Z).max() <= 1e-8, (
+        f"compute_targeted_ica_nullspace: max|S @ Z| = {np.abs(S @ Z).max():.2e}"
+    )
+    assert np.linalg.matrix_rank(Z) == d, (
+        f"compute_targeted_ica_nullspace: rank(Z) = {np.linalg.matrix_rank(Z)} != d = {d}"
+    )
+
+    return Z, {
+        'separable': True,
+        'cond_SD': tgt_status['cond_SD'],
+        'target_indices': tgt_status['target_indices'],
+        'n_ica_free': k_ica,
+        'n_complement_free': n_comp,
+        'n_active_free': n_active,
+        'fallback': False,
+    }
