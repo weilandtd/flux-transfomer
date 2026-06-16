@@ -37,7 +37,10 @@ from sigmaflux.ai.train import (
     BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
-from sigmaflux.ai.utils import compute_sparse_nullspace, compute_targeted_nullspace
+from sigmaflux.ai.utils import (
+    compute_sparse_nullspace, compute_targeted_nullspace,
+    compute_ica_nullspace, compute_targeted_ica_nullspace,
+)
 
 
 def split_indices(n_samples, val_fraction, seed):
@@ -334,6 +337,36 @@ def main(args):
             n_t = len(args.measured_fluxes)
             print(f"Targeted basis: {n_t} measured reaction DOF(s) at cols 0–{n_t - 1}, "
                   f"cond(S_D)={basis_status['cond_SD']:.2e}")
+    elif args.null_space_type == 'ica_informed':
+        flux_matrix = flux_df.values.T   # (n_samples, n_reactions)
+        Z_full, basis_status = compute_ica_nullspace(
+            stoichiometric_matrix, flux_matrix, **args.ica_nullspace_params
+        )
+        if basis_status['fallback']:
+            print(f"ICA-informed basis: FastICA failed; fell back to Varimax (d={Z_full.shape[1]})")
+    elif args.null_space_type == 'targeted_ica':
+        rxn_names = list(flux_df.index)
+        flux_matrix = flux_df.values.T
+        if not args.measured_fluxes:
+            print("WARNING: targeted_ica with no measured_fluxes; using ica_informed")
+            Z_full, basis_status = compute_ica_nullspace(
+                stoichiometric_matrix, flux_matrix, **args.ica_nullspace_params
+            )
+            if basis_status['fallback']:
+                print(f"ICA-informed basis: FastICA failed; fell back to Varimax (d={Z_full.shape[1]})")
+        else:
+            Z_full, basis_status = compute_targeted_ica_nullspace(
+                stoichiometric_matrix, flux_matrix,
+                reaction_names=rxn_names,
+                target_reactions=args.measured_fluxes,
+                **args.ica_nullspace_params,
+            )
+            if not basis_status.get('fallback', False) and basis_status.get('separable', True):
+                n_t = len(args.measured_fluxes)
+                print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
+                      f"{basis_status['n_ica_free']} ICA free modes, "
+                      f"{basis_status['n_complement_free']} complement "
+                      f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
     else:
         print(f"Null-space basis: Varimax (null_space_type={args.null_space_type!r})")
         Z_full = compute_sparse_nullspace(stoichiometric_matrix)
@@ -407,12 +440,14 @@ def main(args):
         print(f"Observability (labeling only): {n_obs_lab}/{n_free_basis} max|r|>0.1")
         print(f"Observability (labeling+flux): {n_obs_all}/{n_free_basis} max|r|>0.1 "
               f"; max|r| range=[{obs_weights_np.min():.3f}, {obs_weights_np.max():.3f}]")
+
+
     else:
         y_mean, y_std, obs_weights_np = None, None, None
         token_information = None
 
-    # Builf the null-space data dict, which the model uses to reconstruct fluxes
-    # the latent space
+    # Build the null-space data dict, which the model uses to reconstruct fluxes
+    # in the latent space
     null_space_data = dict(
         Z_free           = Z_full,               # (n_fluxes, 38) — field name kept for compat
         free_idx         = free_idx,             # metadata: indices of non-measured reactions
@@ -671,7 +706,8 @@ if __name__ == "__main__":
         flux_token_dropout     = t.get("flux_token_dropout", 0.0),
         labeling_token_dropout = f.get("token_dropout", 0.0),
         measured_fluxes        = measured_fluxes,
-        null_space_type        = t.get("null_space_type", "targeted"),
+        null_space_type        = t.get("null_space_type", "targeted"),   # targeted | varimax | ica_informed | targeted_ica
+        ica_nullspace_params   = t.get("ica_nullspace", {}),
         h_compound             = t.get("h_compound"),
         h_label                = t.get("h_label"),
         h_tracer               = t.get("h_tracer"),
