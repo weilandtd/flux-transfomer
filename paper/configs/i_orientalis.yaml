@@ -83,7 +83,7 @@ labeling:
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
-  restrict_to_mapped: true          # only consider metabolites in mapping_csv
+  restrict_to_mapped: True          # only consider metabolites in mapping_csv
   token_selection_method: fisher    # pca | maxr | fisher
   token_dropout: 0.2                # per-token labeling dropout during training
 
@@ -145,10 +145,9 @@ training:
   flux_noise_std: 0.05
   labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
   loss: variance                  # variance | mse
-  null_space_type: targeted       # targeted | varimax — which null-space basis to use
+  null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
   flux_loss_space: basis          # basis | flux | basis — train in null-space, reconstructed flux, or combination
   #mixed_flux_weight: 0.0         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
-
 
