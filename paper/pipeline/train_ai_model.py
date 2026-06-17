@@ -367,6 +367,23 @@ def main(args):
                       f"{basis_status['n_ica_free']} ICA free modes, "
                       f"{basis_status['n_complement_free']} complement "
                       f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
+    elif args.null_space_type == 'boundary':
+        from sigmaflux.ai.boundary_basis import compute_boundary_basis
+        boundary_solver = getattr(args, 'boundary_solver', None)
+        Z_full, basis_status = compute_boundary_basis(
+            cobra_model,
+            solver=boundary_solver,
+            tol=1e-8,
+        )
+        print(f"Boundary basis: {basis_status['n_throughput']} throughput + "
+              f"{basis_status['n_cycle']} cycle columns "
+              f"(solver={basis_status['solver_used']!r})")
+        infeasible = sum(
+            1 for m in basis_status['throughput_meta']
+            if not m['forward_feasible']
+        )
+        if infeasible:
+            print(f"  {infeasible} coordinate(s) forward-infeasible (flagged, not dropped)")
     else:
         print(f"Null-space basis: Varimax (null_space_type={args.null_space_type!r})")
         Z_full = compute_sparse_nullspace(stoichiometric_matrix)
