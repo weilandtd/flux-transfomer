@@ -362,11 +362,17 @@ class MFAModel(TorchModule, Model):
         self.prepared = True
     
 
-    def forward(self, exp_ix=None):
+    def get_flux_bounds(self):
+        lb = torch.tensor([r.lower_bound for r in self.reactions], dtype=self.dtype, device=self.device)
+        ub = torch.tensor([r.upper_bound for r in self.reactions], dtype=self.dtype, device=self.device)
+        return lb, ub
+
+    def forward(self, exp_ix=None, reversible_fluxes=None):
         if not self.prepared:
             raise RuntimeError('Model is not prepared!')
         labeling = []
-        reversible_fluxes = self.reversible_fluxes
+        if reversible_fluxes is None:
+            reversible_fluxes = self.reversible_fluxes
 
         # Recompute A and B matrices for each subnet
         with torch.no_grad(): 

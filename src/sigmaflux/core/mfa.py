@@ -3,189 +3,319 @@ Functions for MFA
 """
 from sigmaflux.expansion.emu import OriginSet, EMU
 from sigmaflux.core.data import get_model_labeling_data, get_model_flux_data
-from tqdm import trange
 import numpy as np
 import torch
 import logging
-from sigmaflux.core.scaling import Scaling
-from sigmaflux.core.utils import time_function 
+from scipy.optimize import minimize as scipy_minimize, Bounds
+from sigmaflux.core.utils import time_function
 # TODO MAKE A CENTRAL DEFINITION
 EPSILON = 1e-9
 
 logger = logging.getLogger(__name__)
 
+
 @time_function
-def fit_mfa_model(model, loss_fn,flux_loss_fn, optimizer,
-                  lam1=1e-4, lam2=1e-5, epochs=100,
+def fit_mfa_model(model,
                   simultanous_experiments=3,
-                  labeling_scaler= None, flux_scaler = 1, checkpoint = 10, 
-                  checkpoint_file='checkpoint.pt', 
-                  labeling_checkpoint_file = "labeling_checkpoint.pt", 
-                  optimizer_checkpoint = "optimizer_checkpoint.pt", 
-                  lr_scheduler = None, with_std = True):
-    """AI is creating summary for fit_mfa_model
+                  max_iter=1000,
+                  tol=1e-3,
+                  checkpoint_file=None,
+                  labeling_checkpoint_file=None,
+                  disp=0):
+    """Fit an MFA model using chi-squared minimization with null-space reparameterization.
 
-    Args:
-        model ([type]): [description]
-        loss_fn ([type]): [description]
-        flux_loss_fn ([type]): [description]
-        optimizer ([type]): [description]
-        lam1 ([type], optional): [description]. Defaults to 1e-4.
-        lam2 ([type], optional): [description]. Defaults to 1e-5.
-        epochs (int, optional): [description]. Defaults to 100.
-        tolerance ([type], optional): [description]. Defaults to 1e-4.
-        labeling_scaler ([type], optional): [description]. Defaults to None.
-        flux_scaler (int, optional): [description]. Defaults to 1.
-        checkpoint (int, optional): [description]. Defaults to 10.
-        checkpoint_file (str, optional): [description]. Defaults to 'checkpoint.pt'.
-        labeling_checkpoint_file (str, optional): [description]. Defaults to "labeling_checkpoint.pt".
-        optimizer_checkpoint (str, optional): [description]. Defaults to "optimizer_checkpoint.pt".
-        lr_scheduler ([type], optional): [description]. Defaults to None.
-        with_std (bool, optional): [description]. Defaults to True.
+    The mass-balance constraint S·v = 0 is satisfied automatically by parameterizing
+    net fluxes as v_net = T @ p, where T = null(S) (right null space of S).
+    Exchange fluxes (reversibility) r are bounded below by min_rev_flux.
+    Optimization uses scipy L-BFGS-B with autograd-based gradient.
 
-    Returns:
-        [type]: [description]
+    Objective:  Σ (L_sim − L_meas)² / σ²_L  +  Σ (v_sim − v_meas)² / σ²_v
+
+    Parameters
+    ----------
+    model : MFAModel
+    simultanous_experiments : int
+    max_iter : int
+    tol : float
+        Projected-gradient tolerance (gtol) for L-BFGS-B convergence.
+    checkpoint_file, labeling_checkpoint_file : str or None
+    disp : int
+        Verbosity: 0 = silent, >1 = per-iteration output.
+
+    Returns
+    -------
+    list
+        [final_chi2 (float), converged (bool), n_iterations (int)]
     """
+    n = model.num_reactions
+    dtype, device = model.dtype, model.device
+    mask_f = model._reversibility_mask  # float tensor, 1.0 for reversible reactions
 
+    # ── Null-space basis of S: v_net = T @ p satisfies S @ v_net = 0 ─────────
+    T_np = gen_SVD_kernel(model.stoichiometry.cpu().numpy())  # [n, k]
+    T_t = torch.tensor(T_np, dtype=dtype, device=device)
+    k = T_t.shape[1]
+
+    # ── Experiment batches + measurement data ─────────────────────────────────
+    experiment_batches = []
+    for i in range(0, len(model.experiments), simultanous_experiments):
+        experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
+    n_batches = len(experiment_batches)
+
+    labeling_scaler = torch.ones(len(model.experiments), device=device)
+    batch_data = {}
+    for exp_ix in experiment_batches:
+        index_labeling, L_mean, _, L_std = get_model_labeling_data(
+            model, labeling_scaler, with_std=True, exp_ix=exp_ix)
+        index_fluxes, v_mean, v_std = get_model_flux_data(
+            model, with_std=True, exp_ix=exp_ix)
+        batch_data[tuple(exp_ix)] = (index_labeling, L_mean, L_std,
+                                     index_fluxes, v_mean, v_std)
+
+    # ── Initial point: project current fluxes onto null(S), keep r ───────────
+    # Columns of T are orthonormal, so T^T is the pseudo-inverse.
+    p0 = T_t.T @ model._fluxes.detach()       # [k]
+    x0 = torch.cat([p0, model._reversibility.detach()])  # [k + n]
+
+    # ── Bounds: p unconstrained, r bounded below by min_rev_flux ─────────────
+    rev_bool = mask_f.bool()
+    lb_p = torch.full((k,), float('-inf'), dtype=dtype, device=device)
+    ub_p = torch.full((k,), float('inf'),  dtype=dtype, device=device)
+    lb_r = torch.where(rev_bool,
+                       torch.full((n,), model.min_rev_flux, dtype=dtype, device=device),
+                       torch.zeros(n, dtype=dtype, device=device))
+    ub_r = torch.where(rev_bool,
+                       torch.full((n,), float('inf'), dtype=dtype, device=device),
+                       torch.zeros(n, dtype=dtype, device=device))
+
+    # ── Chi-squared objective (differentiable w.r.t. x via autograd) ─────────
+    def objective(x: torch.Tensor) -> torch.Tensor:
+        p, r = x[:k], x[k:]
+        v_net = T_t @ p  # S @ v_net = 0 automatically
+        rev = torch.where((r * mask_f) <= model.min_rev_flux,
+                          torch.full_like(r, model.min_rev_flux),
+                          r * mask_f)
+        vf = 0.5 * (v_net.abs() + v_net + rev)
+        vb = 0.5 * (v_net.abs() - v_net + rev)
+        vf = vf - vb * (1.0 - mask_f)
+        vb = vb * mask_f
+        rev_fluxes = torch.cat([vf, vb])
+
+        total = x.new_zeros(())
+        for exp_ix in experiment_batches:
+            index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
+            output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
+            sim_L = torch.take(output, index_labeling)
+            total = total + ((sim_L - L_mean) / L_std).square().sum()
+            if index_fluxes.numel() > 0:
+                total = total + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
+        return total / n_batches
+
+    # ── Gradient via autograd ─────────────────────────────────────────────────
+    def f_and_grad(x_np: np.ndarray):
+        x = torch.tensor(x_np, dtype=dtype, device=device).requires_grad_(True)
+        with torch.enable_grad():
+            loss = objective(x)
+        grad, = torch.autograd.grad(loss, x)
+        return loss.item(), grad.detach().cpu().numpy()
+
+    bounds_scipy = Bounds(
+        torch.cat([lb_p, lb_r]).cpu().numpy(),
+        torch.cat([ub_p, ub_r]).cpu().numpy(),
+    )
+
+    logger.info(
+        f"MFA L-BFGS-B: {n} reactions, {k} free fluxes (null-space dim), "
+        f"{len(model.experiments)} experiments, max_iter={max_iter}, tol={tol}"
+    )
+
+    # ── Optimize ──────────────────────────────────────────────────────────────
+    result = scipy_minimize(
+        f_and_grad, x0.cpu().numpy(), method='L-BFGS-B',
+        jac=True, bounds=bounds_scipy,
+        options=dict(maxiter=max_iter, gtol=tol),
+    )
+
+    # ── Write back: recover v_net from p, update model parameters ────────────
+    x_opt = torch.tensor(result.x, dtype=dtype, device=device)
+    p_opt = x_opt[:k]
+    r_opt = x_opt[k:]
+    v_net_opt = T_t @ p_opt
+    with torch.no_grad():
+        model._fluxes.copy_(v_net_opt.detach())
+        model._reversibility.copy_(r_opt.detach())
+
+    sv_max = float((model.stoichiometry @ model._fluxes).abs().max().item())
+    logger.info(
+        f"MFA done: converged={result.success}, iter={result.nit}, "
+        f"χ²={float(result.fun):.5f}, |S·v|_max={sv_max:.2e}"
+    )
+
+    if checkpoint_file is not None:
+        model.save_checkpoint(file=checkpoint_file,
+                              meta_data={"chi2": float(result.fun), "converged": result.success})
+
+    if labeling_checkpoint_file is not None:
+        with torch.no_grad():
+            pred_labeling = model.forward()
+        torch.save(pred_labeling.cpu(), labeling_checkpoint_file)
+
+    return [float(result.fun), result.success, result.nit]
+
+
+@time_function
+def _fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
+                              lam1=1e-4, lam2=1e-5, epochs=100,
+                              simultanous_experiments=3,
+                              labeling_scaler=None, flux_scaler=1, checkpoint=10,
+                              checkpoint_file=None,
+                              labeling_checkpoint_file=None,
+                              optimizer_checkpoint=None,
+                              lr_scheduler=None, with_std=True,
+                              early_stop_tol=None):
+    """Legacy penalized-Lagrangian MFA optimizer (soft constraints, L1/L2 reg)."""
+    from tqdm import trange
+    from sigmaflux.core.scaling import Scaling
 
     with_std = True
-    if labeling_scaler is None: 
-        labeling_scaler = torch.ones(len(model.experiments), device=model.device)  
-
-    # check if labeling_scaler is a double or a list
+    if labeling_scaler is None:
+        labeling_scaler = torch.ones(len(model.experiments), device=model.device)
     if isinstance(labeling_scaler, float):
-        labeling_scaler = labeling_scaler * torch.ones(len(model.experiments), device=model.device) 
+        labeling_scaler = labeling_scaler * torch.ones(len(model.experiments), device=model.device)
 
     Scaling(labeling_scaler)
-
     log = []
 
-    # Generate indices of experiments to run simultanously
     experiment_batches = []
     for i in range(0, len(model.experiments), simultanous_experiments):
         experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
 
-    # Extract index mapped data for each experiment
     batch_data = {}
     for exp_ix in experiment_batches:
         index_labeling, labeling_mean, labeling_scaler, labeling_std = get_model_labeling_data(model, labeling_scaler, with_std, exp_ix=exp_ix)
-        index_fluxes, flux_mean, flux_std = get_model_flux_data(model,with_std, exp_ix=exp_ix)                        
-        # Create scaling object for this specific batch
+        index_fluxes, flux_mean, flux_std = get_model_flux_data(model, with_std, exp_ix=exp_ix)
         batch_labeling_scaling = Scaling(labeling_scaler)
-        
-        batch_data[tuple(exp_ix)] = (index_labeling, labeling_mean, labeling_scaler, labeling_std, index_fluxes, 
+        batch_data[tuple(exp_ix)] = (index_labeling, labeling_mean, labeling_scaler, labeling_std, index_fluxes,
                                      flux_mean, flux_std, batch_labeling_scaling)
 
-    
+    logger.info(f"Penalized MFA: LR:{optimizer.param_groups[0]['lr']}, L1:{lam1}, L2:{lam2}, Epochs:{epochs}")
 
-    logger.info(f"Optimization parameters: LR:{optimizer.param_groups[0]['lr']}, L1:{lam1}, L2:{lam2}, Epochs:{epochs}," \
-                + f"Loss:{loss_fn.__class__.__name__}, Labeling Scaling: {labeling_scaler}")
+    if checkpoint_file is not None:
+        model.save_checkpoint(file=checkpoint_file)
 
-    model.save_checkpoint(file=checkpoint_file) 
-    
+    is_lbfgs = isinstance(optimizer, torch.optim.LBFGS)
+
     with trange(epochs) as pbar:
         for epoch in pbar:
             epoch_loss = 0.0
-            # Only store outputs when we need to save checkpoint (memory efficient)
             if epoch % checkpoint == 0:
                 epoch_outputs = []
-            
+
             for exp_ix in experiment_batches:
-                # Load correct data for each experiment batch
-                index_labeling, labeling_mean, labeling_scaler, labeling_std, index_fluxes, flux_mean, flux_std, batch_labeling_scaling = batch_data[tuple(exp_ix)]
-    
-                optimizer.zero_grad()
-                # Compute labeling prediction and loss
-                output = model.forward(exp_ix=exp_ix)
-                
-                # Only store output for checkpoint epochs (memory efficient)
-                if epoch % checkpoint == 0:
-                    epoch_outputs.append(output.detach().cpu())
+                (index_labeling, labeling_mean, labeling_scaler, labeling_std,
+                 index_fluxes, flux_mean, flux_std, batch_labeling_scaling) = batch_data[tuple(exp_ix)]
 
-                # Loss function fitting labeling predictions and known fluxes
-                simulated_labeling = torch.take(output, index_labeling)
-                # Debug line  
-                simulated_labeling.retain_grad()
+                _state = {}
 
-                # Training step 
-                labeling_loss = loss_fn(batch_labeling_scaling.scale(simulated_labeling),
-                                        batch_labeling_scaling.scale(labeling_mean))
-            
-                # Lagrange Multipliers to constrain S.v = 0 
-                mass_balance_constraints = (model.stoichiometry @ model.fluxes).square()
-                # Constrain for vf, vb >= 0 
-                #dC/dv = 0  if v >=0  else dC/dv = -v -> positive 
-                positive_fluxes_constraints = torch.relu(-1 * model.reversible_fluxes)
+                def _closure():
+                    optimizer.zero_grad()
+                    output = model.forward(exp_ix=exp_ix)
+                    _state['output'] = output.detach().cpu()
 
-                # L1 Regularization 
-                l1_reg = lam1 * model.reversible_fluxes.abs().mean()
+                    simulated_labeling = torch.take(output, index_labeling)
+                    simulated_labeling.retain_grad()
 
-                # L2 Regularization
-                l2_reg = lam2 * model.reversible_fluxes.square().mean() 
+                    labeling_loss = loss_fn(
+                        batch_labeling_scaling.scale(simulated_labeling),
+                        batch_labeling_scaling.scale(labeling_mean),
+                    )
 
-                # # Optional flux loss 
-                if not index_fluxes.nelement() == 0:
-                    measured_fluxes = torch.take(model.fluxes, index_fluxes)
-                    
-                    #flux_loss = loss_fn(measured_fluxes / flux_mean.squeeze(), flux_mean / flux_mean)
-                    flux_loss = flux_loss_fn(measured_fluxes / flux_mean.squeeze(), (flux_mean / flux_mean).squeeze())
-                    flux_loss = flux_loss * flux_scaler
-                    msrmt_labeling_loss = labeling_loss + flux_loss
+                    mass_balance_constraints = (model.stoichiometry @ model.fluxes).square()
+                    positive_fluxes_constraints = torch.relu(-1 * model.reversible_fluxes)
+                    l1_reg = lam1 * model.reversible_fluxes.abs().mean()
+                    l2_reg = lam2 * model.reversible_fluxes.square().mean()
+
+                    if not index_fluxes.nelement() == 0:
+                        measured_fluxes = torch.take(model.fluxes, index_fluxes)
+                        flux_loss = (flux_loss_fn(
+                            measured_fluxes / flux_mean.squeeze(),
+                            (flux_mean / flux_mean).squeeze(),
+                        ) * flux_scaler)
+                        msrmt_labeling_loss = labeling_loss + flux_loss
+                    else:
+                        msrmt_labeling_loss = labeling_loss
+                        flux_loss = labeling_loss * 0.0
+
+                    lam = model._lambda0
+                    mu = model._mu0
+                    loss = (msrmt_labeling_loss + l1_reg + l2_reg
+                            + lam.T @ mass_balance_constraints
+                            + mu.T @ positive_fluxes_constraints)
+
+                    loss.backward()
+                    _state['loss'] = loss
+                    _state['labeling_loss'] = labeling_loss
+                    _state['flux_loss'] = flux_loss
+                    _state['l1'] = l1_reg
+                    _state['l2'] = l2_reg
+                    return loss
+
+                if is_lbfgs:
+                    optimizer.step(_closure)
                 else:
-                    msrmt_labeling_loss = labeling_loss
-                    flux_loss = labeling_loss * 0.0
+                    _closure()
+                    optimizer.step()
 
-                # Total loss function for augmented Lagrangian
-                lam = model._lambda0
-                mu = model._mu0
-                loss = msrmt_labeling_loss  + l1_reg + l2_reg \
-                        + lam.T @ mass_balance_constraints \
-                        + mu.T @ positive_fluxes_constraints 
-        
-                # Backpropagation
-                loss.backward()
-                optimizer.step(closure= lambda: loss)
+                loss = _state['loss']
+                labeling_loss = _state['labeling_loss']
+                flux_loss = _state['flux_loss']
+                l1_reg = _state['l1']
+                l2_reg = _state['l2']
+
+                if epoch % checkpoint == 0:
+                    epoch_outputs.append(_state['output'])
 
                 epoch_loss += loss.item()
 
             if lr_scheduler is not None:
                 lr_scheduler.step()
 
-            log.append(epoch_loss/len(experiment_batches))
+            log.append(epoch_loss / len(experiment_batches))
+            pbar.set_postfix(loss=epoch_loss / len(experiment_batches), epoch=epoch)
 
-            pbar.set_postfix(loss=epoch_loss/len(experiment_batches), epoch=epoch)
-        
-            logger.info(f"Optimization step {epoch} :total loss {log[-1]:.5f}, labeling loss {labeling_loss:.5f}," \
-                            + f"flux loss {flux_loss:.5f}, l1 {l1_reg:.5f}, l2 {l2_reg:.5f}")
-            
+            if early_stop_tol is not None and len(log) > 1:
+                if abs(log[-1] - log[-2]) < early_stop_tol:
+                    logger.info(f"Early stop at epoch {epoch}: Δloss={abs(log[-1] - log[-2]):.2e} < {early_stop_tol:.2e}")
+                    break
 
-            # Save checkpoint
-            if epoch % checkpoint == 0: 
-                # Add meta data to the checkpoint file
-                meta_data = {"loss": loss.item() , "epoch": epoch, 
-                             "labeling_loss": labeling_loss.item(), "flux_loss": flux_loss.item(), 
-                             "l1": l1_reg.item(), "l2": l2_reg.item()}
-                
-                model.save_checkpoint(file=checkpoint_file, meta_data=meta_data)
-                
-                # Aggregate outputs from all experiment batches
-                # Concatenate along the experiment dimension (dim=0)
-                aggregated_output = torch.cat(epoch_outputs, dim=0)
-                
-                try:
-                    labeling_data = torch.load(labeling_checkpoint_file)
-                except Exception:
-                    labeling_data = []
+            logger.info(
+                f"Optimization step {epoch} :total loss {log[-1]:.5f}, "
+                f"labeling loss {labeling_loss:.5f}, flux loss {flux_loss:.5f}, "
+                f"l1 {l1_reg:.5f}, l2 {l2_reg:.5f}"
+            )
 
-                labeling_data.append(aggregated_output)
+            if epoch % checkpoint == 0:
+                if checkpoint_file is not None:
+                    meta_data = {
+                        "loss": loss.item(), "epoch": epoch,
+                        "labeling_loss": labeling_loss.item(), "flux_loss": flux_loss.item(),
+                        "l1": l1_reg.item(), "l2": l2_reg.item(),
+                    }
+                    model.save_checkpoint(file=checkpoint_file, meta_data=meta_data)
 
-                torch.save(labeling_data, labeling_checkpoint_file)
+                if labeling_checkpoint_file is not None:
+                    aggregated_output = torch.cat(epoch_outputs, dim=0)
+                    try:
+                        labeling_data = torch.load(labeling_checkpoint_file)
+                    except Exception:
+                        labeling_data = []
+                    labeling_data.append(aggregated_output)
+                    torch.save(labeling_data, labeling_checkpoint_file)
 
-                torch.save(optimizer.state_dict(), optimizer_checkpoint)
+                if optimizer_checkpoint is not None:
+                    torch.save(optimizer.state_dict(), optimizer_checkpoint)
 
-
-    logger.info(f"Optimization complete: total loss {log[-1]:.5f}, labeling loss {labeling_loss:.5f}," \
-                + f"flux loss {flux_loss:.5f}, l1 {l1_reg:.5f}, l2 {l2_reg:.5f}")
+    logger.info(f"Penalized MFA complete: loss={log[-1]:.5f}")
     return log
 
 

@@ -1,18 +1,18 @@
 """
-Lightweight smoke test for the traditional MFA pipeline.
+Smoke test for the constrained MFA pipeline (null-space L-BFGS-B).
 
-Runs 10 epochs on the toy one-carbon model using the synthetic test fixtures in
-data/test/. The full real-data benchmark lives in paper/pipeline/run_mfa_data.py
-and is submitted to the cluster via paper/submit/submit_mfa_data_io.sh.
+Runs a short optimization on the toy one-carbon model using synthetic test
+fixtures in data/test/.  The full benchmark lives in
+paper/pipeline/run_mfa_benchmark.py.
 """
 
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 import torch
 from cobra.io.json import load_json_model
-from torch.nn import MSELoss
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
@@ -63,14 +63,18 @@ def test_core_mfa():
     flux_data = FluxData(mfa_model, flux_table)
     tracer = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1])
     experiment = Experiment(mid_data, [tracer], fluxes=flux_data)
-    mfa_model.prepare([experiment])
+    mfa_model.prepare([experiment], with_backward=True)
 
-    optimizer = torch.optim.Adam(mfa_model.parameters(), lr=1e-3)
-    loss_log = fit_mfa_model(mfa_model, MSELoss(), MSELoss(), optimizer, epochs=10)
+    loss_log = fit_mfa_model(mfa_model, max_iter=50, tol=1e-3)
 
-    assert len(loss_log) == 10
-    assert loss_log[-1] < max(loss_log), "Loss never decreased from peak — pipeline broken"
+    chi2, converged, n_iter = loss_log
+    assert np.isfinite(chi2), f"chi2 is not finite: {chi2}"
+    assert n_iter > 0, "Optimizer did not run any iterations"
 
     reaction_ids = [r.id for r in mfa_model.reactions]
     flux_values = mfa_model.fluxes.detach().cpu().numpy()
     assert len(flux_values) == len(reaction_ids)
+
+    # Mass balance should be satisfied to numerical precision
+    sv = (mfa_model.stoichiometry @ mfa_model.fluxes).detach().cpu().numpy()
+    assert np.max(np.abs(sv)) < 1e-6, f"S·v not zero: max|S·v|={np.max(np.abs(sv)):.2e}"

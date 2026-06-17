@@ -27,6 +27,7 @@ dependencies = [
     "networkx>=3.0",
     "optlang>=1.8",
     "tqdm>=4.0",
+    "pytorch-minimize>=0.0.2",
     "matplotlib>=3.7",
     "seaborn>=0.13",
     "h5py>=3.8",
