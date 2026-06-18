@@ -37,14 +37,24 @@ from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
 
 def _discover_conditions(data_dir: str) -> dict[str, str]:
-    """Return {condition_letter: mid_file_path} for all <Name>_<C>.xlsx in data_dir."""
-    pattern = os.path.join(data_dir, "*_[A-Z].xlsx")
-    files = glob.glob(pattern)
+    """Return {condition: mid_file_path} for the condition MID files in data_dir.
+
+    Single-letter nutrient files map by their letter (``<Name>_C.xlsx`` → 'C', …).
+    The batch file ``<Name>_batch.xlsx`` (sharing the nutrient files' stem) maps to 'B'.
+    """
     found = {}
-    for f in sorted(files):
-        m = re.search(r'_([A-Z])\.xlsx$', os.path.basename(f))
+    stems = set()
+    for f in sorted(glob.glob(os.path.join(data_dir, "*_[A-Z].xlsx"))):
+        m = re.search(r'^(.*)_([A-Z])\.xlsx$', os.path.basename(f))
         if m:
-            found[m.group(1)] = f
+            stems.add(m.group(1))
+            found[m.group(2)] = f
+    # Batch condition shares the nutrient files' stem: <stem>_batch.xlsx → 'B'.
+    for stem in sorted(stems):
+        batch = os.path.join(data_dir, f"{stem}_batch.xlsx")
+        if os.path.exists(batch):
+            found["B"] = batch
+            break
     return found
 
 
