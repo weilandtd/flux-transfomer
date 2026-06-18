@@ -6,6 +6,7 @@ from sigmaflux.core.data import get_model_labeling_data, get_model_flux_data
 import numpy as np
 import torch
 import logging
+import time
 from scipy.optimize import minimize as scipy_minimize, Bounds
 from sigmaflux.core.utils import time_function
 # TODO MAKE A CENTRAL DEFINITION
@@ -29,7 +30,9 @@ def fit_mfa_model(model,
     Exchange fluxes (reversibility) r are bounded below by min_rev_flux.
     Optimization uses scipy L-BFGS-B with autograd-based gradient.
 
-    Objective:  Σ (L_sim − L_meas)² / σ²_L  +  Σ (v_sim − v_meas)² / σ²_v
+    Objective (reduced χ² per data block, so the few flux measurements are not drowned
+    out by the many labeling measurements):
+        (1/n_L) Σ (L_sim − L_meas)² / σ²_L  +  (1/n_F) Σ (v_sim − v_meas)² / σ²_v
 
     Parameters
     ----------
@@ -60,7 +63,6 @@ def fit_mfa_model(model,
     experiment_batches = []
     for i in range(0, len(model.experiments), simultanous_experiments):
         experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
-    n_batches = len(experiment_batches)
 
     labeling_scaler = torch.ones(len(model.experiments), device=device)
     batch_data = {}
@@ -71,6 +73,16 @@ def fit_mfa_model(model,
             model, with_std=True, exp_ix=exp_ix)
         batch_data[tuple(exp_ix)] = (index_labeling, L_mean, L_std,
                                      index_fluxes, v_mean, v_std)
+
+    # Per-block measurement counts. The labeling block has many MID measurements
+    # (~hundreds) and the flux block only a handful; a plain summed χ² lets labeling
+    # drown out the flux constraints. Reduced χ² per block (χ²_L/n_L + χ²_F/n_F) gives
+    # each data type equal footing so the few measured fluxes actually constrain the fit.
+    n_L_total = int(sum(bd[0].numel() for bd in batch_data.values()))
+    n_F_total = int(sum(bd[3].numel() for bd in batch_data.values()))
+    # Precompute inverse counts once so the per-iteration objective is branch-free.
+    inv_n_L = 1.0 / max(n_L_total, 1)
+    inv_n_F = (1.0 / n_F_total) if n_F_total > 0 else 0.0
 
     # ── Initial point: project current fluxes onto null(S), keep r ───────────
     # Columns of T are orthonormal, so T^T is the pseudo-inverse.
@@ -101,23 +113,34 @@ def fit_mfa_model(model,
         vb = vb * mask_f
         rev_fluxes = torch.cat([vf, vb])
 
-        total = x.new_zeros(())
+        total_L = x.new_zeros(())
+        total_F = x.new_zeros(())
         for exp_ix in experiment_batches:
             index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
             output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
             sim_L = torch.take(output, index_labeling)
-            total = total + ((sim_L - L_mean) / L_std).square().sum()
+            total_L = total_L + ((sim_L - L_mean) / L_std).square().sum()
             if index_fluxes.numel() > 0:
-                total = total + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
-        return total / n_batches
+                total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
+        # Reduced χ² per block so the flux constraints aren't drowned out by the
+        # far more numerous labeling measurements (inverse counts precomputed).
+        return total_L * inv_n_L + total_F * inv_n_F
 
     # ── Gradient via autograd ─────────────────────────────────────────────────
+    # Track the most recent objective/gradient + evaluation count so the per-iteration
+    # callback can report progress without recomputing the forward pass.
+    progress = {"nfev": 0, "loss": float("nan"), "gnorm": float("nan")}
+
     def f_and_grad(x_np: np.ndarray):
         x = torch.tensor(x_np, dtype=dtype, device=device).requires_grad_(True)
         with torch.enable_grad():
             loss = objective(x)
         grad, = torch.autograd.grad(loss, x)
-        return loss.item(), grad.detach().cpu().numpy()
+        grad_np = grad.detach().cpu().numpy()
+        progress["nfev"] += 1
+        progress["loss"] = loss.item()
+        progress["gnorm"] = float(np.max(np.abs(grad_np)))
+        return loss.item(), grad_np
 
     bounds_scipy = Bounds(
         torch.cat([lb_p, lb_r]).cpu().numpy(),
@@ -129,10 +152,27 @@ def fit_mfa_model(model,
         f"{len(model.experiments)} experiments, max_iter={max_iter}, tol={tol}"
     )
 
+    # ── Per-iteration progress (verbose) ──────────────────────────────────────
+    callback = None
+    if disp:
+        t_start = time.time()
+        timer = {"iter": 0, "t_last": t_start}
+        print(f"[MFA] L-BFGS-B start: {k} free fluxes + {n} reversibility, "
+              f"max_iter={max_iter}, gtol={tol}", flush=True)
+
+        def callback(xk):
+            timer["iter"] += 1
+            now = time.time()
+            print(f"[MFA] iter {timer['iter']:4d}  χ²={progress['loss']:.6g}  "
+                  f"|g|inf={progress['gnorm']:.3e}  nfev={progress['nfev']}  "
+                  f"dt={now - timer['t_last']:.2f}s  total={now - t_start:.1f}s",
+                  flush=True)
+            timer["t_last"] = now
+
     # ── Optimize ──────────────────────────────────────────────────────────────
     result = scipy_minimize(
         f_and_grad, x0.cpu().numpy(), method='L-BFGS-B',
-        jac=True, bounds=bounds_scipy,
+        jac=True, bounds=bounds_scipy, callback=callback,
         options=dict(maxiter=max_iter, gtol=tol),
     )
 
