@@ -165,7 +165,7 @@ def get_model_flux_data(model, with_std=False, exp_ix=None):
             fluxes_std.append(f._std)
 
     fluxes = np.array(fluxes)
-    fluxes_std = np.array(fluxes)
+    fluxes_std = np.array(fluxes_std)
 
     if with_std:
         return torch.tensor(indices, device=model.device), \
