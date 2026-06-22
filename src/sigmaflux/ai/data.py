@@ -323,6 +323,48 @@ def load_data(base_dir, max_samples=None):
     return labeling_df, flux_df, reversibility_df
 
 
+def find_checkpoint(data_dir):
+    """Return the path to the single trained .pt checkpoint in ``data_dir``."""
+    for fname in sorted(os.listdir(data_dir)):
+        if fname.endswith(".pt"):
+            return os.path.join(data_dir, fname)
+    raise FileNotFoundError(f"No .pt checkpoint found in {data_dir}")
+
+
+def split_sample_indices(split, checkpoint_path=None, n_total=None,
+                         val_fraction=None, seed=None):
+    """Sorted HDF5 column indices for a benchmark split: ``'val'``, ``'train'``, or ``'all'``.
+
+    The validation set is the one withheld from AI training, so the trained checkpoint's
+    stored ``val_indices`` / ``train_indices`` are the single source of truth. When a
+    checkpoint is given and carries them, they are used directly; otherwise the split is
+    recomputed from (n_total, val_fraction, seed) — identical to
+    ``train_ai_model.split_indices`` (shuffle ``arange(n_total)`` with ``default_rng(seed)``,
+    hold out the last ``val_fraction``). The two paths produce the same set for matching
+    parameters. Indices are returned sorted so ``--start-ix`` tiles the split deterministically.
+    """
+    if split == "all":
+        if n_total is None:
+            raise ValueError("split_sample_indices('all', ...) requires n_total")
+        return np.arange(n_total)
+    if split not in ("val", "train"):
+        raise ValueError(f"split must be 'val', 'train', or 'all', got {split!r}")
+
+    if checkpoint_path is not None:
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        key = "val_indices" if split == "val" else "train_indices"
+        if isinstance(ckpt, dict) and ckpt.get(key) is not None:
+            return np.sort(np.asarray(ckpt[key]))
+
+    if n_total is None or val_fraction is None or seed is None:
+        raise ValueError("split_sample_indices: provide a checkpoint carrying the split, "
+                         "or all of n_total/val_fraction/seed to recompute it")
+    indices = np.arange(n_total)
+    np.random.default_rng(seed).shuffle(indices)
+    split_pt = int((1.0 - val_fraction) * n_total)
+    return np.sort(indices[split_pt:] if split == "val" else indices[:split_pt])
+
+
 def create_tracer_mapping(labeling_df):
     """
     Extract unique base tracer names from labeling DataFrame.

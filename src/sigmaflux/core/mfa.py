@@ -47,8 +47,12 @@ def fit_mfa_model(model,
 
     Returns
     -------
-    list
-        [final_chi2 (float), converged (bool), n_iterations (int)]
+    dict
+        {"loss": float, "converged": bool, "n_iter": int,
+         "ssr_labeling": float, "ssr_fluxes": float,
+         "n_labeling": int, "n_fluxes": int}
+        where ``loss`` is the reduced χ² (mean_ssr_labeling + mean_ssr_fluxes) and
+        ``ssr_labeling`` / ``ssr_fluxes`` are the per-block reduced χ² (χ²_L/n_L, χ²_F/n_F).
     """
     n = model.num_reactions
     dtype, device = model.dtype, model.device
@@ -101,7 +105,7 @@ def fit_mfa_model(model,
                        torch.zeros(n, dtype=dtype, device=device))
 
     # ── Chi-squared objective (differentiable w.r.t. x via autograd) ─────────
-    def objective(x: torch.Tensor) -> torch.Tensor:
+    def objective(x: torch.Tensor, return_blocks: bool = False) -> torch.Tensor:
         p, r = x[:k], x[k:]
         v_net = T_t @ p  # S @ v_net = 0 automatically
         rev = torch.where((r * mask_f) <= model.min_rev_flux,
@@ -124,6 +128,8 @@ def fit_mfa_model(model,
                 total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
         # Reduced χ² per block so the flux constraints aren't drowned out by the
         # far more numerous labeling measurements (inverse counts precomputed).
+        if return_blocks:
+            return total_L * inv_n_L, total_F * inv_n_F
         return total_L * inv_n_L + total_F * inv_n_F
 
     # ── Gradient via autograd ─────────────────────────────────────────────────
@@ -200,7 +206,20 @@ def fit_mfa_model(model,
             pred_labeling = model.forward()
         torch.save(pred_labeling.cpu(), labeling_checkpoint_file)
 
-    return [float(result.fun), result.success, result.nit]
+    # Re-evaluate the two reduced-χ² blocks at the optimum so callers can apply a
+    # per-block acceptance test (e.g. effective-df multi-start gating).
+    with torch.no_grad():
+        rchi2_L, rchi2_F = objective(x_opt, return_blocks=True)
+
+    return {
+        "loss":         float(result.fun),    # mean_ssr_labeling + mean_ssr_fluxes
+        "converged":    bool(result.success),
+        "n_iter":       int(result.nit),
+        "ssr_labeling": float(rchi2_L),       # reduced χ²_L  (mean ssr labeling)
+        "ssr_fluxes":   float(rchi2_F),       # reduced χ²_F  (mean ssr fluxes)
+        "n_labeling":   n_L_total,
+        "n_fluxes":     n_F_total,
+    }
 
 
 @time_function

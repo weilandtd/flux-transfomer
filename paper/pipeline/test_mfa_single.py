@@ -292,7 +292,8 @@ def main():
     r2_lab_obs, lab_corr_obs, lab_rmse_obs = _labeling_agreement(
         pred_labeling_vec, gt_labeling_vec, extra_mask=obs_mask)
 
-    chi2_final, converged, n_iter = loss_log[0], loss_log[1], loss_log[2]
+    chi2_final, converged, n_iter = (loss_log["loss"], loss_log["converged"],
+                                     loss_log["n_iter"])
 
     if args.debug:
         lab_chi2_post, flux_chi2_post = _chi2_split(mfa_model)

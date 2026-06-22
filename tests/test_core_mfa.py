@@ -67,7 +67,7 @@ def test_core_mfa():
 
     loss_log = fit_mfa_model(mfa_model, max_iter=50, tol=1e-3)
 
-    chi2, converged, n_iter = loss_log
+    chi2, n_iter = loss_log["loss"], loss_log["n_iter"]
     assert np.isfinite(chi2), f"chi2 is not finite: {chi2}"
     assert n_iter > 0, "Optimizer did not run any iterations"
 

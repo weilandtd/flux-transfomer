@@ -46,7 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 torch.set_num_threads(_n_threads)
 
-from sigmaflux.ai.data import load_data
+from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
 from sigmaflux.core.data import FluxData, MassIsotopomerData
 from sigmaflux.core.experiment import Experiment
 from sigmaflux.core.mfa import fit_mfa_model
@@ -62,10 +62,17 @@ def parse_args():
                         "and HDF5 data files")
     p.add_argument("--output-dir", default=None,
                    help="Results directory (default: <data-dir>/mfa_benchmark)")
+    p.add_argument("--checkpoint", default=None,
+                   help="Trained AI .pt whose held-out validation split defines the "
+                        "benchmark samples (auto-detected from data-dir if omitted)")
+    p.add_argument("--split", choices=["val", "train", "all"], default="val",
+                   help="Which AI-training split to benchmark on (default: val — the set "
+                        "withheld from AI training)")
     p.add_argument("--n-benchmarks", type=int, default=10,
-                   help="Number of ground-truth flux / fit pairs to evaluate")
+                   help="Number of samples to evaluate, as an offset count into the split")
     p.add_argument("--start-ix", type=int, default=0,
-                   help="Index of first sample (for SLURM array parallelism)")
+                   help="Offset of the first sample within the split (for SLURM array "
+                        "parallelism); indexes the sorted split, not raw HDF5 columns")
     p.add_argument("--max-iter", type=int, default=500,
                    help="L-BFGS-B max iterations")
     p.add_argument("--tol", type=float, default=1e-3,
@@ -77,6 +84,13 @@ def parse_args():
     p.add_argument("--init-noise", type=float, default=0.20,
                    help="Near-GT init perturbation: v_gt·(1 + N(0, init_noise)), "
                         "applied to both net fluxes and reversibility")
+    p.add_argument("--max-starts", type=int, default=10,
+                   help="N_max multi-start restarts per sample. Restart from a new "
+                        "feasible init until the reduced-χ² acceptance bound is met; "
+                        "if none of the N_max starts is acceptable, write NaN.")
+    p.add_argument("--accept-z", type=float, default=1.645,
+                   help="z-score for the acceptance bound M ≤ 1 + z·sqrt(2/h_eff) "
+                        "(1.645 = one-sided 95%%).")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -133,6 +147,22 @@ def _make_init_fluxes(all_flux_df, all_rev_df, gt_flux, gt_rev, sample_ix,
                             "realized_dev": alpha * dev}
 
 
+def acceptance_threshold(n_L, n_F, z=1.645):
+    """Upper bound on M = ½·(χ²_L/n_L) + ½·(χ²_F/n_F), the equal-weight per-block reduced χ².
+
+    Each reduced χ² block has mean ≈1 and variance ≈2/n_b. Matching the first two moments
+    of M to a single scaled χ² gives an effective df h_eff = 1 / Σ_b w_b²/n_b; with equal
+    weights w_L=w_F=½ this is h_eff = 4·n_L·n_F/(n_L+n_F) (and h_eff = n_L when n_F == 0).
+    M then behaves like a reduced χ² on h_eff df, so we reject above
+    χ²_0.95(h_eff)/h_eff ≈ 1 + z·sqrt(2/h_eff).
+    """
+    if n_F > 0:
+        h_eff = 4.0 * n_L * n_F / (n_L + n_F)
+    else:
+        h_eff = float(n_L)
+    return 1.0 + z * np.sqrt(2.0 / h_eff)
+
+
 def _write_h5(base, labeling_data, labeling_index, flux_data, reaction_ids, sample_indices):
     (pd.DataFrame(labeling_data, index=sample_indices, columns=labeling_index)
        .T.to_hdf(f"{base}_labeling.h5", key="labeling", mode="w"))
@@ -183,8 +213,6 @@ def main():
     data_dir = _p(args.data_dir)
     output_dir = _p(args.output_dir) if args.output_dir else os.path.join(data_dir, "mfa_benchmark")
     os.makedirs(output_dir, exist_ok=True)
-    end_ix = args.start_ix + args.n_benchmarks - 1
-    tag = f"{args.start_ix:05d}_{end_ix:05d}"
 
     # ── Load atom-pattern annotated model ─────────────────────────────────────
     model_path = os.path.join(data_dir, "model_prepared_for_mfa.json")
@@ -200,11 +228,33 @@ def main():
     print(f"Loading training data from: {data_dir}")
     _, all_flux_df, all_rev_df = load_data(data_dir)
     n_total = all_flux_df.shape[1]
-    flux_df = all_flux_df.iloc[:, args.start_ix:args.start_ix + args.n_benchmarks]
-    rev_df  = all_rev_df.iloc[:,  args.start_ix:args.start_ix + args.n_benchmarks]
-    n_runs = flux_df.shape[1]
-    print(f"  {n_runs} samples (indices {args.start_ix}–{args.start_ix + n_runs - 1} "
-          f"of {n_total} total, {flux_df.shape[0]} reactions)")
+
+    # Restrict the benchmark to the AI model's split (default: the withheld validation
+    # set) so MFA and AI are scored on the same held-out samples. --start-ix / --n-benchmarks
+    # now index into this split (sorted real column indices), not the raw HDF5 columns.
+    checkpoint = _p(args.checkpoint) if args.checkpoint else None
+    if checkpoint is None and args.split != "all":
+        try:
+            checkpoint = find_checkpoint(data_dir)
+        except FileNotFoundError:
+            checkpoint = None  # fall back to recomputing the split from config
+    split_cols = split_sample_indices(
+        args.split, checkpoint, n_total,
+        cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
+    )
+    sel = split_cols[args.start_ix:args.start_ix + args.n_benchmarks]
+    n_runs = len(sel)
+    print(f"  split={args.split}: {len(split_cols)} samples; this task evaluates "
+          f"offsets {args.start_ix}–{args.start_ix + n_runs - 1} → columns "
+          f"{sel[0] if n_runs else '-'}..{sel[-1] if n_runs else '-'} of {n_total} total")
+    if n_runs == 0:
+        print("  No samples for this offset range — nothing to do.")
+        return
+
+    end_ix = args.start_ix + n_runs - 1
+    tag = f"{args.start_ix:05d}_{end_ix:05d}"
+    flux_df = all_flux_df.iloc[:, sel]
+    rev_df  = all_rev_df.iloc[:,  sel]
 
     if measured_rxn_ids:
         present = [r for r in measured_rxn_ids if r in flux_df.index]
@@ -231,7 +281,7 @@ def main():
     sample_indices = []
 
     for run_ix in range(n_runs):
-        global_ix = args.start_ix + run_ix
+        global_ix = int(sel[run_ix])   # real HDF5 column index of this validation sample
         gt_flux = flux_df.iloc[:, run_ix]
         gt_rev  = rev_df.iloc[:,  run_ix]
         print(f"\n── Run {run_ix + 1}/{n_runs}  (sample {global_ix}) ──────────────────")
@@ -257,28 +307,46 @@ def main():
         n_obs = sum(len(e.mid_data) for e in noisy_exps)
         print(f"  Noisy MID: {n_obs} entries across {len(noisy_exps)} tracers")
 
-        # ── Step 3: initialise at a feasible near-GT point and fit ───────────
-        # Interpolate GT toward a real training sample (convex combo → stays feasible),
-        # instead of projecting a perturbed GT (which can invert fluxes).
+        # ── Step 3: multi-start fit until the reduced-χ² bound is met ─────────
+        # The measurements above are fixed for this sample; only the starting point
+        # changes across restarts. Each start interpolates GT toward a *different*
+        # random feasible training sample (convex combo → stays feasible, never inverts
+        # fluxes). Restart until M = ½·(ssr_L + ssr_F) clears the effective-df bound, or
+        # max_starts is exhausted — L-BFGS-B otherwise sticks in the first local minimum.
         mfa_model.experiments = noisy_exps
-        v_init, rev_init, _ = _make_init_fluxes(
-            all_flux_df, all_rev_df, gt_flux, gt_rev, global_ix,
-            args.init_noise, reaction_ids, rng
-        )
-        mfa_model.reset_initial_fluxes(pd.Series(v_init, index=reaction_ids))
-        # reset_initial_fluxes() re-seeds reversibility randomly; use the feasible
-        # interpolated reversibility instead.
-        with torch.no_grad():
-            mfa_model._reversibility.copy_(torch.tensor(rev_init, dtype=dtype, device=device))
-        loss_log = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol)
-        print(f"  χ²={loss_log[0]:.5f}, converged={loss_log[1]}, iter={loss_log[2]}")
+        accepted = False
+        for start in range(args.max_starts):
+            v_init, rev_init, _ = _make_init_fluxes(
+                all_flux_df, all_rev_df, gt_flux, gt_rev, global_ix,
+                args.init_noise, reaction_ids, rng
+            )
+            mfa_model.reset_initial_fluxes(pd.Series(v_init, index=reaction_ids))
+            # reset_initial_fluxes() re-seeds reversibility randomly; use the feasible
+            # interpolated reversibility instead.
+            with torch.no_grad():
+                mfa_model._reversibility.copy_(torch.tensor(rev_init, dtype=dtype, device=device))
+            res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol)
+            M = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])      # = res["loss"] / 2
+            M_accept = acceptance_threshold(res["n_labeling"], res["n_fluxes"], args.accept_z)
+            print(f"  start {start + 1}/{args.max_starts}: M={M:.4f} (accept≤{M_accept:.4f}) "
+                  f"Loss={res['loss']:.5f} conv={res['converged']} iter={res['n_iter']}")
+            if M <= M_accept:
+                accepted = True
+                break
 
-        # ── Step 4: predicted labeling after fitting ──────────────────────────
-        with torch.no_grad():
-            pred_labeling_vec = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
+        # ── Step 4: record predicted labeling/fluxes (NaN if no start accepted) ──
+        if accepted:  # model holds the accepted solution (fit writes x_opt back)
+            with torch.no_grad():
+                pred_labeling_vec = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
+            pred_flux_vec = mfa_model.fluxes.detach().cpu().numpy()
+            print(f"  ✓ accepted after {start + 1} start(s)")
+        else:  # not a real solution — write NaN so it is excluded from the benchmark
+            pred_labeling_vec = np.full(len(labeling_index), np.nan)
+            pred_flux_vec = np.full(len(reaction_ids), np.nan)
+            print(f"  ✗ no acceptable fit in {args.max_starts} starts → NaN")
 
         pred_lab_data.append(pred_labeling_vec)
-        pred_flux_data.append(mfa_model.fluxes.detach().cpu().numpy())
+        pred_flux_data.append(pred_flux_vec)
         sample_indices.append(global_ix)
 
         pred_base = os.path.join(output_dir, f"pred_{tag}")
