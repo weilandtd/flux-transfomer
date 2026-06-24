@@ -52,6 +52,13 @@ def main():
                         help='Write output to this file instead of stdout')
     parser.add_argument('--save-matrix', default=None,
                         help='Save flux-token attention matrix as .npz (e.g. flux_token.npz)')
+    parser.add_argument('--save-self-attn', default=None,
+                        help='Save metabolite-token self-attention matrix (.npz) for the '
+                             'attention-vs-distance analysis')
+    parser.add_argument('--drop-flux-frac', type=float, default=0.0,
+                        help='randomly drop this fraction of known measured fluxes before '
+                             'extracting attention (tests if MID attention sharpens)')
+    parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
     # ── Load checkpoint ───────────────────────────────────────────────────────
@@ -130,6 +137,15 @@ def main():
         if out_file:
             out_file.write(msg + '\n')
 
+    # ── Optionally drop a fraction of the known measured fluxes ────────────────
+    keep_flux_ids = np.array(model.fixed_idx)
+    if getattr(args, 'drop_flux_frac', 0.0) > 0 and len(keep_flux_ids) > 0:
+        rng = np.random.default_rng(getattr(args, 'seed', 0))
+        n_keep = len(keep_flux_ids) - int(round(args.drop_flux_frac * len(keep_flux_ids)))
+        keep_flux_ids = np.sort(rng.choice(keep_flux_ids, size=max(0, n_keep), replace=False))
+        print(f"Dropping {args.drop_flux_frac:.0%} of known fluxes: keeping "
+              f"{len(keep_flux_ids)}/{len(model.fixed_idx)} for attention extraction")
+
     # ── Collect attention weights ─────────────────────────────────────────────
     attn_sum    = None
     n_collected = 0
@@ -141,12 +157,13 @@ def main():
             lids  = lids.to(device)
             tids  = tids.to(device)
             fracs = fracs.to(device)
-            measured_fluxes = None
-            if len(model.fixed_idx) > 0:
-                measured_fluxes = targets[:, model.fixed_idx].to(device)
+            measured_fluxes, mfi = None, None
+            if len(keep_flux_ids) > 0:
+                measured_fluxes = targets[:, keep_flux_ids].to(device)
+                mfi = torch.as_tensor(keep_flux_ids, dtype=torch.long, device=device)
 
             _, _, attn = model(cids, lids, tids, fracs,
-                               measured_fluxes=measured_fluxes,
+                               measured_fluxes=measured_fluxes, measured_flux_ids=mfi,
                                return_attn=True)
             batch_sum = attn.cpu().sum(dim=0).numpy()   # (38, N)
             attn_sum  = batch_sum if attn_sum is None else attn_sum + batch_sum
@@ -175,6 +192,48 @@ def main():
     # Bypass measured-flux tokens are appended after the labeling tokens.
     for fname in (ckpt.get('measured_fluxes') or []):
         token_labels.append(f"{fname} [flux]")
+
+    # ── Encoder self-attention over metabolite tokens (for attention-vs-distance) ─
+    if args.save_self_attn:
+        import torch.backends.mha as _mha
+        try:
+            _mha.set_fastpath_enabled(False)        # force the python MHA path so weights are returned
+        except Exception:
+            pass
+        _store = []                                  # per-layer (H, S, S) batch-summed weights
+        def _wrap(layer):
+            _orig = layer.self_attn.forward
+            def _fwd(q, k, v, **kw):
+                kw['need_weights'] = True
+                kw['average_attn_weights'] = False        # keep per-head
+                o, w = _orig(q, k, v, **kw)               # w: (B, H, S, S)
+                _store.append(w.detach().sum(0))          # reduce batch -> (H, S, S) (memory-safe)
+                return o, w
+            layer.self_attn.forward = _fwd
+        for _L in model.encoder.layers:
+            _wrap(_L)
+
+        n_flux_tok = len(ckpt.get('measured_fluxes') or [])
+        accum, sa_n = None, 0
+        with torch.no_grad():
+            for batch in val_loader:
+                (cids, lids, tids, fracs), targets = batch
+                cids, lids = cids.to(device), lids.to(device)
+                tids, fracs = tids.to(device), fracs.to(device)
+                mf = targets[:, model.fixed_idx].to(device) if len(model.fixed_idx) > 0 else None
+                _store.clear()
+                model(cids, lids, tids, fracs, measured_fluxes=mf, return_attn=False)
+                batch_lh = np.stack([s.cpu().numpy() for s in _store], 0)   # (L, H, S, S)
+                accum = batch_lh if accum is None else accum + batch_lh
+                sa_n += cids.shape[0]
+        self_attn_lh = accum / sa_n                            # (L, H, S, S)
+        n_lab = self_attn_lh.shape[-1] - n_flux_tok
+        lh_block = self_attn_lh[:, :, :n_lab, :n_lab]          # metabolite-token block (L, H, n_lab, n_lab)
+        np.savez(args.save_self_attn,
+                 self_attn_lh=lh_block,                        # per layer & head
+                 self_attn=lh_block.mean((0, 1)),              # layer/head-averaged (backward compat)
+                 token_labels=np.array(token_labels[:n_lab], dtype=object))
+        print(f"Saved self-attention → {args.save_self_attn}  per-head {lh_block.shape}")
 
     # ── Gate values + top-flux labels per y-dim ───────────────────────────────
     Z        = np.array(nsd.get('Z_free', []), dtype=float)   # (386, 38)
