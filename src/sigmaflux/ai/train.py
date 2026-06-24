@@ -410,7 +410,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
                 warmup_epochs=0, flux_token_dropout=0.0,
                 labeling_token_dropout=0.0, token_information=None,
-                loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
+                loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0,
+                early_stopping_patience=None):
     """
     Train a FluxDecoder model.
 
@@ -430,6 +431,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         token_information:       (n_tokens,) tensor of scores (used for reporting only)
         labeling_noise_std: Gaussian noise std for isotopologue fractions (0 = disabled)
         loss_function:      callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
+        early_stopping_patience: Stop after this many consecutive epochs without
+                            val_loss improvement (None = disabled; requires val_loader)
 
     Returns:
         log: dict with 'train_loss', 'val_loss', 'grad_norm' lists
@@ -463,6 +466,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
     train_losses, val_losses, grad_norms = [], [], []
     best_val_loss   = float('inf')
     best_state_dict = copy.deepcopy(model.state_dict())
+    epochs_no_improve = 0
 
     iterator = tqdm(range(num_epochs), desc="Training") if verbose else range(num_epochs)
 
@@ -486,6 +490,9 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             if val_loss < best_val_loss:
                 best_val_loss   = val_loss
                 best_state_dict = copy.deepcopy(model.state_dict())
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
 
             scheduler_loss = val_loss
         else:
@@ -501,6 +508,14 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             if val_loader is not None:
                 postfix['val'] = f'{val_loss:.4f}'
             iterator.set_postfix(postfix)
+
+        if (early_stopping_patience is not None and val_loader is not None
+                and epochs_no_improve >= early_stopping_patience):
+            if verbose:
+                tqdm.write(f"Early stopping at epoch {epoch + 1}: no val_loss "
+                           f"improvement for {epochs_no_improve} epochs "
+                           f"(best val_loss={best_val_loss:.6g})")
+            break
 
     if val_loader is not None:
         model.load_state_dict(best_state_dict)
