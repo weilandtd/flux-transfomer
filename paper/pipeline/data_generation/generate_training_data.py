@@ -9,16 +9,17 @@ This follows the mammalian atlas workflow:
   5. Save labeling, flux, and reversibility HDF5 files.
 
 Example:
-    PYTHONPATH=src python paper/generate_training_data.py --config paper/io_config.yaml
+    PYTHONPATH=src python paper/pipeline/data_generation/generate_training_data.py --config paper/io_config.yaml
 
     # Process a specific slice (for parallel jobs):
-    PYTHONPATH=src python paper/generate_training_data.py --config paper/io_config.yaml \\
+    PYTHONPATH=src python paper/pipeline/data_generation/generate_training_data.py --config paper/io_config.yaml \\
         --start-idx 0 --end-idx 500
 """
 
 import argparse
 import datetime
 import os
+from pathlib import Path
 
 # Pin thread counts to the SLURM allocation before any BLAS/OpenMP library
 # is imported.  Without this, PyTorch/OpenBLAS spawn as many threads as there
@@ -34,7 +35,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", str(_n_threads))
 import numpy as np
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 
 import pandas as pd
 import torch

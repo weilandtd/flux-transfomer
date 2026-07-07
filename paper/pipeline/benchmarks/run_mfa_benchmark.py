@@ -19,7 +19,7 @@ Each benchmark run:
 Results are directly comparable to AI model accuracy metrics.
 
 Usage (I. orientalis):
-    python -u paper/pipeline/run_mfa_benchmark.py \\
+    python -u paper/pipeline/benchmarks/run_mfa_benchmark.py \\
         --config paper/configs/i_orientalis.yaml \\
         --data-dir paper/.results/i_orientalis_20260614 \\
         --n-benchmarks 10 --max-iter 500
@@ -29,6 +29,7 @@ import argparse
 import os
 import sys
 from collections import defaultdict
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
@@ -40,9 +41,9 @@ os.environ.setdefault("OMP_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("MKL_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("OPENBLAS_NUM_THREADS", str(_n_threads))
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "paper", "pipeline", "data_generation"))
 
 torch.set_num_threads(_n_threads)
 

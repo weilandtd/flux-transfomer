@@ -2,13 +2,14 @@
 Train SigmaFlux's FluxDecoder (cross-attention decoder) from generated HDF5 data.
 
 Example:
-    PYTHONPATH=src python paper/train_ai_model.py --config paper/io_config.yaml
+    PYTHONPATH=src python paper/pipeline/training/train_ai_model.py --config paper/io_config.yaml
 """
 
 import argparse
 import datetime
 import math
 import os
+from pathlib import Path
 from dataclasses import asdict
 from functools import partial
 
@@ -19,7 +20,7 @@ import torch
 import torch.nn as nn
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 from torch.utils.data import DataLoader
 
 from sigmaflux.ai.data import (
@@ -206,7 +207,14 @@ def main(args):
         h_tracer=args.h_tracer,
     )
 
-    train_indices, val_indices = split_indices(labeling_df.shape[1], args.val_fraction, args.seed)
+    if getattr(args, 'split_file', None):
+        import json as _json
+        _sp = _json.load(open(args.split_file))
+        train_indices = np.asarray(_sp['train_indices'], dtype=int)
+        val_indices   = np.asarray(_sp['val_indices'], dtype=int)
+        print(f"Loaded split from {args.split_file}: train={len(train_indices)} val={len(val_indices)}")
+    else:
+        train_indices, val_indices = split_indices(labeling_df.shape[1], args.val_fraction, args.seed)
 
     # Drop constant reversibilities before building datasets — they add dead queries.
     _rv_std = reversibility_df.values.astype(np.float32).std(axis=1)
@@ -222,6 +230,7 @@ def main(args):
         vocabs=vocabs,
         train_indices=train_indices,
         measured_fluxes=args.measured_fluxes,
+        normalize_mids=args.normalize_mids,
     )
     (val_dataset, _, _, _, _) = prepare_id_dataset(
         labeling_df,
@@ -543,6 +552,7 @@ def main(args):
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
         measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
+        early_stopping_patience    = getattr(args, 'early_stopping_patience', None),
     )
 
     flux_names = flux_df.index.tolist()
@@ -687,6 +697,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train the SigmaFlux FluxDecoder.")
     parser.add_argument("--config", required=True, help="Path to YAML config file (e.g. paper/io_config.yaml)")
     parser.add_argument("--data-dir", default=None, help="Directory containing HDF5 training data (overrides date-based default)")
+    parser.add_argument("--normalize-mids", action="store_true",
+                        help="per-token z-score the labeling (MID) fractions to match flux input scale")
+    parser.add_argument("--output", default=None, help="Override output checkpoint path (.pt)")
+    parser.add_argument("--split-file", default=None, help="JSON with explicit train_indices/val_indices (e.g. KO-aware split)")
+    parser.add_argument("--seed", type=int, default=None, help="Override config seed (ensemble members)")
     cli = parser.parse_args()
 
     with open(cli.config) as f:
@@ -695,7 +710,7 @@ if __name__ == "__main__":
     t = cfg.get("training", {})
     f = cfg.get("features", {})
     output_dir   = cli.data_dir or f"{cfg['name']}_{datetime.date.today().strftime('%Y%m%d')}"
-    output_model = os.path.join(output_dir, t.get("output_model", "transformer.pt"))
+    output_model = cli.output or os.path.join(output_dir, t.get("output_model", "transformer.pt"))
 
     measured_fluxes = t.get("measured_fluxes") or None
 
@@ -706,10 +721,13 @@ if __name__ == "__main__":
         data_dir               = output_dir,
         model_json             = _prepared if os.path.isfile(_prepared) else _default,
         output                 = output_model,
+        normalize_mids         = cli.normalize_mids or t.get("normalize_mids", False),
+        split_file             = cli.split_file,
         device                 = cfg.get("device", "auto"),
-        seed                   = cfg.get("seed", 42),
+        seed                   = cli.seed if cli.seed is not None else cfg.get("seed", 42),
         max_samples            = t.get("max_samples"),
         epochs                 = t.get("epochs", 100),
+        early_stopping_patience = t.get("early_stopping_patience"),
         batch_size             = t.get("batch_size", 64),
         learning_rate          = t.get("learning_rate", 1e-3),
         warmup_epochs          = t.get("warmup_epochs", 5),

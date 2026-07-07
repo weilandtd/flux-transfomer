@@ -6,7 +6,7 @@ flux measurements, fits MFAModel by gradient descent, and writes per-condition
 flux predictions.
 
 Usage (I. orientalis, conditions C N P):
-    python -u paper/pipeline/run_mfa_data.py \\
+    python -u paper/pipeline/inference/run_mfa_data.py \\
         --config paper/configs/i_orientalis.yaml \\
         --mid-file "data/I_orientalis/I_orientalis_{condition}.xlsx" \\
         --extflux-file data/I_orientalis/I_orientalis_ExtFlux.xlsx \\
@@ -19,6 +19,7 @@ import argparse
 import copy
 import os
 import sys
+from pathlib import Path
 from datetime import datetime
 
 import pandas as pd
@@ -32,7 +33,7 @@ os.environ.setdefault("OMP_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("MKL_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("OPENBLAS_NUM_THREADS", str(_n_threads))
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
 torch.set_num_threads(_n_threads)
@@ -86,6 +87,25 @@ def _apply_media_bounds(cobra_model, media_cfg):
             rxn.upper_bound = bounds["ub"]
         except KeyError:
             print(f"  Warning: media reaction {rxn_id} not in model, skipping")
+
+
+def _feasible_init(constrained, fallback):
+    """Parsimonious feasible flux vector to initialize the MFA fit.
+
+    The measured-flux bounds (mean±2σ) are frequently over-determined and make
+    the polytope infeasible (e.g. measured glucose uptake can't supply all the
+    measured biomass-precursor demands under mass balance) — this is normal in
+    13C-MFA and is reconciled by the weighted least-squares fit, NOT by hard
+    bounds. So for the *initial point* only, fall back to the feasible
+    media-only model. Measurements are still applied as soft targets via FluxData.
+    """
+    from cobra.flux_analysis import pfba
+    for mdl, label in ((constrained, "measured-bounds"), (fallback, "media-only")):
+        try:
+            return pfba(mdl).fluxes, label
+        except Exception:
+            continue
+    return fallback.optimize().fluxes, "FBA"
 
 
 def run_condition(cobra_model, condition, gc, args, tracer_cfg, timestamp, output_dir):
@@ -142,12 +162,19 @@ def run_condition(cobra_model, condition, gc, args, tracer_cfg, timestamp, outpu
         rxn.lower_bound = max(rxn.lower_bound, -args.max_sampling_flux)
         rxn.upper_bound = min(rxn.upper_bound, args.max_sampling_flux)
 
-    # ── 5. Create MFAModel (samples init from constrained model) ─────────────
+    # ── 5. Create MFAModel with a feasible initial point ─────────────────────
+    # (the measured-bounds polytope is often infeasible; init from a feasible
+    #  relaxation, measurements remain soft targets in the fit — see _feasible_init)
+    init_series, init_src = _feasible_init(model_for_sampling, cobra_model)
+    if init_src != "measured-bounds":
+        print(f"  Note: measured-bounds model infeasible for init; using {init_src} "
+              f"init (measurements still applied as soft targets in the fit).")
     mfa_model = MFAModel(
         model_for_sampling,
         f"MFA_{condition}{gc}",
         lambda0=args.lambda0,
         seed=args.seed,
+        initial_flux_distribution=init_series,
     )
 
     init_vals = mfa_model.initial_flux_values.cpu().numpy()

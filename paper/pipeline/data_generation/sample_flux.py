@@ -5,12 +5,13 @@ Prepares a COBRA sampling problem from an annotated model, writes sampled
 fluxes, and saves the exact model that those fluxes belong to.
 
 Example:
-    PYTHONPATH=src python paper/sample_flux.py --config paper/io_config.yaml
+    PYTHONPATH=src python paper/pipeline/data_generation/sample_flux.py --config paper/io_config.yaml
 """
 
 import argparse
 import datetime
 import os
+from pathlib import Path
 
 import cobra
 import numpy as np
@@ -26,7 +27,7 @@ except ImportError:
     HopsySampler = None
 from optlang.symbolics import Zero
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 
 # Mapping from YAML-friendly names to hopsy proposal class names.
 _HOPSY_PROPOSALS = {

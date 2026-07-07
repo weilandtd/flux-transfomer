@@ -11,16 +11,17 @@ The training script consumes this CSV automatically when
 is set in the config's features: section.
 
 Usage:
-    python paper/pipeline/extract_informative_features.py \\
+    python paper/pipeline/training/extract_informative_features.py \\
         --config paper/configs/i_orientalis.yaml --data-dir <run_dir>
 """
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
 from sigmaflux.ai.data import load_data

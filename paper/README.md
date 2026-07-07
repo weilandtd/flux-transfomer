@@ -36,7 +36,7 @@ Prepares a COBRA sampling problem from an annotated model and
 draws flux samples via COBRApy's `optgp` sampler.
 
 ```bash
-python paper/sample_flux.py \
+python paper/pipeline/data_generation/sample_flux.py \
     --model-file models/I_orientalis/imIsor_annotated.json \
     --output-dir training_data \
     --n-samples 10000 \
@@ -51,7 +51,7 @@ For each sampled flux distribution, runs `MFAModel` forward to compute
 simulated mass isotopomer distributions (MIDs) and saves them to HDF5.
 
 ```bash
-python paper/generate_training_data.py \
+python paper/pipeline/data_generation/generate_training_data.py \
     --flux_samples training_data/flux_samples.csv \
     --start_idx 0 \
     --end_idx 500 \
@@ -67,7 +67,7 @@ parallel slices (`--start_idx` / `--end_idx`) to distribute across jobs.
 Trains `LabelingToFluxTransformer` on the HDF5 files produced above.
 
 ```bash
-python paper/train_ai_model.py \
+python paper/pipeline/training/train_ai_model.py \
     --data-dir training_data \
     --model-json models/I_orientalis/imIsor_annotated.json \
     --output imisor_transformer.pt \

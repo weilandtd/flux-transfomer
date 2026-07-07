@@ -8,10 +8,10 @@ Steps executed in order:
   4. train_ai_model.py                  — train the labeling-to-flux transformer
 
 Usage (works from any directory):
-    python paper/pipeline/run_training_workflow.py --config paper/configs/i_orientalis.yaml
+    python paper/pipeline/workflows/run_training_workflow.py --config paper/configs/i_orientalis.yaml
 
 Individual steps can be skipped if their outputs already exist:
-    python paper/pipeline/run_training_workflow.py --config ... \\
+    python paper/pipeline/workflows/run_training_workflow.py --config ... \\
         --skip-sampling --skip-generate --skip-features
 """
 
@@ -23,8 +23,10 @@ import sys
 
 import yaml
 
-# Absolute path to the paper/ directory — independent of cwd.
-_PAPER_DIR = os.path.dirname(os.path.abspath(__file__))
+# Absolute pipeline paths, independent of the caller's working directory.
+_PIPELINE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DATA_GENERATION_DIR = os.path.join(_PIPELINE_DIR, "data_generation")
+_TRAINING_DIR = os.path.join(_PIPELINE_DIR, "training")
 
 
 def run_step(cmd):
@@ -68,13 +70,13 @@ def main():
     if args.skip_sampling:
         print("\n[Step 1] Skipping flux sampling.")
     else:
-        run_step([python, os.path.join(_PAPER_DIR, "sample_flux.py"), "--config", config_path])
+        run_step([python, os.path.join(_DATA_GENERATION_DIR, "sample_flux.py"), "--config", config_path])
 
     # ── Step 2: Simulate isotope labeling ────────────────────────────────────
     if args.skip_generate:
         print("\n[Step 2] Skipping labeling data generation.")
     else:
-        run_step([python, os.path.join(_PAPER_DIR, "generate_training_data.py"), "--config", config_path])
+        run_step([python, os.path.join(_DATA_GENERATION_DIR, "generate_training_data.py"), "--config", config_path])
 
     # ── Step 3: Extract informative features ─────────────────────────────────
     features_csv = os.path.join(output_dir,
@@ -83,14 +85,14 @@ def main():
         print(f"\n[Step 3] Skipping feature extraction "
               f"({'--skip-features' if args.skip_features else 'features.csv exists'}).")
     else:
-        run_step([python, os.path.join(_PAPER_DIR, "extract_informative_features.py"),
+        run_step([python, os.path.join(_TRAINING_DIR, "extract_informative_features.py"),
                   "--config", config_path, "--data-dir", output_dir])
 
     # ── Step 4: Train the transformer ────────────────────────────────────────
     if args.skip_train:
         print("\n[Step 4] Skipping model training.")
     else:
-        run_step([python, os.path.join(_PAPER_DIR, "train_ai_model.py"),
+        run_step([python, os.path.join(_TRAINING_DIR, "train_ai_model.py"),
                   "--config", config_path, "--data-dir", output_dir])
 
     print("\nWorkflow complete.")

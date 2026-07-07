@@ -6,7 +6,7 @@ experimental data directory and runs all growth conditions within each.
 Results are saved as per-condition CSVs in the output directory.
 
 Usage:
-    python paper/pipeline/run_inference_workflow.py \\
+    python paper/pipeline/inference/run_inference_workflow.py \\
         --config     paper/configs/i_orientalis.yaml \\
         --checkpoint paper/.results/i_orientalis_20260603/imisor_transformer.pt \\
         --data-dir   data/I_orientalis \\
@@ -24,12 +24,13 @@ import os
 import re
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
 
 from sigmaflux.ai.inference import SigmaFlux

@@ -8,7 +8,7 @@ reversibility from the training data, relative flux noise, near-GT init); the on
 additions are step-by-step debug instrumentation and R² recovery metrics.
 
 Usage:
-    python -u paper/pipeline/test_mfa_single.py \\
+    python -u paper/pipeline/benchmarks/test_mfa_single.py \\
         --config paper/configs/i_orientalis.yaml \\
         --data-dir paper/.results/i_orientalis_20260614 \\
         --sample-ix 0 --noise-std 0.05 --flux-noise-std 0 --debug
@@ -17,6 +17,7 @@ Usage:
 import argparse
 import os
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -29,9 +30,9 @@ os.environ["MKL_NUM_THREADS"] = "4"
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
 torch.set_num_threads(4)
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_REPO_ROOT, "paper", "pipeline", "data_generation"))
 
 from sigmaflux.ai.data import load_data
 from sigmaflux.core.data import get_model_flux_data, get_model_labeling_data
