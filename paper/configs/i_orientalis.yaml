@@ -99,7 +99,9 @@ features:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  epochs: 150
+  ensemble_size: 5              # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
+  epochs: 1000
+  early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
   batch_size: 256
   learning_rate: 0.001
   warmup_epochs: 5
@@ -123,7 +125,8 @@ training:
   h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  flux_token_dropout: 0.1
+  flux_token_dropout: 0.5       # flux masking rate: per-batch prob. each measured-flux token is masked
+  normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
   compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
 
