@@ -115,8 +115,9 @@ def build_plot_df(run_dir: pathlib.Path, org: dict, both_rxns: set) -> pd.DataFr
                  if 'BIOMASS' in ref.index else {})
 
         for gc in sorted(set(pred.columns) & set(ref.columns)):
-            shared = pred.index.intersection(ref.index)
-            shared = [r for r in shared if r in both_rxns]
+            shared = list(pred.index.intersection(ref.index))
+            if both_rxns is not None:                       # None → no filter (all shared reactions)
+                shared = [r for r in shared if r in both_rxns]
             if not shared:
                 continue
             parts.append(pd.DataFrame({
@@ -178,16 +179,26 @@ def main():
     parser.add_argument('run_dir', type=pathlib.Path,
                         help='Training run directory (contains predictions/ and output/)')
     parser.add_argument('--out', type=pathlib.Path, default=None,
-                        help='Output SVG (default: <run_dir>/output/predicted_fluxes_panels.svg)')
+                        help='Output SVG (default: <run_dir>/output/predicted_fluxes_panels[_all].svg)')
+    parser.add_argument('--all-reactions', action='store_true',
+                        help='Plot all shared reactions instead of filtering to Both-identifiable '
+                             '(skips identifiability.csv → no MFA benchmark needed). Used to view the '
+                             'SigmaFlux experimental predictions standalone.')
     args = parser.parse_args()
 
     run_dir = args.run_dir.resolve()
     org = _resolve_organism(run_dir)
 
     id_path = run_dir / 'output' / 'identifiability.csv'
-    id_df = pd.read_csv(id_path)
-    both_rxns = set(id_df.loc[id_df['identifiable_by'] == 'Both', 'reaction'])
-    print(f"Organism: {org['prefix']}  |  Both-identifiable reactions: {len(both_rxns)}")
+    if args.all_reactions or not id_path.exists():
+        both_rxns = None
+        why = "--all-reactions" if args.all_reactions else f"{id_path.name} not found"
+        print(f"Organism: {org['prefix']}  |  plotting ALL shared reactions "
+              f"({why}; no Both-identifiable filter, no MFA benchmark needed)")
+    else:
+        id_df = pd.read_csv(id_path)
+        both_rxns = set(id_df.loc[id_df['identifiable_by'] == 'Both', 'reaction'])
+        print(f"Organism: {org['prefix']}  |  Both-identifiable reactions: {len(both_rxns)}")
 
     df = build_plot_df(run_dir, org, both_rxns)
     print("\nPer-condition points (reaction × growth condition):")
@@ -197,7 +208,8 @@ def main():
             print(f"  {cond}: {len(sub):4d} points, {sub['reaction'].nunique()} reactions, "
                   f"R²={_r2(sub['pred'].values, sub['ref'].values):.3f}")
 
-    out_path = args.out or (run_dir / 'output' / 'predicted_fluxes_panels.svg')
+    default_name = 'predicted_fluxes_panels_all.svg' if both_rxns is None else 'predicted_fluxes_panels.svg'
+    out_path = args.out or (run_dir / 'output' / default_name)
     plot_panels(df, out_path)
 
 
