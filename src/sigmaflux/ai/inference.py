@@ -254,6 +254,7 @@ class SigmaFlux:
             train_indices   = list(range(n_samples)),
             normalize       = False,   # targets not used at inference time
             measured_fluxes = None,
+            norm_stats_input= self.ckpt.get('norm_stats'),  # applies MID z-score if model trained with it
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 

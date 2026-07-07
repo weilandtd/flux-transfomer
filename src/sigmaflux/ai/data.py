@@ -665,7 +665,7 @@ class TokenizedDataset(Dataset):
 
 def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
                     train_indices=None, measured_fluxes=None,
-                    norm_stats_input=None, normalize=False):
+                    norm_stats_input=None, normalize=False, normalize_mids=False):
     """
     Prepare a TokenizedDataset from DataFrames using radial-embedding tokenization.
 
@@ -703,6 +703,26 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     labeling_data = labeling_df.values[:, train_indices].T  # (num_samples, num_tokens)
 
     norm_stats = {}
+
+    # 1b. Optionally per-token z-score the labeling (MID) fractions so they match the
+    # unit-variance scale of the z-scored measured-flux inputs (fractions are otherwise
+    # fed raw ~[0,1], std ~0.04, ~24x weaker than flux inputs). Applied if explicitly
+    # requested (training) OR if the checkpoint's stats carry mid_mean (val/inference),
+    # so old checkpoints (no mid stats) keep the raw behavior.
+    _apply_mid = normalize_mids or (norm_stats_input is not None and 'mid_mean' in norm_stats_input)
+    if _apply_mid:
+        if norm_stats_input is not None and 'mid_mean' in norm_stats_input:
+            mid_mean = np.asarray(norm_stats_input['mid_mean'], dtype=np.float32)
+            mid_std  = np.asarray(norm_stats_input['mid_std'],  dtype=np.float32)
+        else:
+            mid_mean = labeling_data.mean(axis=0).astype(np.float32)
+            mid_std  = np.where(labeling_data.std(axis=0) < 1e-6, 1.0,
+                                labeling_data.std(axis=0)).astype(np.float32)
+        labeling_data = (labeling_data - mid_mean) / mid_std
+        norm_stats['mid_mean'] = mid_mean.tolist()
+        norm_stats['mid_std']  = mid_std.tolist()
+        print(f"MID fractions per-token z-scored: input std now "
+              f"~{labeling_data.std(axis=0).mean():.2f} (raw was ~0.04)")
 
     # ------------------------------------------------------------------
     # 2. Token static features and experiment IDs
@@ -996,7 +1016,7 @@ class IDTokenizedDataset(Dataset):
 
 def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
                        train_indices=None, measured_fluxes=None,
-                       norm_stats_input=None, normalize=False):
+                       norm_stats_input=None, normalize=False, normalize_mids=False):
     """
     Prepare an IDTokenizedDataset for use with FluxDecoder.
 
@@ -1020,6 +1040,7 @@ def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
         measured_fluxes=measured_fluxes,
         norm_stats_input=norm_stats_input,
         normalize=normalize,
+        normalize_mids=normalize_mids,
     )
 
     compound_ids, label_ids, tracer_ids, _, tracer_combo_vocab, tracer_combo_emb_table = \
