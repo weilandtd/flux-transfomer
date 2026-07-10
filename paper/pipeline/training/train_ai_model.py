@@ -701,7 +701,9 @@ if __name__ == "__main__":
                         help="per-token z-score the labeling (MID) fractions to match flux input scale")
     parser.add_argument("--output", default=None, help="Override output checkpoint path (.pt)")
     parser.add_argument("--split-file", default=None, help="JSON with explicit train_indices/val_indices (e.g. KO-aware split)")
-    parser.add_argument("--seed", type=int, default=None, help="Override config seed (ensemble members)")
+    parser.add_argument("--seed", type=int, default=None, help="Override config seed")
+    parser.add_argument("--ensemble-size", type=int, default=None,
+                        help="Number of models to train (override training.ensemble_size). >1 = ensemble.")
     cli = parser.parse_args()
 
     with open(cli.config) as f:
@@ -762,4 +764,31 @@ if __name__ == "__main__":
         n_pca_components       = f.get("n_pca_components", 50),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
-    main(args)
+
+    # ── Ensemble: train N models (distinct seeds) sharing ONE train/val split ──
+    # ensemble_size > 1 -> members saved to <data_dir>/ensemble/model_{i}.pt.
+    # The split is shared across members (from --split-file, or captured from
+    # member 0) so per-reaction confidence is measured on a common val set.
+    ensemble_size = cli.ensemble_size if cli.ensemble_size is not None else t.get("ensemble_size", 1)
+    if ensemble_size and ensemble_size > 1:
+        import copy, json as _json, torch as _torch
+        ens_dir = os.path.join(output_dir, "ensemble")
+        os.makedirs(ens_dir, exist_ok=True)
+        base_seed, shared_split = args.seed, args.split_file
+        print(f"\n=== Ensemble training: {ensemble_size} members (base seed {base_seed}) -> {ens_dir}/ ===")
+        for i in range(ensemble_size):
+            member = copy.copy(args)
+            member.seed = base_seed + i
+            member.output = os.path.join(ens_dir, f"model_{i}.pt")
+            member.split_file = shared_split
+            print(f"\n----- ensemble member {i+1}/{ensemble_size}  seed={member.seed}  -> {member.output} -----")
+            main(member)
+            if shared_split is None:      # capture member 0's split so all members share it
+                _ck = _torch.load(member.output, map_location="cpu", weights_only=False)
+                shared_split = os.path.join(ens_dir, "split.json")
+                _json.dump({"train_indices": list(_ck["train_indices"]),
+                            "val_indices":  list(_ck["val_indices"])}, open(shared_split, "w"))
+                print(f"shared split captured -> {shared_split}")
+        print(f"\n=== Ensemble done: {ensemble_size} models in {ens_dir}/ ===")
+    else:
+        main(args)
