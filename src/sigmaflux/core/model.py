@@ -335,11 +335,6 @@ class MFAModel(TorchModule, Model):
                 "core_met_ix": core_met_ix
             }
 
-            with open('dAs.pkl', 'wb') as f:
-                pickle.dump(dAs, f)
-            with open('dBs.pkl', 'wb') as f:
-                pickle.dump(dBs, f)
-
             self._backward_compatible = True
 
         else:          

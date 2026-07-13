@@ -30,7 +30,7 @@ import seaborn as sns
 mpl.use('Agg')
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 # Per-condition base colors → a dark:<color>_r colormap shades points by growth rate.
 CONDITION_COLORS = {

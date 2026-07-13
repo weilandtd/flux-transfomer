@@ -5,7 +5,7 @@
 Run the entire pipeline for a model by passing its folder name:
 
 ```bash
-python paper/run_training_workflow.py I_orientalis
+python paper/pipeline/workflows/run_training_workflow.py I_orientalis
 ```
 
 Key options:
@@ -75,6 +75,14 @@ python paper/pipeline/training/train_ai_model.py \
 ```
 
 Saves the trained model to `--output` (`.pt` file).
+
+### 4. (optional) Train a reliability ensemble — `train_ai_model.py --ensemble-size 20`
+
+Adding `--ensemble-size 20` trains 20 seed-varied models on a shared split, written to
+`<output_dir>/ensemble/model_{0..19}.pt`. This powers the **reliability layer** (per-reaction
+error bars + the *believe* HIGH/LOW rule + measurement-vs-model diagnosis). See
+[`analysis/ensemble/README.md`](analysis/ensemble/README.md) and the write-up in
+[`reports/reliability_ensemble_methods.md`](reports/reliability_ensemble_methods.md).
 
 ## Notes
 
