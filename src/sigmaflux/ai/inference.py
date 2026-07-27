@@ -5,6 +5,7 @@ Loads a trained checkpoint + config and predicts fluxes from experimental
 MID measurements and (optionally) known exchange fluxes.
 """
 
+import glob
 import os
 import sys
 
@@ -364,3 +365,77 @@ class SigmaFlux:
         if result['Sample'].nunique() == 1:
             result = result.drop(columns='Sample')
         return result
+
+
+class EnsembleSigmaFlux:
+    """Ensemble of trained SigmaFlux members sharing one architecture and split.
+
+    Loads every ``model_*.pt`` in ``ensemble_dir`` as a SigmaFlux member and
+    exposes the same ``predict`` interface, returning the per-reaction mean over
+    members (schema-identical to ``SigmaFlux.predict``). Used for ensemble-mean
+    point predictions in the benchmark and experimental-inference pipelines; the
+    matching per-reaction spread/calibration is produced separately by
+    ``paper/analysis/ensemble/ensemble_predict.py``.
+    """
+
+    def __init__(self, config, ensemble_dir, device=None, data_dir=None):
+        self.member_paths = sorted(glob.glob(os.path.join(ensemble_dir, 'model_*.pt')))
+        if not self.member_paths:
+            raise FileNotFoundError(f"No model_*.pt in ensemble dir: {ensemble_dir}")
+        self.members = [SigmaFlux(config, p, device=device, data_dir=data_dir)
+                        for p in self.member_paths]
+
+        # Re-expose the attributes the pipeline entry points read off a predictor.
+        m0 = self.members[0]
+        self.flux_names          = m0.flux_names
+        self.reversibility_names = m0.reversibility_names
+        self.tracer_names        = m0.tracer_names
+        self.measured_flux_ids   = m0.measured_flux_ids
+        self.device              = m0.device
+        self._tracer_name_to_id  = m0._tracer_name_to_id
+        # Any member's checkpoint carries the shared train/val split (val_indices).
+        self.split_source        = self.member_paths[0]
+
+    def predict(self, df_L, df_Vm=None, return_std=False):
+        """Ensemble-mean prediction. Members share inputs, so per-member outputs
+        have identical row order and are averaged positionally. With
+        ``return_std=True`` an extra ``Std`` column holds the across-member std."""
+        preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
+        out = preds[0].copy()
+        out['Value'] = values.mean(axis=0)
+        if return_std:
+            out['Std'] = values.std(axis=0)
+        return out
+
+    # Introspection helpers delegate to member 0.
+    def expected_metabolites(self):     return self.members[0].expected_metabolites()
+    def expected_tracers(self):         return self.members[0].expected_tracers()
+    def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
+
+
+def load_predictor(config, checkpoint, data_dir=None, device=None):
+    """Build a predictor, preferring an ensemble when one is available.
+
+    An ensemble directory is discovered, in priority order, as: ``checkpoint``
+    itself if it is a directory; ``<dir(checkpoint)>/ensemble``; or
+    ``<data_dir>/ensemble``. If such a directory holds ``model_*.pt`` an
+    :class:`EnsembleSigmaFlux` is returned (mean over members); otherwise a
+    single-model :class:`SigmaFlux` loaded from ``checkpoint``.
+    """
+    candidates = []
+    if checkpoint and os.path.isdir(checkpoint):
+        candidates.append(checkpoint)
+    if checkpoint:
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(checkpoint)), 'ensemble'))
+    if data_dir:
+        candidates.append(os.path.join(data_dir, 'ensemble'))
+
+    for cand in candidates:
+        members = glob.glob(os.path.join(cand, 'model_*.pt')) if cand else []
+        if members:
+            print(f"Loading ENSEMBLE predictor: {len(members)} members from {cand}")
+            return EnsembleSigmaFlux(config, cand, device=device, data_dir=data_dir)
+
+    print(f"Loading single-model predictor: {checkpoint}")
+    return SigmaFlux(config, checkpoint, device=device, data_dir=data_dir)

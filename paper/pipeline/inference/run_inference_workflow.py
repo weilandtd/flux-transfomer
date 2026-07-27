@@ -33,7 +33,7 @@ import yaml
 _REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
 
-from sigmaflux.ai.inference import SigmaFlux
+from sigmaflux.ai.inference import load_predictor
 from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
 
@@ -179,7 +179,8 @@ def main():
               f"Available: {sorted(all_condition_files.keys())}")
         sys.exit(1)
 
-    sf = SigmaFlux(config_path, checkpoint)
+    # Ensemble when a sibling <model-dir>/ensemble exists (mean over members), else single.
+    sf = load_predictor(config_path, checkpoint)
 
     os.makedirs(out_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

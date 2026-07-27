@@ -45,7 +45,7 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "paper", "pipeline", "data_generatio
 torch.set_num_threads(_n_threads)
 
 from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
-from sigmaflux.ai.inference import SigmaFlux
+from sigmaflux.ai.inference import load_predictor
 from sigmaflux.core.data import MassIsotopomerData
 from sigmaflux.core.experiment import Experiment
 from sigmaflux.core.model import MFAModel
@@ -137,9 +137,9 @@ def main():
     output_dir = _p(args.output_dir) if args.output_dir else os.path.join(data_dir, "ai_benchmark")
     os.makedirs(output_dir, exist_ok=True)
 
-    # ── Load AI model ─────────────────────────────────────────────────────────
-    print(f"Loading SigmaFlux checkpoint: {checkpoint}")
-    sf = SigmaFlux(config=_p(args.config), checkpoint=checkpoint)
+    # ── Load AI model (ensemble when <data-dir>/ensemble exists, else single) ──
+    print(f"Loading SigmaFlux predictor (checkpoint hint: {checkpoint})")
+    sf = load_predictor(_p(args.config), checkpoint, data_dir=data_dir)
     inv_tracer = {v: k for k, v in sf._tracer_name_to_id.items()}
     print(f"  Flux outputs : {len(sf.flux_names)}")
     print(f"  Tracers      : {sf.tracer_names}")
@@ -160,8 +160,11 @@ def main():
     # Restrict to the AI model's split (default: the withheld validation set) so AI and
     # MFA are scored on the same held-out samples; the checkpoint's stored val_indices are
     # the source of truth. --start-ix / --n-benchmarks index into this split, not raw columns.
+    # For an ensemble, the shared val split lives in member 0's checkpoint, not the
+    # (possibly stale) top-level .pt that `find_checkpoint` returned.
+    split_ckpt = getattr(sf, "split_source", checkpoint)
     split_cols = split_sample_indices(
-        args.split, checkpoint, n_total,
+        args.split, split_ckpt, n_total,
         cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
     )
     sel = split_cols[args.start_ix:args.start_ix + args.n_benchmarks]

@@ -94,6 +94,7 @@ features:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
+  ensemble_size: 5              # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
   epochs: 150
   batch_size: 512
   learning_rate: 0.001
