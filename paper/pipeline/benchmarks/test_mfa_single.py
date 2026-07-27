@@ -31,14 +31,16 @@ os.environ["OPENBLAS_NUM_THREADS"] = "4"
 torch.set_num_threads(4)
 
 _REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "paper", "pipeline", "data_generation"))
 
 from sigmaflux.ai.data import load_data
 from sigmaflux.core.data import get_model_flux_data, get_model_labeling_data
 from sigmaflux.core.mfa import fit_mfa_model
 from sigmaflux.core.model import MFAModel
-from generate_training_data import build_experiments, build_labeling_index, build_targets
+from sigmaflux.pipeline.generate_training_data import (
+    build_experiments,
+    build_labeling_index,
+    build_targets,
+)
 # Reuse the benchmark's data-construction helpers verbatim so the single-run test
 # and the array benchmark share identical logic.
 from run_mfa_benchmark import (_make_measured_flux_data, _build_noisy_experiments,

@@ -39,8 +39,6 @@ os.environ.setdefault("MKL_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("OPENBLAS_NUM_THREADS", str(_n_threads))
 
 _REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "paper", "pipeline", "data_generation"))
 
 torch.set_num_threads(_n_threads)
 
@@ -49,7 +47,11 @@ from sigmaflux.ai.inference import load_predictor
 from sigmaflux.core.data import MassIsotopomerData
 from sigmaflux.core.experiment import Experiment
 from sigmaflux.core.model import MFAModel
-from generate_training_data import build_experiments, build_labeling_index, build_targets
+from sigmaflux.pipeline.generate_training_data import (
+    build_experiments,
+    build_labeling_index,
+    build_targets,
+)
 
 
 def parse_args():

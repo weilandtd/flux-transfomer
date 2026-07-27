@@ -27,12 +27,25 @@ dependencies = [
     "networkx>=3.0",
     "optlang>=1.8",
     "tqdm>=4.0",
-    "pytorch-minimize>=0.0.2",
     "matplotlib>=3.7",
     "seaborn>=0.13",
     "h5py>=3.8",
     "tables>=3.8",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1",
+    "scikit-learn>=1.3",
 ]
+
+[project.scripts]
+sigmaflux-sample-flux     = "sigmaflux.pipeline.sample_flux:cli"
+sigmaflux-generate-data   = "sigmaflux.pipeline.generate_training_data:cli"
+sigmaflux-select-features = "sigmaflux.pipeline.extract_informative_features:cli"
+sigmaflux-train           = "sigmaflux.pipeline.train_ai_model:cli"
+sigmaflux-workflow        = "sigmaflux.pipeline.run_training_workflow:cli"
+sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
+sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
+sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
+sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
