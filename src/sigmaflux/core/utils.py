@@ -344,6 +344,60 @@ def _strip_out_from_atom_mapping(amm_str):
 
 
 
+def atommap_boundary(model, strict=True):
+    """Give every boundary reaction the atom map of the metabolite it exchanges.
+
+    Boundary (exchange/sink/source) reactions carry no atom mapping of their
+    own, but the EMU expansion needs one to treat them as label inputs. The
+    mapping is copied from any interior reaction that already maps the exchanged
+    metabolite.
+
+    Parameters
+    ----------
+    model : cobra.Model
+        Modified in place.
+    strict : bool
+        Raise when an exchanged metabolite appears in no mapped reaction. Set
+        False to skip those boundaries instead — useful for models where some
+        exchanged species carry no tracked atoms (ions, water, protons).
+
+    Returns
+    -------
+    list of str
+        Ids of boundary reactions left without a mapping.
+    """
+    all_rxns = set(model.reactions)
+    unmapped = []
+    for r in model.boundary:
+        metabolite = list(r.metabolites.keys())[0]
+        metabolite_reaction = None
+        for reaction in metabolite.reactions:
+            if reaction in all_rxns and "atom_mapping" in reaction.annotation:
+                metabolite_reaction = reaction
+                break
+
+        if metabolite_reaction is None:
+            if strict:
+                raise ValueError(
+                    f"No atom-mapped reaction found for {metabolite.id}, so the "
+                    f"boundary reaction {r.id} cannot be annotated. Pass "
+                    f"strict=False to skip such boundaries."
+                )
+            unmapped.append(r.id)
+            continue
+
+        pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+        match = re.search(pattern, metabolite_reaction.annotation['atom_mapping'])
+        if match:
+            atom_map = match.group(1)
+            r.annotation['atom_mapping'] = insert_mapping_into_reaction(
+                r.reaction, metabolite.id, atom_map)
+        else:
+            unmapped.append(r.id)
+
+    return unmapped
+
+
 def insert_mapping_into_reaction(reaction, compound_id, mapping):
     # Define a regular expression pattern to find the compound ID
     # and capture the surrounding context
