@@ -65,14 +65,41 @@ def set_bounds(model, reaction_id, lower_bound, upper_bound):
         reaction.bounds = (lower_bound, upper_bound)
 
 
-def apply_media(model, media_cfg):
-    """Close all EX_ reactions, then open only those listed in media_cfg."""
-    for reaction in model.reactions:
-        if reaction.id.startswith("EX_"):
-            reaction.bounds = (0, 0)
+def apply_media(model, media_cfg, close_unlisted=True):
+    """Constrain the model's boundary fluxes.
+
+    With ``close_unlisted`` (the default) every ``EX_`` reaction is closed first
+    and only those named in *media_cfg* are reopened. That is the right model for
+    an organism grown in a defined medium: anything not in the medium is simply
+    not available.
+
+    It is the wrong model for a whole-body or multi-tissue model, where the
+    ``EX_`` reactions are internal physiology — inter-tissue exchange — rather
+    than a medium the experimenter composed. There, *media_cfg* lists the fluxes
+    that were *measured* (respiration, protein synthesis, TG release, ...) and
+    everything else must keep the bounds the model was built with. Closing them
+    makes the model infeasible.
+
+    Set ``close_unlisted: false`` alongside ``media:`` in the sampling config for
+    that case.
+    """
+    if close_unlisted:
+        for reaction in model.reactions:
+            if reaction.id.startswith("EX_"):
+                reaction.bounds = (0, 0)
+
     for rxn_id, bounds in media_cfg.items():
         set_bounds(model, rxn_id, bounds["lb"], bounds["ub"])
-    print(f"Applied media: {len(media_cfg)} open exchange reactions, all others closed")
+
+    missing = [r for r in media_cfg if r not in model.reactions]
+    if missing:
+        print(f"WARNING: {len(missing)} media reactions not in the model: {missing[:5]}")
+
+    if close_unlisted:
+        print(f"Applied media: {len(media_cfg)} open exchange reactions, all others closed")
+    else:
+        print(f"Applied media: constrained {len(media_cfg) - len(missing)} measured "
+              f"reactions; other exchanges left at their model bounds")
 
 
 def constrain_growth(model, growth_cfg):
@@ -354,8 +381,9 @@ def main(cfg, output_dir_override=None):
     model = load_json_model(resolve_path(cfg["model_file"], cfg.get("_root")))
     model.solver.configuration.tolerances.feasibility = 1e-9
 
-    apply_media(model, s["media"])
-    constrain_growth(model, s["growth"])
+    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+    if s.get("growth"):
+        constrain_growth(model, s["growth"])
 
     solution = model.optimize()
     if solution.status != "optimal":
@@ -390,7 +418,7 @@ def main(cfg, output_dir_override=None):
     cobra.io.save_json_model(model, prepared_model_path)
     print(f"Saved prepared model: {prepared_model_path}")
 
-    if s.get("ko", False) and s["growth"]["lb"] == 0:
+    if s.get("ko", False) and s.get("growth", {}).get("lb") == 0:
         print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
 
     strat_cfg = s.get("stratified_sampling", {})
