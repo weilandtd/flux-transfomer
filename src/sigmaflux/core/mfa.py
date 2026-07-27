@@ -223,16 +223,21 @@ def fit_mfa_model(model,
 
 
 @time_function
-def _fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
-                              lam1=1e-4, lam2=1e-5, epochs=100,
-                              simultanous_experiments=3,
-                              labeling_scaler=None, flux_scaler=1, checkpoint=10,
-                              checkpoint_file=None,
-                              labeling_checkpoint_file=None,
-                              optimizer_checkpoint=None,
-                              lr_scheduler=None, with_std=True,
-                              early_stop_tol=None):
-    """Legacy penalized-Lagrangian MFA optimizer (soft constraints, L1/L2 reg)."""
+def fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
+                            lam1=1e-4, lam2=1e-5, epochs=100,
+                            simultanous_experiments=3,
+                            labeling_scaler=None, flux_scaler=1, checkpoint=10,
+                            checkpoint_file=None,
+                            labeling_checkpoint_file=None,
+                            optimizer_checkpoint=None,
+                            lr_scheduler=None, with_std=True,
+                            early_stop_tol=None):
+    """Legacy penalized-Lagrangian MFA optimizer (soft constraints, L1/L2 reg).
+
+    Retained for reproducing analyses published before :func:`fit_mfa_model` was
+    rewritten as a null-space chi-squared fit. New work should use
+    :func:`fit_mfa_model`.
+    """
     from tqdm import trange
     from sigmaflux.core.scaling import Scaling
 
@@ -376,6 +381,10 @@ def _fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
 
     logger.info(f"Penalized MFA complete: loss={log[-1]:.5f}")
     return log
+
+
+#: Deprecated alias kept for one release; use :func:`fit_mfa_model_penalized`.
+_fit_mfa_model_penalized = fit_mfa_model_penalized
 
 
 def filter_conv_inputs(emu_inputs):

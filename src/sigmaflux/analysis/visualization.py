@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt 
-from sigmaflux.core.mfa import fit_mfa_model
+from sigmaflux.core.mfa import fit_mfa_model_penalized
 from sigmaflux.core.data import get_model_labeling_data, get_model_flux_data
 import torch 
 import numpy as np
 
 # vary epoch size to find the correct epoch size
-def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot = False, with_replicates = False, n_reps = 5):
+def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot = False, with_replicates = False, n_reps = 5, flux_loss_fn=None):
+    flux_loss_fn = loss_fn if flux_loss_fn is None else flux_loss_fn
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
     if not with_replicates: 
@@ -14,7 +15,7 @@ def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot 
     for i,epoch in enumerate(epochs):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -33,7 +34,8 @@ def vary_epoch(model, optim, loss_fn, lam1, lam2, labeling_scaler, epochs, plot 
     return epochs, labeling_diff
     
 
-def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5): 
+def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5, flux_loss_fn=None):
+    flux_loss_fn = loss_fn if flux_loss_fn is None else flux_loss_fn
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
     if not with_replicates: 
@@ -42,7 +44,7 @@ def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plo
     for i,lam1 in enumerate(lam1s):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -60,7 +62,8 @@ def vary_l1(model, optim, loss_fn, lam1s, lam2, labeling_scaler, epoch=100,  plo
     return lam1s, labeling_diff
 
 # write a function that varies l2 regularization parameter
-def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5): 
+def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot = False,with_replicates = False, n_reps = 5, flux_loss_fn=None):
+    flux_loss_fn = loss_fn if flux_loss_fn is None else flux_loss_fn
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
     if not with_replicates: 
@@ -69,7 +72,7 @@ def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot
     for i,lam2 in enumerate(lam2s):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -87,7 +90,8 @@ def vary_l2(model, optim, loss_fn, lam1, lam2s,labeling_scaler, epoch=100,  plot
     return lam2s, labeling_diff
 
 # write a function to vary scaling parameter 
-def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100, plot = False, with_replicates = False, n_reps = 5): 
+def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100, plot = False, with_replicates = False, n_reps = 5, flux_loss_fn=None):
+    flux_loss_fn = loss_fn if flux_loss_fn is None else flux_loss_fn
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
     index_labeling, labeling_mean, _ = get_model_labeling_data(model, experimental_scaling)
     if not with_replicates: 
@@ -96,7 +100,7 @@ def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100,
     for i,labeling_scaler in enumerate(labeling_scalers):
         for j in range(n_reps): 
             model.reset_initial_fluxes()
-            fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
+            fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scaler)
             labeling, _ = model()
             simulated_labeling = torch.take(labeling, index_labeling)
             labeling_diff[i,j] = ((simulated_labeling - labeling_mean).mean().item())
@@ -113,13 +117,14 @@ def vary_scaling(model, optim, loss_fn, lam1, lam2, labeling_scalers, epoch=100,
         plt.show()
     return labeling_scalers, labeling_diff
 
-def comparing_scaling(model, optim, loss_fn, lam1, lam2, labeling_scale, epoch=100, plot = False, n_reps = 10):
+def comparing_scaling(model, optim, loss_fn, lam1, lam2, labeling_scale, epoch=100, plot = False, n_reps = 10, flux_loss_fn=None):
+    flux_loss_fn = loss_fn if flux_loss_fn is None else flux_loss_fn
     flux_residuals_no_scale = np.zeros(n_reps)
     flux_residuals_scale = np.zeros(n_reps)
     labeling_residuals_no_scale = np.zeros(n_reps)
     labeling_residuals_scale = np.zeros(n_reps)
 
-    loss_no_scale = np.zeros(n_reps, epoch)
+    loss_no_scale = np.zeros((n_reps, epoch))
     loss_scale = np.zeros(n_reps,epoch)
 
     experimental_scaling = torch.ones(len(model.experiments), device=model.device)
@@ -128,7 +133,7 @@ def comparing_scaling(model, optim, loss_fn, lam1, lam2, labeling_scale, epoch=1
 
     for i in range(n_reps):
         model.reset_initial_fluxes()
-        log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = 1)
+        log = fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = 1)
         simulated_fluxes = torch.take(model.fluxes, index_fluxes)
         labeling, _ = model()
         simulated_labeling = torch.take(labeling, index_labeling)
@@ -137,7 +142,7 @@ def comparing_scaling(model, optim, loss_fn, lam1, lam2, labeling_scale, epoch=1
         loss_no_scale[i,:] = log
 
         model.reset_initial_fluxes()
-        log = fit_mfa_model(model, loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scale)
+        log = fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optim, epochs=epoch, lam1=lam1 , lam2=lam2, labeling_scaler = labeling_scale)
         simulated_fluxes = torch.take(model.fluxes, index_fluxes)
         labeling, _ = model()
         simulated_labeling = torch.take(labeling, index_labeling)
