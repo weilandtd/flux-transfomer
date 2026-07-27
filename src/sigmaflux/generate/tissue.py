@@ -2,12 +2,22 @@ from cobra import Reaction, Metabolite
 from sigmaflux.core.utils import insert_mapping_into_reaction
 import re
 import csv 
-from sigmaflux.generate.read_data import TRACEBASE_SERUM_METABOLITE_MAPPING
 import numpy as np 
 import pandas as pd 
 
-def restrict_exchange(model, serum_concentration_data_file, tissue_cardiac_output, metabolite_mapping=TRACEBASE_SERUM_METABOLITE_MAPPING, lowest_bound = 0.01, compartment = "a", input = True):
-    """ tissue_cardiac_output in ml/min"""
+def restrict_exchange(model, serum_concentration_data_file, tissue_cardiac_output,
+                      metabolite_mapping=None, lowest_bound=0.01, compartment="a", input=True):
+    """Bound arterial input reactions by measured serum concentrations.
+
+    tissue_cardiac_output is in ml/min. metabolite_mapping is a two-column CSV
+    (experimental name, model metabolite id); it is organism-specific and has
+    no sensible default, so it must be supplied by the caller.
+    """
+    if metabolite_mapping is None:
+        raise ValueError(
+            "restrict_exchange() requires metabolite_mapping: a CSV mapping "
+            "experimental metabolite names to model metabolite ids."
+        )
     serum_exchange_df = pd.read_csv(serum_concentration_data_file)
 
     with open(metabolite_mapping, newline='') as csvfile:
@@ -214,30 +224,6 @@ def merge_models(model1, model2):
     model1.add_reactions(model2.reactions)
     model1.add_metabolites(model2.metabolites)
     return model1
-
-def add_heart(model, bounds = [0,20]): 
-    heart_reactions = []
-    for met in model.metabolites: 
-        if met.id.endswith("_a"): 
-            vein_met = model.metabolites.get_by_id(met.id.replace("_a", "_v"))
-            heart_reaction = Reaction('_'.join(met.id.split("_")[:-1]) + "_heart")
-            heart_reaction.add_metabolites({met: 1, vein_met: -1})
-            match = None 
-            for r in met.reactions: 
-                if "atom_mapping" in r.annotation: 
-                    annotation = r.annotation["atom_mapping"]
-                    pattern = re.escape(met.id) + r'\s*(\([^)]+\))'
-                    match = re.search(pattern, annotation)
-                    if match: 
-                        break 
-            if match: 
-                atom_map = match.group(1)
-                heart_reaction.annotation['atom_mapping'] = insert_mapping_into_reaction(heart_reaction.reaction, met.id, atom_map)
-                heart_reaction.annotation['atom_mapping'] = insert_mapping_into_reaction(heart_reaction.annotation['atom_mapping'], vein_met.id, atom_map)
-            heart_reaction.bounds = bounds
-            heart_reactions.extend([heart_reaction])
-    model.add_reactions(heart_reactions)
-    return model 
 
 # adds an input reaction into the arterial metabolite, atommaps and sets the bound 
 def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]): 

@@ -43,172 +43,217 @@ def _read_hdf(filepath, key):
         return pd.DataFrame(values, index=index, columns=columns)
 
 
-# Default path to biosynthetic bypass reactions config
-_DEFAULT_MEASURED_FLUXES_CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), '../../data/biosynthetic_bypass_reactions.json'
-)
+# ── Measured ("bypass") fluxes ───────────────────────────────────────────────
+# Fluxes measured by orthogonal methods and fed straight to the transformer,
+# skipping the labeling pathway. Which reactions those are is a property of the
+# organism and the experiment, so it is described by a JSON config supplied by
+# the caller rather than hard-coded here.
+#
+# Config schema — every top-level object may declare:
+#     "<group name>": {
+#         "reaction_ids": ["RXN_A", "RXN_B"],           # direct flux features
+#         "reactions":    {"RXN_C": "description"},      # ... or as a mapping
+#         "derived": {                                   # optional derived features
+#             "NAME": {"reaction": "RXN_C", "sign": -1},   # signed flux
+#             "OTHER": {"ratio": ["NAME_A", "NAME_B"]}     # ratio of two derived
+#         }
+#     }
+# A derived feature's source reactions are read but not emitted as features
+# themselves unless they also appear in reaction_ids.
 
 
-def load_measured_fluxes_config(config_path=None):
-    """
-    Load biosynthetic bypass reactions configuration from JSON file.
+def load_measured_fluxes_config(config_path):
+    """Load a measured-flux config from JSON.
 
-    Args:
-        config_path: Path to config file. If None, uses default path.
-
-    Returns:
-        config: Dictionary with bypass reaction configuration
+    There is no default path: the reactions that can be measured orthogonally
+    depend on the organism and the experimental setup.
     """
     if config_path is None:
-        config_path = _DEFAULT_MEASURED_FLUXES_CONFIG_PATH
-
+        raise ValueError(
+            "load_measured_fluxes_config() requires an explicit config_path; "
+            "measured-flux definitions are organism-specific."
+        )
     with open(config_path, 'r') as f:
-        config = json.load(f)
-
-    return config
+        return json.load(f)
 
 
-def get_measured_fluxes_reaction_ids(mode='respiratory', config_path=None):
-    """
-    Get list of bypass reaction IDs based on mode.
+def _group_reaction_ids(group):
+    """Reaction ids declared by one config group, from either supported key."""
+    ids = list(group.get('reaction_ids', []))
+    ids += [r for r in group.get('reactions', {}) if r not in ids]
+    return ids
+
+
+def get_measured_fluxes_reaction_ids(spec=None, config_path=None):
+    """Resolve a measured-flux *spec* into reactions and derived features.
 
     Args:
-        mode: Bypass mode - one of:
-            - 'respiratory' or 'legacy': Just VO2/VCO2/RER derived features (default)
-            - 'biosynthetic' or 'extended': All biosynthetic fluxes (protein, TG, glycogen)
-            - 'full': Respiratory + all biosynthetic fluxes
-            - list: Custom list of reaction IDs to extract as bypass features
-            - None or False: No bypass features
-        config_path: Path to bypass config JSON file
+        spec: one of
+            - ``None`` / ``False``: no measured-flux features
+            - ``list``: explicit reaction ids, no derived features
+            - ``"all"``: every group in the config
+            - ``dict``: ``{"groups": [...], "derived": bool}`` selecting groups
+              by name (``derived`` defaults to True)
+        config_path: JSON config, required unless *spec* is a list or empty.
 
     Returns:
-        reaction_ids: List of reaction IDs to extract (excludes derived features like RER)
-        derived_features: List of derived feature names to compute (e.g., ['VO2', 'VCO2', 'RER'])
-        feature_names: List of all feature names in order they appear in bypass data
+        reaction_ids: reaction ids whose flux must be read
+        derived_specs: ``{name: definition}`` for computed features
+        feature_names: feature order in the emitted array
     """
-    if mode is None or mode is False:
-        return [], [], []
+    if spec is None or spec is False:
+        return [], {}, []
 
-    if isinstance(mode, list):
-        # Custom list of reaction IDs
-        return mode, [], mode
+    if isinstance(spec, (list, tuple)):
+        return list(spec), {}, list(spec)
 
     config = load_measured_fluxes_config(config_path)
 
-    reaction_ids = []
-    derived_features = []
-    feature_names = []
+    if spec == "all":
+        group_names, want_derived = None, True
+    elif isinstance(spec, dict):
+        group_names = spec.get("groups")
+        want_derived = spec.get("derived", True)
+    else:
+        raise ValueError(
+            f"Unsupported measured-flux spec {spec!r}. Expected None, a list of "
+            'reaction ids, "all", or {"groups": [...], "derived": bool}.'
+        )
 
-    if mode in ('respiratory', 'legacy', 'full'):
-        # Respiratory exchange features (VO2, VCO2, RER)
-        reaction_ids.extend(['EX_o2_e_lung', 'EX_co2_e_lung'])
-        derived_features.extend(['VO2', 'VCO2', 'RER'])
-        feature_names.extend(['VO2', 'VCO2', 'RER'])
+    reaction_ids, derived_specs, feature_names = [], {}, []
+    for name, group in config.items():
+        if not isinstance(group, dict):
+            continue                                  # description/notes strings
+        if group_names is not None and name not in group_names:
+            continue
+        if 'reaction_ids' not in group and 'reactions' not in group and 'derived' not in group:
+            continue                                  # e.g. a summary block
 
-    if mode in ('biosynthetic', 'extended', 'full'):
-        # Protein synthesis
-        protein_rxns = config['protein_synthesis']['reaction_ids']
-        reaction_ids.extend(protein_rxns)
-        feature_names.extend(protein_rxns)
+        derived = group.get('derived', {}) if want_derived else {}
+        for rxn_id in _group_reaction_ids(group):
+            if rxn_id not in reaction_ids:
+                reaction_ids.append(rxn_id)
+            # A reaction that only exists to feed a derived feature is not
+            # itself emitted (that is what "reactions" vs "reaction_ids" means).
+            if rxn_id in group.get('reaction_ids', []) and rxn_id not in feature_names:
+                feature_names.append(rxn_id)
 
-        # Triglyceride synthesis (DGAT)
-        tg_rxns = config['triglyceride_synthesis']['reaction_ids']
-        reaction_ids.extend(tg_rxns)
-        feature_names.extend(tg_rxns)
+        for feat_name, definition in derived.items():
+            derived_specs[feat_name] = definition
+            if feat_name not in feature_names:
+                feature_names.append(feat_name)
 
-        # Glycogen synthesis
-        glyc_rxns = config['glycogen_synthesis']['reaction_ids']
-        reaction_ids.extend(glyc_rxns)
-        feature_names.extend(glyc_rxns)
-
-    return reaction_ids, derived_features, feature_names
+    return reaction_ids, derived_specs, feature_names
 
 
-def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_path=None, reaction_ids=None):
-    """
-    Extract bypass features from flux data.
+def _normalize_derived(definition, name):
+    """Accept both the descriptive string form and the explicit dict form."""
+    if isinstance(definition, dict):
+        return definition
+    # Legacy/descriptive configs carry a human-readable string; infer nothing
+    # from it and let the caller know it cannot be computed.
+    raise ValueError(
+        f"Derived feature {name!r} is described by a string, not a definition. "
+        'Use {"reaction": "<id>", "sign": 1} or {"ratio": ["<a>", "<b>"]}.'
+    )
 
-    These are fluxes that will be measured with orthogonal methods and passed
-    directly to the transformer, bypassing the labeling data pathway.
+
+def extract_measured_fluxes(flux_df, train_indices, spec=None, config_path=None,
+                            reaction_ids=None):
+    """Extract measured-flux features from simulated flux data.
 
     Args:
-        flux_df: DataFrame with flux data (reactions x samples)
-        train_indices: Sample indices to extract
-        mode: Bypass mode (see get_bypass_reaction_ids for options). Ignored when
-            reaction_ids is provided.
-        config_path: Path to bypass config JSON file. Ignored when reaction_ids
-            is provided.
-        reaction_ids: Explicit list of reaction IDs to extract. When provided,
-            mode and config_path are ignored and no derived features are computed.
+        flux_df: DataFrame of fluxes (reactions x samples)
+        train_indices: sample indices to extract
+        spec: measured-flux spec, see :func:`get_measured_fluxes_reaction_ids`.
+            Ignored when *reaction_ids* is given.
+        config_path: JSON config path. Ignored when *reaction_ids* is given.
+        reaction_ids: explicit reaction ids; skips spec resolution entirely.
 
     Returns:
-        measured_fluxes_data: (num_samples, num_bypass_features) numpy array
-        feature_names: List of feature names
+        measured_fluxes_data: ``(n_samples, n_features)`` array, or None
+        feature_names: names matching the array columns
     """
     if reaction_ids is not None:
-        # Caller supplied an explicit list — skip mode resolution entirely.
-        direct_rxn_ids = reaction_ids
-        derived_features = []
+        direct_rxn_ids = list(reaction_ids)
+        derived_specs = {}
         feature_names = list(reaction_ids)
     else:
-        if mode is None or mode is False:
+        direct_rxn_ids, derived_specs, feature_names = \
+            get_measured_fluxes_reaction_ids(spec, config_path)
+        if not direct_rxn_ids and not derived_specs:
             return None, []
-        direct_rxn_ids_from_mode, derived_features, feature_names = get_measured_fluxes_reaction_ids(mode, config_path)
-        if not direct_rxn_ids_from_mode and not derived_features:
-            return None, []
-        direct_rxn_ids = direct_rxn_ids_from_mode
 
-    flux_data_subset = flux_df.values[:, train_indices].T  # (num_samples, num_reactions)
+    flux_data_subset = flux_df.values[:, train_indices].T   # (n_samples, n_rxns)
     reaction_list = flux_df.index.tolist()
 
-    measured_fluxes_columns = []
+    def _flux(rxn_id):
+        if rxn_id not in reaction_list:
+            return None
+        return flux_data_subset[:, reaction_list.index(rxn_id)]
 
-    # Handle respiratory-derived features (VO2, VCO2, RER)
-    if 'VO2' in derived_features:
-        o2_idx = reaction_list.index('EX_o2_e_lung') if 'EX_o2_e_lung' in reaction_list else None
-        co2_idx = reaction_list.index('EX_co2_e_lung') if 'EX_co2_e_lung' in reaction_list else None
-
-        if o2_idx is not None and co2_idx is not None:
-            # O2 is negative (uptake), convert to positive VO2
-            vo2 = -flux_data_subset[:, o2_idx]
-            # CO2 is positive (production)
-            vco2 = flux_data_subset[:, co2_idx]
-            # Calculate RER
-            rer = np.where(vo2 > 1e-6, vco2 / vo2, 0.0)
-
-            measured_fluxes_columns.extend([vo2, vco2, rer])
+    # ── Derived features first: they may be referenced by later ratios ────────
+    derived_values = {}
+    for name, definition in derived_specs.items():
+        definition = _normalize_derived(definition, name)
+        if 'reaction' in definition:
+            values = _flux(definition['reaction'])
+            if values is None:
+                print(f"WARNING: reaction {definition['reaction']} for derived "
+                      f"feature {name} not found in flux data; skipping {name}")
+                continue
+            derived_values[name] = float(definition.get('sign', 1)) * values
+        elif 'ratio' in definition:
+            num_name, den_name = definition['ratio']
+            num = derived_values.get(num_name, _flux(num_name))
+            den = derived_values.get(den_name, _flux(den_name))
+            if num is None or den is None:
+                print(f"WARNING: operands for derived feature {name} unavailable; skipping")
+                continue
+            # np.where would evaluate num/den eagerly and warn on zeros.
+            safe = np.abs(den) > 1e-6
+            derived_values[name] = np.divide(
+                num, den, out=np.zeros_like(np.asarray(num, dtype=float)), where=safe)
         else:
-            print("WARNING: Could not find EX_o2_e_lung or EX_co2_e_lung in flux data")
-            print("         Respiratory bypass features will not be included")
-            # Remove respiratory features from feature_names
-            feature_names = [f for f in feature_names if f not in ['VO2', 'VCO2', 'RER']]
+            raise ValueError(f"Derived feature {name!r} has no 'reaction' or 'ratio' key.")
 
-    # Handle direct flux extraction (filter out exchange reactions already handled above)
-    direct_rxn_ids = [r for r in direct_rxn_ids if r not in ['EX_o2_e_lung', 'EX_co2_e_lung']]
+    # ── Direct fluxes, minus any reaction consumed only by a derived feature ──
+    derived_sources = {
+        d['reaction'] for d in derived_specs.values()
+        if isinstance(d, dict) and 'reaction' in d
+    }
     missing_rxns = []
-
+    direct_values = {}
     for rxn_id in direct_rxn_ids:
-        if rxn_id in reaction_list:
-            rxn_idx = reaction_list.index(rxn_id)
-            measured_fluxes_columns.append(flux_data_subset[:, rxn_idx])
-        else:
+        if rxn_id in derived_sources and rxn_id not in feature_names:
+            continue
+        values = _flux(rxn_id)
+        if values is None:
             missing_rxns.append(rxn_id)
-            # Remove from feature_names
-            if rxn_id in feature_names:
-                feature_names.remove(rxn_id)
+            continue
+        direct_values[rxn_id] = values
 
     if missing_rxns:
-        print(f"WARNING: {len(missing_rxns)} biosynthetic reactions not found in flux data:")
+        print(f"WARNING: {len(missing_rxns)} measured-flux reactions not found in flux data:")
         for rxn in missing_rxns[:5]:
             print(f"         - {rxn}")
         if len(missing_rxns) > 5:
             print(f"         ... and {len(missing_rxns) - 5} more")
 
-    if not measured_fluxes_columns:
+    # Emit in declared feature order, dropping whatever could not be computed.
+    columns, kept_names = [], []
+    for name in feature_names:
+        if name in derived_values:
+            columns.append(derived_values[name])
+            kept_names.append(name)
+        elif name in direct_values:
+            columns.append(direct_values[name])
+            kept_names.append(name)
+
+    if not columns:
         return None, []
 
-    measured_fluxes_data = np.column_stack(measured_fluxes_columns)
-    return measured_fluxes_data, feature_names
+    return np.column_stack(columns), kept_names
 
 
 def find_data_batches(base_dir, base_filename, pattern='*_*.h5'):
