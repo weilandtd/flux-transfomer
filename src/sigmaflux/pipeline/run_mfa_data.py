@@ -6,7 +6,7 @@ flux measurements, fits MFAModel by gradient descent, and writes per-condition
 flux predictions.
 
 Usage (I. orientalis, conditions C N P):
-    python -u paper/pipeline/inference/run_mfa_data.py \\
+    sigmaflux-mfa-data \\
         --config paper/configs/i_orientalis.yaml \\
         --mid-file "data/I_orientalis/I_orientalis_{condition}.xlsx" \\
         --extflux-file data/I_orientalis/I_orientalis_ExtFlux.xlsx \\

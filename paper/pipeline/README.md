@@ -1,12 +1,15 @@
 # Paper pipelines
 
-Executable pipeline scripts are grouped by stage:
+The training and inference stages ship with the package as console scripts — see
+`sigmaflux.pipeline` for the full table (`sigmaflux-sample-flux`,
+`sigmaflux-generate-data`, `sigmaflux-select-features`, `sigmaflux-train`,
+`sigmaflux-workflow`, `sigmaflux-infer`, `sigmaflux-mfa-data`,
+`sigmaflux-sample-ko-flux`, `sigmaflux-build-ko-split`).
 
-- `data_generation/`: flux sampling, KO datasets, and isotope-label simulation
-- `training/`: informative-feature selection and AI model training
-- `inference/`: AI and traditional MFA runs on experimental data
+What remains here is paper-specific and not part of the installed package:
+
 - `benchmarks/`: AI/MFA accuracy benchmarks and calibration checks
-- `workflows/`: launchers that coordinate multiple stages
 
-Run scripts from the repository root using their full path. Cluster entry points
-live in `paper/scripts/` and reference these locations directly.
+Run the benchmark scripts from the repository root using their full path.
+Cluster entry points live in `paper/submit/` and invoke the packaged stages as
+`python -u -m sigmaflux.pipeline.<stage>`.

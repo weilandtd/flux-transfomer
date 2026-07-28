@@ -2,7 +2,7 @@
 Train SigmaFlux's FluxDecoder (cross-attention decoder) from generated HDF5 data.
 
 Example:
-    PYTHONPATH=src python paper/pipeline/training/train_ai_model.py --config paper/io_config.yaml
+    sigmaflux-train --config paper/io_config.yaml
 """
 
 import argparse

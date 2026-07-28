@@ -9,10 +9,10 @@ This follows the mammalian atlas workflow:
   5. Save labeling, flux, and reversibility HDF5 files.
 
 Example:
-    PYTHONPATH=src python paper/pipeline/data_generation/generate_training_data.py --config paper/io_config.yaml
+    sigmaflux-generate-data --config paper/io_config.yaml
 
     # Process a specific slice (for parallel jobs):
-    PYTHONPATH=src python paper/pipeline/data_generation/generate_training_data.py --config paper/io_config.yaml \\
+    sigmaflux-generate-data --config paper/io_config.yaml \\
         --start-idx 0 --end-idx 500
 """
 

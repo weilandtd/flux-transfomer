@@ -6,7 +6,7 @@ experimental data directory and runs all growth conditions within each.
 Results are saved as per-condition CSVs in the output directory.
 
 Usage:
-    python paper/pipeline/inference/run_inference_workflow.py \\
+    sigmaflux-infer \\
         --config     paper/configs/i_orientalis.yaml \\
         --checkpoint paper/.results/i_orientalis_20260603/imisor_transformer.pt \\
         --data-dir   data/I_orientalis \\
