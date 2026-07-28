@@ -30,8 +30,6 @@ Sample count, epochs and device are config keys (`sampling:`, `training:`,
 The pipeline stages ship with the package as console scripts. Each takes the same
 organism YAML; per-stage settings live in the config, not on the command line.
 
-## Steps
-
 ### 1. Sample flux distributions — `sigmaflux-sample-flux`
 
 Prepares a COBRA sampling problem from an annotated model and
@@ -95,6 +93,22 @@ prediction time**: `sigmaflux.ai.load_predictor` returns an `EnsembleSigmaFlux`
 whenever it finds an `ensemble/` directory next to the checkpoint, and reports the
 per-reaction median over members. No extra flag is needed — point inference at the
 run directory and it picks the ensemble up automatically.
+
+### 6. Predict fluxes from experimental data — `sigmaflux-infer`
+
+Discovers the per-condition MID spreadsheets in the experimental data directory
+and writes `predictions_*.csv` per condition.
+
+```bash
+sigmaflux-infer \
+    --config     paper/configs/i_orientalis.yaml \
+    --checkpoint <run_dir>/imisor_transformer.pt \
+    --data-dir   data/I_orientalis \
+    --out-dir    <run_dir>/predictions
+```
+
+For programmatic use, `sigmaflux.ai.load_predictor` returns the same predictor and
+exposes `.predict(df_L, df_Vm)`.
 
 ## Notes
 
