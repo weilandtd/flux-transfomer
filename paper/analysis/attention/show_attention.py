@@ -14,25 +14,11 @@ Usage:
 
 import argparse
 import math
-import os
-import sys
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from sigmaflux.ai.data import (
-    build_radial_vocabs,
-    create_tracer_mapping,
-    load_data,
-    load_stoichiometric_matrix,
-    prepare_id_dataset,
-    radial_embedding_table,
-)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
 
 
 def strip_compartment(met_id):
@@ -61,74 +47,30 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     args = parser.parse_args()
 
-    # ── Load checkpoint ───────────────────────────────────────────────────────
-    ckpt       = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
-    cfg_dict   = ckpt['model_config']
-    nsd        = ckpt['null_space_data']
-    data_dir   = ckpt['data_dir']
-    model_json = ckpt.get('model_json')
-    flux_names = ckpt.get('flux_names', [])
-
-    # ── Rebuild data (for vocabs + val samples) ───────────────────────────────
-    labeling_df, flux_df, reversibility_df = load_data(data_dir, max_samples=args.n_samples * 2)
-
-    # Restrict to the exact tokens the model was trained on, in the saved order,
-    # so the labeling sequence and the radial label vocab match the checkpoint
-    # (training may have filtered to a Fisher-selected token subset).
-    token_index = ckpt.get('token_index')
-    if token_index is not None:
-        labeling_df = labeling_df.loc[token_index]
-        print(f"Restricted to {labeling_df.shape[0]} trained tokens (from checkpoint token_index)")
-
-    _, base_tracer_names = create_tracer_mapping(labeling_df)
-    _, cobra_model       = load_stoichiometric_matrix(model_json)
-
-    vocabs = build_radial_vocabs(
-        cobra_model,
-        labeling_df,
-        base_tracer_names,
-        h_compound = cfg_dict.get('d_comp', 32) // 2,
-        h_label    = cfg_dict.get('d_label', 10) // 2,
-        h_tracer   = cfg_dict.get('d_tracer', 2)  // 2,
+    # ── Load checkpoint, data and model ───────────────────────────────────────
+    # Only the leading n_samples columns are scored here, not the saved val split.
+    # Load twice that, then take the slice that actually exists — the first pass
+    # skips dataset construction so the column count is known before choosing it.
+    probe = load_eval_context(args.checkpoint, build_dataset=False,
+                              max_samples=args.n_samples * 2)
+    val_indices = np.arange(min(args.n_samples, probe.labeling_df.shape[1]))
+    ctx = load_eval_context(
+        probe.ckpt, samples=val_indices,
+        data=(probe.labeling_df, probe.flux_df, probe.reversibility_df),
     )
 
-    val_indices = np.arange(min(args.n_samples, labeling_df.shape[1]))
-    (val_dataset, _, _, tracer_combo_vocab, tracer_combo_emb_table) = prepare_id_dataset(
-        labeling_df, flux_df, reversibility_df,
-        vocabs=vocabs,
-        train_indices=val_indices,
-        measured_fluxes=ckpt.get('measured_fluxes'),
-        norm_stats_input=ckpt.get('norm_stats'),
-    )
-    val_loader = DataLoader(val_dataset, batch_size=min(args.n_samples, 64), shuffle=False)
+    cfg_dict   = ctx.ckpt['model_config']
+    nsd        = ctx.null_space_data
+    flux_names = ctx.flux_names
+    labeling_df = ctx.labeling_df
+    vocabs      = ctx.vocabs
+    tracer_combo_vocab = ctx.tracer_combo_vocab
+    print(f"Restricted to {labeling_df.shape[0]} trained tokens (from checkpoint token_index)")
 
-    # ── Reconstruct model ─────────────────────────────────────────────────────
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__
-                               if k in cfg_dict})
-    token_experiment_ids_tensor = ckpt['model_state_dict']['token_experiment_ids']
+    val_loader = ctx.loader(batch_size=min(args.n_samples, 64))
 
-    # Rebuild the frozen reaction/type radial tables exactly as training did
-    # (deterministic given (N, H)); load_state_dict restores the learned weights.
-    flux_dim_ck        = len(flux_names) or cfg.n_fluxes
-    reaction_emb_table = radial_embedding_table(flux_dim_ck, ckpt['h_reaction'])
-    type_emb_table     = radial_embedding_table(2, ckpt['h_type'])
-
-    model = FluxDecoder(
-        cfg,
-        token_experiment_ids = token_experiment_ids_tensor,
-        compound_emb_table   = vocabs['compound_emb_table'],
-        label_emb_table      = vocabs['label_emb_table'],
-        tracer_emb_table     = tracer_combo_emb_table,
-        reaction_emb_table   = reaction_emb_table,
-        type_emb_table       = type_emb_table,
-        null_space_data      = nsd,
-        flux_norm_stats      = ckpt.get('flux_norm_stats'),
-    )
-    model.load_state_dict(ckpt['model_state_dict'])
-    model.eval()
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model.to(device)
+    device = resolve_device()
+    model = build_flux_decoder(ctx, device=device)
     print(f"Running on {device}")
 
     out_file = open(args.out, 'w') if args.out else None
@@ -172,7 +114,7 @@ def main():
     attn_mean = attn_sum / n_collected   # (38, N)
 
     # ── Build token labels from the first batch ───────────────────────────────
-    first_batch = next(iter(DataLoader(val_dataset, batch_size=1)))
+    first_batch = next(iter(ctx.loader(batch_size=1)))
     (cids0, lids0, tids0, _), _ = first_batch
     cids0 = cids0[0].numpy()
     lids0 = lids0[0].numpy()
@@ -190,7 +132,7 @@ def main():
         token_labels.append(f"{met} {iso} [{trac_short}]")
 
     # Bypass measured-flux tokens are appended after the labeling tokens.
-    for fname in (ckpt.get('measured_fluxes') or []):
+    for fname in (ctx.ckpt.get('measured_fluxes') or []):
         token_labels.append(f"{fname} [flux]")
 
     # ── Encoder self-attention over metabolite tokens (for attention-vs-distance) ─
@@ -213,7 +155,7 @@ def main():
         for _L in model.encoder.layers:
             _wrap(_L)
 
-        n_flux_tok = len(ckpt.get('measured_fluxes') or [])
+        n_flux_tok = len(ctx.ckpt.get('measured_fluxes') or [])
         accum, sa_n = None, 0
         with torch.no_grad():
             for batch in val_loader:
@@ -237,7 +179,7 @@ def main():
 
     # ── Gate values + top-flux labels per y-dim ───────────────────────────────
     Z        = np.array(nsd.get('Z_free', []), dtype=float)   # (386, 38)
-    gate_raw = ckpt['model_state_dict'].get('fusion_gate')
+    gate_raw = ctx.ckpt['model_state_dict'].get('fusion_gate')
     gate     = torch.sigmoid(gate_raw).numpy() if gate_raw is not None else np.full(38, 0.5)
 
     # Flux-token attention matrix: Z @ attn_mean[:n_free] → (n_fluxes, N)

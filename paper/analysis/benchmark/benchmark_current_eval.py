@@ -6,15 +6,8 @@ Computes per-reaction R2 two ways on the SAME split:
 Saves paper/.results/version_benchmark/current_io.json
 """
 import argparse, json, os, numpy as np, torch
-from torch.utils.data import DataLoader
-from sigmaflux.ai.data import (load_data, create_tracer_mapping, build_radial_vocabs,
-                               prepare_id_dataset, radial_embedding_table, load_stoichiometric_matrix)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
-
-
-def per_reaction_r2(pred, gt):
-    sr = ((pred - gt) ** 2).sum(0); st = ((gt - gt.mean(0)) ** 2).sum(0)
-    return np.where(st > 1e-9, 1 - sr / st, np.nan)
+from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from sigmaflux.ai.train import per_reaction_r2
 
 
 def main():
@@ -24,35 +17,17 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out_dir, exist_ok=True)
 
-    ck = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
-    cfg_dict, nsd = ck['model_config'], ck['null_space_data']
-    flux_names = list(ck['flux_names'])
-    val_idx = np.asarray(ck['val_indices'], int)
+    device = resolve_device()
+    ctx = load_eval_context(args.checkpoint)
+    model = build_flux_decoder(ctx, device=device)
 
-    lab, flux, rev = load_data(ck['data_dir'])
+    ck, cfg_dict = ctx.ckpt, ctx.ckpt['model_config']
+    flux_names, val_idx = ctx.flux_names, ctx.sample_indices
     ti = ck.get('token_index')
-    if ti is not None: lab = lab.loc[ti]
-    _, base_tr = create_tracer_mapping(lab)
-    _, cobra = load_stoichiometric_matrix(ck['model_json'])
-    vocabs = build_radial_vocabs(cobra, lab, base_tr, h_compound=cfg_dict.get('d_comp', 32)//2,
-                                 h_label=cfg_dict.get('d_label', 10)//2, h_tracer=cfg_dict.get('d_tracer', 2)//2)
-    val_ds, _, _, _, tracer_emb = prepare_id_dataset(lab, flux, rev, vocabs=vocabs, train_indices=val_idx,
-                                                     measured_fluxes=ck.get('measured_fluxes'),
-                                                     norm_stats_input=ck.get('norm_stats'))
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__ if k in cfg_dict})
-    model = FluxDecoder(cfg, token_experiment_ids=ck['model_state_dict']['token_experiment_ids'],
-                        compound_emb_table=vocabs['compound_emb_table'], label_emb_table=vocabs['label_emb_table'],
-                        tracer_emb_table=tracer_emb,
-                        reaction_emb_table=radial_embedding_table(len(flux_names) or cfg.n_fluxes, ck['h_reaction']),
-                        type_emb_table=radial_embedding_table(2, ck['h_type']),
-                        null_space_data=nsd, flux_norm_stats=ck.get('flux_norm_stats'))
-    model.load_state_dict(ck['model_state_dict']); model.eval()
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'; model.to(device)
 
-    (cids, lids, tids, fracs), targets = next(iter(DataLoader(val_ds, batch_size=len(val_ds))))
-    cids, lids, tids, fracs, targets = [t.to(device) for t in (cids, lids, tids, fracs, targets)]
+    (cids, lids, tids, fracs), targets = ctx.full_batch(device=device)
     gt = targets[:, :len(flux_names)].cpu().numpy()
-    fixed_idx = torch.as_tensor(np.asarray(model.fixed_idx), dtype=torch.long, device=device)
+    fixed_idx = model.fixed_idx_t.to(device)
 
     def evalr2(use_flux):
         with torch.no_grad():

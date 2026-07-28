@@ -30,16 +30,13 @@ import argparse
 import numpy as np
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sigmaflux.ai.data import (load_data, create_tracer_mapping, build_radial_vocabs,
-                               prepare_id_dataset, radial_embedding_table,
-                               load_stoichiometric_matrix)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from sigmaflux.ai.train import per_reaction_r2
 
 matplotlib.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 
@@ -56,10 +53,6 @@ BIOMASS_FLUXES = ['PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c']
 BIOMASS_LEVELS = [0, 1, 2, 3, 4, 5]                         # # biomass fluxes removed
 
 
-def per_reaction_r2(pred, gt):
-    ss_res = ((pred - gt) ** 2).sum(0)
-    ss_tot = ((gt - gt.mean(0)) ** 2).sum(0)
-    return np.where(ss_tot > 1e-9, 1 - ss_res / ss_tot, np.nan)
 
 
 def main():
@@ -73,13 +66,12 @@ def main():
                     help='each cell counts reactions with per-reaction R2 > this value')
     ap.add_argument('--flux-mode', choices=['random', 'biomass'], default='random',
                     help="how the flux axis removes measured fluxes: 'random' = random fraction "
-                         "({0,10,20,50,70}%); 'biomass' = cumulatively drop biomass-precursor fluxes "
+                         "({0,10,20,50,70}%%); 'biomass' = cumulatively drop biomass-precursor fluxes "
                          "(0..5), keeping the exchange fluxes")
     ap.add_argument('--out', default=None)
     args = ap.parse_args()
 
     ck = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
-    cfg_dict, nsd = ck['model_config'], ck['null_space_data']
     flux_names = ck.get('flux_names', [])
 
     # Evaluate on the EXACT held-out validation split (positional columns into the
@@ -88,37 +80,15 @@ def main():
     if args.max_val is not None and args.max_val < len(val_idx):
         val_idx = np.sort(np.random.default_rng(0).choice(val_idx, size=args.max_val, replace=False))
 
-    lab, flux, rev = load_data(ck['data_dir'])           # ALL samples, original order
-    ti = ck.get('token_index')
-    if ti is not None:
-        lab = lab.loc[ti]
-    _, base_tr = create_tracer_mapping(lab)
-    _, cobra = load_stoichiometric_matrix(ck['model_json'])
-    vocabs = build_radial_vocabs(cobra, lab, base_tr,
-                                 h_compound=cfg_dict.get('d_comp', 32) // 2,
-                                 h_label=cfg_dict.get('d_label', 10) // 2,
-                                 h_tracer=cfg_dict.get('d_tracer', 2) // 2)
-    val_ds, _, _, _, tracer_emb = prepare_id_dataset(lab, flux, rev, vocabs=vocabs, train_indices=val_idx,
-                                                     measured_fluxes=ck.get('measured_fluxes'),
-                                                     norm_stats_input=ck.get('norm_stats'))
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__ if k in cfg_dict})
-    model = FluxDecoder(cfg, token_experiment_ids=ck['model_state_dict']['token_experiment_ids'],
-                        compound_emb_table=vocabs['compound_emb_table'], label_emb_table=vocabs['label_emb_table'],
-                        tracer_emb_table=tracer_emb,
-                        reaction_emb_table=radial_embedding_table(len(flux_names) or cfg.n_fluxes, ck['h_reaction']),
-                        type_emb_table=radial_embedding_table(2, ck['h_type']),
-                        null_space_data=nsd, flux_norm_stats=ck.get('flux_norm_stats'))
-    model.load_state_dict(ck['model_state_dict']); model.eval()
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model.to(device)
+    device = resolve_device()
+    ctx = load_eval_context(ck, samples=val_idx)
+    model = build_flux_decoder(ctx, device=device)
     print(f"device: {device}")
 
-    (cids, lids, tids, fracs), targets = next(iter(DataLoader(val_ds, batch_size=len(val_ds))))
-    cids, lids, tids, fracs = cids.to(device), lids.to(device), tids.to(device), fracs.to(device)
-    targets = targets.to(device)
+    (cids, lids, tids, fracs), targets = ctx.full_batch(device=device)
     gt = targets[:, :len(flux_names)].cpu().numpy()
     fixed_idx = np.array(model.fixed_idx)                    # reaction indices of the known fluxes
-    cvocab = vocabs['compound_vocab']
+    cvocab = ctx.vocabs['compound_vocab']
     tok_met = np.array([strip_c(cvocab[int(c)]) if int(c) < len(cvocab) else str(int(c)) for c in cids[0].cpu().numpy()])
     mets = sorted(set(tok_met))
     print(f"held-out val samples={gt.shape[0]} | reactions={len(flux_names)} | metabolites={len(mets)} | known fluxes={len(fixed_idx)}")

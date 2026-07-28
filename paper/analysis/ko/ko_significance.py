@@ -12,13 +12,10 @@ Expectation: well-predicted (R²>0.5) reactions show a larger, more significant 
 Usage: python paper/analysis/ko_significance.py --checkpoint <ko.pt> --run-dir <ko run>
 """
 import argparse, os, numpy as np, pandas as pd, torch
-from torch.utils.data import DataLoader
 from scipy.stats import mannwhitneyu
 import matplotlib as mpl; mpl.use('Agg')
 import matplotlib.pyplot as plt, seaborn as sns
-from sigmaflux.ai.data import (load_data, create_tracer_mapping, build_radial_vocabs,
-                               prepare_id_dataset, radial_embedding_table, load_stoichiometric_matrix)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
 
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 COLORS = {'non-KO': '#4C72B0', 'KO': '#DD8452'}
@@ -40,28 +37,16 @@ def main():
     ap.add_argument('--r2-cut', type=float, default=0.5)
     args = ap.parse_args()
 
-    ck = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
-    cfg_dict, nsd = ck['model_config'], ck['null_space_data']
-    flux_names = list(ck['flux_names']); name2idx = {n: i for i, n in enumerate(flux_names)}
-    val_idx = np.asarray(ck['val_indices'], int)
+    dev = resolve_device()
+    ctx = load_eval_context(args.checkpoint)
+    m = build_flux_decoder(ctx, device=dev)
+
+    flux_names = ctx.flux_names; name2idx = {n: i for i, n in enumerate(flux_names)}
+    val_idx = ctx.sample_indices
     labels = pd.read_csv(os.path.join(args.run_dir, 'ko_labels.csv'), index_col=0).iloc[val_idx].reset_index(drop=True)
 
-    lab, flux, rev = load_data(ck['data_dir']); ti = ck.get('token_index')
-    if ti is not None: lab = lab.loc[ti]
-    _, base = create_tracer_mapping(lab); S, cobra = load_stoichiometric_matrix(ck['model_json'])
-    vocabs = build_radial_vocabs(cobra, lab, base, h_compound=cfg_dict['d_comp']//2,
-                                 h_label=cfg_dict['d_label']//2, h_tracer=cfg_dict['d_tracer']//2)
-    val_ds, _, _, _, temb = prepare_id_dataset(lab, flux, rev, vocabs=vocabs, train_indices=val_idx,
-                                               measured_fluxes=ck.get('measured_fluxes'), norm_stats_input=ck.get('norm_stats'))
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__ if k in cfg_dict})
-    m = FluxDecoder(cfg, token_experiment_ids=ck['model_state_dict']['token_experiment_ids'],
-                    compound_emb_table=vocabs['compound_emb_table'], label_emb_table=vocabs['label_emb_table'], tracer_emb_table=temb,
-                    reaction_emb_table=radial_embedding_table(len(flux_names), ck['h_reaction']),
-                    type_emb_table=radial_embedding_table(2, ck['h_type']), null_space_data=nsd, flux_norm_stats=ck.get('flux_norm_stats'))
-    m.load_state_dict(ck['model_state_dict']); m.eval(); dev = 'cuda' if torch.cuda.is_available() else 'cpu'; m.to(dev)
-    (c, l, t, fr), tg = next(iter(DataLoader(val_ds, batch_size=len(val_ds))))
-    c, l, t, fr, tg = [x.to(dev) for x in (c, l, t, fr, tg)]
-    fid = torch.as_tensor(np.asarray(m.fixed_idx), dtype=torch.long, device=dev)
+    (c, l, t, fr), tg = ctx.full_batch(device=dev)
+    fid = m.fixed_idx_t.to(dev)
     with torch.no_grad():
         vp = m(c, l, t, fr, measured_fluxes=tg.index_select(1, fid), measured_flux_ids=fid, return_attn=False)[0].cpu().numpy()
     gt = tg[:, :len(flux_names)].cpu().numpy()
