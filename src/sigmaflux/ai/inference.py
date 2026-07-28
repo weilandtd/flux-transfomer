@@ -371,11 +371,15 @@ class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` as a SigmaFlux member and
-    exposes the same ``predict`` interface, returning the per-reaction mean over
-    members (schema-identical to ``SigmaFlux.predict``). Used for ensemble-mean
-    point predictions in the benchmark and experimental-inference pipelines; the
-    matching per-reaction spread/calibration is produced separately by
-    ``paper/analysis/ensemble/ensemble_predict.py``.
+    exposes the same ``predict`` interface, returning the per-reaction **median**
+    over members (schema-identical to ``SigmaFlux.predict``). This is the point
+    prediction used by both the benchmark and the experimental-inference pipeline,
+    so the two report the same quantity.
+
+    The median rather than the mean: a member that lands on a wild value for an
+    unidentifiable flux shifts a mean but not a median, and the members disagree
+    most exactly on those reactions. Per-reaction spread is deliberately not
+    returned here — it is produced by the dedicated ensemble scripts.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -396,16 +400,13 @@ class EnsembleSigmaFlux:
         # Any member's checkpoint carries the shared train/val split (val_indices).
         self.split_source        = self.member_paths[0]
 
-    def predict(self, df_L, df_Vm=None, return_std=False):
-        """Ensemble-mean prediction. Members share inputs, so per-member outputs
-        have identical row order and are averaged positionally. With
-        ``return_std=True`` an extra ``Std`` column holds the across-member std."""
+    def predict(self, df_L, df_Vm=None):
+        """Ensemble-median prediction. Members share inputs, so per-member outputs
+        have identical row order and are combined positionally."""
         preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
-        out['Value'] = values.mean(axis=0)
-        if return_std:
-            out['Std'] = values.std(axis=0)
+        out['Value'] = np.median(values, axis=0)
         return out
 
     # Introspection helpers delegate to member 0.
@@ -420,8 +421,12 @@ def load_predictor(config, checkpoint, data_dir=None, device=None):
     An ensemble directory is discovered, in priority order, as: ``checkpoint``
     itself if it is a directory; ``<dir(checkpoint)>/ensemble``; or
     ``<data_dir>/ensemble``. If such a directory holds ``model_*.pt`` an
-    :class:`EnsembleSigmaFlux` is returned (mean over members); otherwise a
+    :class:`EnsembleSigmaFlux` is returned (median over members); otherwise a
     single-model :class:`SigmaFlux` loaded from ``checkpoint``.
+
+    Note that ``checkpoint`` is only a *hint*: whenever a sibling ``ensemble/``
+    directory exists it wins, so passing a single ``.pt`` path does not force
+    single-model inference.
     """
     candidates = []
     if checkpoint and os.path.isdir(checkpoint):
