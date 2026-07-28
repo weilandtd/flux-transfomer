@@ -1,42 +1,20 @@
 """
 Integration tests for the AI inference pipeline using the toy one-carbon model.
 
-A module-scoped fixture builds a complete but minimal FluxDecoder checkpoint
-(random weights, correct stoichiometric structure) without running training.
-Tests verify output shape, mass-balance, fixed-flux propagation, and the
-predict.py CLI end-to-end.
+The ``toy_run`` fixture (see conftest.py) builds a complete but minimal
+FluxDecoder checkpoint (random weights, correct stoichiometric structure)
+without running training. Tests verify output shape, mass-balance and
+fixed-flux propagation.
 """
-
-import os
-import subprocess
-import sys
 
 import numpy as np
 import pandas as pd
-import pytest
-import torch
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from dataclasses import asdict
-
-from sigmaflux.ai.data import (
-    build_radial_vocabs,
-    create_tracer_mapping,
-    load_stoichiometric_matrix,
-    prepare_id_dataset,
-    radial_embedding_table,
-)
+from sigmaflux.ai.data import load_stoichiometric_matrix
 from sigmaflux.ai.inference import SigmaFlux
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
-from sigmaflux.ai.utils import compute_sparse_nullspace
 
-_TOY_MODEL_JSON = os.path.join(_REPO_ROOT, 'models', 'toy', 'one_carbon_annotated.json')
-_TOY_CONFIG_YAML = os.path.join(_REPO_ROOT, 'data', 'test', 'toy_config.yaml')
-
-# Internal tracer ID: f"{tracer_id}_{labeling}_{enrichment}" (matches toy_config.yaml)
-_TRACER_ID = 'Ser_in_111_0.1'
+from conftest import TOY_CONFIG_YAML as _TOY_CONFIG_YAML
+from conftest import TOY_MODEL_JSON as _TOY_MODEL_JSON
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -61,147 +39,11 @@ def make_toy_df_L(n_samples: int = 2) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-# ── fixtures ──────────────────────────────────────────────────────────────────
-
-@pytest.fixture(scope='module')
-def toy_checkpoint(tmp_path_factory):
-    """
-    Build a complete FluxDecoder checkpoint on the toy model without training.
-
-    The model has random weights but the correct stoichiometric structure,
-    null-space basis, and normalisation statistics.
-    """
-    S, cobra_model = load_stoichiometric_matrix(_TOY_MODEL_JSON)
-    flux_names = [r.id for r in cobra_model.reactions]   # 23 reactions
-    n_fluxes   = len(flux_names)
-    n_samples  = 30
-
-    measured_fluxes = ['EX_Ser_in', 'EX_Gly_src']
-    fixed_idx = [flux_names.index(r) for r in measured_fluxes]
-    free_idx  = [i for i in range(n_fluxes) if i not in set(fixed_idx)]
-
-    # ── Synthetic labeling_df: 2 metabolites × 3 isotopomers × 1 tracer ──────
-    # Use internal tracer ID (SigmaFlux maps user names to these at predict time)
-    rows = [
-        (_TRACER_ID, 'Ser', 'M+1'), (_TRACER_ID, 'Ser', 'M+2'), (_TRACER_ID, 'Ser', 'M+3'),
-        (_TRACER_ID, 'Gly', 'M+1'), (_TRACER_ID, 'Gly', 'M+2'),
-    ]
-    midx = pd.MultiIndex.from_tuples(rows, names=['Tracer', 'Metabolite', 'Isotopomer'])
-    rng = np.random.default_rng(42)
-    # Each column sums to ≈1 per metabolite (realistic MID fractions)
-    ser_fracs = rng.dirichlet(np.ones(3), n_samples).T.astype(np.float32)  # (3, n)
-    gly_fracs = rng.dirichlet(np.ones(2), n_samples).T.astype(np.float32)  # (2, n)
-    frac_data = np.vstack([ser_fracs, gly_fracs])                           # (5, n)
-    labeling_df = pd.DataFrame(frac_data, index=midx, columns=list(range(n_samples)))
-
-    # ── Synthetic flux_df and reversibility_df ────────────────────────────────
-    flux_data = np.abs(rng.normal(2.0, 1.0, (n_fluxes, n_samples))).astype(np.float32)
-    flux_df   = pd.DataFrame(flux_data, index=flux_names, columns=list(range(n_samples)))
-    rev_data  = np.clip(rng.normal(0.5, 0.2, (n_fluxes, n_samples)), 0, 1).astype(np.float32)
-    rev_df    = pd.DataFrame(rev_data, index=flux_names, columns=list(range(n_samples)))
-
-    # ── Build vocabs and dataset (no bypass tokens — matches inference.py) ────
-    _, base_tracer_names = create_tracer_mapping(labeling_df)
-    vocabs = build_radial_vocabs(cobra_model, labeling_df, base_tracer_names)
-
-    (dataset, norm_stats, token_experiment_ids,
-     tracer_combo_vocab, tracer_combo_emb_table) = prepare_id_dataset(
-        labeling_df, flux_df, rev_df,
-        vocabs          = vocabs,
-        train_indices   = list(range(n_samples)),
-        normalize       = False,
-        measured_fluxes = None,
-    )
-
-    # ── Null-space basis and y normalisation ──────────────────────────────────
-    Z_full  = compute_sparse_nullspace(S)
-    n_free  = Z_full.shape[1]
-    Z_t     = torch.tensor(Z_full, dtype=torch.float32)
-
-    flux_targets = dataset.targets[:, :n_fluxes]          # (n_samples, n_fluxes)
-    y_train = flux_targets @ Z_t
-    y_mean  = y_train.mean(dim=0).numpy()
-    y_std   = y_train.std(dim=0).clamp_min(1e-6).numpy()
-
-    obs_weights = np.ones(n_free, dtype=np.float32)
-
-    null_space_data = dict(
-        Z_free      = Z_full,
-        free_idx    = free_idx,
-        fixed_idx   = fixed_idx,
-        y_mean      = y_mean,
-        y_std       = y_std,
-        obs_weights = obs_weights,
-    )
-
-    # ── Reaction and type embedding tables ───────────────────────────────────
-    h_reaction = 4                              # d_reaction = 8, fits in d_entity_lab=14
-    h_type     = 2                              # d_type = 4
-    reaction_emb_table = radial_embedding_table(n_fluxes, h_reaction)
-    type_emb_table     = radial_embedding_table(2, h_type)
-
-    # ── Build FluxDecoder ─────────────────────────────────────────────────────
-    cfg = FluxDecoderConfig(
-        d_model     = 16,
-        n_heads     = 1,
-        n_layers    = 1,
-        dropout     = 0.0,
-        n_compounds = len(vocabs['compound_vocab']),
-        n_labels    = len(vocabs['label_vocab']),
-        n_tracers   = len(tracer_combo_vocab),
-        d_comp      = vocabs['h_compound'] * 2,
-        d_label     = vocabs['h_label']    * 2,
-        d_tracer    = vocabs['h_tracer']   * 2,
-        n_fluxes    = n_fluxes,
-        n_rev       = n_fluxes,
-        n_free      = n_free,
-        d_reaction  = h_reaction * 2,
-        d_type      = h_type     * 2,
-    )
-
-    model = FluxDecoder(
-        cfg,
-        token_experiment_ids  = token_experiment_ids,
-        compound_emb_table    = vocabs['compound_emb_table'],
-        label_emb_table       = vocabs['label_emb_table'],
-        tracer_emb_table      = tracer_combo_emb_table,
-        null_space_data       = null_space_data,
-        reaction_emb_table    = reaction_emb_table,
-        type_emb_table        = type_emb_table,
-    )
-
-    # ── Assemble and save checkpoint ──────────────────────────────────────────
-    checkpoint = {
-        'model_state_dict':     model.state_dict(),
-        'model_config':         asdict(cfg),
-        'vocabs': {k: v for k, v in vocabs.items()
-                   if k not in ('compound_emb_table', 'label_emb_table', 'tracer_emb_table')},
-        'tracer_combo_vocab':   tracer_combo_vocab,
-        'token_experiment_ids': token_experiment_ids.tolist(),
-        'token_index':          list(labeling_df.index),
-        'norm_stats':           norm_stats,
-        'train_indices':        list(range(n_samples)),
-        'val_indices':          [],
-        'log':                  {'train_loss': [], 'val_loss': [], 'grad_norm': []},
-        'val_correlations':     {},
-        'flux_names':           flux_names,
-        'reversibility_names':  flux_names,
-        'measured_fluxes':      measured_fluxes,
-        'null_space_data':      null_space_data,
-        'data_dir':             '',
-        'model_json':           _TOY_MODEL_JSON,
-    }
-
-    ckpt_path = str(tmp_path_factory.mktemp('ckpt') / 'toy_ckpt.pt')
-    torch.save(checkpoint, ckpt_path)
-    return ckpt_path
-
-
 # ── tests ─────────────────────────────────────────────────────────────────────
 
-def test_predict_output_shape(toy_checkpoint):
+def test_predict_output_shape(toy_run):
     """Predictions have the right number of rows and finite values."""
-    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_checkpoint)
+    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L   = make_toy_df_L(n_samples=2)
     result = sf.predict(df_L)
 
@@ -216,13 +58,13 @@ def test_predict_output_shape(toy_checkpoint):
     assert np.isfinite(result['Value'].values).all()
 
 
-def test_mass_balance(toy_checkpoint):
+def test_mass_balance(toy_run):
     """Predicted fluxes satisfy S @ v ≈ 0 (guaranteed by NullSpaceDecoder)."""
     S, cobra_model = load_stoichiometric_matrix(_TOY_MODEL_JSON)
     flux_names = [r.id for r in cobra_model.reactions]
     n_fluxes   = len(flux_names)
 
-    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_checkpoint)
+    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     result = sf.predict(make_toy_df_L(n_samples=1))   # single sample → no Sample col
 
     # First n_fluxes rows are the flux predictions; the rest are reversibilities
@@ -231,7 +73,7 @@ def test_mass_balance(toy_checkpoint):
     assert np.abs(sv).max() < 1e-4, f"Max |Sv| = {np.abs(sv).max():.2e}"
 
 
-def test_fixed_fluxes_affect_prediction(toy_checkpoint):
+def test_fixed_fluxes_affect_prediction(toy_run):
     """
     Providing fixed_fluxes changes predictions vs. providing none.
 
@@ -239,7 +81,7 @@ def test_fixed_fluxes_affect_prediction(toy_checkpoint):
     constrained by measured reactions), replacing y_raw's signal there.
     Predictions with df_Vm therefore differ from predictions without it.
     """
-    sf   = SigmaFlux(_TOY_CONFIG_YAML, toy_checkpoint)
+    sf   = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L = make_toy_df_L(n_samples=1)
 
     df_Vm = pd.DataFrame({
