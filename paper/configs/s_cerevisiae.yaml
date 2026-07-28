@@ -5,6 +5,14 @@ mapping_csv: models/S_cerevisiae/S_cerevisiae_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
+# Experimental data for the paper analyses (not used by training). Paths are
+# relative to the project root; reference_flux is relative to data_dir.
+# The data directory really is spelled "S_cervesiae" on disk.
+experiment:
+  data_dir:       data/S_cervesiae
+  reference_flux: Shen_et_al_flux_data_SC.xlsx
+  gem_xlsx:       models/S_cerevisiae/scGEM.xlsx
+
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
 # the remaining reactions before they are dropped.

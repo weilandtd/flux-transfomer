@@ -5,6 +5,13 @@ mapping_csv: models/I_orientalis/I_orientalis_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
+# Experimental data for the paper analyses (not used by training). Paths are
+# relative to the project root; reference_flux is relative to data_dir.
+experiment:
+  data_dir:       data/I_orientalis
+  reference_flux: Shen_et_al_flux_data_IO.xlsx
+  gem_xlsx:       models/I_orientalis/imIsor_GEM.xlsx
+
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
 # the remaining reactions before they are dropped.
