@@ -7,7 +7,6 @@ MID measurements and (optionally) known exchange fluxes.
 
 import glob
 import os
-import sys
 
 import numpy as np
 import pandas as pd
@@ -15,19 +14,15 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)
-))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from sigmaflux.ai.data import (
+from .checkpoint import flux_decoder_config, promote_norm_buffers, resolve_device
+from .data import (
     build_radial_vocabs,
     create_tracer_mapping,
     load_data,
     load_stoichiometric_matrix,
     prepare_id_dataset,
 )
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from .model import FluxDecoder
 
 
 class SigmaFlux:
@@ -57,9 +52,7 @@ class SigmaFlux:
 
         self.ckpt = torch.load(checkpoint, map_location='cpu', weights_only=False)
 
-        if device is None:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device = torch.device(device)
+        self.device = resolve_device(device)
 
         # Tracer name → internal tracer string mapping.
         # The internal string is Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}"
@@ -109,24 +102,9 @@ class SigmaFlux:
         _, self.cobra_model = load_stoichiometric_matrix(model_json)
 
         # ── Reconstruct FluxDecoder from checkpoint ───────────────────────────
-        cfg = FluxDecoderConfig(**{
-            k: cfg_dict[k]
-            for k in FluxDecoderConfig.__dataclass_fields__
-            if k in cfg_dict
-        })
-        # Enrich null_space_data with normalization buffers from the state_dict.
-        # Older checkpoints omit y_mean/y_std/rev_log_mean/rev_log_std from the
-        # null_space_data dict even though the trained model weights have them.
-        # PyTorch's load_state_dict(strict=False) cannot promote a None buffer to
-        # a tensor, so we must seed the constructor with the correct values.
-        nsd = dict(self.ckpt['null_space_data'])
+        cfg = flux_decoder_config(cfg_dict)
         sd  = self.ckpt['model_state_dict']
-        if nsd.get('y_mean') is None and sd.get('y_norm_mean') is not None:
-            nsd['y_mean'] = sd['y_norm_mean'].numpy()
-            nsd['y_std']  = sd['y_norm_std'].numpy()
-        if nsd.get('rev_log_mean') is None and sd.get('rev_norm_mean') is not None:
-            nsd['rev_log_mean'] = sd['rev_norm_mean'].numpy()
-            nsd['rev_log_std']  = sd['rev_norm_std'].numpy()
+        nsd = promote_norm_buffers(self.ckpt['null_space_data'], sd)
 
         token_ids       = sd['token_experiment_ids']
         flux_norm_stats = self.ckpt.get('flux_norm_stats')
