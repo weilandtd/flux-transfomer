@@ -423,14 +423,24 @@ def convolution(core_met_ix, emu_states, origin_set, device, dtype):
     if len(origin_set) > 2:
         emus = origin_set._values 
         ## first convolute every two emus, then convolute the results from that convolution and so on until we have convoluted all 8 elements together 
+        ## Both reductions step in pairs, so an ODD count leaves a last element
+        ## with no partner: emus[i+1] / all_convolutions[i+1] then overrun and
+        ## raise IndexError. Only sets whose size is a power of two survived.
+        ## Convolution is associative, so the unpaired element is simply carried
+        ## into the next round untouched.
         all_convolutions = []
-        for i in range(0, len(emus), 2): 
+        for i in range(0, len(emus) - 1, 2): 
             all_convolutions.append(convolution(core_met_ix, emu_states, OriginSet([emus[i], emus[i+1]]), device, dtype))
+        if len(emus) % 2:
+            lone = emus[-1]
+            lone_size = lone.size
+            all_convolutions.append(
+                emu_states[lone_size][core_met_ix[lone_size][lone]])
         
         
         while len(all_convolutions) > 1: 
             new_convolutions = []
-            for i in range(0, len(all_convolutions), 2): 
+            for i in range(0, len(all_convolutions) - 1, 2): 
                 cur_set_size = all_convolutions[i].shape[0] + all_convolutions[i+1].shape[0] - 2
                 t1 = torch.zeros((cur_set_size + 1),device=device, dtype = dtype)
                 t2 = torch.zeros((cur_set_size + 1),device=device, dtype = dtype)
@@ -440,6 +450,8 @@ def convolution(core_met_ix, emu_states, origin_set, device, dtype):
                 conv = torch.tensor([sum([t1[alpha - beta] * t2[beta] for beta in range(alpha + 1)])
                     for alpha in range(cur_set_size + 1)], device=device, dtype=dtype)
                 new_convolutions.append(conv)
+            if len(all_convolutions) % 2:
+                new_convolutions.append(all_convolutions[-1])
             all_convolutions = new_convolutions 
 
         return all_convolutions[0]
@@ -477,16 +489,25 @@ def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_se
     emu_size = origin_set.size
     if len(origin_set) > 2:
         emus = origin_set._values
+        ## Same pairwise assumption as convolution(): an odd count overruns.
+        ## The unpaired element is carried forward with its own derivative and
+        ## its own single-element set, so the reduction stays consistent.
         all_convolutions = []
         all_sets = []
-        for i in range(0, len(emus), 2): 
+        for i in range(0, len(emus) - 1, 2): 
             all_convolutions.append(convolution_derivative(core_met_ix, derivative_states, emu_states, OriginSet([emus[i], emus[i+1]]), device, dtype))
             all_sets.append(OriginSet([emus[i], emus[i+1]]))
+        if len(emus) % 2:
+            lone = emus[-1]
+            lone_size = lone.size
+            lone_ix = core_met_ix[lone_size][lone]
+            all_convolutions.append(derivative_states[lone_size][lone_ix])
+            all_sets.append(OriginSet([lone]))
     
         while len(all_convolutions) > 1: 
             new_sets = []
             new_convolutions = []
-            for i in range(0, len(all_convolutions), 2): 
+            for i in range(0, len(all_convolutions) - 1, 2): 
                 origin_set_1 = all_sets[i]
                 origin_set_2 = all_sets[i+1]
                 cur_set_size = all_convolutions[i].shape[1] + all_convolutions[i+1].shape[1] - 2
@@ -506,6 +527,9 @@ def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_se
                 
                 new_sets.append(OriginSet(origin_set_1._values + origin_set_2._values))
                 new_convolutions.append(conv_derivative_1 + conv_derivative_2)
+            if len(all_convolutions) % 2:
+                new_convolutions.append(all_convolutions[-1])
+                new_sets.append(all_sets[-1])
             all_convolutions = new_convolutions 
             all_sets = new_sets
 
