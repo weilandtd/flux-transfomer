@@ -88,10 +88,13 @@ Saves the trained model to `--output` (`.pt` file).
 ### 5. (optional) Train a reliability ensemble — `sigmaflux-train --ensemble-size 20`
 
 Adding `--ensemble-size 20` trains 20 seed-varied models on a shared split, written to
-`<output_dir>/ensemble/model_{0..19}.pt`. This powers the **reliability layer** (per-reaction
-error bars + the *believe* HIGH/LOW rule + measurement-vs-model diagnosis). See
-[`analysis/ensemble/README.md`](analysis/ensemble/README.md) and the write-up in
-[`reports/reliability_ensemble_methods.md`](reports/reliability_ensemble_methods.md).
+`<output_dir>/ensemble/model_{0..19}.pt`.
+
+This is the recommended way to train, because ensembles are the **default at
+prediction time**: `sigmaflux.ai.load_predictor` returns an `EnsembleSigmaFlux`
+whenever it finds an `ensemble/` directory next to the checkpoint, and reports the
+per-reaction median over members. No extra flag is needed — point inference at the
+run directory and it picks the ensemble up automatically.
 
 ## Notes
 
