@@ -159,6 +159,30 @@ def r2_score(predictions, targets):
     return torch.nan_to_num(r2, nan=0.0), int(variable.sum())
 
 
+def per_reaction_r2(predictions, targets, eps=1e-9):
+    """Per-column R², NaN where the target column is constant.
+
+    The numpy counterpart to :func:`r2_score`, with a deliberately different
+    contract: ``r2_score`` drops constant columns, so its output no longer lines
+    up with ``flux_names``. This keeps one entry per column and marks the
+    undefined ones NaN, so the result indexes alongside the reaction list.
+
+    Parameters
+    ----------
+    predictions, targets : array-like, shape (n_samples, n_reactions)
+    eps : float
+        Columns whose total sum of squares falls at or below this are NaN.
+    """
+    predictions = np.asarray(predictions)
+    targets     = np.asarray(targets)
+    ss_res = ((predictions - targets) ** 2).sum(0)
+    ss_tot = ((targets - targets.mean(0)) ** 2).sum(0)
+    # np.where evaluates both branches, so the constant columns divide by zero
+    # before being discarded; silence that rather than warn on every call.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(ss_tot > eps, 1.0 - ss_res / ss_tot, np.nan)
+
+
 def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=None):
     model.eval()
     flux_preds, flux_tgts, rev_preds, rev_tgts = [], [], [], []
