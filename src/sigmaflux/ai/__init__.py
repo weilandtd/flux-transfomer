@@ -6,7 +6,25 @@ AI module for metabolic flux prediction from labeling data.
 from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
 
 # Training
-from .train import train_model, evaluate_validation_correlations, var_norm_mse_loss
+from .train import (
+    train_model,
+    evaluate_validation_correlations,
+    var_norm_mse_loss,
+    per_reaction_r2,
+)
+
+# Inference (experimental MID data -> fluxes)
+from .inference import SigmaFlux, EnsembleSigmaFlux, load_predictor
+
+# Checkpoint loading (training data -> model + the dataset it was scored on)
+from .checkpoint import (
+    ALL,
+    VAL,
+    EvalContext,
+    build_flux_decoder,
+    load_eval_context,
+    resolve_device,
+)
 
 # Prediction
 from .predict import (
@@ -24,6 +42,9 @@ from .data import (
     load_data,
     load_data_batches,
     find_data_batches,
+    find_checkpoint,
+    split_sample_indices,
+    extract_measured_fluxes,
     create_tracer_mapping,
     load_stoichiometric_matrix,
     radial_embedding_table,
@@ -52,6 +73,18 @@ __all__ = [
     'train_model',
     'evaluate_validation_correlations',
     'var_norm_mse_loss',
+    'per_reaction_r2',
+    # Inference
+    'SigmaFlux',
+    'EnsembleSigmaFlux',
+    'load_predictor',
+    # Checkpoint loading
+    'ALL',
+    'VAL',
+    'EvalContext',
+    'build_flux_decoder',
+    'load_eval_context',
+    'resolve_device',
     # Prediction
     'predict_fluxes',
     'create_ensemble',
@@ -61,6 +94,9 @@ __all__ = [
     'load_data',
     'load_data_batches',
     'find_data_batches',
+    'find_checkpoint',
+    'split_sample_indices',
+    'extract_measured_fluxes',
     'create_tracer_mapping',
     'load_stoichiometric_matrix',
     'radial_embedding_table',
