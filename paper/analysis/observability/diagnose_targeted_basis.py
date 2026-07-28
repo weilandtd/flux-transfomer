@@ -11,8 +11,6 @@ Run from the repo root:
     python paper/analysis/diagnose_targeted_basis.py
 """
 
-import sys
-sys.path.insert(0, 'src')
 
 import numpy as np
 from cobra.io import load_json_model

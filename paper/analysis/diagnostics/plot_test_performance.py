@@ -23,7 +23,6 @@ Output is saved to <run_dir>/output/.
 
 import argparse
 import pathlib
-import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -33,7 +32,6 @@ import seaborn as sns
 from scipy.stats import norm
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_REPO_ROOT / "src"))
 from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
 
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})

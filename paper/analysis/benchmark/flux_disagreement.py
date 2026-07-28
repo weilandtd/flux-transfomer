@@ -39,7 +39,6 @@ import numpy as np
 import pandas as pd
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import load_benchmark, per_flux_r2, R2_THRESHOLD  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402

@@ -18,13 +18,11 @@ Run from repo root:
 
 import argparse
 import os
-import sys
 from collections import defaultdict
 
 import numpy as np
 import torch
 
-sys.path.insert(0, 'src')
 
 
 OBS_THRESH_HIGH = 0.30

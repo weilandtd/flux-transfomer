@@ -22,7 +22,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import yaml
 from cobra.io.json import load_json_model
 
 os.environ["OMP_NUM_THREADS"] = "4"
@@ -30,8 +29,8 @@ os.environ["MKL_NUM_THREADS"] = "4"
 os.environ["OPENBLAS_NUM_THREADS"] = "4"
 torch.set_num_threads(4)
 
-_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 
+from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 from sigmaflux.ai.data import load_data
 from sigmaflux.core.data import get_model_flux_data, get_model_labeling_data
 from sigmaflux.core.mfa import fit_mfa_model
@@ -70,11 +69,8 @@ def parse_args():
     p.add_argument("--debug", action="store_true",
                    help="Print per-step diagnostics to localise misfit")
     p.add_argument("--seed", type=int, default=42)
+    add_root_argument(p)
     return p.parse_args()
-
-
-def _p(rel):
-    return os.path.join(_REPO_ROOT, rel)
 
 
 def _chi2_split(model):
@@ -127,8 +123,10 @@ def _labeling_agreement(pred, gt, extra_mask=None):
 def main():
     args = parse_args()
 
-    with open(_p(args.config)) as f:
-        cfg = yaml.safe_load(f)
+    cfg, root = load_config(args.config, args.root)
+
+    def _p(rel):
+        return resolve_path(rel, root)
 
     tracer_cfg = cfg["labeling"]["tracers"]
     measured_rxn_ids = cfg.get("training", {}).get("measured_fluxes", [])

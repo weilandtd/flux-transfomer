@@ -24,7 +24,6 @@ import numpy as np
 import pandas as pd
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 sys.path.insert(0, str(_REPO_ROOT / "models"))
 from build_pathway_annotations import SUBSYSTEM_TO_COARSE  # noqa: E402

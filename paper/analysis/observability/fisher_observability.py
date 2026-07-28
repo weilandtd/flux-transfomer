@@ -14,13 +14,13 @@ resolve, and how many of the 387 reactions become predictable?
 
 Usage: python paper/analysis/fisher_observability.py --config paper/configs/i_orientalis.yaml --data-dir <run>
 """
-import argparse, os, sys, numpy as np, pandas as pd, yaml
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 'src'))
+import argparse, os, numpy as np, pandas as pd
 import matplotlib as mpl; mpl.use('Agg'); import matplotlib.pyplot as plt, seaborn as sns
 from sigmaflux.ai.data import load_data, load_stoichiometric_matrix
 from sigmaflux.ai import features as feat_lib
 from sigmaflux.ai.fisher_selection import empirical_sensitivity_grams, observable_spectrum, _prior_precision
 from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 COLORS = {'main': '#4C72B0'}
@@ -30,15 +30,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--config', required=True)
     ap.add_argument('--data-dir', required=True)
+    add_root_argument(ap)
     args = ap.parse_args()
-    cfg = yaml.safe_load(open(args.config))
+    cfg, root = load_config(args.config, args.root)
     fc = cfg.get('features', {})
     noise_std = fc.get('noise_std', 0.02)
     n_samples = fc.get('n_samples', 10000)
 
-    _abs = lambda p: p if os.path.isabs(p) else os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), p)
     model_json = os.path.join(args.data_dir, 'model_prepared_for_mfa.json')
-    if not os.path.isfile(model_json): model_json = _abs(cfg['model_file'])
+    if not os.path.isfile(model_json): model_json = resolve_path(cfg['model_file'], root)
 
     lab, flux, rev = load_data(args.data_dir, max_samples=n_samples)
     # FORWARD flux directions only — no reversibility augmentation

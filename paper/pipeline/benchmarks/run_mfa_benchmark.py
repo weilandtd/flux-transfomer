@@ -33,7 +33,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
-import yaml
 from cobra.io.json import load_json_model
 
 _n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
@@ -41,10 +40,10 @@ os.environ.setdefault("OMP_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("MKL_NUM_THREADS", str(_n_threads))
 os.environ.setdefault("OPENBLAS_NUM_THREADS", str(_n_threads))
 
-_REPO_ROOT = str(next(p for p in Path(__file__).resolve().parents if (p / "pyproject.toml").is_file()))
 
 torch.set_num_threads(_n_threads)
 
+from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
 from sigmaflux.core.data import FluxData, MassIsotopomerData
 from sigmaflux.core.experiment import Experiment
@@ -95,11 +94,8 @@ def parse_args():
                    help="z-score for the acceptance bound M ≤ 1 + z·sqrt(2/h_eff) "
                         "(1.645 = one-sided 95%%).")
     p.add_argument("--seed", type=int, default=42)
+    add_root_argument(p)
     return p.parse_args()
-
-
-def _p(rel):
-    return os.path.join(_REPO_ROOT, rel)
 
 
 def _make_measured_flux_data(mfa_model, measured_rxn_ids, gt_flux_series, flux_noise_std, rng):
@@ -204,8 +200,10 @@ def _build_noisy_experiments(experiments, gt_series, noise_std, rng, mfa_model,
 def main():
     args = parse_args()
 
-    with open(_p(args.config)) as f:
-        cfg = yaml.safe_load(f)
+    cfg, root = load_config(args.config, args.root)
+
+    def _p(rel):
+        return resolve_path(rel, root)
 
     tracer_cfg = cfg["labeling"]["tracers"]
     measured_rxn_ids = cfg.get("training", {}).get("measured_fluxes", [])
