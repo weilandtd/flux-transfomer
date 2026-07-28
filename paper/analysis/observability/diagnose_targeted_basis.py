@@ -7,10 +7,14 @@ Checks:
 4. Z_proj sanity: v @ Z_proj @ Z.T ≈ v for sampled fluxes
 5. Coordinate recovery: y_true = v @ Z_proj; v_rec = y_true @ Z.T ≈ v
 
-Run from the repo root:
-    python paper/analysis/diagnose_targeted_basis.py
+Usage:
+    python paper/analysis/observability/diagnose_targeted_basis.py \\
+        --config paper/configs/i_orientalis.yaml --data-dir <run>
 """
 
+
+import argparse
+import os
 
 import numpy as np
 from cobra.io import load_json_model
@@ -18,19 +22,8 @@ from cobra.util.array import create_stoichiometric_matrix
 
 from sigmaflux.ai.data import load_data
 from sigmaflux.ai.utils import compute_targeted_nullspace
+from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 
-# ── Config ───────────────────────────────────────────────────────────────────
-
-CONFIGS = {
-    'IO': {
-        'model_json':  'models/I_orientalis/imIsor_annotated_hierarchical.json',
-        'data_dir':    'paper/.results/i_orientalis_20260614',
-        'targets': [
-            'EX_glc__D_e', 'PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c',
-            'CARB_c', 'EX_etoh_e', 'EX_ac_e', 'EX_glyc_e', 'EX_succ_e',
-        ],
-    },
-}
 
 
 def sep(title=''):
@@ -168,6 +161,26 @@ def run(name, cfg):
     print(f'  y_right (v @ Z_proj): std range [{y_right.std(axis=0).min():.2f}, {y_right.std(axis=0).max():.2f}]')
 
 
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--config', required=True, help='Organism YAML config')
+    ap.add_argument('--data-dir', required=True, help='Run directory with wb_model_*.h5')
+    add_root_argument(ap)
+    args = ap.parse_args()
+
+    cfg, root = load_config(args.config, args.root)
+    # Prefer the prepared model saved alongside the run, as the trainer does.
+    model_json = os.path.join(args.data_dir, 'model_prepared_for_mfa.json')
+    if not os.path.isfile(model_json):
+        model_json = resolve_path(cfg['model_file'], root)
+
+    run(cfg['name'], {
+        'model_json': model_json,
+        'data_dir':   args.data_dir,
+        'targets':    cfg.get('training', {}).get('measured_fluxes', []),
+    })
+
+
 if __name__ == '__main__':
-    for name, cfg in CONFIGS.items():
-        run(name, cfg)
+    main()

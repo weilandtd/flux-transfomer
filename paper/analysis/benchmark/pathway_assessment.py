@@ -27,13 +27,9 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 sys.path.insert(0, str(_REPO_ROOT / "models"))
 from build_pathway_annotations import SUBSYSTEM_TO_COARSE  # noqa: E402
+from analysis_predicted_fluxes import _organism_path, _resolve_organism  # noqa: E402
 from plot_test_performance import load_benchmark, per_flux_r2, R2_THRESHOLD  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
-
-GEMS = {
-    "i_orientalis": "models/I_orientalis/imIsor_GEM.xlsx",
-    "s_cerevisiae": "models/S_cerevisiae/scGEM.xlsx",
-}
 
 # A subsystem needs at least this many scored reactions before its median is worth
 # reporting — below it the median is one or two reactions and swings wildly.
@@ -52,10 +48,8 @@ def parse_args():
 
 def reaction_annotation(run_dir: pathlib.Path) -> pd.DataFrame:
     """subsystem / coarse subsystem / KEGG id / EC number, per reaction."""
-    organism = next((k for k in GEMS if run_dir.name.startswith(k)), None)
-    if organism is None:
-        raise ValueError(f"Cannot detect organism from '{run_dir.name}'. Known: {list(GEMS)}")
-    gem = pd.read_excel(_REPO_ROOT / GEMS[organism], sheet_name="Reactions")
+    org = _resolve_organism(run_dir)
+    gem = pd.read_excel(_organism_path(org, org["gem_xlsx"]), sheet_name="Reactions")
     ann = gem.set_index(gem["Rxn ID"].astype(str))[["subsystem", "kegg.reaction", "ec-code"]]
     ann = ann.rename(columns={"kegg.reaction": "kegg", "ec-code": "ec"})
     ann["coarse"] = ann["subsystem"].map(SUBSYSTEM_TO_COARSE).fillna("Other")

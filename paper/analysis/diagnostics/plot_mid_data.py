@@ -27,6 +27,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
+from sigmaflux.pipeline._paths import load_config, resolve_path
+
 mpl.use("Agg")
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
@@ -36,18 +38,32 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 CONDITION_COLORS = {"C": "#f3c47f", "N": "#7fb3d5", "P": "#2c9c8f"}
 COLORS = {"error": "#444444"}
 
-ORGANISMS = {
-    "i_orientalis": dict(data="data/I_orientalis", prefix="I_orientalis",
-                         reference="Shen_et_al_flux_data_IO.xlsx"),
-    "s_cerevisiae": dict(data="data/S_cervesiae", prefix="S_cerevisiae",
-                         reference="Shen_et_al_flux_data_SC.xlsx"),
-}
+CONFIG_DIR = _REPO_ROOT / "paper" / "configs"
+
+#: Organism configs carrying an `experiment:` block, by config stem.
+ORGANISM_KEYS = sorted(
+    p.stem for p in CONFIG_DIR.glob("*.yaml")
+    if "experiment:" in p.read_text()
+)
+
+
+def organism(key: str) -> dict:
+    """Experimental-data paths for an organism, read from its YAML config."""
+    cfg, root = load_config(CONFIG_DIR / f"{key}.yaml")
+    exp = cfg["experiment"]
+    return dict(prefix=cfg["name"], data=exp["data_dir"],
+                reference=exp["reference_flux"], root=root)
+
+
+def _opath(org: dict, *parts) -> pathlib.Path:
+    """Resolve a config-relative path against the organism's project root."""
+    return pathlib.Path(resolve_path("/".join(parts), org["root"]))
 
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--organism", default="i_orientalis", choices=list(ORGANISMS))
+    p.add_argument("--organism", default="i_orientalis", choices=ORGANISM_KEYS)
     p.add_argument("--compound", default="Mal", help="Compound name as it appears in the xlsx")
     p.add_argument("--tracer", default="U-13C glucose (50%)", help="Sheet name of the tracer")
     p.add_argument("--condition", default="C", choices=["C", "N", "P"])
@@ -62,7 +78,7 @@ def parse_args():
 
 def load_mid(org: dict, condition: str, tracer: str, compound: str) -> pd.DataFrame:
     """Tidy replicate-level MIDs: one row per (growth condition, replicate, M+n)."""
-    xlsx = _REPO_ROOT / org["data"] / f"{org['prefix']}_{condition}.xlsx"
+    xlsx = _opath(org, org["data"], f"{org['prefix']}_{condition}.xlsx")
     sheet = pd.read_excel(xlsx, sheet_name=tracer)
 
     sub = sheet[sheet["Compound"].astype(str) == compound]
@@ -92,9 +108,10 @@ def load_all_replicate_sd() -> pd.DataFrame:
     by more than 3×.
     """
     rows = []
-    for org_key, org in ORGANISMS.items():
+    for org_key in ORGANISM_KEYS:
+        org = organism(org_key)
         for cond in ("C", "N", "P"):
-            xlsx = _REPO_ROOT / org["data"] / f"{org['prefix']}_{cond}.xlsx"
+            xlsx = _opath(org, org["data"], f"{org['prefix']}_{cond}.xlsx")
             if not xlsx.exists():
                 continue
             for tracer, sheet in pd.read_excel(xlsx, sheet_name=None).items():
@@ -158,7 +175,7 @@ def plot_noise_distribution(df: pd.DataFrame, assumed_sigma: float,
 
 def growth_rates(org: dict, condition: str) -> dict:
     """Dilution rate per growth condition, from the reference biomass flux."""
-    ref = pd.read_excel(_REPO_ROOT / org["data"] / org["reference"]).set_index("id")
+    ref = pd.read_excel(_opath(org, org["data"], org["reference"])).set_index("id")
     pat = re.compile(rf"^{re.escape(condition)}(\d*)_mfa$")
     out = {}
     for c in ref.columns:
@@ -211,7 +228,7 @@ def plot_mid(df: pd.DataFrame, rates: dict, compound: str, tracer: str,
 
 def main():
     args = parse_args()
-    org = ORGANISMS[args.organism]
+    org = organism(args.organism)
     default_dir = (_REPO_ROOT / "paper" / ".results" / f"{args.organism}_20260614" / "output")
 
     if args.mode == "noise":

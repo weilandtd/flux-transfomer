@@ -35,6 +35,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
 
+from sigmaflux.pipeline._paths import load_config, resolve_path
+
 mpl.use('Agg')
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 
@@ -55,20 +57,43 @@ CONDITIONS = ['C', 'N', 'P']
 # Reactions with |flux| below this are excluded from the log-log plot.
 FLUX_MIN_ABS = 1e-6
 
-ORGANISMS = {
-    'i_orientalis': dict(prefix='I_orientalis', data='data/I_orientalis',
-                         reference='Shen_et_al_flux_data_IO.xlsx'),
-    's_cerevisiae': dict(prefix='S_cerevisiae', data='data/S_cervesiae',
-                         reference='Shen_et_al_flux_data_SC.xlsx'),
-}
+CONFIG_DIR = _REPO_ROOT / 'paper' / 'configs'
 
 
-def _resolve_organism(run_dir: pathlib.Path) -> dict:
-    name = run_dir.name
-    for key, info in ORGANISMS.items():
-        if name.startswith(key):
-            return info
-    raise ValueError(f"Cannot detect organism from '{name}'. Known: {list(ORGANISMS)}")
+def _config_for_run(run_dir: pathlib.Path) -> pathlib.Path:
+    """The organism config a run directory came from, by `<config-stem>_<date>`.
+
+    Longest stem first, so `i_orientalis_ko_20260614` picks i_orientalis_ko
+    rather than i_orientalis.
+    """
+    stems = sorted(CONFIG_DIR.glob('*.yaml'), key=lambda p: -len(p.stem))
+    for cfg_path in stems:
+        if run_dir.name.startswith(cfg_path.stem):
+            return cfg_path
+    raise ValueError(f"Cannot detect organism config from '{run_dir.name}'. "
+                     f"Known: {[p.stem for p in stems]}")
+
+
+def _resolve_organism(run_dir: pathlib.Path, config=None) -> dict:
+    """Experimental-data paths for a run, read from its organism YAML."""
+    config = pathlib.Path(config) if config else _config_for_run(run_dir)
+    cfg, root = load_config(config)
+    exp = cfg.get('experiment')
+    if not exp:
+        raise ValueError(f"{config} has no 'experiment:' block "
+                         "(data_dir / reference_flux / gem_xlsx)")
+    return dict(
+        prefix    = cfg['name'],
+        data      = exp['data_dir'],
+        reference = exp['reference_flux'],
+        gem_xlsx  = exp.get('gem_xlsx'),
+        root      = root,
+    )
+
+
+def _organism_path(org: dict, *parts) -> pathlib.Path:
+    """Resolve a config-relative path against the organism's project root."""
+    return pathlib.Path(resolve_path(os.path.join(*parts), org['root']))
 
 
 def _ref_by_gc(ref_path: pathlib.Path, condition: str) -> pd.DataFrame:
@@ -172,7 +197,7 @@ def _label_deviations(fig, ax, sub: pd.DataFrame, mark: pd.DataFrame, max_labels
 def build_plot_df(run_dir: pathlib.Path, org: dict, panel_rxns: set) -> pd.DataFrame:
     """Tidy DataFrame of |pred| vs |ref| per (condition, growth condition, reaction),
     restricted to SigmaFlux-identifiable reactions and finite positive values."""
-    ref_path = _REPO_ROOT / org['data'] / org['reference']
+    ref_path = _organism_path(org, org['data'], org['reference'])
     parts = []
 
     for cond in CONDITIONS:
@@ -325,6 +350,8 @@ def main():
                              "writes each as its own figure.")
     parser.add_argument('--max-labels', type=int, default=5,
                         help='Worst outliers to name per panel (default 5)')
+    parser.add_argument('--config', default=None,
+                        help='Organism YAML (default: matched from the run directory name)')
     parser.add_argument('--all-reactions', action='store_true',
                         help='Plot all shared reactions instead of filtering to SigmaFlux-identifiable '
                              '(skips identifiability.csv). Used to view the SigmaFlux experimental '
@@ -332,7 +359,7 @@ def main():
     args = parser.parse_args()
 
     run_dir = args.run_dir.resolve()
-    org = _resolve_organism(run_dir)
+    org = _resolve_organism(run_dir, args.config)
 
     id_path = run_dir / 'output' / 'identifiability.csv'
     if args.all_reactions or not id_path.exists():
