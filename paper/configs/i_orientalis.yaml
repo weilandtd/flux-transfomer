@@ -99,7 +99,7 @@ features:
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: imisor_transformer.pt
-  ensemble_size: 5              # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
+  ensemble_size: 20             # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
   epochs: 1000
   early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
   batch_size: 256
