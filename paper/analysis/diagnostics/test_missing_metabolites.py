@@ -18,37 +18,19 @@ Usage:
 """
 
 import argparse
-import os
-import sys
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from sigmaflux.ai.data import (
-    build_radial_vocabs,
-    create_tracer_mapping,
-    load_data,
-    load_stoichiometric_matrix,
-    prepare_id_dataset,
-)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from sigmaflux.ai.train import per_reaction_r2
 
 
-def r2_per_flux(preds, targets):
-    """R² score per flux dimension. Returns (n_fluxes,) array."""
-    ss_res = ((preds - targets) ** 2).sum(axis=0)
-    ss_tot = ((targets - targets.mean(axis=0)) ** 2).sum(axis=0)
-    return np.where(ss_tot > 1e-8, 1.0 - ss_res / ss_tot, 0.0)
-
-
-def run_inference(model, loader, device, nsd, padding_mask_fn=None):
+def run_inference(model, loader, device, labeling_mask_fn=None):
     """Run model over all batches, return (preds, targets) as numpy arrays."""
     all_preds, all_targets = [], []
     model.eval()
+    measured_flux_ids = model.fixed_idx_t.to(device)
     with torch.no_grad():
         for batch in loader:
             (cids, lids, tids, fracs), targets = batch
@@ -58,17 +40,18 @@ def run_inference(model, loader, device, nsd, padding_mask_fn=None):
             fracs = fracs.to(device)
             B     = cids.shape[0]
 
-            pmask = None
-            if padding_mask_fn is not None:
-                pmask = padding_mask_fn(cids[0], B, device)
+            lmask = None
+            if labeling_mask_fn is not None:
+                lmask = labeling_mask_fn(cids[0], B, device)
 
-            fixed_fluxes = None
-            if model.cfg.n_measured > 0:
-                fixed_idx    = nsd.get('fixed_idx', [])
-                fixed_fluxes = targets[:, fixed_idx].to(device)
+            measured_fluxes = None
+            if len(model.fixed_idx) > 0:
+                measured_fluxes = targets.to(device).index_select(1, measured_flux_ids)
 
             fluxes, _ = model(cids, lids, tids, fracs,
-                              padding_mask=pmask, fixed_fluxes=fixed_fluxes)
+                              labeling_mask=lmask,
+                              measured_fluxes=measured_fluxes,
+                              measured_flux_ids=measured_flux_ids)
             all_preds.append(fluxes.cpu().numpy())
             all_targets.append(targets[:, :model.flux_dim].numpy())
 
@@ -76,7 +59,7 @@ def run_inference(model, loader, device, nsd, padding_mask_fn=None):
 
 
 def make_mask_fn(masked_met_set, token_labels):
-    """Return a padding_mask_fn that masks tokens belonging to masked_met_set."""
+    """Return a labeling_mask_fn that masks tokens belonging to masked_met_set."""
     token_mets = [lbl.split(' ')[0] for lbl in token_labels]
     mask_indices = [j for j, m in enumerate(token_mets) if m in masked_met_set]
 
@@ -105,49 +88,32 @@ def main():
                         help='Save report to text file')
     args = parser.parse_args()
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = resolve_device()
 
     lines = []
     def out(msg=''):
         print(msg)
         lines.append(msg)
 
-    # ── Load checkpoint ───────────────────────────────────────────────────────
-    ckpt       = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
-    cfg_dict   = ckpt['model_config']
-    nsd        = ckpt['null_space_data']
-    data_dir   = ckpt['data_dir']
-    model_json = ckpt.get('model_json')
-    flux_names = ckpt.get('flux_names', [])
-
-    # ── Load data + vocabs ────────────────────────────────────────────────────
-    labeling_df, flux_df, reversibility_df = load_data(
-        data_dir, max_samples=args.n_samples * 2
-    )
-    _, base_tracer_names = create_tracer_mapping(labeling_df)
-    _, cobra_model       = load_stoichiometric_matrix(model_json)
-
-    vocabs = build_radial_vocabs(
-        cobra_model, labeling_df, base_tracer_names,
-        h_compound = cfg_dict.get('d_comp', 32) // 2,
-        h_label    = cfg_dict.get('d_label', 10) // 2,
-        h_tracer   = cfg_dict.get('d_tracer',  2) // 2,
+    # ── Load checkpoint, data and model ───────────────────────────────────────
+    # The leading n_samples columns, not the saved val split — this measures
+    # degradation against its own baseline, so the sample choice is arbitrary.
+    probe = load_eval_context(args.checkpoint, build_dataset=False,
+                              max_samples=args.n_samples * 2)
+    val_indices = np.arange(min(args.n_samples, probe.labeling_df.shape[1]))
+    ctx = load_eval_context(
+        probe.ckpt, samples=val_indices,
+        data=(probe.labeling_df, probe.flux_df, probe.reversibility_df),
     )
 
-    val_indices = np.arange(min(args.n_samples, labeling_df.shape[1]))
-    (val_dataset, _, _, _, _) = prepare_id_dataset(
-        labeling_df, flux_df, reversibility_df,
-        vocabs           = vocabs,
-        train_indices    = val_indices,
-        normalize        = True,
-        measured_fluxes  = ckpt.get('measured_fluxes'),
-        norm_stats_input = ckpt.get('norm_stats'),
-    )
-    loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+    data_dir    = ctx.data_dir
+    flux_names  = ctx.flux_names
+    vocabs      = ctx.vocabs
+    val_dataset = ctx.dataset
+    loader      = ctx.loader(batch_size=64)
 
     # ── Build token labels + metabolite list ──────────────────────────────────
-    first_batch = next(iter(DataLoader(val_dataset, batch_size=1)))
-    (cids0, lids0, tids0, _), _ = first_batch
+    (cids0, lids0, tids0, _), _ = next(iter(ctx.loader(batch_size=1)))
     cids0 = cids0[0].numpy()
     lids0 = lids0[0].numpy()
 
@@ -175,14 +141,7 @@ def main():
     n_mets = len(unique_mets)
 
     # ── Reconstruct model ─────────────────────────────────────────────────────
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__
-                               if k in cfg_dict})
-    token_ids = ckpt['model_state_dict']['token_experiment_ids']
-    model = FluxDecoder(cfg, stoichiometric_matrix=None,
-                        token_experiment_ids=token_ids, null_space_data=nsd,
-                        fixed_flux_indices=nsd.get('fixed_idx', []))
-    model.load_state_dict(ckpt['model_state_dict'])
-    model.to(device)
+    model = build_flux_decoder(ctx, device=device)
 
     out(f"Model : {args.checkpoint}")
     out(f"Data  : {data_dir}  ({len(val_dataset)} samples)")
@@ -191,8 +150,8 @@ def main():
     out()
 
     # ── Step 1: Baseline (all metabolites) ────────────────────────────────────
-    preds_base, targets_base = run_inference(model, loader, device, nsd)
-    r2_base = r2_per_flux(preds_base, targets_base)
+    preds_base, targets_base = run_inference(model, loader, device)
+    r2_base = np.nan_to_num(per_reaction_r2(preds_base, targets_base))
 
     recoverable_idx  = np.where(r2_base >= args.r2_threshold)[0]
     recoverable_names = [flux_names[i] if i < len(flux_names) else str(i)
@@ -232,9 +191,9 @@ def main():
             masked_mets  = set(rng.choice(unique_mets, size=n_mask, replace=False).tolist())
             mask_fn      = make_mask_fn(masked_mets, token_labels)
 
-            preds_m, targets_m = run_inference(model, loader, device, nsd,
-                                               padding_mask_fn=mask_fn)
-            r2_m = r2_per_flux(preds_m, targets_m)
+            preds_m, targets_m = run_inference(model, loader, device,
+                                               labeling_mask_fn=mask_fn)
+            r2_m = np.nan_to_num(per_reaction_r2(preds_m, targets_m))
 
             # Among the baseline-recoverable set, which are still recovered?
             r2_rec_masked   = r2_m[recoverable_idx]

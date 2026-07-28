@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import os
 import pathlib
-import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -30,11 +29,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
-
 from sigmaflux.ai.data import load_data
 from sigmaflux.analysis.sensitivity import hsic_indices
+from sigmaflux.pipeline._paths import find_project_root, resolve_path
 
 COLORS = {
     "main":      "#2C7BB6",
@@ -140,14 +137,11 @@ def _run_model_inference(
     """Run FluxDecoder on sample_idx samples, return per-reaction R² DataFrame."""
     try:
         import torch
-        from torch.utils.data import DataLoader
-        from sigmaflux.ai.data import (
-            build_radial_vocabs,
-            create_tracer_mapping,
-            load_stoichiometric_matrix,
-            prepare_id_dataset,
+        from sigmaflux.ai.checkpoint import (
+            build_flux_decoder,
+            load_eval_context,
+            resolve_device,
         )
-        from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
     except ImportError as exc:
         print(f"Warning: missing dependency for model inference ({exc}); skipping.")
         return None
@@ -155,77 +149,43 @@ def _run_model_inference(
     print(f"\nLoading model from {ckpt_path!r} ...")
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
-    # Resolve COBRA model JSON
-    if model_json is None:
-        model_json = ckpt.get("model_json", "")
-    if not os.path.isabs(model_json):
-        model_json = os.path.join(_REPO_ROOT, model_json)
-    if not os.path.exists(model_json):
+    resolved_json = model_json or ckpt.get("model_json", "")
+    if resolved_json and not os.path.isabs(resolved_json):
+        resolved_json = resolve_path(resolved_json, find_project_root(ckpt_path))
+    if not resolved_json or not os.path.exists(resolved_json):
         print(
-            f"Warning: COBRA model JSON not found at {model_json!r}. "
+            f"Warning: COBRA model JSON not found at {resolved_json!r}. "
             "Pass --model-json to specify the path."
         )
         return None
 
-    stoichiometric_matrix, cobra_model = load_stoichiometric_matrix(model_json)
-
-    _, base_tracer_names = create_tracer_mapping(labeling_df)
-    vcabs = ckpt["vocabs"]
-    vocabs = build_radial_vocabs(
-        cobra_model, labeling_df, base_tracer_names,
-        h_compound=vcabs["h_compound"],
-        h_label=vcabs["h_label"],
-        h_tracer=vcabs["h_tracer"],
+    # HSIC already loaded and subsampled the data; score the identical rows.
+    ctx = load_eval_context(
+        ckpt,
+        samples=sample_idx,
+        data=(labeling_df, flux_df, rev_df),
+        model_json=resolved_json,
+        measured_fluxes=ckpt["norm_stats"].get("measured_fluxes_feature_names") or None,
     )
+    device = resolve_device(None if device == "auto" else device)
+    model = build_flux_decoder(ctx, device=device)
 
-    norm_stats = ckpt["norm_stats"]
-    measured_fluxes = norm_stats.get("measured_fluxes_feature_names") or None
-
-    dataset, _, token_exp_ids, _, tracer_combo_emb = prepare_id_dataset(
-        labeling_df, flux_df, rev_df,
-        vocabs=vocabs,
-        train_indices=sample_idx,
-        normalize=True,
-        measured_fluxes=measured_fluxes,
-        norm_stats_input=norm_stats,
-    )
-
-    cfg = FluxDecoderConfig(**ckpt["model_config"])
-    null_space_data = ckpt["null_space_data"]
-    fixed_flux_indices = null_space_data.get("fixed_idx") or None
-
-    model = FluxDecoder(
-        config=cfg,
-        stoichiometric_matrix=stoichiometric_matrix,
-        token_experiment_ids=token_exp_ids,
-        compound_emb_table=vocabs["compound_emb_table"],
-        label_emb_table=vocabs["label_emb_table"],
-        tracer_emb_table=tracer_combo_emb,
-        fixed_flux_indices=fixed_flux_indices,
-        null_space_data=null_space_data,
-    )
-    model.load_state_dict(ckpt["model_state_dict"])
-    model.eval()
-
-    if device == "auto":
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
-
-    flux_dim = cfg.n_fluxes
-    loader = DataLoader(dataset, batch_size=64, shuffle=False)
+    flux_dim = ctx.config.n_fluxes
+    measured_flux_ids = model.fixed_idx_t.to(device)
 
     flux_preds_list, flux_tgts_list = [], []
     with torch.no_grad():
-        for (cids, lids, tids, fracs), tgts in loader:
+        for (cids, lids, tids, fracs), tgts in ctx.loader(batch_size=64):
             cids  = cids.to(device)
             lids  = lids.to(device)
             tids  = tids.to(device)
             fracs = fracs.to(device)
-            fixed_fluxes = None
-            if cfg.n_measured > 0:
-                bypass_mask  = token_exp_ids.to(device) == -1
-                fixed_fluxes = fracs[:, bypass_mask, 0]
-            pred_flux, _ = model(cids, lids, tids, fracs, None, fixed_fluxes)
+            measured_fluxes = None
+            if len(model.fixed_idx) > 0:
+                measured_fluxes = tgts.to(device).index_select(1, measured_flux_ids)
+            pred_flux, _ = model(cids, lids, tids, fracs,
+                                 measured_fluxes=measured_fluxes,
+                                 measured_flux_ids=measured_flux_ids)
             flux_preds_list.append(pred_flux.cpu())
             flux_tgts_list.append(tgts[:, :flux_dim])
 
@@ -253,7 +213,7 @@ def _run_model_inference(
     )
 
     print(
-        f"Model R² on {n_sub} samples: {int(variable.sum())} variable reactions, "
+        f"Model R² on {len(sample_idx)} samples: {int(variable.sum())} variable reactions, "
         f"mean={r2.mean():.4f}, median={float(np.median(r2)):.4f}"
     )
     return pd.DataFrame({"model_r2": r2}, index=pd.Index(var_names))
