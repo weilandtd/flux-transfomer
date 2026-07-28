@@ -22,7 +22,6 @@ Requires environment setup:
 
 import argparse
 import os
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -34,17 +33,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from sigmaflux.ai.data import (
-    build_radial_vocabs,
-    create_tracer_mapping,
-    load_data,
-    load_stoichiometric_matrix,
-    prepare_id_dataset,
-)
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.checkpoint import ALL, build_flux_decoder, load_eval_context
 
 
 def collect_tokens(model, dataset, max_samples, device):
@@ -149,66 +138,28 @@ def main():
     device = 'cpu'
     np.random.seed(args.random_state)
 
-    # ── Load checkpoint ───────────────────────────────────────────────────────
+    # ── Load checkpoint, data and model ───────────────────────────────────────
+    # Every sample column, not the saved val split: the tSNE is over token
+    # embeddings, so more samples is strictly better.
     print(f"Loading checkpoint from {args.checkpoint}")
-    ckpt      = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    cfg_dict  = ckpt['model_config']
-    nsd       = ckpt['null_space_data']
-    data_dir  = ckpt['data_dir']
-    model_json = ckpt.get('model_json')
+    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+    nsd = ckpt['null_space_data']
     flux_names = ckpt.get('flux_names', [])
-    fixed_idx  = nsd.get('fixed_idx', [])
+    fixed_idx = nsd.get('fixed_idx', [])
     measured_flux_names = [flux_names[i] for i in fixed_idx] if flux_names else None
 
-    # ── Rebuild vocabs ────────────────────────────────────────────────────────
-    print("Building vocabs...")
-    labeling_df, flux_df, reversibility_df = load_data(data_dir, max_samples=None)
-    _, base_tracer_names = create_tracer_mapping(labeling_df)
-    _, cobra_model = load_stoichiometric_matrix(model_json)
-
-    vocabs = build_radial_vocabs(
-        cobra_model,
-        labeling_df,
-        base_tracer_names,
-        h_compound=cfg_dict.get('d_comp', 32) // 2,
-        h_label=cfg_dict.get('d_label', 10) // 2,
-        h_tracer=cfg_dict.get('d_tracer', 2) // 2,
-    )
-
-    # ── Build dataset ─────────────────────────────────────────────────────────
-    print("Building dataset...")
-    dataset, _, token_experiment_ids, _, _ = prepare_id_dataset(
-        labeling_df,
-        flux_df,
-        reversibility_df,
-        vocabs=vocabs,
-        measured_fluxes=measured_flux_names,
-    )
+    print("Building vocabs and dataset...")
+    # Only load what will actually be scored: collect_tokens walks the dataset in
+    # order and stops at --max-samples, so reading the full run wastes memory.
+    ctx = load_eval_context(ckpt, samples=ALL, measured_fluxes=measured_flux_names,
+                            max_samples=args.max_samples)
+    vocabs = ctx.vocabs
+    labeling_df = ctx.labeling_df
+    dataset = ctx.dataset
     print(f"  Dataset size: {len(dataset)} samples")
 
-    # ── Reconstruct model ─────────────────────────────────────────────────────
     print("Reconstructing model...")
-    cfg = FluxDecoderConfig(**{k: cfg_dict[k] for k in FluxDecoderConfig.__dataclass_fields__
-                               if k in cfg_dict})
-    flux_norm_stats = None
-    if 'flux_norm_mean' in ckpt['model_state_dict'] and 'flux_norm_std' in ckpt['model_state_dict']:
-        flux_norm_stats = {
-            'mean': ckpt['model_state_dict']['flux_norm_mean'].numpy(),
-            'std':  ckpt['model_state_dict']['flux_norm_std'].numpy(),
-        }
-
-    model = FluxDecoder(
-        cfg,
-        token_experiment_ids=token_experiment_ids,
-        null_space_data=nsd,
-        compound_emb_table=None,
-        label_emb_table=None,
-        tracer_emb_table=None,
-        flux_norm_stats=flux_norm_stats,
-    )
-    model.load_state_dict(ckpt['model_state_dict'], strict=False)
-    model.to(device)
-    model.eval()
+    model = build_flux_decoder(ctx, device=device, strict=False)
 
     n_lab = dataset.compound_ids.shape[0]
     n_fx  = len(model.fixed_idx)
