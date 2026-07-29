@@ -4,6 +4,28 @@
 from collections.abc import Iterable
 import cobra
 
+from sigmaflux.expansion.utils import can_make_met
+
+
+def _produces_from_nothing(rxn, metabolite):
+    """
+    Check if a reaction introduces the metabolite "from nothing", i.e. the
+    producing side of the reaction carries no educt metabolite.  Such a
+    production is not connected to any upstream EMU node and marks the
+    metabolite as a network input (boundary).
+
+    :param rxn: cobra.Reaction
+    :param metabolite: cobra.Metabolite
+    :return: bool
+    """
+    # forward production: metabolite is a product, educts are the reactants
+    if rxn.upper_bound > 0 and metabolite in rxn.products and len(rxn.reactants) == 0:
+        return True
+    # reverse production: metabolite is a reactant, educts are the products
+    if rxn.lower_bound < 0 and metabolite in rxn.reactants and len(rxn.products) == 0:
+        return True
+    return False
+
 
 class EMU(object):
     """
@@ -18,6 +40,19 @@ class EMU(object):
         """
         if not isinstance(metabolite, cobra.Metabolite):
             raise TypeError(f'Input {metabolite} is of type {type(metabolite)} must be cobra.Metabolite')
+
+        # Boundary status is a property of the stoichiometry and must be read
+        # from the live (model-attached) metabolite BEFORE the copy below
+        # detaches it (metabolite.reactions would then be empty).  An EMU is a
+        # boundary (network input) iff an atom-mapped reaction produces its
+        # metabolite "from nothing" -- the production has no upstream educt.
+        self._is_boundary = any(
+            'atom_mapping' in rxn.annotation
+            and can_make_met(rxn, metabolite)
+            and _produces_from_nothing(rxn, metabolite)
+            for rxn in metabolite.reactions
+        )
+
         self._metabolite = metabolite.copy()
         self.mid = mid
 
@@ -43,6 +78,10 @@ class EMU(object):
     @property
     def metabolite(self) -> str:
         return self._metabolite.id
+
+    @property
+    def is_boundary(self) -> bool:
+        return self._is_boundary
 
     def __eq__(self, other):
         if isinstance(other, EMU):
@@ -80,6 +119,10 @@ class OriginSet(object):
     @property
     def size(self):
         return sum([v.size for v in self._values])
+
+    @property
+    def is_boundary(self) -> bool:
+        return any(v._is_boundary for v in self._values) or len(self._values) > 1
 
     def __len__(self):
         return len(self._values)

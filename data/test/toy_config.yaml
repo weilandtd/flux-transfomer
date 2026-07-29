@@ -1,5 +1,5 @@
 name: toy_one_carbon
-model_file: models/toy/one_carbon_annotated.json
+model_file: models/atomistic/toy/one_carbon_annotated.json
 device: cpu
 
 labeling:

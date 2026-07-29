@@ -3,10 +3,31 @@ AI module for metabolic flux prediction from labeling data.
 """
 
 # Model
-from .model import CrossAttention, FluxDecoderConfig, FluxDecoder, MeasuredFluxEncoder, RotationFusion
+from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
 
 # Training
-from .train import train_model, var_norm_mse_loss
+from .train import (
+    train_model,
+    evaluate_validation_correlations,
+    var_norm_mse_loss,
+    per_reaction_r2,
+)
+
+# Inference (experimental MID data -> fluxes)
+from .inference import ModelSpec, SigmaFlux, EnsembleSigmaFlux, load_predictor
+
+# Packaged models (.sfx)
+from .export import SFX_SUFFIX, export_model, inspect_model, load_model, validate_model
+
+# Checkpoint loading (training data -> model + the dataset it was scored on)
+from .checkpoint import (
+    ALL,
+    VAL,
+    EvalContext,
+    build_flux_decoder,
+    load_eval_context,
+    resolve_device,
+)
 
 # Prediction
 from .predict import (
@@ -16,18 +37,22 @@ from .predict import (
     train_ensemble
 )
 
-# Math utilities
-from .utils import compute_sparse_nullspace
+# Utilities (null-space, token scoring, file conversion)
+from .utils import compute_sparse_nullspace, compute_token_scores, load_fisher_token_scores
 
 # Data utilities
 from .data import (
     load_data,
     load_data_batches,
     find_data_batches,
+    find_checkpoint,
+    split_sample_indices,
+    extract_measured_fluxes,
     create_tracer_mapping,
     load_stoichiometric_matrix,
     radial_embedding_table,
     build_radial_vocabs,
+    radial_vocabs_from_lists,
     build_token_static_features,
     build_id_token_features,
     TokenizedDataset,
@@ -40,17 +65,37 @@ from .data import (
 )
 
 __all__ = [
-    # Math utilities
+    # Utilities
     'compute_sparse_nullspace',
+    'compute_token_scores',
+    'load_fisher_token_scores',
     # Model
     'CrossAttention',
     'FluxDecoderConfig',
     'FluxDecoder',
-    'MeasuredFluxEncoder',
-    'RotationFusion',
     # Training
     'train_model',
+    'evaluate_validation_correlations',
     'var_norm_mse_loss',
+    'per_reaction_r2',
+    # Inference
+    'ModelSpec',
+    'SigmaFlux',
+    'EnsembleSigmaFlux',
+    'load_predictor',
+    # Packaged models
+    'SFX_SUFFIX',
+    'export_model',
+    'inspect_model',
+    'load_model',
+    'validate_model',
+    # Checkpoint loading
+    'ALL',
+    'VAL',
+    'EvalContext',
+    'build_flux_decoder',
+    'load_eval_context',
+    'resolve_device',
     # Prediction
     'predict_fluxes',
     'create_ensemble',
@@ -60,10 +105,14 @@ __all__ = [
     'load_data',
     'load_data_batches',
     'find_data_batches',
+    'find_checkpoint',
+    'split_sample_indices',
+    'extract_measured_fluxes',
     'create_tracer_mapping',
     'load_stoichiometric_matrix',
     'radial_embedding_table',
     'build_radial_vocabs',
+    'radial_vocabs_from_lists',
     'build_token_static_features',
     'build_id_token_features',
     'TokenizedDataset',

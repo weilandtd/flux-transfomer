@@ -70,7 +70,7 @@ def run_model_test(path, name, dataset='yeast'):
     flux_data = FluxData(mfa_model, make_test_flux_data(model, dataset=dataset))
 
     if dataset == 'yeast':
-        tracer_1 = Tracer(mfa_model.metabolites.glc__D_out, 0.1, [1, 1, 1, 1, 1, 1])
+        tracer_1 = Tracer(mfa_model.metabolites.glc__D_e, 0.5, [1, 1, 1, 1, 1, 1])
     elif dataset == 'toy':
         tracer_1 = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1, ])
     else:
@@ -97,16 +97,16 @@ def run_model_test(path, name, dataset='yeast'):
 
 
 @pytest.mark.parametrize("path,name,dataset", [
-    (os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
-    (os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
-    (os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
 ])
 def test_models(path, name, dataset):
     run_model_test(path, name, dataset=dataset)
 
 
 if __name__ == '__main__':
-    run_model_test(os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
-    run_model_test(os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
-    run_model_test(os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
 

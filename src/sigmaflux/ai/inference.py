@@ -1,17 +1,22 @@
 """
 SigmaFlux inference engine.
 
-Loads a trained checkpoint + config and predicts fluxes from experimental
-MID measurements and (optionally) known exchange fluxes.
+Predicts fluxes from experimental MID measurements and (optionally) known
+exchange fluxes.
 
-Auto-masking: any metabolite in the trained model's token set that is absent
-from the user's df_L is automatically masked (excluded from attention).  The
-model treats it as if that metabolite was never measured, which is the correct
-behaviour when running on incomplete experimental data.
+A predictor can be built three ways, all ending at the same
+:class:`ModelSpec` + weights pair:
+
+- :class:`SigmaFlux` / :class:`EnsembleSigmaFlux` from a training checkpoint
+  plus its config YAML (needs the run directory and the COBRA JSON);
+- :meth:`EnsembleSigmaFlux.from_export` from a packaged ``.sfx`` model
+  (self-contained — see :mod:`sigmaflux.ai.export`);
+- :meth:`SigmaFlux.from_spec` / :meth:`EnsembleSigmaFlux.from_spec` directly.
 """
 
+import glob
 import os
-import sys
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -19,19 +24,200 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)
-))))
-sys.path.insert(0, os.path.join(_REPO_ROOT, 'src'))
-
-from sigmaflux.ai.data import (
+from .checkpoint import flux_decoder_config, promote_norm_buffers, resolve_device
+from .data import (
     build_radial_vocabs,
+    build_tracer_combo_emb_table,
     create_tracer_mapping,
     load_data,
     load_stoichiometric_matrix,
     prepare_id_dataset,
+    radial_embedding_table,
+    radial_vocabs_from_lists,
 )
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from .model import FluxDecoder
+
+
+@dataclass
+class ModelSpec:
+    """Everything a predictor needs that is *not* the trained weights.
+
+    This is the config-free, COBRA-free, HDF5-free closure of
+    :class:`SigmaFlux`'s constructor: given one of these plus a state dict you
+    can predict without a YAML, a run directory or a training checkpoint. An
+    ensemble shares exactly one spec across all of its members.
+
+    Treat instances as immutable — ``_cache`` is an internal memo for the
+    embedding tables and is excluded from equality.
+    """
+
+    model_config:         dict
+    vocabs:               dict          # compound/label/tracer vocab + h_* + token_dim
+    tracer_combo_vocab:   list
+    token_index:          list          # (Tracer, Metabolite, Isotopomer), TRAINING order
+    token_experiment_ids: list
+    flux_names:           list
+    reversibility_names:  list
+    measured_fluxes:      list
+    null_space_data:      dict          # y_*/rev_log_* already promoted
+    flux_norm_stats:      dict = None   # {'mean', 'std'}
+    norm_stats:           dict = field(default_factory=dict)
+    h_reaction:           int = 0
+    h_type:               int = 0
+    tracer_display_names: dict = field(default_factory=dict)   # display name -> internal id
+    batch_size:           int = 64
+    _cache:               dict = field(default_factory=dict, repr=False, compare=False)
+
+    def __post_init__(self):
+        n_tok, n_ids = len(self.token_index), len(self.token_experiment_ids)
+        if n_ids and n_tok != n_ids:
+            raise ValueError(
+                f"token_index has {n_tok} entries but token_experiment_ids has {n_ids}; "
+                "the two describe the same token sequence and must agree"
+            )
+
+    # ── Construction ──────────────────────────────────────────────────────────
+
+    @classmethod
+    def from_checkpoint(cls, ckpt, *, config=None, model_json=None, data_dir=None):
+        """Build a spec from a training checkpoint, optionally with its config YAML.
+
+        This is the only place that reads a checkpoint *and* a YAML. ``config``
+        supplies the human-readable tracer names and the inference batch size;
+        without it, tracer names fall back to the internal ids.
+        """
+        cfg = {}
+        if config is not None:
+            with open(config) as fh:
+                cfg = yaml.safe_load(fh) or {}
+
+        state_dict = ckpt['model_state_dict']
+        null_space_data = promote_norm_buffers(ckpt['null_space_data'], state_dict)
+
+        token_index = ckpt.get('token_index')
+        if token_index is None:
+            # Older checkpoint: derive the token structure from one training sample.
+            print("Checkpoint does not contain token_index; "
+                  "loading one training sample to derive token structure ...")
+            labeling_df, _, _ = load_data(data_dir or ckpt['data_dir'], max_samples=1)
+            token_index = list(labeling_df.index)
+        token_index = [tuple(t) for t in token_index]
+
+        vocabs = ckpt.get('vocabs')
+        if not vocabs or 'compound_vocab' not in vocabs:
+            # Pre-`vocabs` checkpoint: the COBRA JSON is the only way back.
+            resolved = model_json or ckpt.get('model_json')
+            if not resolved or not os.path.exists(resolved):
+                resolved = cfg.get('model_file')
+            _, cobra_model = load_stoichiometric_matrix(resolved)
+            labeling_df = pd.DataFrame(
+                index=pd.MultiIndex.from_tuples(
+                    token_index, names=['Tracer', 'Metabolite', 'Isotopomer'])
+            )
+            _, base_tracers = create_tracer_mapping(labeling_df)
+            cfg_dict = ckpt['model_config']
+            vocabs = build_radial_vocabs(
+                cobra_model, labeling_df, base_tracers,
+                h_compound=cfg_dict.get('d_comp', 32) // 2,
+                h_label=cfg_dict.get('d_label', 10) // 2,
+                h_tracer=cfg_dict.get('d_tracer', 2) // 2,
+            )
+
+        flux_names = list(ckpt.get('flux_names', []))
+        tracers = {
+            t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
+            for t in cfg.get('labeling', {}).get('tracers', [])
+        }
+
+        token_ids = ckpt.get('token_experiment_ids')
+        if token_ids is None:
+            token_ids = state_dict['token_experiment_ids'].tolist()
+
+        return cls(
+            model_config         = dict(ckpt['model_config']),
+            vocabs               = {k: v for k, v in vocabs.items() if not k.endswith('_emb_table')},
+            tracer_combo_vocab   = list(ckpt.get('tracer_combo_vocab', []) or []),
+            token_index          = token_index,
+            token_experiment_ids = [int(i) for i in token_ids],
+            flux_names           = flux_names,
+            reversibility_names  = list(ckpt.get('reversibility_names', flux_names)),
+            measured_fluxes      = list(ckpt.get('measured_fluxes')
+                                        or cfg.get('training', {}).get('measured_fluxes')
+                                        or []),
+            null_space_data      = null_space_data,
+            flux_norm_stats      = ckpt.get('flux_norm_stats'),
+            norm_stats           = ckpt.get('norm_stats') or {},
+            h_reaction           = int(ckpt.get('h_reaction', 0)),
+            h_type               = int(ckpt.get('h_type', 0)),
+            tracer_display_names = tracers,
+            batch_size           = int(cfg.get('training', {}).get('batch_size', 64)),
+        )
+
+    # ── Derived data ──────────────────────────────────────────────────────────
+
+    def emb_tables(self):
+        """Vocabularies plus their radial embedding tables (memoized).
+
+        Rebuilt from the three stored vocabularies, so this needs neither the
+        COBRA model nor the training data.
+        """
+        if 'vocabs' not in self._cache:
+            self._cache['vocabs'] = radial_vocabs_from_lists(
+                self.vocabs['compound_vocab'],
+                self.vocabs['label_vocab'],
+                self.vocabs['tracer_vocab'],
+                h_compound=self.vocabs.get('h_compound'),
+                h_label=self.vocabs.get('h_label'),
+                h_tracer=self.vocabs.get('h_tracer'),
+                verbose=False,
+            )
+        return self._cache['vocabs']
+
+    def tracer_combo_emb_table(self):
+        """Embedding table over ``tracer_combo_vocab`` (memoized).
+
+        Combined tracers are sums of base embeddings, not a radial table, so this
+        mirrors what :func:`~sigmaflux.ai.data.prepare_dataset` builds at training
+        time. Falls back to the base table when no combo vocab was recorded.
+        """
+        if 'tracer_combo' not in self._cache:
+            base = self.emb_tables()['tracer_emb_table']
+            combo = (build_tracer_combo_emb_table(
+                        self.tracer_combo_vocab, self.vocabs['tracer_vocab'], base)
+                     if self.tracer_combo_vocab else base)
+            self._cache['tracer_combo'] = combo
+        return self._cache['tracer_combo']
+
+    def tracer_map(self):
+        """Display name → internal tracer id, with internal ids mapping to themselves."""
+        internal = {t: t for t in self.vocabs.get('tracer_vocab', [])}
+        return {**internal, **self.tracer_display_names}
+
+    def build_decoder(self, state_dict, *, device=None, strict=True):
+        """Rebuild a :class:`FluxDecoder` and load *state_dict* into it.
+
+        The frozen embedding tables are regenerated from the vocabularies and
+        harmonics rather than read from the weights — the same regeneration
+        :func:`sigmaflux.ai.checkpoint.build_flux_decoder` performs, and the
+        reason an exported model can omit them entirely.
+        """
+        tables = self.emb_tables()
+        n_reactions = len(self.flux_names) or self.model_config.get('n_fluxes')
+        model = FluxDecoder(
+            flux_decoder_config(self.model_config),
+            token_experiment_ids=torch.as_tensor(self.token_experiment_ids, dtype=torch.int64),
+            compound_emb_table=tables['compound_emb_table'],
+            label_emb_table=tables['label_emb_table'],
+            tracer_emb_table=self.tracer_combo_emb_table(),
+            reaction_emb_table=radial_embedding_table(n_reactions, self.h_reaction),
+            type_emb_table=radial_embedding_table(2, self.h_type),
+            null_space_data=self.null_space_data,
+            flux_norm_stats=self.flux_norm_stats,
+        )
+        model.load_state_dict(state_dict, strict=strict)
+        model.eval()
+        model.to(resolve_device(device))
+        return model
 
 
 class SigmaFlux:
@@ -58,79 +244,55 @@ class SigmaFlux:
     def __init__(self, config, checkpoint, device=None, data_dir=None):
         with open(config) as f:
             self.cfg = yaml.safe_load(f)
-
         self.ckpt = torch.load(checkpoint, map_location='cpu', weights_only=False)
+        spec = ModelSpec.from_checkpoint(self.ckpt, config=config, data_dir=data_dir)
+        self._init_from_spec(spec, self.ckpt['model_state_dict'], device=device,
+                             strict=False)
 
-        if device is None:
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device = torch.device(device)
+    @classmethod
+    def from_spec(cls, spec, state_dict, *, device=None, strict=True):
+        """Build a predictor from a :class:`ModelSpec` and one member's weights.
 
-        # Tracer name → internal tracer string mapping.
-        # The internal string is Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}"
-        # which is what actually appears in the training labeling_df index.
-        # User-facing names come from config labeling.tracers[*].name.
-        self._tracer_name_to_id = {
-            t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
-            for t in self.cfg['labeling']['tracers']
-        }
-        self.tracer_names = list(self._tracer_name_to_id.keys())  # human-readable
+        No config YAML, run directory or COBRA JSON involved — this is the path
+        an exported model takes.
+        """
+        self = cls.__new__(cls)
+        self.cfg = None
+        self.ckpt = None
+        self._init_from_spec(spec, state_dict, device=device, strict=strict)
+        return self
 
-        # Flux / reversibility output names
-        self.flux_names        = self.ckpt.get('flux_names', [])
-        self.reversibility_names = self.ckpt.get('reversibility_names', self.flux_names)
+    def _init_from_spec(self, spec, state_dict, *, device=None, strict=True):
+        self.spec = spec
+        self.device = resolve_device(device)
 
-        # Measured flux reaction IDs expected in df_Vm.
-        # Fall back to config if not stored in checkpoint (older checkpoints).
-        self.measured_flux_ids = (
-            self.ckpt.get('measured_fluxes')
-            or self.cfg.get('training', {}).get('measured_fluxes')
-            or []
+        # Tracer name → internal tracer string mapping. The internal string is
+        # Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}", which is what
+        # appears in the training labeling_df index; user-facing names come from
+        # the config (or, for an export, the frozen map stored with the model).
+        self._tracer_name_to_id = spec.tracer_display_names or dict(
+            zip(spec.vocabs['tracer_vocab'], spec.vocabs['tracer_vocab'])
         )
-        self._batch_size = self.cfg.get('training', {}).get('batch_size', 64)
+        self.tracer_names = list(self._tracer_name_to_id.keys())
 
-        # ── Token skeleton ────────────────────────────────────────────────────
-        # Full list of (Tracer, Metabolite, Isotopomer) tuples the model was
-        # trained on.  Defines the exact token sequence for inference.
-        token_index = self.ckpt.get('token_index')
-        if token_index is not None:
-            self._token_index = token_index          # list of 3-tuples
-        else:
-            # Older checkpoint without token_index — load one training sample
-            print("Checkpoint does not contain token_index; "
-                  "loading one training sample to derive token structure ...")
-            _data_dir = data_dir or self.ckpt['data_dir']
-            labeling_df, _, _ = load_data(_data_dir, max_samples=1)
-            self._token_index = list(labeling_df.index)
+        self.flux_names          = spec.flux_names
+        self.reversibility_names = spec.reversibility_names
+        self.measured_flux_ids   = spec.measured_fluxes
+        self._batch_size         = spec.batch_size
 
-        # Set of unique metabolite IDs the model knows about
+        # Token skeleton: the exact (Tracer, Metabolite, Isotopomer) sequence the
+        # model was trained on.
+        self._token_index = spec.token_index
         self._known_metabolites = {tup[1] for tup in self._token_index}
 
-        # ── COBRA model (compound vocabulary) ─────────────────────────────────
-        cfg_dict   = self.ckpt['model_config']
-        model_json = self.ckpt.get('model_json')
-        if not model_json or not os.path.exists(model_json):
-            model_json = self.cfg.get('model_file')
-        _, self.cobra_model = load_stoichiometric_matrix(model_json)
+        # Embedding tables come from the stored vocabularies, so no COBRA model
+        # is needed; kept as an attribute only for backwards compatibility.
+        self.cobra_model = None
+        self._vocabs = spec.emb_tables()
 
-        # ── Reconstruct FluxDecoder from checkpoint ───────────────────────────
-        cfg = FluxDecoderConfig(**{
-            k: cfg_dict[k]
-            for k in FluxDecoderConfig.__dataclass_fields__
-            if k in cfg_dict
-        })
-        nsd       = self.ckpt['null_space_data']
-        token_ids = self.ckpt['model_state_dict']['token_experiment_ids']
-        self._model = FluxDecoder(
-            cfg,
-            token_experiment_ids=token_ids,
-            null_space_data=nsd,
-        )
-        self._model.load_state_dict(self.ckpt['model_state_dict'])
-        self._model.to(self.device)
-        self._model.eval()
-
-        self._cfg_dict = cfg_dict
-        self._nsd      = nsd
+        self._model = spec.build_decoder(state_dict, device=self.device, strict=strict)
+        self._cfg_dict = spec.model_config
+        self._nsd      = spec.null_space_data
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -151,11 +313,6 @@ class SigmaFlux:
             Metabolite IDs must match the COBRA model exactly (with compartment
             suffix, e.g. 'pyr_c', 'akg_c' — run sf.expected_metabolites() to
             see the full list).
-
-            Auto-masking: metabolites from the training token set that are
-            absent from df_L are automatically excluded from attention.  This
-            is the correct behaviour for metabolites not measured in your
-            experiment.  No manual masking flag needed.
 
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes (optional, but use when available).
@@ -210,15 +367,9 @@ class SigmaFlux:
             df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
             user_metabolites -= unknown_mets
 
-        # Metabolites the model knows about but absent from df_L → auto-masked
-        masked_mets = self._known_metabolites - user_metabolites
-        if masked_mets:
-            print(f"Auto-masking {len(masked_mets)} metabolite(s) not in df_L: "
-                  f"{', '.join(sorted(masked_mets))}")
-
         # ── Build full-skeleton labeling_df ───────────────────────────────────
         # One column per sample; ALL training tokens present; zero where user
-        # has no measurement; those tokens will be masked below.
+        # has no measurement.
         skeleton_index = pd.MultiIndex.from_tuples(
             self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
         )
@@ -240,36 +391,34 @@ class SigmaFlux:
         # ── Flux DataFrames ───────────────────────────────────────────────────
         flux_df, rev_df = self._build_flux_dfs(df_Vm, n_samples, samples)
 
-        # ── Vocabs ────────────────────────────────────────────────────────────
-        _, base_tracer_names = create_tracer_mapping(labeling_df)
-        vocabs = build_radial_vocabs(
-            self.cobra_model, labeling_df, base_tracer_names,
-            h_compound = self._cfg_dict.get('d_comp',   32) // 2,
-            h_label    = self._cfg_dict.get('d_label',  10) // 2,
-            h_tracer   = self._cfg_dict.get('d_tracer',  2) // 2,
-        )
-
+        # ── Dataset ───────────────────────────────────────────────────────────
+        # Vocabularies are fixed by the token skeleton, so they are built once in
+        # __init__ rather than rebuilt on every predict() call.
         (dataset, _, _, _, _) = prepare_id_dataset(
             labeling_df, flux_df, rev_df,
-            vocabs           = vocabs,
-            train_indices    = list(range(n_samples)),
-            normalize        = True,
-            measured_fluxes  = None,
-            norm_stats_input = self.ckpt.get('norm_stats'),
+            vocabs          = self._vocabs,
+            train_indices   = list(range(n_samples)),
+            normalize       = False,   # targets not used at inference time
+            measured_fluxes = None,
+            norm_stats_input= self.spec.norm_stats,  # applies MID z-score if model trained with it
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
 
-        # ── Build static padding mask for missing metabolites ─────────────────
-        met_index = labeling_df.index.get_level_values('Metabolite').tolist()
-        mask_positions = [j for j, m in enumerate(met_index) if m in masked_mets]
-
-        # ── Pre-build fixed_fluxes tensor (raw values, matching train.py) ─────
+        # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
+        # Normalize to match training if checkpoint used normalize_targets.
         # Shape: (n_samples, n_measured) — sliced per batch in the loop below.
-        # Mirrors train.py: fixed_fluxes = targets[:, fixed_idx] (raw flux values).
         _fixed_flux_raw = None
-        if self._model.cfg.n_measured > 0:
+        if len(self._model.fixed_idx) > 0:
             fixed_idx = list(self._nsd.get('fixed_idx', []))
             fvals = flux_df.values[fixed_idx, :].T.copy()   # (n_samples, n_measured)
+            # Only apply norm_stats normalization when the model has no internal FluxNorm
+            # (i.e., trained with normalize=True so targets were pre-normalized).
+            if self._model.flux_norm_mean is None:
+                _ns_ff = self.spec.norm_stats
+                if 'flux_mean' in _ns_ff:
+                    _fmean = np.array(_ns_ff['flux_mean'], dtype=np.float32)[fixed_idx]
+                    _fstd  = np.array(_ns_ff['flux_std'],  dtype=np.float32)[fixed_idx]
+                    fvals  = (fvals - _fmean) / _fstd
             _fixed_flux_raw = torch.tensor(fvals, dtype=torch.float32)
 
         # ── Inference ─────────────────────────────────────────────────────────
@@ -284,25 +433,29 @@ class SigmaFlux:
                 fracs = fracs.to(self.device)
                 B     = cids.shape[0]
 
-                pmask = None
-                if mask_positions:
-                    pmask = torch.zeros(B, cids.shape[1], dtype=torch.bool,
-                                        device=self.device)
-                    pmask[:, mask_positions] = True
-
                 fixed_fluxes = None
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     padding_mask=pmask,
-                                     fixed_fluxes=fixed_fluxes)
+                                     measured_fluxes=fixed_fluxes)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
                 batch_offset += B
 
         flux_arr = torch.cat(all_flux).numpy()
         rev_arr  = torch.cat(all_rev).numpy()
+
+        # Flux: already denormalized inside model.forward() via y_norm_mean/std
+        # (basis coefficients → physical mmol/gDW/h via Z_full.T).
+
+        # Reversibility: decode from z-scored log1p space → physical values.
+        # model.forward() returns raw z-score logits when rev_norm_mean is set.
+        _rev_log_mean = self._nsd.get('rev_log_mean')
+        if _rev_log_mean is not None:
+            _rev_log_mean = np.array(_rev_log_mean, dtype=np.float32)
+            _rev_log_std  = np.array(self._nsd['rev_log_std'], dtype=np.float32)
+            rev_arr = np.expm1(rev_arr * _rev_log_std + _rev_log_mean).clip(0)
 
         return self._format_output(flux_arr, rev_arr, samples)
 
@@ -344,7 +497,14 @@ class SigmaFlux:
 
     def _format_output(self, flux_arr, rev_arr, samples):
         flux_names = self.flux_names or [f'flux_{i}' for i in range(flux_arr.shape[1])]
-        rev_names  = self.reversibility_names or [f'rev_{n}' for n in flux_names]
+        rev_names  = self.reversibility_names or [f'rev_{i}' for i in range(rev_arr.shape[1])]
+        # zip() would silently truncate a mismatch and mislabel every row.
+        if len(flux_names) != flux_arr.shape[1] or len(rev_names) != rev_arr.shape[1]:
+            raise ValueError(
+                f"output names do not match model outputs: {len(flux_names)} flux names "
+                f"for {flux_arr.shape[1]} fluxes, {len(rev_names)} reversibility names "
+                f"for {rev_arr.shape[1]} reversibilities"
+            )
 
         records = []
         for s_idx, s in enumerate(samples):
@@ -357,3 +517,117 @@ class SigmaFlux:
         if result['Sample'].nunique() == 1:
             result = result.drop(columns='Sample')
         return result
+
+
+class EnsembleSigmaFlux:
+    """Ensemble of trained SigmaFlux members sharing one architecture and split.
+
+    Loads every ``model_*.pt`` in ``ensemble_dir`` as a SigmaFlux member and
+    exposes the same ``predict`` interface, returning the per-reaction **median**
+    over members (schema-identical to ``SigmaFlux.predict``). This is the point
+    prediction used by both the benchmark and the experimental-inference pipeline,
+    so the two report the same quantity.
+
+    The median rather than the mean: a member that lands on a wild value for an
+    unidentifiable flux shifts a mean but not a median, and the members disagree
+    most exactly on those reactions. Per-reaction spread is deliberately not
+    returned here — it is produced by the dedicated ensemble scripts.
+    """
+
+    def __init__(self, config, ensemble_dir, device=None, data_dir=None):
+        self.member_paths = sorted(glob.glob(os.path.join(ensemble_dir, 'model_*.pt')))
+        if not self.member_paths:
+            raise FileNotFoundError(f"No model_*.pt in ensemble dir: {ensemble_dir}")
+        members = [SigmaFlux(config, p, device=device, data_dir=data_dir)
+                   for p in self.member_paths]
+        # Any member's checkpoint carries the shared train/val split (val_indices).
+        self._adopt(members, split_source=self.member_paths[0])
+
+    @classmethod
+    def from_spec(cls, spec, state_dicts, *, device=None, member_ids=None, strict=True):
+        """Build an ensemble from one shared :class:`ModelSpec` and N weight sets."""
+        self = cls.__new__(cls)
+        self.member_paths = list(member_ids or range(len(state_dicts)))
+        members = [SigmaFlux.from_spec(spec, sd, device=device, strict=strict)
+                   for sd in state_dicts]
+        self._adopt(members, split_source=None)
+        return self
+
+    @classmethod
+    def from_export(cls, path, *, device=None):
+        """Load a packaged ``.sfx`` model. A one-member export is still an ensemble."""
+        from .export import load_model
+        return load_model(path, device=device)
+
+    def _adopt(self, members, *, split_source):
+        """Re-expose the attributes the pipeline entry points read off a predictor."""
+        self.members = members
+        m0 = members[0]
+        self.spec                = m0.spec
+        self.flux_names          = m0.flux_names
+        self.reversibility_names = m0.reversibility_names
+        self.tracer_names        = m0.tracer_names
+        self.measured_flux_ids   = m0.measured_flux_ids
+        self.device              = m0.device
+        self._tracer_name_to_id  = m0._tracer_name_to_id
+        self._token_index        = m0._token_index
+        self._known_metabolites  = m0._known_metabolites
+        self.split_source        = split_source
+        self.manifest            = None
+        self.name                = None
+        self.model_version       = None
+        self.source_path         = None
+
+    def predict(self, df_L, df_Vm=None):
+        """Ensemble-median prediction. Members share inputs, so per-member outputs
+        have identical row order and are combined positionally."""
+        preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
+        out = preds[0].copy()
+        out['Value'] = np.median(values, axis=0)
+        return out
+
+    # Introspection helpers delegate to member 0.
+    def expected_metabolites(self):     return self.members[0].expected_metabolites()
+    def expected_tracers(self):         return self.members[0].expected_tracers()
+    def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
+
+
+def load_predictor(config, checkpoint, data_dir=None, device=None):
+    """Build a predictor, preferring an ensemble when one is available.
+
+    An ensemble directory is discovered, in priority order, as: ``checkpoint``
+    itself if it is a directory; ``<dir(checkpoint)>/ensemble``; or
+    ``<data_dir>/ensemble``. If such a directory holds ``model_*.pt`` an
+    :class:`EnsembleSigmaFlux` is returned (median over members); otherwise a
+    single-model :class:`SigmaFlux` loaded from ``checkpoint``.
+
+    Note that ``checkpoint`` is only a *hint*: whenever a sibling ``ensemble/``
+    directory exists it wins, so passing a single ``.pt`` path does not force
+    single-model inference.
+
+    A packaged ``.sfx`` model is detected by suffix and loaded directly; it is
+    self-contained, so ``config`` is unused (and may be ``None``) in that case.
+    """
+    from ._sfx import SFX_SUFFIX
+    if checkpoint and str(checkpoint).endswith(SFX_SUFFIX) and os.path.isfile(checkpoint):
+        from .export import load_model
+        print(f"Loading EXPORTED model: {checkpoint}")
+        return load_model(checkpoint, device=device)
+
+    candidates = []
+    if checkpoint and os.path.isdir(checkpoint):
+        candidates.append(checkpoint)
+    if checkpoint:
+        candidates.append(os.path.join(os.path.dirname(os.path.abspath(checkpoint)), 'ensemble'))
+    if data_dir:
+        candidates.append(os.path.join(data_dir, 'ensemble'))
+
+    for cand in candidates:
+        members = glob.glob(os.path.join(cand, 'model_*.pt')) if cand else []
+        if members:
+            print(f"Loading ENSEMBLE predictor: {len(members)} members from {cand}")
+            return EnsembleSigmaFlux(config, cand, device=device, data_dir=data_dir)
+
+    print(f"Loading single-model predictor: {checkpoint}")
+    return SigmaFlux(config, checkpoint, device=device, data_dir=data_dir)

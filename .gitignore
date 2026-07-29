@@ -225,6 +225,8 @@ task.md
 
 # Model checkpoints and generated matrices
 *.pt
+*.sfx
+!models/pretrained/*.sfx
 *.npz
 
 # Generated figures and reports
@@ -242,3 +244,12 @@ metabolism_dashboard/
 # Temporary conversion/helper scripts (underscore-prefixed)
 data/_*
 *.csv
+
+# Local AI assistant context — not part of the project
+.claude/
+
+# Symlink to the run-results volume — machine-specific, not part of the project
+paper/.results
+
+# Stray analysis output at the repo root (scripts write into <run_dir>/output)
+/output/

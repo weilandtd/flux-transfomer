@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sigmaflux"
-version = "0.1.0"
+# Single source of truth: src/sigmaflux/__init__.py:__version__ (see .claude/versioning.md)
+dynamic = ["version"]
 description = "Metabolic Flux Analysis with EMU framework and AI-based flux prediction"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -31,7 +32,23 @@ dependencies = [
     "seaborn>=0.13",
     "h5py>=3.8",
     "tables>=3.8",
+    "pyyaml>=6.0",
+    "openpyxl>=3.1",
+    "scikit-learn>=1.3",
 ]
+
+[project.scripts]
+sigmaflux-sample-flux     = "sigmaflux.pipeline.sample_flux:cli"
+sigmaflux-generate-data   = "sigmaflux.pipeline.generate_training_data:cli"
+sigmaflux-select-features = "sigmaflux.pipeline.extract_informative_features:cli"
+sigmaflux-train           = "sigmaflux.pipeline.train_ai_model:cli"
+sigmaflux-workflow        = "sigmaflux.pipeline.run_training_workflow:cli"
+sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
+sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
+sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
+sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
+sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
+sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
@@ -40,6 +57,9 @@ docs = [
     "sphinx-autodoc-typehints",
     "furo",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "sigmaflux.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

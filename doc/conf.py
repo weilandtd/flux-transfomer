@@ -5,7 +5,10 @@ sys.path.insert(0, os.path.abspath("../src"))
 
 project = "sigmaflux"
 author = "Daniel R. Weilandt"
-release = "0.1.0"
+
+# Read the version rather than repeating it — see .claude/versioning.md.
+from sigmaflux import __version__ as release  # noqa: E402
+version = ".".join(release.split(".")[:2])    # short X.Y form Sphinx also uses
 
 extensions = [
     "sphinx.ext.autodoc",

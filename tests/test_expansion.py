@@ -25,9 +25,9 @@ def assert_no_redundant_edges(emu_network):
 
 
 @pytest.mark.parametrize("path,name,dataset", [
-    (os.path.join(PROJECT_DIR, 'models', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
-    (os.path.join(PROJECT_DIR, 'models', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
-    (os.path.join(PROJECT_DIR, 'models', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
 ])
 def test_no_redundant_edges(path, name, dataset):
     model = load_json_model(path)
@@ -39,7 +39,7 @@ def test_no_redundant_edges(path, name, dataset):
     flux_data = FluxData(mfa_model, make_test_flux_data(model, dataset=dataset))
 
     if dataset == 'yeast':
-        tracer = Tracer(mfa_model.metabolites.glc__D_out, 0.1, [1, 1, 1, 1, 1, 1])
+        tracer = Tracer(mfa_model.metabolites.glc__D_e, 0.1, [1, 1, 1, 1, 1, 1])
     else:
         tracer = Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1])
 

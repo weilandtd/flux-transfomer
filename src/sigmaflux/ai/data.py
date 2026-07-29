@@ -43,172 +43,217 @@ def _read_hdf(filepath, key):
         return pd.DataFrame(values, index=index, columns=columns)
 
 
-# Default path to biosynthetic bypass reactions config
-_DEFAULT_MEASURED_FLUXES_CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), '../../data/biosynthetic_bypass_reactions.json'
-)
+# ── Measured ("bypass") fluxes ───────────────────────────────────────────────
+# Fluxes measured by orthogonal methods and fed straight to the transformer,
+# skipping the labeling pathway. Which reactions those are is a property of the
+# organism and the experiment, so it is described by a JSON config supplied by
+# the caller rather than hard-coded here.
+#
+# Config schema — every top-level object may declare:
+#     "<group name>": {
+#         "reaction_ids": ["RXN_A", "RXN_B"],           # direct flux features
+#         "reactions":    {"RXN_C": "description"},      # ... or as a mapping
+#         "derived": {                                   # optional derived features
+#             "NAME": {"reaction": "RXN_C", "sign": -1},   # signed flux
+#             "OTHER": {"ratio": ["NAME_A", "NAME_B"]}     # ratio of two derived
+#         }
+#     }
+# A derived feature's source reactions are read but not emitted as features
+# themselves unless they also appear in reaction_ids.
 
 
-def load_measured_fluxes_config(config_path=None):
-    """
-    Load biosynthetic bypass reactions configuration from JSON file.
+def load_measured_fluxes_config(config_path):
+    """Load a measured-flux config from JSON.
 
-    Args:
-        config_path: Path to config file. If None, uses default path.
-
-    Returns:
-        config: Dictionary with bypass reaction configuration
+    There is no default path: the reactions that can be measured orthogonally
+    depend on the organism and the experimental setup.
     """
     if config_path is None:
-        config_path = _DEFAULT_MEASURED_FLUXES_CONFIG_PATH
-
+        raise ValueError(
+            "load_measured_fluxes_config() requires an explicit config_path; "
+            "measured-flux definitions are organism-specific."
+        )
     with open(config_path, 'r') as f:
-        config = json.load(f)
-
-    return config
+        return json.load(f)
 
 
-def get_measured_fluxes_reaction_ids(mode='respiratory', config_path=None):
-    """
-    Get list of bypass reaction IDs based on mode.
+def _group_reaction_ids(group):
+    """Reaction ids declared by one config group, from either supported key."""
+    ids = list(group.get('reaction_ids', []))
+    ids += [r for r in group.get('reactions', {}) if r not in ids]
+    return ids
+
+
+def get_measured_fluxes_reaction_ids(spec=None, config_path=None):
+    """Resolve a measured-flux *spec* into reactions and derived features.
 
     Args:
-        mode: Bypass mode - one of:
-            - 'respiratory' or 'legacy': Just VO2/VCO2/RER derived features (default)
-            - 'biosynthetic' or 'extended': All biosynthetic fluxes (protein, TG, glycogen)
-            - 'full': Respiratory + all biosynthetic fluxes
-            - list: Custom list of reaction IDs to extract as bypass features
-            - None or False: No bypass features
-        config_path: Path to bypass config JSON file
+        spec: one of
+            - ``None`` / ``False``: no measured-flux features
+            - ``list``: explicit reaction ids, no derived features
+            - ``"all"``: every group in the config
+            - ``dict``: ``{"groups": [...], "derived": bool}`` selecting groups
+              by name (``derived`` defaults to True)
+        config_path: JSON config, required unless *spec* is a list or empty.
 
     Returns:
-        reaction_ids: List of reaction IDs to extract (excludes derived features like RER)
-        derived_features: List of derived feature names to compute (e.g., ['VO2', 'VCO2', 'RER'])
-        feature_names: List of all feature names in order they appear in bypass data
+        reaction_ids: reaction ids whose flux must be read
+        derived_specs: ``{name: definition}`` for computed features
+        feature_names: feature order in the emitted array
     """
-    if mode is None or mode is False:
-        return [], [], []
+    if spec is None or spec is False:
+        return [], {}, []
 
-    if isinstance(mode, list):
-        # Custom list of reaction IDs
-        return mode, [], mode
+    if isinstance(spec, (list, tuple)):
+        return list(spec), {}, list(spec)
 
     config = load_measured_fluxes_config(config_path)
 
-    reaction_ids = []
-    derived_features = []
-    feature_names = []
+    if spec == "all":
+        group_names, want_derived = None, True
+    elif isinstance(spec, dict):
+        group_names = spec.get("groups")
+        want_derived = spec.get("derived", True)
+    else:
+        raise ValueError(
+            f"Unsupported measured-flux spec {spec!r}. Expected None, a list of "
+            'reaction ids, "all", or {"groups": [...], "derived": bool}.'
+        )
 
-    if mode in ('respiratory', 'legacy', 'full'):
-        # Respiratory exchange features (VO2, VCO2, RER)
-        reaction_ids.extend(['EX_o2_e_lung', 'EX_co2_e_lung'])
-        derived_features.extend(['VO2', 'VCO2', 'RER'])
-        feature_names.extend(['VO2', 'VCO2', 'RER'])
+    reaction_ids, derived_specs, feature_names = [], {}, []
+    for name, group in config.items():
+        if not isinstance(group, dict):
+            continue                                  # description/notes strings
+        if group_names is not None and name not in group_names:
+            continue
+        if 'reaction_ids' not in group and 'reactions' not in group and 'derived' not in group:
+            continue                                  # e.g. a summary block
 
-    if mode in ('biosynthetic', 'extended', 'full'):
-        # Protein synthesis
-        protein_rxns = config['protein_synthesis']['reaction_ids']
-        reaction_ids.extend(protein_rxns)
-        feature_names.extend(protein_rxns)
+        derived = group.get('derived', {}) if want_derived else {}
+        for rxn_id in _group_reaction_ids(group):
+            if rxn_id not in reaction_ids:
+                reaction_ids.append(rxn_id)
+            # A reaction that only exists to feed a derived feature is not
+            # itself emitted (that is what "reactions" vs "reaction_ids" means).
+            if rxn_id in group.get('reaction_ids', []) and rxn_id not in feature_names:
+                feature_names.append(rxn_id)
 
-        # Triglyceride synthesis (DGAT)
-        tg_rxns = config['triglyceride_synthesis']['reaction_ids']
-        reaction_ids.extend(tg_rxns)
-        feature_names.extend(tg_rxns)
+        for feat_name, definition in derived.items():
+            derived_specs[feat_name] = definition
+            if feat_name not in feature_names:
+                feature_names.append(feat_name)
 
-        # Glycogen synthesis
-        glyc_rxns = config['glycogen_synthesis']['reaction_ids']
-        reaction_ids.extend(glyc_rxns)
-        feature_names.extend(glyc_rxns)
-
-    return reaction_ids, derived_features, feature_names
+    return reaction_ids, derived_specs, feature_names
 
 
-def extract_measured_fluxes(flux_df, train_indices, mode='respiratory', config_path=None, reaction_ids=None):
-    """
-    Extract bypass features from flux data.
+def _normalize_derived(definition, name):
+    """Accept both the descriptive string form and the explicit dict form."""
+    if isinstance(definition, dict):
+        return definition
+    # Legacy/descriptive configs carry a human-readable string; infer nothing
+    # from it and let the caller know it cannot be computed.
+    raise ValueError(
+        f"Derived feature {name!r} is described by a string, not a definition. "
+        'Use {"reaction": "<id>", "sign": 1} or {"ratio": ["<a>", "<b>"]}.'
+    )
 
-    These are fluxes that will be measured with orthogonal methods and passed
-    directly to the transformer, bypassing the labeling data pathway.
+
+def extract_measured_fluxes(flux_df, train_indices, spec=None, config_path=None,
+                            reaction_ids=None):
+    """Extract measured-flux features from simulated flux data.
 
     Args:
-        flux_df: DataFrame with flux data (reactions x samples)
-        train_indices: Sample indices to extract
-        mode: Bypass mode (see get_bypass_reaction_ids for options). Ignored when
-            reaction_ids is provided.
-        config_path: Path to bypass config JSON file. Ignored when reaction_ids
-            is provided.
-        reaction_ids: Explicit list of reaction IDs to extract. When provided,
-            mode and config_path are ignored and no derived features are computed.
+        flux_df: DataFrame of fluxes (reactions x samples)
+        train_indices: sample indices to extract
+        spec: measured-flux spec, see :func:`get_measured_fluxes_reaction_ids`.
+            Ignored when *reaction_ids* is given.
+        config_path: JSON config path. Ignored when *reaction_ids* is given.
+        reaction_ids: explicit reaction ids; skips spec resolution entirely.
 
     Returns:
-        measured_fluxes_data: (num_samples, num_bypass_features) numpy array
-        feature_names: List of feature names
+        measured_fluxes_data: ``(n_samples, n_features)`` array, or None
+        feature_names: names matching the array columns
     """
     if reaction_ids is not None:
-        # Caller supplied an explicit list — skip mode resolution entirely.
-        direct_rxn_ids = reaction_ids
-        derived_features = []
+        direct_rxn_ids = list(reaction_ids)
+        derived_specs = {}
         feature_names = list(reaction_ids)
     else:
-        if mode is None or mode is False:
+        direct_rxn_ids, derived_specs, feature_names = \
+            get_measured_fluxes_reaction_ids(spec, config_path)
+        if not direct_rxn_ids and not derived_specs:
             return None, []
-        direct_rxn_ids_from_mode, derived_features, feature_names = get_measured_fluxes_reaction_ids(mode, config_path)
-        if not direct_rxn_ids_from_mode and not derived_features:
-            return None, []
-        direct_rxn_ids = direct_rxn_ids_from_mode
 
-    flux_data_subset = flux_df.values[:, train_indices].T  # (num_samples, num_reactions)
+    flux_data_subset = flux_df.values[:, train_indices].T   # (n_samples, n_rxns)
     reaction_list = flux_df.index.tolist()
 
-    measured_fluxes_columns = []
+    def _flux(rxn_id):
+        if rxn_id not in reaction_list:
+            return None
+        return flux_data_subset[:, reaction_list.index(rxn_id)]
 
-    # Handle respiratory-derived features (VO2, VCO2, RER)
-    if 'VO2' in derived_features:
-        o2_idx = reaction_list.index('EX_o2_e_lung') if 'EX_o2_e_lung' in reaction_list else None
-        co2_idx = reaction_list.index('EX_co2_e_lung') if 'EX_co2_e_lung' in reaction_list else None
-
-        if o2_idx is not None and co2_idx is not None:
-            # O2 is negative (uptake), convert to positive VO2
-            vo2 = -flux_data_subset[:, o2_idx]
-            # CO2 is positive (production)
-            vco2 = flux_data_subset[:, co2_idx]
-            # Calculate RER
-            rer = np.where(vo2 > 1e-6, vco2 / vo2, 0.0)
-
-            measured_fluxes_columns.extend([vo2, vco2, rer])
+    # ── Derived features first: they may be referenced by later ratios ────────
+    derived_values = {}
+    for name, definition in derived_specs.items():
+        definition = _normalize_derived(definition, name)
+        if 'reaction' in definition:
+            values = _flux(definition['reaction'])
+            if values is None:
+                print(f"WARNING: reaction {definition['reaction']} for derived "
+                      f"feature {name} not found in flux data; skipping {name}")
+                continue
+            derived_values[name] = float(definition.get('sign', 1)) * values
+        elif 'ratio' in definition:
+            num_name, den_name = definition['ratio']
+            num = derived_values.get(num_name, _flux(num_name))
+            den = derived_values.get(den_name, _flux(den_name))
+            if num is None or den is None:
+                print(f"WARNING: operands for derived feature {name} unavailable; skipping")
+                continue
+            # np.where would evaluate num/den eagerly and warn on zeros.
+            safe = np.abs(den) > 1e-6
+            derived_values[name] = np.divide(
+                num, den, out=np.zeros_like(np.asarray(num, dtype=float)), where=safe)
         else:
-            print("WARNING: Could not find EX_o2_e_lung or EX_co2_e_lung in flux data")
-            print("         Respiratory bypass features will not be included")
-            # Remove respiratory features from feature_names
-            feature_names = [f for f in feature_names if f not in ['VO2', 'VCO2', 'RER']]
+            raise ValueError(f"Derived feature {name!r} has no 'reaction' or 'ratio' key.")
 
-    # Handle direct flux extraction (filter out exchange reactions already handled above)
-    direct_rxn_ids = [r for r in direct_rxn_ids if r not in ['EX_o2_e_lung', 'EX_co2_e_lung']]
+    # ── Direct fluxes, minus any reaction consumed only by a derived feature ──
+    derived_sources = {
+        d['reaction'] for d in derived_specs.values()
+        if isinstance(d, dict) and 'reaction' in d
+    }
     missing_rxns = []
-
+    direct_values = {}
     for rxn_id in direct_rxn_ids:
-        if rxn_id in reaction_list:
-            rxn_idx = reaction_list.index(rxn_id)
-            measured_fluxes_columns.append(flux_data_subset[:, rxn_idx])
-        else:
+        if rxn_id in derived_sources and rxn_id not in feature_names:
+            continue
+        values = _flux(rxn_id)
+        if values is None:
             missing_rxns.append(rxn_id)
-            # Remove from feature_names
-            if rxn_id in feature_names:
-                feature_names.remove(rxn_id)
+            continue
+        direct_values[rxn_id] = values
 
     if missing_rxns:
-        print(f"WARNING: {len(missing_rxns)} biosynthetic reactions not found in flux data:")
+        print(f"WARNING: {len(missing_rxns)} measured-flux reactions not found in flux data:")
         for rxn in missing_rxns[:5]:
             print(f"         - {rxn}")
         if len(missing_rxns) > 5:
             print(f"         ... and {len(missing_rxns) - 5} more")
 
-    if not measured_fluxes_columns:
+    # Emit in declared feature order, dropping whatever could not be computed.
+    columns, kept_names = [], []
+    for name in feature_names:
+        if name in derived_values:
+            columns.append(derived_values[name])
+            kept_names.append(name)
+        elif name in direct_values:
+            columns.append(direct_values[name])
+            kept_names.append(name)
+
+    if not columns:
         return None, []
 
-    measured_fluxes_data = np.column_stack(measured_fluxes_columns)
-    return measured_fluxes_data, feature_names
+    return np.column_stack(columns), kept_names
 
 
 def find_data_batches(base_dir, base_filename, pattern='*_*.h5'):
@@ -321,6 +366,48 @@ def load_data(base_dir, max_samples=None):
     print(f"Reversibility data shape: {reversibility_df.shape}")
 
     return labeling_df, flux_df, reversibility_df
+
+
+def find_checkpoint(data_dir):
+    """Return the path to the single trained .pt checkpoint in ``data_dir``."""
+    for fname in sorted(os.listdir(data_dir)):
+        if fname.endswith(".pt"):
+            return os.path.join(data_dir, fname)
+    raise FileNotFoundError(f"No .pt checkpoint found in {data_dir}")
+
+
+def split_sample_indices(split, checkpoint_path=None, n_total=None,
+                         val_fraction=None, seed=None):
+    """Sorted HDF5 column indices for a benchmark split: ``'val'``, ``'train'``, or ``'all'``.
+
+    The validation set is the one withheld from AI training, so the trained checkpoint's
+    stored ``val_indices`` / ``train_indices`` are the single source of truth. When a
+    checkpoint is given and carries them, they are used directly; otherwise the split is
+    recomputed from (n_total, val_fraction, seed) — identical to
+    ``train_ai_model.split_indices`` (shuffle ``arange(n_total)`` with ``default_rng(seed)``,
+    hold out the last ``val_fraction``). The two paths produce the same set for matching
+    parameters. Indices are returned sorted so ``--start-ix`` tiles the split deterministically.
+    """
+    if split == "all":
+        if n_total is None:
+            raise ValueError("split_sample_indices('all', ...) requires n_total")
+        return np.arange(n_total)
+    if split not in ("val", "train"):
+        raise ValueError(f"split must be 'val', 'train', or 'all', got {split!r}")
+
+    if checkpoint_path is not None:
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        key = "val_indices" if split == "val" else "train_indices"
+        if isinstance(ckpt, dict) and ckpt.get(key) is not None:
+            return np.sort(np.asarray(ckpt[key]))
+
+    if n_total is None or val_fraction is None or seed is None:
+        raise ValueError("split_sample_indices: provide a checkpoint carrying the split, "
+                         "or all of n_total/val_fraction/seed to recompute it")
+    indices = np.arange(n_total)
+    np.random.default_rng(seed).shuffle(indices)
+    split_pt = int((1.0 - val_fraction) * n_total)
+    return np.sort(indices[split_pt:] if split == "val" else indices[:split_pt])
 
 
 def create_tracer_mapping(labeling_df):
@@ -451,34 +538,65 @@ def build_radial_vocabs(cobra_model, labeling_df, base_tracer_names,
     """
     # Compound vocab: full metabolic network
     compound_vocab = sorted([met.id for met in cobra_model.metabolites])
-    n_compound = len(compound_vocab)
-    if h_compound is None:
-        h_compound = max(1, math.ceil(math.log2(n_compound)))
-
     # Label vocab: unique isotopomers in data
     label_vocab = sorted(labeling_df.index.get_level_values('Isotopomer').unique().tolist())
-    n_label = len(label_vocab)
-    if h_label is None:
-        h_label = max(1, math.ceil(math.log2(n_label)))
-
     # Tracer vocab: base tracers
     tracer_vocab = sorted(base_tracer_names)
-    n_tracer = len(tracer_vocab)
+
+    return radial_vocabs_from_lists(
+        compound_vocab, label_vocab, tracer_vocab,
+        h_compound=h_compound, h_label=h_label, h_tracer=h_tracer,
+    )
+
+
+def radial_vocabs_from_lists(compound_vocab, label_vocab, tracer_vocab,
+                             h_compound=None, h_label=None, h_tracer=None,
+                             verbose=True):
+    """
+    Build the radial-embedding tables from three already-derived vocabularies.
+
+    This is the half of :func:`build_radial_vocabs` that needs no COBRA model and
+    no labeling DataFrame — only the three sorted string lists. An exported model
+    stores those lists, so it can rebuild identical embedding tables without the
+    network JSON or the training data.
+
+    Args:
+        compound_vocab: Sorted metabolite IDs (the full network, not just measured).
+        label_vocab:    Sorted isotopomer labels.
+        tracer_vocab:   Sorted base tracer names.
+        h_compound/h_label/h_tracer: Harmonics per vocabulary (default: ceil(log2(N))).
+        verbose:        Print the vocabulary summary.
+
+    Returns:
+        vocabs: dict with keys:
+            compound_vocab, label_vocab, tracer_vocab  — sorted string lists
+            h_compound, h_label, h_tracer              — int H values used
+            token_dim                                   — total token dimension
+            compound_emb_table                         — (N_c, 2*H_c) float32 array
+            label_emb_table                            — (N_l, 2*H_l) float32 array
+            tracer_emb_table                           — (N_t, 2*H_t) float32 array
+    """
+    n_compound, n_label, n_tracer = len(compound_vocab), len(label_vocab), len(tracer_vocab)
+    if h_compound is None:
+        h_compound = max(1, math.ceil(math.log2(n_compound)))
+    if h_label is None:
+        h_label = max(1, math.ceil(math.log2(n_label)))
     if h_tracer is None:
         h_tracer = max(1, math.ceil(math.log2(n_tracer)))
 
     token_dim = 2 * h_compound + 2 * h_label + 2 * h_tracer + 1  # +1 for fraction
 
-    print(f"\nRadial embedding vocabularies:")
-    print(f"  Compounds: {n_compound} → H={h_compound}, emb_dim={2*h_compound}")
-    print(f"  Labels:    {n_label}   → H={h_label},  emb_dim={2*h_label}")
-    print(f"  Tracers:   {n_tracer}  → H={h_tracer},  emb_dim={2*h_tracer}")
-    print(f"  Token dim: {token_dim} (incl. fraction scalar)")
+    if verbose:
+        print(f"\nRadial embedding vocabularies:")
+        print(f"  Compounds: {n_compound} → H={h_compound}, emb_dim={2*h_compound}")
+        print(f"  Labels:    {n_label}   → H={h_label},  emb_dim={2*h_label}")
+        print(f"  Tracers:   {n_tracer}  → H={h_tracer},  emb_dim={2*h_tracer}")
+        print(f"  Token dim: {token_dim} (incl. fraction scalar)")
 
     return {
-        'compound_vocab': compound_vocab,
-        'label_vocab': label_vocab,
-        'tracer_vocab': tracer_vocab,
+        'compound_vocab': list(compound_vocab),
+        'label_vocab': list(label_vocab),
+        'tracer_vocab': list(tracer_vocab),
         'h_compound': h_compound,
         'h_label': h_label,
         'h_tracer': h_tracer,
@@ -487,6 +605,29 @@ def build_radial_vocabs(cobra_model, labeling_df, base_tracer_names,
         'label_emb_table': radial_embedding_table(n_label, h_label),
         'tracer_emb_table': radial_embedding_table(n_tracer, h_tracer),
     }
+
+
+def build_tracer_combo_emb_table(tracer_combo_vocab, tracer_base_vocab, tracer_base_emb_table):
+    """Embedding table for combined tracer strings, by summing base embeddings.
+
+    A token's tracer may be a co-fed combination written ``"A|B"``; its embedding
+    is the sum of the base tracer embeddings. Unknown base names fall back to
+    index 0, matching the tokenizer.
+
+    Args:
+        tracer_combo_vocab:    sorted unique tracer strings (may contain '|').
+        tracer_base_vocab:     sorted base tracer names.
+        tracer_base_emb_table: (n_base, d_tracer) float32 base embeddings.
+
+    Returns:
+        (n_combos, d_tracer) float32 array, row order matching tracer_combo_vocab.
+    """
+    base_to_idx = {t: i for i, t in enumerate(tracer_base_vocab)}
+    table = np.zeros((len(tracer_combo_vocab), tracer_base_emb_table.shape[1]), dtype=np.float32)
+    for combo_idx, combo_str in enumerate(tracer_combo_vocab):
+        for bt in (t.strip() for t in combo_str.split('|')):
+            table[combo_idx] += tracer_base_emb_table[base_to_idx.get(bt, 0)]
+    return table
 
 
 def build_token_static_features(labeling_df, vocabs):
@@ -622,15 +763,15 @@ class TokenizedDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
-                    train_indices=None, normalize=True, measured_fluxes=None,
-                    norm_stats_input=None):
+                    train_indices=None, measured_fluxes=None,
+                    norm_stats_input=None, normalize=False, normalize_mids=False):
     """
     Prepare a TokenizedDataset from DataFrames using radial-embedding tokenization.
 
     Each row of labeling_df becomes one token: [compound_emb | label_emb |
-    tracer_emb | fraction].  Optionally, measured bypass fluxes are prepended
-    as extra tokens with zero ID embeddings and the normalised flux value in
-    the fraction slot.
+    tracer_emb | fraction].  Measured flux tokens are built separately inside
+    FluxDecoder.forward() using reaction embeddings — they are NOT prepended
+    here.
 
     Args:
         labeling_df: DataFrame with labeling data (MultiIndex: Tracer/Metabolite/Isotopomer).
@@ -638,16 +779,17 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
         reversibility_df: DataFrame with reversibility data.
         vocabs: dict from build_radial_vocabs.
         train_indices: Sample indices to use (None = all).
-        normalize: Whether to log-transform and standardise labeling fractions.
-        measured_fluxes: List of reaction IDs whose fluxes are prepended as
-            bypass tokens, or None to disable.
+        normalize: Whether to standardise flux/reversibility targets.
+        measured_fluxes: Accepted for API compatibility; no longer used to build
+            bypass tokens. Measured flux values are present in the targets tensor
+            and passed to forward() at training time.
         norm_stats_input: Pre-computed normalisation stats (for inference/val).
 
     Returns:
         dataset: TokenizedDataset
         norm_stats: dict with normalisation statistics
         token_experiment_ids: (num_tokens,) int64 tensor mapping tokens to
-            experiment indices (-1 = bypass token, never masked)
+            experiment indices
     """
     if train_indices is None:
         train_indices = range(labeling_df.shape[1])
@@ -659,29 +801,27 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     # ------------------------------------------------------------------
     labeling_data = labeling_df.values[:, train_indices].T  # (num_samples, num_tokens)
 
-    if normalize:
-        eps = 1e-9
-        labeling_data = np.log(np.clip(labeling_data, 0, None) + eps)
+    norm_stats = {}
 
-        if norm_stats_input is not None:
-            mean = float(norm_stats_input['labeling_mean'])
-            std = float(norm_stats_input['labeling_std'])
-            if std < 1e-12:
-                std = 1.0
-            labeling_data = (labeling_data - mean) / std
-            norm_stats = norm_stats_input.copy()
-            norm_stats['labeling_std'] = std
+    # 1b. Optionally per-token z-score the labeling (MID) fractions so they match the
+    # unit-variance scale of the z-scored measured-flux inputs (fractions are otherwise
+    # fed raw ~[0,1], std ~0.04, ~24x weaker than flux inputs). Applied if explicitly
+    # requested (training) OR if the checkpoint's stats carry mid_mean (val/inference),
+    # so old checkpoints (no mid stats) keep the raw behavior.
+    _apply_mid = normalize_mids or (norm_stats_input is not None and 'mid_mean' in norm_stats_input)
+    if _apply_mid:
+        if norm_stats_input is not None and 'mid_mean' in norm_stats_input:
+            mid_mean = np.asarray(norm_stats_input['mid_mean'], dtype=np.float32)
+            mid_std  = np.asarray(norm_stats_input['mid_std'],  dtype=np.float32)
         else:
-            mean = labeling_data.mean()
-            std = labeling_data.std()
-            if std < 1e-12:
-                std = 1.0
-            labeling_data = (labeling_data - mean) / std
-            norm_stats = {'labeling_mean': mean, 'labeling_std': std}
-
-        labeling_data = np.nan_to_num(labeling_data, nan=0.0, posinf=0.0, neginf=0.0)
-    else:
-        norm_stats = {}
+            mid_mean = labeling_data.mean(axis=0).astype(np.float32)
+            mid_std  = np.where(labeling_data.std(axis=0) < 1e-6, 1.0,
+                                labeling_data.std(axis=0)).astype(np.float32)
+        labeling_data = (labeling_data - mid_mean) / mid_std
+        norm_stats['mid_mean'] = mid_mean.tolist()
+        norm_stats['mid_std']  = mid_std.tolist()
+        print(f"MID fractions per-token z-scored: input std now "
+              f"~{labeling_data.std(axis=0).mean():.2f} (raw was ~0.04)")
 
     # ------------------------------------------------------------------
     # 2. Token static features and experiment IDs
@@ -692,72 +832,52 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     static_dim = token_dim - 1
 
     # ------------------------------------------------------------------
-    # 3. Measured bypass flux tokens (optional)
+    # 3. Targets — normalize flux, then slice bypass tokens from it
     # ------------------------------------------------------------------
-    bypass_fractions = None
+    flux_data = flux_df.values[:, train_indices].T        # (num_samples, n_fluxes)
+    rev_data  = reversibility_df.values[:, train_indices].T
+
+    if normalize:
+        if norm_stats_input is None:
+            # Compute from current slice (used when caller doesn't pre-compute stats)
+            norm_stats_input = {
+                'flux_mean': flux_data.mean(axis=0).tolist(),
+                'flux_std':  np.where(flux_data.std(axis=0) < 1e-6, 1.0,
+                                      flux_data.std(axis=0)).tolist(),
+                'rev_mean':  rev_data.mean(axis=0).tolist(),
+                'rev_std':   np.where(rev_data.std(axis=0) < 1e-6, 1.0,
+                                      rev_data.std(axis=0)).tolist(),
+            }
+        flux_mean = np.array(norm_stats_input['flux_mean'], dtype=np.float32)
+        flux_std  = np.array(norm_stats_input['flux_std'],  dtype=np.float32)
+        rev_mean  = np.array(norm_stats_input['rev_mean'],  dtype=np.float32)
+        rev_std   = np.array(norm_stats_input['rev_std'],   dtype=np.float32)
+        norm_stats['flux_mean'] = norm_stats_input['flux_mean']
+        norm_stats['flux_std']  = norm_stats_input['flux_std']
+        norm_stats['rev_mean']  = norm_stats_input['rev_mean']
+        norm_stats['rev_std']   = norm_stats_input['rev_std']
+        flux_data = (flux_data - flux_mean) / flux_std
+        rev_data  = (rev_data  - rev_mean)  / rev_std
+        print(f"Flux targets normalized: "
+              f"mean range=[{flux_data.mean(axis=0).min():.4f}, {flux_data.mean(axis=0).max():.4f}], "
+              f"std range=[{flux_data.std(axis=0).min():.4f}, {flux_data.std(axis=0).max():.4f}]")
+        print(f"Rev targets normalized:  "
+              f"mean range=[{rev_data.mean(axis=0).min():.4f}, {rev_data.mean(axis=0).max():.4f}], "
+              f"std range=[{rev_data.std(axis=0).min():.4f}, {rev_data.std(axis=0).max():.4f}]")
+
+    # ------------------------------------------------------------------
+    # 4. Assemble static features and experiment IDs (labeling tokens only)
+    # ------------------------------------------------------------------
     if measured_fluxes:
-        measured_fluxes_data, feature_names = extract_measured_fluxes(
-            flux_df, train_indices, reaction_ids=measured_fluxes
-        )
+        print(f"Extracted {len(measured_fluxes)} measured fluxes as bypass tokens: {measured_fluxes}")
 
-        if measured_fluxes_data is not None and len(feature_names) > 0:
-            if normalize:
-                if norm_stats_input is not None and 'measured_fluxes_mean' in norm_stats_input:
-                    bypass_mean = np.array(norm_stats_input['measured_fluxes_mean'])
-                    bypass_std = np.array(norm_stats_input['measured_fluxes_std'])
-
-                    if len(bypass_mean) != measured_fluxes_data.shape[1]:
-                        raise ValueError(
-                            f"Measured-fluxes normalisation stats dimension mismatch: "
-                            f"expected {len(bypass_mean)} features but got "
-                            f"{measured_fluxes_data.shape[1]}."
-                        )
-                    norm_stats['measured_fluxes_mean'] = norm_stats_input['measured_fluxes_mean']
-                    norm_stats['measured_fluxes_std'] = norm_stats_input['measured_fluxes_std']
-                    if 'measured_fluxes_feature_names' in norm_stats_input:
-                        norm_stats['measured_fluxes_feature_names'] = \
-                            norm_stats_input['measured_fluxes_feature_names']
-                else:
-                    bypass_mean = measured_fluxes_data.mean(axis=0)
-                    bypass_std = measured_fluxes_data.std(axis=0)
-                    bypass_std = np.where(bypass_std < 1e-6, 1.0, bypass_std)
-                    norm_stats['measured_fluxes_mean'] = bypass_mean.tolist()
-                    norm_stats['measured_fluxes_std'] = bypass_std.tolist()
-                    norm_stats['measured_fluxes_feature_names'] = feature_names
-
-                measured_fluxes_data = (measured_fluxes_data - bypass_mean) / bypass_std
-
-            bypass_fractions = measured_fluxes_data  # (num_samples, num_bypass)
-            print(f"Extracted {len(feature_names)} measured fluxes as bypass tokens: {feature_names}")
-
-    # ------------------------------------------------------------------
-    # 4. Assemble static features and experiment IDs across all tokens
-    # ------------------------------------------------------------------
-    if bypass_fractions is not None:
-        num_bypass = bypass_fractions.shape[1]
-        bypass_static = np.zeros((num_bypass, static_dim), dtype=np.float32)
-        bypass_exp_ids = np.full(num_bypass, -1, dtype=np.int64)
-
-        all_static = np.concatenate([bypass_static, static_features], axis=0)
-        all_exp_ids = np.concatenate([bypass_exp_ids, token_experiment_ids_np])
-        all_fractions = np.concatenate([bypass_fractions, labeling_data], axis=1)
-    else:
-        all_static = static_features
-        all_exp_ids = token_experiment_ids_np
-        all_fractions = labeling_data
-
-    # ------------------------------------------------------------------
-    # 5. Targets
-    # ------------------------------------------------------------------
-    flux_data = flux_df.values[:, train_indices].T
-    rev_data = reversibility_df.values[:, train_indices].T
     targets = np.hstack([flux_data, rev_data])
 
     # ------------------------------------------------------------------
-    # 6. Build dataset
+    # 5. Build dataset
     # ------------------------------------------------------------------
-    dataset = TokenizedDataset(all_static, all_fractions, targets)
-    token_experiment_ids = torch.tensor(all_exp_ids, dtype=torch.int64)
+    dataset = TokenizedDataset(static_features, labeling_data, targets)
+    token_experiment_ids = torch.tensor(token_experiment_ids_np, dtype=torch.int64)
 
     return dataset, norm_stats, token_experiment_ids
 
@@ -903,16 +1023,9 @@ def build_id_token_features(labeling_df, vocabs):
     # Combined tracer vocab: one entry per unique tracer string (incl. "A|B")
     tracer_combo_vocab    = sorted(tracers.unique().tolist())
     tracer_combo_to_idx   = {t: i for i, t in enumerate(tracer_combo_vocab)}
-
-    # Precompute combined embeddings by summing base tracer embeddings
-    tracer_emb_dim = tracer_base_emb_table.shape[1]
-    tracer_combo_emb_table = np.zeros(
-        (len(tracer_combo_vocab), tracer_emb_dim), dtype=np.float32
+    tracer_combo_emb_table = build_tracer_combo_emb_table(
+        tracer_combo_vocab, tracer_base_vocab, tracer_base_emb_table
     )
-    for combo_str, combo_idx in tracer_combo_to_idx.items():
-        for bt in (t.strip() for t in combo_str.split('|')):
-            bt_idx = tracer_base_to_idx.get(bt, 0)
-            tracer_combo_emb_table[combo_idx] += tracer_base_emb_table[bt_idx]
 
     num_tokens           = len(labeling_df)
     compound_ids         = np.zeros(num_tokens, dtype=np.int64)
@@ -994,8 +1107,8 @@ class IDTokenizedDataset(Dataset):
 
 
 def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
-                       train_indices=None, normalize=True, measured_fluxes=None,
-                       norm_stats_input=None):
+                       train_indices=None, measured_fluxes=None,
+                       norm_stats_input=None, normalize=False, normalize_mids=False):
     """
     Prepare an IDTokenizedDataset for use with FluxDecoder.
 
@@ -1016,22 +1129,14 @@ def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     float_dataset, norm_stats, token_experiment_ids = prepare_dataset(
         labeling_df, flux_df, reversibility_df, vocabs,
         train_indices=train_indices,
-        normalize=normalize,
         measured_fluxes=measured_fluxes,
         norm_stats_input=norm_stats_input,
+        normalize=normalize,
+        normalize_mids=normalize_mids,
     )
 
     compound_ids, label_ids, tracer_ids, _, tracer_combo_vocab, tracer_combo_emb_table = \
         build_id_token_features(labeling_df, vocabs)
-
-    # Prepend zero IDs for bypass tokens (prepended first in prepare_dataset)
-    n_total  = float_dataset.static.shape[0]
-    n_bypass = n_total - len(labeling_df)
-    if n_bypass > 0:
-        z            = np.zeros(n_bypass, dtype=np.int64)
-        compound_ids = np.concatenate([z, compound_ids])
-        label_ids    = np.concatenate([z, label_ids])
-        tracer_ids   = np.concatenate([z, tracer_ids])
 
     fractions = float_dataset.fractions.numpy()  # (num_samples, n_total)
     targets   = float_dataset.targets.numpy()

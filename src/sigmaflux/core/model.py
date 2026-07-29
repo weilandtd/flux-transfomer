@@ -30,16 +30,17 @@ class MFAModel(TorchModule, Model):
     Class for an MFA model
     """
     @time_function
-    def __init__(self, model, name, 
+    def __init__(self, model, name,
                  device=None,
                  min_flux=1e-4,
                  mu0=1.0,
                  lambda0=1.0,
                  n_processes=1,
-                 n_samples=10, 
+                 n_samples=10,
                  initial_flux_distribution=None,
                  dtype=torch.float64,
-                 max_reversibility_ratio=10.0):
+                 max_reversibility_ratio=10.0,
+                 seed=None):
         """
 
         :param model: cobra.Model annotated with atom transitions
@@ -80,7 +81,7 @@ class MFAModel(TorchModule, Model):
         # If no intial value provided sample
         if initial_flux_distribution is None: 
             # Sample a mean flux distribution to initialize the model
-            flux_sample = sample(model, n_samples, processes=n_processes)
+            flux_sample = sample(model, n_samples, processes=n_processes, seed=seed)
             initial_fluxes = flux_sample.mean()
         
         else:
@@ -334,11 +335,6 @@ class MFAModel(TorchModule, Model):
                 "core_met_ix": core_met_ix
             }
 
-            with open('dAs.pkl', 'wb') as f:
-                pickle.dump(dAs, f)
-            with open('dBs.pkl', 'wb') as f:
-                pickle.dump(dBs, f)
-
             self._backward_compatible = True
 
         else:          
@@ -361,11 +357,17 @@ class MFAModel(TorchModule, Model):
         self.prepared = True
     
 
-    def forward(self, exp_ix=None):
+    def get_flux_bounds(self):
+        lb = torch.tensor([r.lower_bound for r in self.reactions], dtype=self.dtype, device=self.device)
+        ub = torch.tensor([r.upper_bound for r in self.reactions], dtype=self.dtype, device=self.device)
+        return lb, ub
+
+    def forward(self, exp_ix=None, reversible_fluxes=None):
         if not self.prepared:
             raise RuntimeError('Model is not prepared!')
         labeling = []
-        reversible_fluxes = self.reversible_fluxes
+        if reversible_fluxes is None:
+            reversible_fluxes = self.reversible_fluxes
 
         # Recompute A and B matrices for each subnet
         with torch.no_grad(): 
