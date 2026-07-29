@@ -247,3 +247,6 @@ data/_*
 
 # Local AI assistant context — not part of the project
 .claude/
+
+# Symlink to the run-results volume — machine-specific, not part of the project
+paper/.results
