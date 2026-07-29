@@ -8,9 +8,14 @@ what a real ``sigmaflux-train`` run produces, minus the training.
 Both :mod:`test_ai_inference` (which needs only the checkpoint) and
 :mod:`test_checkpoint` (which needs the HDF5 data and the split as well) build
 on it, so the checkpoint schema lives in exactly one place.
+
+``_no_repo_root_litter`` is an autouse guard: tests must write to ``tmp_path``,
+never to the working tree.
 """
 
 import os
+import subprocess
+import warnings
 from dataclasses import asdict
 
 import numpy as np
@@ -39,6 +44,53 @@ N_SAMPLES = 30
 N_VAL = 8
 H_REACTION = 4      # d_reaction = 8, fits in d_entity_lab = 14
 H_TYPE = 2          # d_type = 4
+
+#: Generated-artifact suffixes a test might leave in the working tree. Only these
+#: are swept, so an unrelated file someone creates mid-run is never touched.
+_ARTIFACT_SUFFIXES = (".pkl", ".pt", ".sfx", ".h5", ".npz", ".npy", ".csv", ".out")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _no_repo_root_litter():
+    """Delete generated artifacts a test drops in the repo root, and say so.
+
+    Tests should write only under ``tmp_path``. Some library paths still default
+    to a relative filename — ``MFAModel.prepare(with_backward=True)`` reads
+    ``dAs.pkl``/``dBs.pkl`` from the current directory, for instance — so a test
+    that grows such a call would silently start littering the working tree.
+
+    The sweep is deliberately narrow: repo root only, non-recursive, only files
+    that did not exist when the session started, and only known artifact
+    suffixes. It warns rather than deleting silently, because a test writing to
+    the working tree is a bug in the test, not something to paper over.
+    """
+    def snapshot():
+        return {e.name: e.stat().st_mtime
+                for e in os.scandir(REPO_ROOT)
+                if e.is_file() and e.name.endswith(_ARTIFACT_SUFFIXES)}
+
+    # Never touch a file git tracks: a tracked artifact is somebody's deliberate
+    # choice, not litter, and deleting one would be a silent, damaging surprise.
+    try:
+        tracked = set(subprocess.run(
+            ["git", "-C", REPO_ROOT, "ls-files", "-z"],
+            capture_output=True, text=True, timeout=30,
+        ).stdout.split("\0"))
+    except (OSError, subprocess.SubprocessError):
+        tracked = set()
+
+    before = snapshot()
+    yield
+    strays = [name for name, mtime in snapshot().items()
+              if before.get(name) != mtime and name not in tracked]
+    for name in sorted(strays):
+        os.remove(os.path.join(REPO_ROOT, name))
+    if strays:
+        warnings.warn(
+            f"tests wrote {len(strays)} artifact(s) into the repo root and they were "
+            f"removed: {', '.join(sorted(strays))}. Write to tmp_path instead.",
+            stacklevel=1,
+        )
 
 
 @pytest.fixture(scope="session")
