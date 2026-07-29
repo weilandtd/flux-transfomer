@@ -4,7 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sigmaflux"
-version = "0.1.0"
+# Single source of truth: src/sigmaflux/__init__.py:__version__ (see .claude/versioning.md)
+dynamic = ["version"]
 description = "Metabolic Flux Analysis with EMU framework and AI-based flux prediction"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -56,6 +57,9 @@ docs = [
     "sphinx-autodoc-typehints",
     "furo",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "sigmaflux.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
