@@ -607,6 +607,29 @@ def radial_vocabs_from_lists(compound_vocab, label_vocab, tracer_vocab,
     }
 
 
+def build_tracer_combo_emb_table(tracer_combo_vocab, tracer_base_vocab, tracer_base_emb_table):
+    """Embedding table for combined tracer strings, by summing base embeddings.
+
+    A token's tracer may be a co-fed combination written ``"A|B"``; its embedding
+    is the sum of the base tracer embeddings. Unknown base names fall back to
+    index 0, matching the tokenizer.
+
+    Args:
+        tracer_combo_vocab:    sorted unique tracer strings (may contain '|').
+        tracer_base_vocab:     sorted base tracer names.
+        tracer_base_emb_table: (n_base, d_tracer) float32 base embeddings.
+
+    Returns:
+        (n_combos, d_tracer) float32 array, row order matching tracer_combo_vocab.
+    """
+    base_to_idx = {t: i for i, t in enumerate(tracer_base_vocab)}
+    table = np.zeros((len(tracer_combo_vocab), tracer_base_emb_table.shape[1]), dtype=np.float32)
+    for combo_idx, combo_str in enumerate(tracer_combo_vocab):
+        for bt in (t.strip() for t in combo_str.split('|')):
+            table[combo_idx] += tracer_base_emb_table[base_to_idx.get(bt, 0)]
+    return table
+
+
 def build_token_static_features(labeling_df, vocabs):
     """
     Precompute the fixed (non-fraction) part of each token from labeling_df.
@@ -1000,16 +1023,9 @@ def build_id_token_features(labeling_df, vocabs):
     # Combined tracer vocab: one entry per unique tracer string (incl. "A|B")
     tracer_combo_vocab    = sorted(tracers.unique().tolist())
     tracer_combo_to_idx   = {t: i for i, t in enumerate(tracer_combo_vocab)}
-
-    # Precompute combined embeddings by summing base tracer embeddings
-    tracer_emb_dim = tracer_base_emb_table.shape[1]
-    tracer_combo_emb_table = np.zeros(
-        (len(tracer_combo_vocab), tracer_emb_dim), dtype=np.float32
+    tracer_combo_emb_table = build_tracer_combo_emb_table(
+        tracer_combo_vocab, tracer_base_vocab, tracer_base_emb_table
     )
-    for combo_str, combo_idx in tracer_combo_to_idx.items():
-        for bt in (t.strip() for t in combo_str.split('|')):
-            bt_idx = tracer_base_to_idx.get(bt, 0)
-            tracer_combo_emb_table[combo_idx] += tracer_base_emb_table[bt_idx]
 
     num_tokens           = len(labeling_df)
     compound_ids         = np.zeros(num_tokens, dtype=np.int64)
