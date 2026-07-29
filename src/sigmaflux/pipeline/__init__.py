@@ -12,6 +12,8 @@ console script:
 ``sigmaflux-infer``              :mod:`sigmaflux.pipeline.run_inference_workflow`
 ``sigmaflux-mfa-data``           :mod:`sigmaflux.pipeline.run_mfa_data`
 ``sigmaflux-sample-ko-flux``     :mod:`sigmaflux.pipeline.sample_ko_flux`
+``sigmaflux-export``            :mod:`sigmaflux.pipeline.export_model`
+``sigmaflux-inspect``           :mod:`sigmaflux.pipeline.inspect_model`
 ``sigmaflux-build-ko-split``     :mod:`sigmaflux.pipeline.build_ko_split`
 ===============================  ==========================================
 
@@ -25,6 +27,8 @@ cobra, which is far too expensive for ``import sigmaflux.pipeline``.
 """
 
 __all__ = [
+    'export_model',
+    'inspect_model',
     "build_ko_split",
     "extract_informative_features",
     "generate_training_data",

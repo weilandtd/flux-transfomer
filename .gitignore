@@ -225,6 +225,7 @@ task.md
 
 # Model checkpoints and generated matrices
 *.pt
+*.sfx
 *.npz
 
 # Generated figures and reports

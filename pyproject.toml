@@ -46,6 +46,8 @@ sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
 sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
 sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
 sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
+sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
+sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
