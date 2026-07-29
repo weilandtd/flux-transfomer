@@ -14,7 +14,10 @@ from .train import (
 )
 
 # Inference (experimental MID data -> fluxes)
-from .inference import SigmaFlux, EnsembleSigmaFlux, load_predictor
+from .inference import ModelSpec, SigmaFlux, EnsembleSigmaFlux, load_predictor
+
+# Packaged models (.sfx)
+from .export import SFX_SUFFIX, export_model, inspect_model, load_model, validate_model
 
 # Checkpoint loading (training data -> model + the dataset it was scored on)
 from .checkpoint import (
@@ -76,9 +79,16 @@ __all__ = [
     'var_norm_mse_loss',
     'per_reaction_r2',
     # Inference
+    'ModelSpec',
     'SigmaFlux',
     'EnsembleSigmaFlux',
     'load_predictor',
+    # Packaged models
+    'SFX_SUFFIX',
+    'export_model',
+    'inspect_model',
+    'load_model',
+    'validate_model',
     # Checkpoint loading
     'ALL',
     'VAL',
