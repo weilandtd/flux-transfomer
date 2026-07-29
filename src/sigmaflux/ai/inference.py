@@ -570,6 +570,8 @@ class EnsembleSigmaFlux:
         self.measured_flux_ids   = m0.measured_flux_ids
         self.device              = m0.device
         self._tracer_name_to_id  = m0._tracer_name_to_id
+        self._token_index        = m0._token_index
+        self._known_metabolites  = m0._known_metabolites
         self.split_source        = split_source
         self.manifest            = None
         self.name                = None
@@ -603,7 +605,16 @@ def load_predictor(config, checkpoint, data_dir=None, device=None):
     Note that ``checkpoint`` is only a *hint*: whenever a sibling ``ensemble/``
     directory exists it wins, so passing a single ``.pt`` path does not force
     single-model inference.
+
+    A packaged ``.sfx`` model is detected by suffix and loaded directly; it is
+    self-contained, so ``config`` is unused (and may be ``None``) in that case.
     """
+    from ._sfx import SFX_SUFFIX
+    if checkpoint and str(checkpoint).endswith(SFX_SUFFIX) and os.path.isfile(checkpoint):
+        from .export import load_model
+        print(f"Loading EXPORTED model: {checkpoint}")
+        return load_model(checkpoint, device=device)
+
     candidates = []
     if checkpoint and os.path.isdir(checkpoint):
         candidates.append(checkpoint)
