@@ -243,3 +243,6 @@ metabolism_dashboard/
 # Temporary conversion/helper scripts (underscore-prefixed)
 data/_*
 *.csv
+
+# Local AI assistant context — not part of the project
+.claude/
