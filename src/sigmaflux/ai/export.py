@@ -347,7 +347,10 @@ def export_model(source, out_path=None, *, name=None, model_version,
         raise FileExistsError(f"{out_path} exists; pass overwrite=True to replace it")
 
     layout, member_nbytes = _tensor_layout(checkpoints[0]["model_state_dict"], precision)
-    git_commit, git_dirty = _git_state(Path(member_paths[0]).parent)
+    # Record the commit of the *code* that built this, not of the checkpoint's
+    # directory: run dirs usually live on scratch outside any repo, which would
+    # silently leave the commit null exactly when provenance matters most.
+    git_commit, git_dirty = _git_state(Path(__file__).parent)
     ck0 = checkpoints[0]
 
     from .. import __version__ as sigmaflux_version

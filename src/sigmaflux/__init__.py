@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from sigmaflux.core.model import MFAModel
 from sigmaflux.core.mfa import fit_mfa_model
