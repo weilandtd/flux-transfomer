@@ -8,7 +8,7 @@ methods fail in the same places or in different ones.
 
 Subsystems (and KEGG reaction ids / EC numbers) come from the GEM Excel `Reactions` sheet,
 which the prepared JSON model drops. The coarse grouping is imported from
-`models/build_pathway_annotations.py` so the two stay consistent.
+`models/atomistic/build_pathway_annotations.py` so the two stay consistent.
 
 Usage:
     python paper/analysis/benchmark/pathway_assessment.py paper/.results/i_orientalis_20260614
@@ -25,7 +25,7 @@ import pandas as pd
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
-sys.path.insert(0, str(_REPO_ROOT / "models"))
+sys.path.insert(0, str(_REPO_ROOT / "models" / "atomistic"))
 from build_pathway_annotations import SUBSYSTEM_TO_COARSE  # noqa: E402
 from analysis_predicted_fluxes import _organism_path, _resolve_organism  # noqa: E402
 from plot_test_performance import load_benchmark, per_flux_r2, R2_THRESHOLD  # noqa: E402

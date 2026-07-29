@@ -1,7 +1,7 @@
 # SigmaFlux training configuration — Issatchenkia orientalis
 name: I_orientalis
-model_file: models/I_orientalis/imIsor_annotated_hierarchical.json
-mapping_csv: models/I_orientalis/I_orientalis_mapping.csv
+model_file: models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json
+mapping_csv: models/atomistic/I_orientalis/I_orientalis_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 

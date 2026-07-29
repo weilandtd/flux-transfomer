@@ -16,7 +16,7 @@ from sigmaflux.core.data import MassIsotopomerData, FluxData
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir))
-YEAST_MODEL_PATH = os.path.join(PROJECT_DIR, "models", "I_orientalis", "imIsor_annotated.json")
+YEAST_MODEL_PATH = os.path.join(PROJECT_DIR, "models", "atomistic", "I_orientalis", "imIsor_annotated.json")
 
 
 @pytest.fixture(scope="module")

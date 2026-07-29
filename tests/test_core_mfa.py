@@ -25,7 +25,7 @@ from sigmaflux.core.model import MFAModel
 _TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_DIR = os.path.abspath(os.path.join(_TEST_DIR, os.pardir))
 
-TOY_MODEL = os.path.join(_PROJECT_DIR, "models", "toy", "one_carbon_annotated.json")
+TOY_MODEL = os.path.join(_PROJECT_DIR, "models", "atomistic", "toy", "one_carbon_annotated.json")
 TOY_LABELING = os.path.join(_PROJECT_DIR, "data", "test", "toy_test_labeling.csv")
 TOY_FLUXES = os.path.join(_PROJECT_DIR, "data", "test", "toy_test_fluxes.csv")
 

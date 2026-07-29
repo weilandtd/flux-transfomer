@@ -9,11 +9,11 @@ For each DOF column j of the saved Z_free matrix the script reports:
 Run from repo root:
     python paper/analysis/analyze_nullspace_components.py \\
         --checkpoint paper/.results/s_cerevisiae_20260614/sc_transformer.pt \\
-        --model-json models/S_cerevisiae/sc_annotated_hierarchical.json
+        --model-json models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json
 
     python paper/analysis/analyze_nullspace_components.py \\
         --checkpoint paper/.results/i_orientalis_20260614/imisor_transformer.pt \\
-        --model-json models/I_orientalis/imIsor_annotated_hierarchical.json
+        --model-json models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json
 """
 
 import argparse

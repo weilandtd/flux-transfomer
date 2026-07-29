@@ -121,7 +121,7 @@ def main():
     # Central carbon metabolism R²
     try:
         import json
-        central_carbon_file = 'models/I_orientalis/central_carbon_metabolism.json'
+        central_carbon_file = 'models/atomistic/I_orientalis/central_carbon_metabolism.json'
         if os.path.exists(central_carbon_file):
             with open(central_carbon_file, 'r') as f:
                 cc_data = json.load(f)

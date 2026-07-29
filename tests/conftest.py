@@ -34,7 +34,7 @@ from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.utils import compute_sparse_nullspace
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOY_MODEL_JSON = os.path.join(REPO_ROOT, "models", "toy", "one_carbon_annotated.json")
+TOY_MODEL_JSON = os.path.join(REPO_ROOT, "models", "atomistic", "toy", "one_carbon_annotated.json")
 TOY_CONFIG_YAML = os.path.join(REPO_ROOT, "data", "test", "toy_config.yaml")
 
 #: Internal tracer ID: f"{tracer_id}_{labeling}_{enrichment}" (matches toy_config.yaml)

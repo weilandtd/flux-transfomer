@@ -14,7 +14,7 @@ Excluded subsystems: Exchange, Transport, Pseudoreaction, Unassigned, Glycerol s
 Usage:
     python paper/analysis/pathway_attention.py \
         paper/.results/i_orientalis_20260620/attention/flux_token_attn.npz \
-        --gem models/I_orientalis/imIsor_GEM.xlsx --top-k 3
+        --gem models/atomistic/I_orientalis/imIsor_GEM.xlsx --top-k 3
 """
 import argparse
 import os

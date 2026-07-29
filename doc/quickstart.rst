@@ -17,7 +17,7 @@ Fitting a model to measured data:
 
    from cobra.io import load_json_model
 
-   cobra_model = load_json_model("models/toy/one_carbon_annotated.json")
+   cobra_model = load_json_model("models/atomistic/toy/one_carbon_annotated.json")
    mfa_model = MFAModel(cobra_model, "TOY")
 
    experiment = Experiment(mid_data, [Tracer(mfa_model.metabolites.Ser_in, 0.1, [1, 1, 1])],

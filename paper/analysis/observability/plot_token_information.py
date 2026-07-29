@@ -8,7 +8,7 @@ components y_i — measures how informative each labeling token is for flux pred
 Usage:
     python paper/analysis/plot_token_information.py path/to/transformer.pt
     python paper/analysis/plot_token_information.py path/to/transformer.pt \\
-        --pathway-csv models/I_orientalis/metabolite_pathways.csv
+        --pathway-csv models/atomistic/I_orientalis/metabolite_pathways.csv
 """
 import argparse
 import pathlib

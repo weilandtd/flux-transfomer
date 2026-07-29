@@ -203,7 +203,7 @@ def load_matrix(npz_path: pathlib.Path, mixing: str = "convex") -> pd.DataFrame:
 def pretty_names(mid_xlsx) -> dict:
     """model metabolite stem -> the short name used in the experimental sheets (fdp -> FBP)."""
     org = "I_orientalis" if "I_orientalis" in str(mid_xlsx) else "S_cerevisiae"
-    csv = _REPO_ROOT / "models" / org / f"{org}_mapping.csv"
+    csv = _REPO_ROOT / "models" / "atomistic" / org / f"{org}_mapping.csv"
     if not csv.exists():
         return {}
     m = pd.read_csv(csv)
@@ -391,7 +391,7 @@ def isotopomer_evidence(attn: pd.DataFrame, metabolite: str, features_csv, mid_x
         # Experimental compound names do not follow the model ids ("FBP" for fdp_c), so map
         # them explicitly rather than by string prefix.
         cand = []
-        map_csv = _REPO_ROOT / "models" / ("I_orientalis" if "I_orientalis" in str(mid_xlsx)
+        map_csv = _REPO_ROOT / "models" / "atomistic" / ("I_orientalis" if "I_orientalis" in str(mid_xlsx)
                                            else "S_cerevisiae")
         map_csv = map_csv / f"{map_csv.name}_mapping.csv"
         if map_csv.exists():

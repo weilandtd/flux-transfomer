@@ -8,7 +8,7 @@ flux type).
 Usage:
     python paper/interactive_attention.py \\
         I_orientalis_20260508/flux_token_attn.npz \\
-        --model-json models/I_orientalis/imIsor_annotated.json
+        --model-json models/atomistic/I_orientalis/imIsor_annotated.json
 
     python paper/interactive_attention.py ...npz --model-json ...json --out fig.html
 """

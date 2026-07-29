@@ -14,7 +14,7 @@ prepare_experiment_data.py and run_inference.py via --mapping-csv.
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from sigmaflux.utils import build_data_name_maps
 
@@ -31,8 +31,8 @@ ORGANISMS = [
             "data/I_orientalis/I_orientalis_P.xlsx",
             "data/I_orientalis/I_orientalis_batch.xlsx",
         ],
-        "amm_xlsx":   "models/I_orientalis/imIsor_AMM.xlsx",
-        "output_csv": "models/I_orientalis/I_orientalis_mapping.csv",
+        "amm_xlsx":   "models/atomistic/I_orientalis/imIsor_AMM.xlsx",
+        "output_csv": "models/atomistic/I_orientalis/I_orientalis_mapping.csv",
     },
     {
         "name": "S_cerevisiae",
@@ -42,8 +42,8 @@ ORGANISMS = [
             "data/S_cervesiae/S_cerevisiae_P.xlsx",
             "data/S_cervesiae/S_cerevisiae_batch.xlsx",
         ],
-        "amm_xlsx":   "models/S_cerevisiae/scAMM.xlsx",
-        "output_csv": "models/S_cerevisiae/S_cerevisiae_mapping.csv",
+        "amm_xlsx":   "models/atomistic/S_cerevisiae/scAMM.xlsx",
+        "output_csv": "models/atomistic/S_cerevisiae/S_cerevisiae_mapping.csv",
     },
 ]
 

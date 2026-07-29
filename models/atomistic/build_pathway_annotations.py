@@ -68,18 +68,18 @@ _FALLBACK_COARSE = "Other"
 
 CONFIGS = [
     dict(
-        model_json='models/I_orientalis/imIsor_annotated_hierarchical.json',
-        gem_xlsx='models/I_orientalis/imIsor_GEM.xlsx',
-        out_csv='models/I_orientalis/metabolite_pathways.csv',
+        model_json='models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
+        gem_xlsx='models/atomistic/I_orientalis/imIsor_GEM.xlsx',
+        out_csv='models/atomistic/I_orientalis/metabolite_pathways.csv',
     ),
     dict(
-        model_json='models/S_cerevisiae/sc_annotated_hierarchical.json',
-        gem_xlsx='models/S_cerevisiae/scGEM.xlsx',
-        out_csv='models/S_cerevisiae/metabolite_pathways.csv',
+        model_json='models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
+        gem_xlsx='models/atomistic/S_cerevisiae/scGEM.xlsx',
+        out_csv='models/atomistic/S_cerevisiae/metabolite_pathways.csv',
     ),
 ]
 
-_REPO_ROOT = pathlib.Path(__file__).parent.parent
+_REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
 def build_annotations(model_json, gem_xlsx, out_csv):

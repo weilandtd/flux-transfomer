@@ -16,7 +16,7 @@ Usage:
     python paper/analysis/attention_distance_sweep.py \
         --self  paper/.results/i_orientalis_20260620/attention/self_attn.npz \
         --cross paper/.results/i_orientalis_20260620/attention/flux_token_attn.npz \
-        --model-json models/I_orientalis/imIsor_annotated_hierarchical.json
+        --model-json models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json
 """
 import argparse
 import os

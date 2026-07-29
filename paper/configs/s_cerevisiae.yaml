@@ -1,7 +1,7 @@
 # SigmaFlux training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
-model_file: models/S_cerevisiae/sc_annotated_hierarchical.json
-mapping_csv: models/S_cerevisiae/S_cerevisiae_mapping.csv
+model_file: models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json
+mapping_csv: models/atomistic/S_cerevisiae/S_cerevisiae_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
@@ -11,7 +11,7 @@ device: auto  # auto | cpu | cuda
 experiment:
   data_dir:       data/S_cervesiae
   reference_flux: Shen_et_al_flux_data_SC.xlsx
-  gem_xlsx:       models/S_cerevisiae/scGEM.xlsx
+  gem_xlsx:       models/atomistic/S_cerevisiae/scGEM.xlsx
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
