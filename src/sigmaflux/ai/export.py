@@ -372,7 +372,11 @@ def export_model(source, out_path=None, *, name=None, model_version,
             "numpy_version": np.__version__,
             "python_version": platform.python_version(),
             "platform": platform.platform(),
-            "source": str(source if isinstance(source, (str, os.PathLike)) else member_paths),
+            # Basenames only, never absolute paths: an exported model is shared,
+            # and the producer's directory layout is both useless to a consumer
+            # and identifying (usernames, cluster project names, scratch mounts).
+            "source": os.path.basename(str(source).rstrip("/")) if isinstance(
+                source, (str, os.PathLike)) else f"{len(member_paths)} checkpoints",
             "member_sources": [os.path.basename(p) for p in member_paths],
             "trained_utc": datetime.datetime.fromtimestamp(
                 max(os.path.getmtime(p) for p in member_paths),
@@ -381,8 +385,8 @@ def export_model(source, out_path=None, *, name=None, model_version,
             "config_sha256": _sha256_file(config),
             "model_config_sha256": _sfx.sha256_bytes(
                 json.dumps(spec.model_config, sort_keys=True).encode()),
-            "training_data_dir": ck0.get("data_dir"),
-            "training_model_json": ck0.get("model_json"),
+            "training_run": os.path.basename(str(ck0.get("data_dir") or "").rstrip("/")) or None,
+            "training_model_json": os.path.basename(str(ck0.get("model_json") or "")) or None,
         },
         "model": {
             "model_config": spec.model_config,
