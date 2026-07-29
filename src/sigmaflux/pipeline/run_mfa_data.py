@@ -10,7 +10,7 @@ Usage (I. orientalis, conditions C N P):
         --config paper/configs/i_orientalis.yaml \\
         --mid-file "data/I_orientalis/I_orientalis_{condition}.xlsx" \\
         --extflux-file data/I_orientalis/I_orientalis_ExtFlux.xlsx \\
-        --mapping-csv models/I_orientalis/I_orientalis_mapping.csv \\
+        --mapping-csv models/atomistic/I_orientalis/I_orientalis_mapping.csv \\
         --output-dir paper/.results/mfa_data_io_YYYYMMDD/ \\
         --conditions C N P
 """
