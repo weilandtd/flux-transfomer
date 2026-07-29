@@ -250,3 +250,6 @@ data/_*
 
 # Symlink to the run-results volume — machine-specific, not part of the project
 paper/.results
+
+# Stray analysis output at the repo root (scripts write into <run_dir>/output)
+/output/

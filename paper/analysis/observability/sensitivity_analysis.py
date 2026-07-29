@@ -38,7 +38,11 @@ COLORS = {
     "reference": "#AAAAAA",
 }
 
-OUTPUT_DIR = pathlib.Path("output")
+# Plots go next to the run they describe, as the other analysis scripts do. A
+# cwd-relative "output" would drop them wherever the script happened to be
+# invoked from — in practice the repository root.
+def _plot_dir(args):
+    return pathlib.Path(args.plot_dir) if args.plot_dir else pathlib.Path(args.data_dir) / "output"
 
 
 def main(args: argparse.Namespace) -> None:
@@ -104,8 +108,9 @@ def main(args: argparse.Namespace) -> None:
         if model_r2 is not None:
             comparison = flux_results.join(model_r2, how="inner")
             print(f"Matched {len(comparison)} reactions between HSIC and model.")
-            OUTPUT_DIR.mkdir(exist_ok=True)
-            _plot_sensitivity_vs_r2(comparison, OUTPUT_DIR)
+            plot_dir = _plot_dir(args)
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            _plot_sensitivity_vs_r2(comparison, plot_dir)
             _print_comparison_table(comparison, args.top_n)
             if args.output:
                 out = pathlib.Path(args.output)
@@ -272,6 +277,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--data-dir",   required=True,  help="Directory containing wb_model_*.h5 files")
     parser.add_argument("--output",     default=None,   help="Path to write full results CSV")
+    parser.add_argument("--plot-dir",   default=None, dest="plot_dir",
+                        help="Where to write plots (default: <data-dir>/output)")
     parser.add_argument("--top-n",      type=int, default=20, dest="top_n",   help="Rows to print per table (default: 20)")
     parser.add_argument("--by",         default="eta", choices=["eta", "R", "hsic"], help="Sort column (default: eta)")
     parser.add_argument("--max-samples",type=int, default=None, dest="max_samples", help="Randomly subsample this many rows for analysis")

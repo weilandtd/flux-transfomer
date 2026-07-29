@@ -14,6 +14,7 @@ never to the working tree.
 """
 
 import os
+import shutil
 import subprocess
 import warnings
 from dataclasses import asdict
@@ -47,7 +48,12 @@ H_TYPE = 2          # d_type = 4
 
 #: Generated-artifact suffixes a test might leave in the working tree. Only these
 #: are swept, so an unrelated file someone creates mid-run is never touched.
-_ARTIFACT_SUFFIXES = (".pkl", ".pt", ".sfx", ".h5", ".npz", ".npy", ".csv", ".out")
+_ARTIFACT_SUFFIXES = (".pkl", ".pt", ".sfx", ".h5", ".npz", ".npy", ".csv", ".out",
+                      ".svg", ".png", ".pdf", ".json")
+
+#: Directories a script might create at the repo root. Swept only when empty of
+#: tracked files, since a relative "output" path lands here rather than in tmp.
+_ARTIFACT_DIRS = ("output",)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -69,6 +75,15 @@ def _no_repo_root_litter():
                 for e in os.scandir(REPO_ROOT)
                 if e.is_file() and e.name.endswith(_ARTIFACT_SUFFIXES)}
 
+    def stray_dirs():
+        """Artifact directories at the root that git knows nothing about."""
+        out = []
+        for name in _ARTIFACT_DIRS:
+            path = os.path.join(REPO_ROOT, name)
+            if os.path.isdir(path) and not any(t.startswith(f"{name}/") for t in tracked):
+                out.append(name)
+        return out
+
     # Never touch a file git tracks: a tracked artifact is somebody's deliberate
     # choice, not litter, and deleting one would be a silent, damaging surprise.
     try:
@@ -79,12 +94,20 @@ def _no_repo_root_litter():
     except (OSError, subprocess.SubprocessError):
         tracked = set()
 
-    before = snapshot()
+    before, before_dirs = snapshot(), set(stray_dirs())
     yield
     strays = [name for name, mtime in snapshot().items()
               if before.get(name) != mtime and name not in tracked]
     for name in sorted(strays):
         os.remove(os.path.join(REPO_ROOT, name))
+
+    # A relative output path (e.g. Path("output")) lands here, not in tmp_path,
+    # and a file inside a directory is invisible to the suffix sweep above.
+    new_dirs = [d for d in stray_dirs() if d not in before_dirs]
+    for name in sorted(new_dirs):
+        shutil.rmtree(os.path.join(REPO_ROOT, name), ignore_errors=True)
+    strays += [f"{d}/" for d in new_dirs]
+
     if strays:
         warnings.warn(
             f"tests wrote {len(strays)} artifact(s) into the repo root and they were "
