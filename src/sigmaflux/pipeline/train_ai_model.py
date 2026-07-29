@@ -47,6 +47,37 @@ from sigmaflux.ai.utils import (
 )
 
 
+def share_basis(Z_full, basis_file):
+    """Return the null-space basis every ensemble member must use.
+
+    Writes *Z_full* to *basis_file* the first time and loads it thereafter, so a
+    whole ensemble shares one basis. This matters because an ICA basis is **not**
+    bit-reproducible: FastICA's fixed point depends on the sample covariance's
+    last bits, which change with the BLAS thread count, so members trained on
+    differently sized nodes otherwise land on different — equally valid —
+    rotations of the same subspace. Predicted fluxes are unaffected (they are
+    physical), but the members' basis coordinates are then incomparable.
+
+    ``basis_file=None`` disables sharing and returns *Z_full* unchanged.
+    """
+    if not basis_file:
+        return Z_full
+    if os.path.exists(basis_file):
+        loaded = np.load(basis_file)['Z_full']
+        if loaded.shape != Z_full.shape:
+            raise ValueError(
+                f"basis file {basis_file} holds a {loaded.shape} basis but this run "
+                f"computed {Z_full.shape}; it belongs to a different model"
+            )
+        print(f"Loaded shared null-space basis from {basis_file} {loaded.shape}")
+        return loaded
+    parent = os.path.dirname(os.path.abspath(basis_file))
+    os.makedirs(parent, exist_ok=True)
+    np.savez_compressed(basis_file, Z_full=Z_full)
+    print(f"Saved shared null-space basis to {basis_file} {Z_full.shape}")
+    return Z_full
+
+
 def split_indices(n_samples, val_fraction, seed):
     indices = np.arange(n_samples)
     rng = np.random.default_rng(seed)
@@ -399,6 +430,16 @@ def main(args):
     else:
         print(f"Null-space basis: Varimax (null_space_type={args.null_space_type!r})")
         Z_full = compute_sparse_nullspace(stoichiometric_matrix)
+
+    # ── Share one basis across an ensemble ────────────────────────────────────
+    # ICA-based bases are not bit-reproducible: FastICA's fixed point depends on
+    # the covariance's last bits, which change with the BLAS thread count, so
+    # members trained on different nodes can land on different (equally valid)
+    # rotations of the same subspace. Predictions are unaffected — fluxes are
+    # physical — but any per-member comparison in basis coordinates is not, so
+    # members must share one basis, exactly as they share one train/val split.
+    Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
+
     n_free_basis = Z_full.shape[1]
 
     print(f"Full null-space basis dimension: {n_free_basis}")
@@ -704,6 +745,10 @@ def build_parser():
                         help="per-token z-score the labeling (MID) fractions to match flux input scale")
     parser.add_argument("--output", default=None, help="Override output checkpoint path (.pt)")
     parser.add_argument("--split-file", default=None, help="JSON with explicit train_indices/val_indices (e.g. KO-aware split)")
+    parser.add_argument("--basis-file", default=None,
+                        help="NPZ holding the shared null-space basis. Loaded if it exists, "
+                             "else written after computing it. Ensemble members MUST share one: "
+                             "ICA bases are not bit-reproducible across BLAS thread counts.")
     parser.add_argument("--seed", type=int, default=None, help="Override config seed")
     parser.add_argument("--ensemble-size", type=int, default=None,
                         help="Number of models to train (override training.ensemble_size). >1 = ensemble.")
@@ -731,6 +776,7 @@ def cli(argv=None):
         output                 = output_model,
         normalize_mids         = cli.normalize_mids or t.get("normalize_mids", False),
         split_file             = cli.split_file,
+        basis_file             = cli.basis_file,
         device                 = cfg.get("device", "auto"),
         seed                   = cli.seed if cli.seed is not None else cfg.get("seed", 42),
         max_samples            = t.get("max_samples"),
@@ -771,22 +817,28 @@ def cli(argv=None):
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
 
-    # ── Ensemble: train N models (distinct seeds) sharing ONE train/val split ──
+    # ── Ensemble: N models (distinct seeds) sharing ONE split and ONE basis ──
     # ensemble_size > 1 -> members saved to <data_dir>/ensemble/model_{i}.pt.
-    # The split is shared across members (from --split-file, or captured from
-    # member 0) so per-reaction confidence is measured on a common val set.
+    # Both the split and the null-space basis are shared (from --split-file /
+    # --basis-file, or captured from member 0): the split so per-reaction
+    # confidence is measured on a common val set, the basis because an ICA basis
+    # is not bit-reproducible across BLAS thread counts and members would
+    # otherwise use different coordinates.
     ensemble_size = cli.ensemble_size if cli.ensemble_size is not None else t.get("ensemble_size", 1)
     if ensemble_size and ensemble_size > 1:
         import copy, json as _json, torch as _torch
         ens_dir = os.path.join(output_dir, "ensemble")
         os.makedirs(ens_dir, exist_ok=True)
         base_seed, shared_split = args.seed, args.split_file
+        # One basis for the whole ensemble: member 0 writes it, the rest load it.
+        shared_basis = args.basis_file or os.path.join(ens_dir, "basis.npz")
         print(f"\n=== Ensemble training: {ensemble_size} members (base seed {base_seed}) -> {ens_dir}/ ===")
         for i in range(ensemble_size):
             member = copy.copy(args)
             member.seed = base_seed + i
             member.output = os.path.join(ens_dir, f"model_{i}.pt")
             member.split_file = shared_split
+            member.basis_file = shared_basis
             print(f"\n----- ensemble member {i+1}/{ensemble_size}  seed={member.seed}  -> {member.output} -----")
             main(member)
             if shared_split is None:      # capture member 0's split so all members share it
