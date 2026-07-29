@@ -110,6 +110,49 @@ sigmaflux-infer \
 For programmatic use, `sigmaflux.ai.load_predictor` returns the same predictor and
 exposes `.predict(df_L, df_Vm)`.
 
+### 7. Package the model for release — `sigmaflux-export`
+
+A trained run is 20 `.pt` files (252 MB for I. orientalis), and each one only
+loads next to its config YAML, COBRA JSON and run directory. `sigmaflux-export`
+packages them into one self-contained file:
+
+```bash
+sigmaflux-export \
+    --source <run_dir>/ensemble \
+    --config paper/configs/i_orientalis.yaml \
+    --model-version 1.0.0
+```
+
+| | |
+|---|---|
+| 20 `.pt` members | 252.1 MB |
+| `i_orientalis-v1.0.0.sfx` (fp16) | **34.4 MB — 7.3×** |
+| `--precision fp32` | 64 MB, predictions bit-identical to the source |
+
+The saving comes from storing the shared payload once instead of 20×, dropping
+training diagnostics nothing reads, regenerating the 14 frozen embedding tables
+on load, and float16 weights. fp16 costs nothing that matters: on the held-out
+split the ensemble median R² moves 0.981874 → 0.981816, and the count of
+reactions above R² 0.9 (250) and 0.95 (239) is unchanged. Only reactions that
+were already unidentifiable move, and the null-space basis stays float32 so
+`S·v ≈ 0` still holds exactly.
+
+Inspect one without loading any weights — or without torch installed:
+
+```bash
+sigmaflux-inspect i_orientalis-v1.0.0.sfx           # name, version, provenance
+sigmaflux-inspect i_orientalis-v1.0.0.sfx --verify  # checksums for every entry
+```
+
+An export is **always an ensemble** (a single model is an ensemble of one), and
+anything that accepts a checkpoint accepts it:
+
+```bash
+sigmaflux-infer --config paper/configs/i_orientalis.yaml \
+                --checkpoint i_orientalis-v1.0.0.sfx \
+                --data-dir data/I_orientalis --out-dir <run_dir>/predictions
+```
+
 ## Notes
 
 - Install the package once with `pip install -e .`; the `sigmaflux-*` console

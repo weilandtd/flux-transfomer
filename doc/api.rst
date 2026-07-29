@@ -50,11 +50,22 @@ EMU Expansion
 AI
 --
 
-Start with :mod:`sigmaflux.ai.inference` — it turns experimental MID measurements
-into fluxes. :mod:`sigmaflux.ai.checkpoint` is the research-side counterpart: it
-rebuilds a trained model together with the dataset it was scored on.
+Three modules handle a trained model, each with a distinct job:
+
+- :mod:`sigmaflux.ai.inference` — turn experimental MID measurements into fluxes.
+  Start here.
+- :mod:`sigmaflux.ai.checkpoint` — rebuild a model together with the dataset it
+  was scored on, from a **training checkpoint**. Needs the run directory.
+- :mod:`sigmaflux.ai.export` — read and write a packaged **exported model**
+  (``.sfx``): self-contained, compressed and versioned, loadable with nothing but
+  the file. Unlike a ``.pt`` it contains no pickle, so loading one cannot execute
+  arbitrary code.
 
 .. automodule:: sigmaflux.ai.inference
+   :members:
+   :undoc-members:
+
+.. automodule:: sigmaflux.ai.export
    :members:
    :undoc-members:
 
