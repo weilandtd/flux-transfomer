@@ -38,6 +38,7 @@ import os
 import platform
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -57,7 +58,8 @@ from ._sfx import (
     SfxWriter,
     read_manifest,
 )
-from .inference import EnsembleSigmaFlux, ModelSpec
+from .checkpoint import promote_norm_buffers
+from .inference import EnsembleSigmaFlux, ModelSpec, SigmaFlux
 
 __all__ = [
     "SFX_SUFFIX",
@@ -130,7 +132,13 @@ def _discover_members(source):
 
 
 def _check_members_agree(checkpoints, paths):
-    """Refuse to package members that were not trained as one ensemble."""
+    """Refuse to package members that were not trained as one ensemble.
+
+    Returns ``True`` when every member shares one null-space basis. A seed-varied
+    ICA basis (``null_space_type: targeted_ica``) legitimately differs per member
+    — the decoded fluxes are physical either way — so that case is reported
+    rather than rejected, and the basis is then stored per member.
+    """
     first = checkpoints[0]
     for ckpt, path in zip(checkpoints[1:], paths[1:]):
         for key in _SHARED_KEYS:
@@ -144,13 +152,24 @@ def _check_members_agree(checkpoints, paths):
                     f"ensemble members disagree on {key!r}: {os.path.basename(paths[0])} "
                     f"and {os.path.basename(path)} were not trained as one ensemble"
                 )
-        za = np.asarray(first["null_space_data"]["Z_free"])
-        zb = np.asarray(ckpt["null_space_data"]["Z_free"])
-        if not np.array_equal(za, zb):
+
+    ref = np.asarray(first["null_space_data"]["Z_free"])
+    divergent = []
+    for ckpt, path in zip(checkpoints[1:], paths[1:]):
+        other = np.asarray(ckpt["null_space_data"]["Z_free"])
+        if other.shape != ref.shape:
             raise ValueError(
-                f"ensemble members disagree on the null-space basis: "
-                f"{os.path.basename(paths[0])} and {os.path.basename(path)}"
+                f"ensemble members disagree on the null-space *shape*: "
+                f"{os.path.basename(paths[0])} has {ref.shape}, "
+                f"{os.path.basename(path)} has {other.shape}"
             )
+        if not np.array_equal(other, ref):
+            divergent.append(os.path.basename(path))
+    if divergent:
+        print(f"  note: {len(divergent)} member(s) use a different null-space basis "
+              f"({', '.join(divergent[:4])}{'...' if len(divergent) > 4 else ''}); "
+              f"storing the basis per member")
+    return not divergent
 
 
 # ── Provenance ────────────────────────────────────────────────────────────────
@@ -302,7 +321,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
               f"{source if isinstance(source, (str, os.PathLike)) else f'{len(member_paths)} files'}")
 
     checkpoints = [torch.load(p, map_location="cpu", weights_only=False) for p in member_paths]
-    _check_members_agree(checkpoints, member_paths)
+    shared_null_space = _check_members_agree(checkpoints, member_paths)
 
     cfg = {}
     if config is not None:
@@ -379,6 +398,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
         "member_nbytes": member_nbytes,
         "regenerated_tensors": [k for k in _REGENERATED
                                 if k in checkpoints[0]["model_state_dict"]],
+        "shared_null_space": shared_null_space,
     }
 
     nsd = spec.null_space_data
@@ -472,6 +492,15 @@ def export_model(source, out_path=None, *, name=None, model_version,
         # ── members ───────────────────────────────────────────────────────────
         for i, ckpt in enumerate(checkpoints):
             w.write_bytes(MEMBER_FMT.format(i), _member_blob(ckpt["model_state_dict"], layout))
+            if not shared_null_space:
+                # A seed-varied ICA basis differs per member; the decoded fluxes
+                # are physical either way, so keep each member's own basis.
+                member_nsd = promote_norm_buffers(ckpt["null_space_data"],
+                                                  ckpt["model_state_dict"])
+                for key in _NULL_SPACE_FLOAT:
+                    if member_nsd.get(key) is not None:
+                        w.write_array(f"members/{i:03d}_null_space/{key}.npy",
+                                      np.asarray(member_nsd[key], dtype=np.float32))
 
     if verbose:
         raw = sum(os.path.getsize(p) for p in member_paths)
@@ -527,16 +556,26 @@ def load_model(path, *, device=None):
         )
 
         regenerated = set(m.get("regenerated_tensors", ()))
-        state_dicts = []
+        state_dicts, specs = [], []
         for i in range(m["n_members"]):
-            arrays = r.member_arrays(i)
-            state_dicts.append({k: torch.from_numpy(v) for k, v in arrays.items()})
+            state_dicts.append({k: torch.from_numpy(v) for k, v in r.member_arrays(i).items()})
+            if m.get("shared_null_space", True):
+                specs.append(spec)
+            else:
+                member_nsd = dict(nsd)
+                for key in _NULL_SPACE_FLOAT:
+                    entry = f"members/{i:03d}_null_space/{key}.npy"
+                    if r.has(entry):
+                        member_nsd[key] = r.read_array(entry)
+                # Same spec but this member's basis; the embedding-table cache is
+                # shared because it does not depend on the null space.
+                specs.append(replace(spec, null_space_data=member_nsd, _cache=spec._cache))
 
-    model = EnsembleSigmaFlux.from_spec(
-        spec, state_dicts, device=device,
-        member_ids=[MEMBER_FMT.format(i) for i in range(m["n_members"])],
-        strict=False,   # the regenerated tensors are deliberately absent
-    )
+    members = [SigmaFlux.from_spec(s, sd, device=device, strict=False)
+               for s, sd in zip(specs, state_dicts)]
+    model = EnsembleSigmaFlux.__new__(EnsembleSigmaFlux)
+    model.member_paths = [MEMBER_FMT.format(i) for i in range(m["n_members"])]
+    model._adopt(members, split_source=None)
     # strict=False would also hide a renamed key, so check the difference exactly.
     expected = set(model.members[0]._model.state_dict()) - set(state_dicts[0])
     if expected != regenerated:
