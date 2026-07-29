@@ -74,7 +74,10 @@ __all__ = [
 #: Weight tensors above this magnitude fall back to float32 (fp16 max is 65504).
 _FP16_SAFE_MAX = 6.0e4
 
-#: state_dict keys the loader regenerates rather than storing.
+#: state_dict keys the loader regenerates rather than storing. This is the
+#: *maximal* set — which of them a given model actually has depends on its
+#: config (a model trained without flux normalization has no flux_norm_* buffer),
+#: so the manifest records the subset that was really dropped.
 _REGENERATED = (
     "compound_emb.weight", "label_emb.weight", "tracer_emb.weight",
     "reaction_emb.weight", "_token_type_emb.weight",
@@ -214,35 +217,43 @@ def _member_blob(state_dict, layout):
 
 # ── Validation payload ────────────────────────────────────────────────────────
 
-def _read_val_inputs(ckpt, spec, val_indices, data_dir=None, max_samples=None):
-    """The MID inputs for the validation split, in training token order.
+def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
+    """The validation split's MID inputs and targets, in training token order.
 
-    This is the only step that touches the training HDF5. Returns
-    ``(fractions, rev_actuals)`` or ``(None, None)`` if the data is unreachable.
+    This is the only step that touches the training HDF5. Reading the flux
+    targets here rather than lifting them out of ``val_correlations`` means the
+    export does not depend on training diagnostics it otherwise drops, and works
+    for checkpoints that never recorded them.
+
+    Returns ``(fractions, flux_actuals, rev_actuals)``, or ``(None, None, None)``
+    when the training data is unreachable.
     """
     from .data import load_data
     resolved = data_dir or ckpt.get("data_dir")
     if not resolved or not os.path.isdir(resolved):
         print(f"  validation inputs: skipped (training data not found at {resolved!r})")
-        return None, None
+        return None, None, None
     try:
-        labeling_df, _, rev_df = load_data(resolved)
-    except (OSError, FileNotFoundError) as exc:
+        labeling_df, flux_df, rev_df = load_data(resolved)
+    except (OSError, FileNotFoundError, KeyError) as exc:
         print(f"  validation inputs: skipped ({exc})")
-        return None, None
+        return None, None, None
 
-    token_index = [tuple(t) for t in spec.token_index]
-    labeling_df = labeling_df.loc[token_index]
     idx = np.asarray(val_indices, dtype=int)
     if max_samples is not None:
         idx = idx[:max_samples]
+
+    labeling_df = labeling_df.loc[[tuple(t) for t in spec.token_index]]
     fractions = labeling_df.values[:, idx].T.astype(np.float32)
 
+    flux_names = list(spec.flux_names)
+    flux_actuals = (flux_df.loc[flux_names].values[:, idx].T.astype(np.float32)
+                    if flux_names and set(flux_names) <= set(flux_df.index) else None)
+
     rev_names = list(spec.reversibility_names)
-    rev_actuals = None
-    if rev_names and set(rev_names) <= set(rev_df.index):
-        rev_actuals = rev_df.loc[rev_names].values[:, idx].T.astype(np.float32)
-    return fractions, rev_actuals
+    rev_actuals = (rev_df.loc[rev_names].values[:, idx].T.astype(np.float32)
+                   if rev_names and set(rev_names) <= set(rev_df.index) else None)
+    return fractions, flux_actuals, rev_actuals
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -366,7 +377,8 @@ def export_model(source, out_path=None, *, name=None, model_version,
         "tracers_source": "config" if spec.tracer_display_names else "identity",
         "tensors": layout,
         "member_nbytes": member_nbytes,
-        "regenerated_tensors": list(_REGENERATED),
+        "regenerated_tensors": [k for k in _REGENERATED
+                                if k in checkpoints[0]["model_state_dict"]],
     }
 
     nsd = spec.null_space_data
@@ -406,33 +418,39 @@ def export_model(source, out_path=None, *, name=None, model_version,
                               np.asarray(spec.flux_norm_stats[key], dtype=np.float32))
 
         # ── validation ────────────────────────────────────────────────────────
-        vc = ck0.get("val_correlations") or {}
-        val_actuals = vc.get("val_actuals")
-        included = bool(with_validation and len(val_indices) and val_actuals is not None)
-        vblock = {"included": included, "n_val": int(len(val_indices)) if included else 0,
-                  "inputs_included": False, "token_order": "training"}
-        if included:
-            val_actuals = np.asarray(val_actuals, dtype=np.float32)[:len(val_indices)]
-            w.write_array("validation/val_indices.npy", val_indices)
-            w.write_array("validation/val_actuals.npy", val_actuals)
-            vblock["actuals_shape"] = list(val_actuals.shape)
-
-            want_inputs = with_val_inputs if with_val_inputs != "auto" else True
-            if want_inputs:
-                fractions, rev_actuals = _read_val_inputs(
+        vblock = {"included": False, "n_val": 0, "inputs_included": False,
+                  "token_order": "training"}
+        if with_validation and len(val_indices):
+            fractions = flux_actuals = rev_actuals = None
+            if with_val_inputs is not False:
+                fractions, flux_actuals, rev_actuals = _read_val_data(
                     ck0, spec, val_indices, data_dir=data_dir, max_samples=max_val_samples)
+                if fractions is None and with_val_inputs is True:
+                    raise FileNotFoundError(
+                        "with_val_inputs=True but the training data could not be read; "
+                        "pass data_dir=... or use with_val_inputs='auto'")
+
+            # Fall back to the targets training recorded when the HDF5 is out of reach.
+            if flux_actuals is None:
+                recorded = (ck0.get("val_correlations") or {}).get("val_actuals")
+                if recorded is not None:
+                    flux_actuals = np.asarray(recorded, dtype=np.float32)[:len(val_indices)]
+
+            if flux_actuals is not None:
+                if max_val_samples is not None:
+                    val_indices = val_indices[:max_val_samples]
+                w.write_array("validation/val_indices.npy", val_indices)
+                w.write_array("validation/val_actuals.npy", flux_actuals)
+                vblock.update(included=True, n_val=int(len(val_indices)),
+                              actuals_shape=list(flux_actuals.shape))
                 if fractions is not None:
                     w.write_array("validation/val_fractions.npy", fractions)
                     vblock["inputs_included"] = True
                     vblock["fractions_shape"] = list(fractions.shape)
-                    if rev_actuals is not None:
-                        w.write_array("validation/val_rev_actuals.npy", rev_actuals)
-                        vblock["rev_actuals_shape"] = list(rev_actuals.shape)
-                elif with_val_inputs is True:
-                    raise FileNotFoundError(
-                        "with_val_inputs=True but the training data could not be read; "
-                        "pass data_dir=... or use with_val_inputs='auto'")
-            if metrics:
+                if rev_actuals is not None:
+                    w.write_array("validation/val_rev_actuals.npy", rev_actuals)
+                    vblock["rev_actuals_shape"] = list(rev_actuals.shape)
+            if metrics and vblock["included"]:
                 vblock["reported"] = [
                     {"member": i, **{k: float(c.get("val_correlations", {}).get(k))
                                      for k in ("flux_mean", "flux_median",
