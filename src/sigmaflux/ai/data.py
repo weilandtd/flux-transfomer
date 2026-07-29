@@ -538,34 +538,65 @@ def build_radial_vocabs(cobra_model, labeling_df, base_tracer_names,
     """
     # Compound vocab: full metabolic network
     compound_vocab = sorted([met.id for met in cobra_model.metabolites])
-    n_compound = len(compound_vocab)
-    if h_compound is None:
-        h_compound = max(1, math.ceil(math.log2(n_compound)))
-
     # Label vocab: unique isotopomers in data
     label_vocab = sorted(labeling_df.index.get_level_values('Isotopomer').unique().tolist())
-    n_label = len(label_vocab)
-    if h_label is None:
-        h_label = max(1, math.ceil(math.log2(n_label)))
-
     # Tracer vocab: base tracers
     tracer_vocab = sorted(base_tracer_names)
-    n_tracer = len(tracer_vocab)
+
+    return radial_vocabs_from_lists(
+        compound_vocab, label_vocab, tracer_vocab,
+        h_compound=h_compound, h_label=h_label, h_tracer=h_tracer,
+    )
+
+
+def radial_vocabs_from_lists(compound_vocab, label_vocab, tracer_vocab,
+                             h_compound=None, h_label=None, h_tracer=None,
+                             verbose=True):
+    """
+    Build the radial-embedding tables from three already-derived vocabularies.
+
+    This is the half of :func:`build_radial_vocabs` that needs no COBRA model and
+    no labeling DataFrame — only the three sorted string lists. An exported model
+    stores those lists, so it can rebuild identical embedding tables without the
+    network JSON or the training data.
+
+    Args:
+        compound_vocab: Sorted metabolite IDs (the full network, not just measured).
+        label_vocab:    Sorted isotopomer labels.
+        tracer_vocab:   Sorted base tracer names.
+        h_compound/h_label/h_tracer: Harmonics per vocabulary (default: ceil(log2(N))).
+        verbose:        Print the vocabulary summary.
+
+    Returns:
+        vocabs: dict with keys:
+            compound_vocab, label_vocab, tracer_vocab  — sorted string lists
+            h_compound, h_label, h_tracer              — int H values used
+            token_dim                                   — total token dimension
+            compound_emb_table                         — (N_c, 2*H_c) float32 array
+            label_emb_table                            — (N_l, 2*H_l) float32 array
+            tracer_emb_table                           — (N_t, 2*H_t) float32 array
+    """
+    n_compound, n_label, n_tracer = len(compound_vocab), len(label_vocab), len(tracer_vocab)
+    if h_compound is None:
+        h_compound = max(1, math.ceil(math.log2(n_compound)))
+    if h_label is None:
+        h_label = max(1, math.ceil(math.log2(n_label)))
     if h_tracer is None:
         h_tracer = max(1, math.ceil(math.log2(n_tracer)))
 
     token_dim = 2 * h_compound + 2 * h_label + 2 * h_tracer + 1  # +1 for fraction
 
-    print(f"\nRadial embedding vocabularies:")
-    print(f"  Compounds: {n_compound} → H={h_compound}, emb_dim={2*h_compound}")
-    print(f"  Labels:    {n_label}   → H={h_label},  emb_dim={2*h_label}")
-    print(f"  Tracers:   {n_tracer}  → H={h_tracer},  emb_dim={2*h_tracer}")
-    print(f"  Token dim: {token_dim} (incl. fraction scalar)")
+    if verbose:
+        print(f"\nRadial embedding vocabularies:")
+        print(f"  Compounds: {n_compound} → H={h_compound}, emb_dim={2*h_compound}")
+        print(f"  Labels:    {n_label}   → H={h_label},  emb_dim={2*h_label}")
+        print(f"  Tracers:   {n_tracer}  → H={h_tracer},  emb_dim={2*h_tracer}")
+        print(f"  Token dim: {token_dim} (incl. fraction scalar)")
 
     return {
-        'compound_vocab': compound_vocab,
-        'label_vocab': label_vocab,
-        'tracer_vocab': tracer_vocab,
+        'compound_vocab': list(compound_vocab),
+        'label_vocab': list(label_vocab),
+        'tracer_vocab': list(tracer_vocab),
         'h_compound': h_compound,
         'h_label': h_label,
         'h_tracer': h_tracer,
