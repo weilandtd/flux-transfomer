@@ -83,6 +83,11 @@ CONFIGS = [
         gem_xlsx='models/atomistic/S_cerevisiae/scGEM.xlsx',
         out_csv='models/atomistic/S_cerevisiae/metabolite_pathways.csv',
     ),
+    dict(
+        model_json='models/atomistic/R_toruloides/imRt_annotated_hierarchical.json',
+        gem_xlsx='models/atomistic/R_toruloides/imRt_GEM.xlsx',
+        out_csv='models/atomistic/R_toruloides/metabolite_pathways.csv',
+    ),
 ]
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
