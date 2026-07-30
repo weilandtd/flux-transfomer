@@ -22,13 +22,15 @@ MANUAL_OVERRIDES: dict[str, list[str]] = {
 
 
 def build_data_name_maps(
-    experimental_xlsx: str | list[str],
+    experimental_xlsx: str | list[str] | None,
     model_amm_xlsx: str,
     output_csv: str = "metabolite_name_mapping.csv",
     compound_col: str = "Compound",
     amm_sheet: str = "Atom Transition",
     met_col: str = "metAbbreviation",
     compartments: tuple = ("_c", "_m", "_e"),
+    experimental_names: list[str] | None = None,
+    overrides: dict[str, list[str]] | None = None,
 ) -> pd.DataFrame:
     """
     Generate metabolite_name_mapping.csv mapping experimental compound names
@@ -36,10 +38,12 @@ def build_data_name_maps(
 
     Parameters
     ----------
-    experimental_xlsx : str | list[str]
+    experimental_xlsx : str | list[str] | None
         Path(s) to experimental MID xlsx. Compound names are unioned across all
         files. The first sheet matching [A-Z]+_[0-9]+ (e.g. NU_1, C12_1) is
         used per file; falls back to first sheet containing compound_col.
+        Pass None and supply experimental_names instead when an organism has no
+        measured data yet.
     model_amm_xlsx : str
         Path to model atom mapping xlsx. Sheet 'Atom Transition', column
         metAbbreviation supplies all model metabolite IDs.
@@ -53,16 +57,27 @@ def build_data_name_maps(
         Column name in AMM sheet containing model metabolite IDs.
     compartments : tuple
         Compartment suffixes to include in output (default: _c, _m, _e).
+    experimental_names : list[str] | None
+        Compound names to resolve, in place of reading them from xlsx files.
+    overrides : dict | None
+        Organism-specific aliases layered over MANUAL_OVERRIDES, for names whose
+        model ID differs from the one the shared table assumes.
 
     Returns
     -------
     pd.DataFrame with columns [experimental_id, model_id].
     Unmatched experimental names are printed as warnings.
     """
+    if (experimental_xlsx is None) == (experimental_names is None):
+        raise ValueError("pass exactly one of experimental_xlsx or experimental_names")
+
+    manual_overrides = {**MANUAL_OVERRIDES, **(overrides or {})}
 
     # ---- 1 & 2. Extract unique compound names across all xlsx files ----
-    xlsx_paths = [experimental_xlsx] if isinstance(experimental_xlsx, str) else experimental_xlsx
-    exp_names_set: set = set()
+    xlsx_paths = ([] if experimental_xlsx is None
+                  else [experimental_xlsx] if isinstance(experimental_xlsx, str)
+                  else experimental_xlsx)
+    exp_names_set: set = set(experimental_names or [])
 
     for xlsx_path in xlsx_paths:
         xl = pd.ExcelFile(xlsx_path)
@@ -112,6 +127,7 @@ def build_data_name_maps(
     for mid in model_ids:
         base = get_base(mid)
         base_to_ids.setdefault(base, []).append(mid)
+    model_id_set = set(model_ids)
 
     # ---- 4. Match each experimental name -> model IDs ----
     records = []
@@ -135,9 +151,14 @@ def build_data_name_maps(
         if matched:
             for model_id in matched:
                 records.append({"experimental_id": exp, "model_id": model_id})
-        elif exp in MANUAL_OVERRIDES:
-            for model_id in MANUAL_OVERRIDES[exp]:
+        elif exp in manual_overrides:
+            # An override may name a metabolite this organism does not carry, e.g. when
+            # the compound list is shared across organisms; drop those silently.
+            present = [m for m in manual_overrides[exp] if m in model_id_set]
+            for model_id in present:
                 records.append({"experimental_id": exp, "model_id": model_id})
+            if not present:
+                unmatched.append(exp)
         else:
             unmatched.append(exp)
 
