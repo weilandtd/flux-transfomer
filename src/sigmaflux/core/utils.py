@@ -137,7 +137,8 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
         except Exception:
             pass
 
-def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C'):
+def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
+                        drop_subsystems=()):
     """
     Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated
     with SigmaFlux atom_mapping strings, ready for MFAModel().
@@ -150,22 +151,37 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     :param path_to_atom_map_xls: path to Maranas AMM xlsx (Atom Transition + Symmetry sheets)
     :param path_to_output: if given, save annotated model as JSON
     :param atom_type: element to track, default 'C'
+    :param drop_subsystems: subsystems to exclude, e.g. ('dilution',) for the
+        completeMFA workbooks whose explicit dilution sub-network SigmaFlux does
+        not model.  Their formulas are dropped before parsing — some carry
+        zero-coefficient reactants that COBRA would silently discard, leaving atom
+        mappings that reference metabolites no longer in the reaction.
     """
     import cobra
 
     # Load GEM xlsx into a cobra model
     gem = pd.read_excel(path_to_cobra, sheet_name=None)
+    reactions, dropped_formulas = gem['Reactions'], []
+    if drop_subsystems:
+        dropped = reactions['subsystem'].isin(drop_subsystems)
+        dropped_formulas = reactions.loc[dropped, 'Reaction Formula'].astype(str).tolist()
+        reactions = reactions[~dropped]
+        print(f"Dropped {len(dropped_formulas)} reactions in subsystems {list(drop_subsystems)}")
+
     model = cobra.Model()
     for _, row in gem['Metabolites'].iterrows():
         model.add_metabolites([cobra.Metabolite(id=str(row['metid']), name=str(row['metname']))])
-    for _, row in gem['Reactions'].iterrows():
+    for _, row in reactions.iterrows():
         rxn = cobra.Reaction(str(row['Rxn ID']), lower_bound=row['Lower bound'], upper_bound=row['Upper bound'])
         model.add_reactions([rxn])
         rxn.build_reaction_from_string(str(row['Reaction Formula']))
 
+    _remove_metabolites_orphaned_by(model, dropped_formulas)
+
     # Annotate with atom mappings
     amm = pd.read_excel(path_to_atom_map_xls, sheet_name='Atom Transition')
     amm = amm[amm['startNodeSymbol'] == atom_type]
+    amm = amm[amm['rxnAbbreviation'].isin({r.id for r in model.reactions})]
 
     _chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
 
@@ -226,6 +242,26 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
         cobra.io.save_json_model(model, str(path_to_output))
 
     return model
+
+
+def _remove_metabolites_orphaned_by(model, dropped_formulas):
+    """Remove metabolites left without reactions by a `drop_subsystems` filter.
+
+    Only metabolites that the dropped formulas actually mention are removed.
+    Metabolites that carry no reaction in the workbook to begin with are kept —
+    the I. orientalis GEM lists ~200 such dead `*_i` / `sink_*` entries, and
+    pruning them would silently change a model that already ships as a release.
+    """
+    if not dropped_formulas:
+        return
+
+    mentioned = set()
+    for formula in dropped_formulas:
+        mentioned.update(re.findall(r'[A-Za-z0-9_\[\]-]+', formula))
+
+    orphaned = [m for m in model.metabolites if not m.reactions and m.id in mentioned]
+    model.remove_metabolites(orphaned)
+    print(f"Removed {len(orphaned)} metabolites orphaned by the dropped reactions")
 
 
 def _remove_out_metabolites(model):
