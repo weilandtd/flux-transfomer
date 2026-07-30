@@ -42,11 +42,15 @@ SUBSYSTEM_TO_COARSE = {
     # Carbohydrate metabolism
     "Carbohydrate biosynthesis":                         "Carbohydrate metabolism",
     "Amino sugar and nucleotide sugar metabolism":       "Carbohydrate metabolism",
+    "Starch and sucrose metabolism":                     "Carbohydrate metabolism",
     # Lipid metabolism
     "Fatty acid biosynthesis":                           "Lipid metabolism",
     "Fatty acid degradation":                            "Lipid metabolism",
+    "Fatty acid elongation":                             "Lipid metabolism",
     "Fatty acid metabolism":                             "Lipid metabolism",
     "Lipid biosynthesis":                                "Lipid metabolism",
+    "Glycerophospholipid metabolism":                    "Lipid metabolism",
+    "Phospholipid biosynthesis":                         "Lipid metabolism",
     "Inositol phosphate metabolism":                     "Lipid metabolism",
     # Sterol & isoprenoid metabolism
     "Ergosterol biosynthesis":                           "Sterol & isoprenoid metabolism",
@@ -54,6 +58,7 @@ SUBSYSTEM_TO_COARSE = {
     # Cofactor & sulfur metabolism
     "Folate metabolism":                                 "Cofactor & sulfur metabolism",
     "Sulfur metabolism":                                 "Cofactor & sulfur metabolism",
+    "Nitrogen metabolism":                               "Cofactor & sulfur metabolism",
     # Transport
     "Transport":                                         "Transport",
     "Exchange":                                          "Transport",
@@ -62,6 +67,7 @@ SUBSYSTEM_TO_COARSE = {
     "Other":                                             "Other",
     "Detoxification":                                    "Other",
     "Pseudoreaction":                                    "Other",
+    "Unassigned":                                        "Other",
 }
 
 _FALLBACK_COARSE = "Other"
