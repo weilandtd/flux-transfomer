@@ -100,6 +100,7 @@ def run_model_test(path, name, dataset='yeast'):
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'toy', 'one_carbon_annotated.json'), 'EC', 'toy'),
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'R_toruloides', 'imRt_annotated.json'), 'RT', 'yeast'),
 ])
 def test_models(path, name, dataset):
     run_model_test(path, name, dataset=dataset)
@@ -109,4 +110,5 @@ if __name__ == '__main__':
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'toy', 'one_carbon_annotated.json'), 'EC', dataset='toy')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', dataset='yeast')
     run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', dataset='yeast')
+    run_model_test(os.path.join(PROJECT_DIR, 'models', 'atomistic', 'R_toruloides', 'imRt_annotated.json'), 'RT', dataset='yeast')
 
