@@ -1,0 +1,162 @@
+# SigmaFlux training configuration — Rhodotorula toruloides
+name: R_toruloides
+model_file: models/atomistic/R_toruloides/imRt_annotated_hierarchical.json
+mapping_csv: models/atomistic/R_toruloides/R_toruloides_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# No `experiment:` block — there is no data/R_toruloides yet. That block is read only
+# by the paper analyses and by sigmaflux-infer, and plot_mid_data.py discovers
+# organisms by its presence, so omitting it keeps R. toruloides out of the MID plots
+# rather than pointing them at files that do not exist. Training needs none of it.
+
+# Reactions removed from the model after FVA (sampling and MFA use the uncoupled
+# subspace). FVA is still run with these reactions active so their bounds inform
+# the remaining reactions before they are dropped.
+skip_constraints:
+  - BIOMASS
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000   # final output written to flux_samples.csv
+  thinning: 100
+  processes: 8
+  method: optgp        # hopsy | optgp | achr
+  fva: true
+  ko: false
+
+  # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
+  # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
+  # reactions: null falls back to training.measured_fluxes.
+  stratified_sampling:
+    enabled: true
+    n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
+    n_bins: 10                    # equal-width bins along each measured reaction's FVA range
+    reactions: null               # null → training.measured_fluxes; or explicit list
+
+  growth:
+    lb: 0.01
+    ub: 0.5
+
+  # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
+  # Convention (after standardization): met_e →  i.e. positive flux = secretion,
+  # negative flux = uptake.
+  #
+  # imRt has 15 exchanges and none for ethanol, acetate, glycerol or succinate:
+  # R. toruloides is a non-Crabtree, obligately aerobic yeast that does not ferment,
+  # so CO2 is its only carbon secretion product. All 15 are listed below.
+  media:
+    # Carbon source — mandatory uptake
+    EX_glc__D_e: {lb: -12.0, ub: -1.0}
+    # Electron acceptor — mandatory uptake
+    EX_o2_e:     {lb: -100.0, ub: 0.0}
+    # Carbon secretion product
+    EX_co2_e:    {lb: 0.0,  ub: 100.0}
+    # Essential macronutrients — unrestricted uptake
+    EX_nh4_e:    {lb: -100.0, ub: 0.0}
+    EX_pi_e:     {lb: -100.0, ub: 0.0}
+    EX_so4_e:    {lb: -100.0, ub: 0.0}
+    # Water and proton — freely exchangeable
+    EX_h2o_e:    {lb: -100.0, ub: 100.0}
+    EX_h_e:      {lb: -100.0, ub: 100.0}
+    # Trace minerals — unrestricted uptake
+    EX_ca2_e:    {lb: -100.0, ub: 0.0}
+    EX_cu2_e:    {lb: -100.0, ub: 0.0}
+    EX_fe2_e:    {lb: -100.0, ub: 0.0}
+    EX_k_e:      {lb: -100.0, ub: 0.0}
+    EX_mg2_e:    {lb: -100.0, ub: 0.0}
+    EX_mn2_e:    {lb: -100.0, ub: 0.0}
+    EX_zn2_e:    {lb: -100.0, ub: 0.0}
+
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+labeling:
+  batch_size: 512
+  # Each entry is one tracer experiment. The tracer_id must correspond to a
+  # metabolite that is open in the media (i.e. has a non-zero EX_ reaction).
+  # Multiple entries with the same tracer_id but different labeling patterns
+  # represent mixed-label experiments (e.g. 50% U-13C + 50% 1,2-13C glucose).
+  tracers:
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 0.5
+      name: "1,2-13C glucose (50%)"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only consider metabolites in mapping_csv
+  token_selection_method: fisher    # pca | maxr | fisher
+  token_dropout: 0.2                # per-token labeling dropout during training
+
+  # Fisher selection parameters — all values that determine which tokens are included:
+  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
+  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
+  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
+  n_permutations: 10              # null-calibration permutations used to set significance floor
+  token_filter: selected          # significant | selected — which tokens are passed to training
+  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
+  budget: null                    # hard cap on token count (null = uncapped)
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: imrt_transformer.pt
+  ensemble_size: 20             # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
+  epochs: 1000
+  early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.2
+  max_samples: 10000
+
+  # Architecture (FluxDecoder cross-attention decoder)
+  combined_dim: 128       # d_model
+  num_attn_heads: 8       # n_head
+  num_transformer_layers: 4
+  dropout: 0.3
+
+  # Radial embedding dimensions (number of harmonics H per vocabulary).
+  # Resulting embedding vector length = 2*H.
+  # Set to null to auto-compute H = ceil(log2(N)) from vocab size.
+  h_compound: 16   # compounds  — full metabolic model vocab (~400 metabolites → 32-dim)
+  h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
+  h_tracer: 1      # tracer identities (1–2 tracers   →  2-dim)
+  h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
+  h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
+
+  flux_token_dropout: 0.5       # flux masking rate: per-batch prob. each measured-flux token is masked
+  normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
+  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
+  exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
+
+  # Measured fluxes fed as soft inputs through the fusion layer.
+  # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
+  # via intermediate metabolites, so they're NOT independent null-space DOFs.
+  #
+  # Without fermentation products, glucose and the five biomass components are the
+  # only measurable boundary fluxes the other two yeasts rely on, so O2 uptake and
+  # CO2 evolution are included here — both are routinely measured off-gas for an
+  # obligate aerobe, and they also define the strata for stratified sampling.
+  measured_fluxes:
+    - EX_glc__D_e
+    - EX_o2_e
+    - EX_co2_e
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+    - CARB_c
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
+  loss: variance                  # variance | mse
+  null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
+  flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
