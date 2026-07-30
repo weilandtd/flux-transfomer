@@ -323,27 +323,6 @@ def _strip_out_from_atom_mapping(amm_str):
     return _strip_terms(lhs) + " -> " + _strip_terms(rhs)
 
 
-
-    all_rxns = set(model.reactions)
-    for r in model.boundary: 
-        metabolite = list(r.metabolites.keys())[0]
-        metabolite_reaction = None 
-        for reaction in metabolite.reactions: 
-            if reaction in all_rxns and "atom_mapping" in reaction.annotation: 
-                metabolite_reaction = reaction
-                break 
-        if metabolite_reaction is not None: 
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
-            match = re.search(pattern, metabolite_reaction.annotation['atom_mapping'])
-            if match:
-                atom_map = match.group(1)
-                r.annotation['atom_mapping'] = insert_mapping_into_reaction(r.reaction, metabolite.id, atom_map)
-        else: 
-            
-            raise ValueError("Metabolite is not in the model")
-
-
-
 def atommap_boundary(model, strict=True):
     """Give every boundary reaction the atom map of the metabolite it exchanges.
 
