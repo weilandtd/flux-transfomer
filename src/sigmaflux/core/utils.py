@@ -45,6 +45,123 @@ _BIOMASS_ENERGY_FRACS: dict = {
     'PROTEIN_c': 0.50, 'CARB_c': 0.20, 'LIPID_c': 0.15, 'RNA_c': 0.12, 'DNA_c': 0.03,
 }
 BIOMASS_COMPONENT_IDS: tuple = ('PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c')
+_COMPONENT_TO_BM: dict = {
+    'PROTEIN_c': 'bm_protein_c', 'RNA_c': 'bm_rna_c', 'DNA_c': 'bm_dna_c',
+    'LIPID_c': 'bm_lipid_c', 'CARB_c': 'bm_carb_c',
+}
+# Maranas biomass formulas use placeholder tokens for the variable acyl chains and
+# the sphingoid backbone (e.g. tag_c = C3H5O3Acyl3), so those masses are nominal:
+# a palmitoyl chain and a C18 phytoceramide core.
+_PLACEHOLDER_MASSES: dict = {'Acyl': 239.4, 'Cer': 537.9}
+_ATOMIC_MASSES: dict = {
+    'C': 12.011, 'H': 1.008, 'O': 15.999, 'N': 14.007, 'P': 30.974, 'S': 32.06,
+}
+
+
+def _biomass_component(met_id: str) -> str | None:
+    """Which macromolecule a BIOMASS building block belongs to (None = shared cofactor)."""
+    if met_id in _SHARED_MET_IDS:
+        return None
+    if met_id in _AMINO_ACID_IDS:
+        return 'PROTEIN_c'
+    if met_id in _RNA_NTP_IDS:
+        return 'RNA_c'
+    if met_id in _DNA_NTP_IDS:
+        return 'DNA_c'
+    if met_id in _CARB_IDS:
+        return 'CARB_c'
+    return 'LIPID_c'
+
+
+def _formula_mass(formula) -> float:
+    """Molecular weight of a Maranas metabolite formula, or 0.0 if unparseable."""
+    if not isinstance(formula, str):
+        return 0.0
+    mass, remainder = 0.0, formula
+    for token, token_mass in _PLACEHOLDER_MASSES.items():
+        # A trailing digit multiplies the placeholder, e.g. Acyl3 in C3H5O3Acyl3
+        for match in re.finditer(re.escape(token) + r'(\d*)', remainder):
+            mass += token_mass * (int(match.group(1)) if match.group(1) else 1)
+        remainder = re.sub(re.escape(token) + r'\d*', '', remainder)
+    for element, count in re.findall(r'([A-Z][a-z]?)(\d*)', remainder):
+        if not element:
+            continue
+        if element not in _ATOMIC_MASSES:
+            return 0.0
+        mass += _ATOMIC_MASSES[element] * (int(count) if count else 1)
+    return mass
+
+
+def derive_biomass_fractions(model, formulas: dict) -> dict:
+    """Macromolecule mass fractions implied by the aggregate BIOMASS stoichiometry.
+
+    `formulas` maps metabolite id -> chemical formula (the GEM's `metformula`
+    column).  Each building block contributes coefficient x molecular weight to its
+    macromolecule, and the five totals are normalised to sum to 1.
+
+    These fractions are a units convention, not a physical constraint: they cancel
+    out of the net stoichiometry, so they only set the scale of the five component
+    fluxes.  They are approximate — the lipid formulas carry placeholder tokens and
+    the polysaccharides are written per monomer — so prefer measured values when a
+    biomass composition is available for the organism.
+    """
+    biomass = model.reactions.get_by_id('BIOMASS')
+    masses = {cid: 0.0 for cid in BIOMASS_COMPONENT_IDS}
+    for met, coeff in biomass.metabolites.items():
+        component = _biomass_component(met.id) if coeff < 0 else None
+        if component is None:
+            continue
+        masses[component] += -coeff * _formula_mass(formulas.get(met.id))
+
+    total = sum(masses.values())
+    if total <= 0.0:
+        raise ValueError("BIOMASS carries no building blocks with a parseable formula")
+    return {cid: mass / total for cid, mass in masses.items()}
+
+
+def split_biomass_hierarchical(model, fractions: dict) -> None:
+    """Split the aggregate BIOMASS into the 5 macromolecule component reactions.
+
+    Each component reaction consumes its building blocks at `coefficient / fraction`
+    and produces one `bm_*_c` pseudo-metabolite; BIOMASS is left consuming only those
+    pseudo-metabolites, at the mass fractions.  The composition through BIOMASS is
+    therefore unchanged — the split exposes PROTEIN_c, RNA_c, DNA_c, LIPID_c and
+    CARB_c as separately measurable fluxes.
+
+    Energy is then moved out of BIOMASS by `redistribute_biomass_energy`, without
+    which the components become energy-decoupled drains once BIOMASS is dropped
+    during sampling and labeling loses all sensitivity to them.
+    """
+    import cobra
+
+    rxn_ids = {r.id for r in model.reactions}
+    if 'BIOMASS' not in rxn_ids:
+        raise ValueError("model has no BIOMASS reaction to split")
+    already_split = [c for c in BIOMASS_COMPONENT_IDS if c in rxn_ids]
+    if already_split:
+        raise ValueError(f"model already has component reactions {already_split}")
+
+    biomass = model.reactions.get_by_id('BIOMASS')
+    building_blocks: dict = {cid: {} for cid in BIOMASS_COMPONENT_IDS}
+    for met, coeff in biomass.metabolites.items():
+        component = _biomass_component(met.id) if coeff < 0 else None
+        if component is not None:
+            building_blocks[component][met] = coeff
+
+    for component_id, blocks in building_blocks.items():
+        fraction = fractions[component_id]
+        bm_met = cobra.Metabolite(id=_COMPONENT_TO_BM[component_id],
+                                  name=f"{component_id} biomass precursor", compartment='c')
+        model.add_metabolites([bm_met])
+        component = cobra.Reaction(component_id, lower_bound=0.0, upper_bound=1000.0)
+        model.add_reactions([component])
+        component.add_metabolites({met: coeff / fraction for met, coeff in blocks.items()})
+        component.add_metabolites({bm_met: 1.0})
+        # BIOMASS consumes the pseudo-metabolite in place of the building blocks
+        biomass.add_metabolites({met: -coeff for met, coeff in blocks.items()})
+        biomass.add_metabolites({bm_met: -fraction})
+
+    redistribute_biomass_energy(model)
 
 
 def redistribute_biomass_energy(model) -> None:
@@ -85,16 +202,8 @@ def redistribute_biomass_energy(model) -> None:
     atp_rna_specific = utp_stoich            # ATP co-consumed with RNA NTP synthesis
     atp_energy = atp_total - atp_rna_specific  # energy ATP to distribute by fracs
 
-    comp_to_bm = {
-        'PROTEIN_c': 'bm_protein_c',
-        'RNA_c':     'bm_rna_c',
-        'DNA_c':     'bm_dna_c',
-        'LIPID_c':   'bm_lipid_c',
-        'CARB_c':    'bm_carb_c',
-    }
-
     for comp_id, frac in _BIOMASS_ENERGY_FRACS.items():
-        bm_id = comp_to_bm[comp_id]
+        bm_id = _COMPONENT_TO_BM[comp_id]
         bm_frac = bm_fracs.get(bm_id, 0.0)
         if bm_frac == 0.0:
             continue
