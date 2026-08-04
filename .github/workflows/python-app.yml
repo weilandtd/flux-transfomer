@@ -1,0 +1,62 @@
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python application
+
+on:
+  push:
+    branches: [ "main", "main_dev" ]
+  pull_request:
+    branches: [ "main" , "main_dev"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    env:
+      # Empty when the secret is unset, and always empty for a fork PR, which is
+      # what the coverage upload below keys off.
+      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+
+    steps:
+    - uses: actions/checkout@v4
+      # No lfs: true — the pretrained .sfx models are ~70 MB of LFS bandwidth per
+      # run. Their tests skip on the pointer files by design.
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+        cache: pip
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        # CPU wheels only: the default torch build drags in ~2.5 GB of CUDA that a
+        # GitHub runner cannot use.
+        pip install torch --index-url https://download.pytorch.org/whl/cpu
+        # Editable install rather than requirements.txt: the tests import sigmaflux,
+        # and pyproject carries the complete dependency list.
+        pip install -e ".[dev]" flake8
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest --cov=sigmaflux --cov-report=xml
+
+    - name: Codacy Coverage Reporter
+      # Skipped rather than failed when no token is configured, so a fork PR — which
+      # never sees repository secrets — still reports a green build.
+      if: env.CODACY_PROJECT_TOKEN != ''
+      # You may pin to the exact commit or the version.
+      # uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699
+      uses: codacy/codacy-coverage-reporter-action@v1.3.0
+      with:
+        project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        coverage-reports: coverage.xml
