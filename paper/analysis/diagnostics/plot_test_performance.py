@@ -10,7 +10,7 @@ them to the benchmark predictions. Produces SVG figures:
 Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
-All R² are plain (unfiltered). run_mfa_benchmark.py already rejects fits that fail
+All R² are plain (unfiltered). sigmaflux-benchmark-mfa already rejects fits that fail
 the reduced-χ² acceptance bound and writes them as NaN, so every MFA sample reaching
 this script is a statistically acceptable fit; the spread that remains is genuine
 flux non-identifiability, not numerical failure, and must not be filtered away.
@@ -75,7 +75,7 @@ def load_benchmark(bench_dir: pathlib.Path,
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
     Returns the paired long frame and the number of samples the method failed to
-    solve. run_mfa_benchmark.py writes all-NaN fluxes for samples where no restart
+    solve. sigmaflux-benchmark-mfa writes all-NaN fluxes for samples where no restart
     cleared the reduced-χ² acceptance bound; those samples drop out here and never
     count against the method's R², so the failure count must be reported alongside it.
     """

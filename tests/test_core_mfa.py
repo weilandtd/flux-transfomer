@@ -3,7 +3,7 @@ Smoke test for the constrained MFA pipeline (null-space L-BFGS-B).
 
 Runs a short optimization on the toy one-carbon model using synthetic test
 fixtures in data/test/.  The full benchmark lives in
-paper/pipeline/run_mfa_benchmark.py.
+sigmaflux.pipeline.run_mfa_benchmark (``sigmaflux-benchmark-mfa``).
 """
 
 import os

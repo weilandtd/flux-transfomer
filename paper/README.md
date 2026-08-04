@@ -153,6 +153,40 @@ sigmaflux-infer --config paper/configs/i_orientalis.yaml \
                 --data-dir data/I_orientalis --out-dir <run_dir>/predictions
 ```
 
+### 8. Benchmark accuracy — `sigmaflux-benchmark`, `sigmaflux-benchmark-mfa`
+
+Both benchmarks score a predictor on the samples withheld from AI training
+(`--split val`), from the same noisy inputs, and write the same HDF5 schema
+(`pred_<start>_<end>_{labeling,flux}.h5`) so their results load identically in
+`paper/analysis/diagnostics/plot_test_performance.py`.
+
+```bash
+sigmaflux-benchmark \
+    --config paper/configs/i_orientalis.yaml \
+    --data-dir <run_dir> --n-benchmarks 2000        # → <run_dir>/ai_benchmark/
+
+sigmaflux-benchmark-mfa \
+    --config paper/configs/i_orientalis.yaml \
+    --data-dir <run_dir> --n-benchmarks 2 --start-ix 0   # → <run_dir>/mfa_benchmark/
+```
+
+`--start-ix` / `--n-benchmarks` are an offset window into the split, not raw HDF5
+columns, so a SLURM array tiles it deterministically — that is how
+`paper/submit/submit_mfa_benchmark.sh` covers the 2000 validation samples with 1000
+tasks. MFA is fit with up to `--max-starts` restarts from a feasible near-GT init;
+a sample whose best fit never clears the reduced-χ² acceptance bound is written as
+all-NaN rather than as a bad fit.
+
+To tune the noise and optimiser settings before launching an array, fit a single
+sample with full diagnostics (GT feasibility, init agreement, per-block χ² split,
+measured-flux recovery, flux/labeling R²) and no HDF5 output:
+
+```bash
+sigmaflux-benchmark-mfa --diagnose \
+    --config paper/configs/i_orientalis.yaml \
+    --data-dir <run_dir> --start-ix 0 --max-iter 1000
+```
+
 ## Notes
 
 - Install the package once with `pip install -e .`; the `sigmaflux-*` console
