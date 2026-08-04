@@ -40,6 +40,20 @@ PRETRAINED = sorted(glob.glob(os.path.join(PRETRAINED_DIR, "*.sfx")))
 #: An unfetched git-lfs pointer is a ~130-byte text stub, not a model.
 _LFS_POINTER_MAX_BYTES = 1024
 
+
+def _is_fetched(path):
+    """Whether *path* is a real model rather than an unfetched git-lfs pointer.
+
+    A CI runner checks out without LFS, so the files are present at full name and
+    near-zero size; anything that opens one as a model gets ``BadZipFile``.
+    """
+    return os.path.getsize(path) > _LFS_POINTER_MAX_BYTES
+
+
+#: The subset a test may actually open. Tests that take a single model go through
+#: the sfx_path fixture and skip individually; the rest must filter on this.
+FETCHED = [p for p in PRETRAINED if _is_fetched(p)]
+
 pytestmark = pytest.mark.skipif(not PRETRAINED,
                                 reason=f"no .sfx models in {PRETRAINED_DIR}")
 
@@ -55,7 +69,7 @@ def _pinned_threads():
 
 @pytest.fixture(params=PRETRAINED, ids=lambda p: os.path.basename(p))
 def sfx_path(request):
-    if os.path.getsize(request.param) <= _LFS_POINTER_MAX_BYTES:
+    if not _is_fetched(request.param):
         pytest.skip(f"{os.path.basename(request.param)} is a git-lfs pointer; "
                     "run 'git lfs pull' to fetch the weights")
     return request.param
@@ -203,9 +217,8 @@ def test_predicted_fluxes_are_mass_balanced(model, sfx_path):
     assert np.abs(S @ flux).max() < 1e-5 * max(np.abs(flux).max(), 1.0)
 
 
-@pytest.mark.skipif(len(PRETRAINED) < 2, reason="needs two shipped models")
+@pytest.mark.skipif(len(FETCHED) < 2, reason="needs two fetched models")
 def test_models_are_distinct_organisms():
     """Two releases are two models — catches a duplicated or mislabelled artifact."""
-    manifests = [inspect_model(p) for p in PRETRAINED]
-    names = [m["name"] for m in manifests]
+    names = [inspect_model(p)["name"] for p in FETCHED]
     assert len(set(names)) == len(names), f"duplicate model names: {names}"
