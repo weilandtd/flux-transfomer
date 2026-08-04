@@ -140,13 +140,9 @@ training:
   # via intermediate metabolites, so they're NOT independent null-space DOFs.
   #
   # Without fermentation products, glucose and the five biomass components are the
-  # only measurable boundary fluxes the other two yeasts rely on, so O2 uptake and
-  # CO2 evolution are included here — both are routinely measured off-gas for an
-  # obligate aerobe, and they also define the strata for stratified sampling.
+  # only measurable boundary fluxes the other two yeasts rely on
   measured_fluxes:
     - EX_glc__D_e
-    - EX_o2_e
-    - EX_co2_e
     - PROTEIN_c
     - RNA_c
     - DNA_c
