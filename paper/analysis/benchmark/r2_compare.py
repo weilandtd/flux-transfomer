@@ -32,11 +32,12 @@ def main():
     args = ap.parse_args()
 
     # consistency check: same val split?
-    for p, tag in [(args.a, 'A'), (args.b, 'B')]:
-        ck = torch.load(p, map_location='cpu', weights_only=False)
-        globals()[f'_vi_{tag}'] = list(ck.get('val_indices', []))
-    same_split = _vi_A == _vi_B
-    print(f"same validation split: {same_split} (A:{len(_vi_A)} B:{len(_vi_B)} samples)")
+    val_indices = {tag: list(torch.load(p, map_location='cpu',
+                                        weights_only=False).get('val_indices', []))
+                   for p, tag in [(args.a, 'A'), (args.b, 'B')]}
+    vi_a, vi_b = val_indices['A'], val_indices['B']
+    print(f"same validation split: {vi_a == vi_b} "
+          f"(A:{len(vi_a)} B:{len(vi_b)} samples)")
 
     ra, rb = get_r2(args.a), get_r2(args.b)
     rxns = [r for r in ra if r in rb]
