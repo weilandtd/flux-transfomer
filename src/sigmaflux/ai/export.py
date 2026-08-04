@@ -15,7 +15,15 @@ What is stored
 --------------
 Once, shared by every member: the vocabularies, null-space basis, token index,
 output names, model config, flux normalization, the resolved tracer-name map,
-and (optionally) the validation split. Per member: **only the trained weights**.
+the prepared COBRA network, and (optionally) the validation split. Per member:
+**only the trained weights**.
+
+The network is the MFA-prepared model the run was trained on — the one whose
+reaction order matches ``flux_names``, not the annotated model it came from. It
+costs ~30 KB packed and is what lets a consumer check ``S @ v ≈ 0``, look up a
+reaction's metabolites or subsystem, and draw a map, none of which the names
+alone support. :func:`read_stoichiometry` returns it already aligned to the
+model's outputs.
 
 What is dropped, because it is regenerable or is training-only ballast: the 14
 frozen tensors (all five radial embedding tables plus buffers that duplicate
@@ -70,8 +78,15 @@ __all__ = [
     "export_model",
     "inspect_model",
     "load_model",
+    "read_cobra_model",
+    "read_stoichiometry",
     "validate_model",
 ]
+
+#: Entry holding the prepared COBRA network, as written by ``sigmaflux-sample-flux``.
+NETWORK_ENTRY = "shared/cobra_model.json"
+#: Filename of the prepared network inside a training run directory.
+PREPARED_MODEL_JSON = "model_prepared_for_mfa.json"
 
 #: Weight tensors above this magnitude fall back to float32 (fp16 max is 65504).
 _FP16_SAFE_MAX = 6.0e4
@@ -234,6 +249,59 @@ def _member_blob(state_dict, layout):
     return b"".join(chunks)
 
 
+# ── Prepared network ──────────────────────────────────────────────────────────
+
+def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=None):
+    """Locate the prepared COBRA network for a checkpoint.
+
+    The run directory's ``model_prepared_for_mfa.json`` is preferred over the
+    checkpoint's ``model_json``: training builds its stoichiometry from the
+    prepared model, whose reaction order matches ``flux_names``, while the
+    annotated source model has neither the same order nor the same reactions
+    (FVA pruning and skipped constraints drop some).
+    """
+    candidates = [model_json]
+    run_dir = data_dir or ckpt.get("data_dir")
+    if run_dir:
+        candidates.append(os.path.join(run_dir, PREPARED_MODEL_JSON))
+    candidates.append(ckpt.get("model_json"))
+    if config is not None:
+        from ..pipeline._paths import load_config, resolve_path
+        cfg, cfg_root = load_config(config, root)
+        candidates.append(resolve_path(cfg.get("model_file"), cfg_root))
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _read_network(path, flux_names):
+    """Read a COBRA JSON and describe how it lines up with the model's outputs.
+
+    Returns ``(payload, block)`` where *payload* is the raw file bytes and
+    *block* is the manifest entry. ``covers_flux_names`` is the property that
+    decides whether the network is usable: without every predicted reaction
+    present, a consumer cannot build ``S`` for the prediction vector at all.
+    """
+    with open(path, "rb") as fh:
+        payload = fh.read()
+    doc = json.loads(payload.decode("utf-8"))
+    reaction_ids = [r["id"] for r in doc.get("reactions", [])]
+
+    return payload, {
+        "included": True,
+        "source": os.path.basename(path),
+        "sha256": _sfx.sha256_bytes(payload),
+        "n_reactions": len(reaction_ids),
+        "n_metabolites": len(doc.get("metabolites", [])),
+        "covers_flux_names": set(flux_names) <= set(reaction_ids),
+        # False is fine — read_stoichiometry reorders — but it flags an export
+        # built from a model other than the one training actually used.
+        "reaction_order_matches": reaction_ids == list(flux_names),
+    }
+
+
 # ── Validation payload ────────────────────────────────────────────────────────
 
 def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
@@ -279,8 +347,8 @@ def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
 
 def export_model(source, out_path=None, *, name=None, model_version,
                  precision="fp16", config=None, root=None, description=None,
-                 with_validation=True, with_val_inputs="auto", data_dir=None,
-                 model_json=None, max_members=None, max_val_samples=None,
+                 with_validation=True, with_val_inputs="auto", with_network="auto",
+                 data_dir=None, model_json=None, max_members=None, max_val_samples=None,
                  metrics=True, overwrite=False, verbose=True):
     """Package trained checkpoints into a single ``.sfx`` model.
 
@@ -304,6 +372,13 @@ def export_model(source, out_path=None, *, name=None, model_version,
         Store the validation split, and (``"auto"``/True/False) the MID inputs
         needed to recompute R² from the export alone. Reading the inputs is the
         only step that touches the training HDF5.
+    with_network : {"auto", True, False}
+        Store the prepared COBRA network (default ``"auto"``: embed it when it
+        is found and covers every predicted reaction, otherwise warn and carry
+        on). ``True`` makes a missing or mismatched network an error; ``False``
+        skips it. The search order is *model_json*, then
+        ``<data_dir>/model_prepared_for_mfa.json``, then the checkpoint's
+        ``model_json``, then the config's ``model_file``.
 
     Returns
     -------
@@ -353,6 +428,33 @@ def export_model(source, out_path=None, *, name=None, model_version,
     git_commit, git_dirty = _git_state(Path(__file__).parent)
     ck0 = checkpoints[0]
 
+    network_payload, network = None, {"included": False}
+    if with_network is not False:
+        found = _find_network_json(ck0, model_json=model_json, data_dir=data_dir,
+                                   config=config, root=root)
+        if found is None:
+            if with_network is True:
+                raise FileNotFoundError(
+                    f"with_network=True but no COBRA network was found; pass "
+                    f"model_json=..., or data_dir=... containing {PREPARED_MODEL_JSON}"
+                )
+            print("  network: skipped (no prepared COBRA JSON found)")
+        else:
+            network_payload, candidate = _read_network(found, spec.flux_names)
+            if candidate["covers_flux_names"]:
+                network = candidate
+            elif with_network is True:
+                raise ValueError(
+                    f"{found} is missing reactions this model predicts, so it cannot "
+                    f"describe its output: it has {candidate['n_reactions']} reactions "
+                    f"and the model predicts {len(spec.flux_names)}. Point model_json "
+                    f"at the run's {PREPARED_MODEL_JSON}."
+                )
+            else:
+                network_payload = None
+                print(f"  network: skipped ({os.path.basename(found)} does not cover "
+                      f"every predicted reaction)")
+
     from .. import __version__ as sigmaflux_version
     manifest = {
         "format": _sfx.FORMAT,
@@ -401,6 +503,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
         },
         "tracers": spec.tracer_display_names,
         "tracers_source": "config" if spec.tracer_display_names else "identity",
+        "network": network,
         "tensors": layout,
         "member_nbytes": member_nbytes,
         "regenerated_tensors": [k for k in _REGENERATED
@@ -443,6 +546,8 @@ def export_model(source, out_path=None, *, name=None, model_version,
             for key in ("mean", "std"):
                 w.write_array(f"shared/flux_norm/{key}.npy",
                               np.asarray(spec.flux_norm_stats[key], dtype=np.float32))
+        if network_payload is not None:
+            w.write_bytes(NETWORK_ENTRY, network_payload)
 
         # ── validation ────────────────────────────────────────────────────────
         vblock = {"included": False, "n_val": 0, "inputs_included": False,
@@ -602,6 +707,50 @@ def load_model(path, *, device=None):
 def inspect_model(path):
     """Return a packaged model's manifest without loading any weights."""
     return read_manifest(path)
+
+
+def read_cobra_model(path):
+    """The prepared COBRA network stored in *path*, as a :class:`cobra.Model`.
+
+    Needs no run directory: the network travels inside the export. Raises
+    :class:`SfxFormatError` for a model exported without one (``with_network=False``,
+    or any release predating the entry) — check
+    ``inspect_model(path)["network"]["included"]`` first to branch without catching.
+    """
+    from cobra.io.json import from_json
+
+    with SfxReader(path) as r:
+        if not r.has(NETWORK_ENTRY):
+            raise SfxFormatError(
+                f"{path} carries no COBRA network. Re-export it with with_network=True."
+            )
+        return from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8"))
+
+
+def read_stoichiometry(path):
+    """``(S, metabolite_ids, cobra_model)`` with ``S`` columns in ``flux_names`` order.
+
+    The prepared network usually already lists its reactions in that order, but
+    reindexing here means a consumer can multiply straight into a prediction —
+    ``S @ predicted_fluxes ≈ 0`` — without knowing whether it does.
+    """
+    from cobra.util.array import create_stoichiometric_matrix
+
+    model = read_cobra_model(path)
+    with SfxReader(path) as r:
+        flux_names = r.read_json("shared/names.json")["flux_names"]
+
+    S = create_stoichiometric_matrix(model, array_type="dense")
+    order = {rxn.id: i for i, rxn in enumerate(model.reactions)}
+    missing = [name for name in flux_names if name not in order]
+    if missing:
+        raise SfxFormatError(
+            f"{path}: the stored network is missing {len(missing)} predicted "
+            f"reaction(s), e.g. {missing[:5]}"
+        )
+    return (S[:, [order[name] for name in flux_names]],
+            [met.id for met in model.metabolites],
+            model)
 
 
 def validate_model(path, *, device=None, per_member=False):

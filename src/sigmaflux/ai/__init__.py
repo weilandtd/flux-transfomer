@@ -17,7 +17,8 @@ from .train import (
 from .inference import ModelSpec, SigmaFlux, EnsembleSigmaFlux, load_predictor
 
 # Packaged models (.sfx)
-from .export import SFX_SUFFIX, export_model, inspect_model, load_model, validate_model
+from .export import (SFX_SUFFIX, export_model, inspect_model, load_model,
+                     read_cobra_model, read_stoichiometry, validate_model)
 
 # Checkpoint loading (training data -> model + the dataset it was scored on)
 from .checkpoint import (
@@ -88,6 +89,8 @@ __all__ = [
     'export_model',
     'inspect_model',
     'load_model',
+    'read_cobra_model',
+    'read_stoichiometry',
     'validate_model',
     # Checkpoint loading
     'ALL',
