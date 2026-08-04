@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from cobra.io.json import load_json_model, save_json_model
 
 from sigmaflux.ai.data import (
     build_radial_vocabs,
@@ -33,13 +34,15 @@ from sigmaflux.ai.data import (
 )
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.core.utils import annotate_atom_patterns
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOY_MODEL_JSON = os.path.join(REPO_ROOT, "models", "atomistic", "toy", "one_carbon_annotated.json")
 TOY_CONFIG_YAML = os.path.join(REPO_ROOT, "data", "test", "toy_config.yaml")
 
-#: Internal tracer ID: f"{tracer_id}_{labeling}_{enrichment}" (matches toy_config.yaml)
-TRACER_ID = "Ser_in_111_0.1"
+#: Internal tracer ID: ``Tracer.__repr__`` = f"{tracer_id}_{labeling}_{enrichment}",
+#: rendered from toy_config.yaml exactly as the real training data renders it.
+TRACER_ID = "Ser_in_[1, 1, 1]_0.1"
 
 N_SAMPLES = 30
 N_VAL = 8
@@ -160,6 +163,16 @@ def toy_run(tmp_path_factory):
     labeling_df.to_hdf(run_dir / f"wb_model_labeling_data{suffix}.h5", key="labeling", mode="w")
     flux_df.to_hdf(run_dir / f"wb_model_flux_data{suffix}.h5", key="fluxes", mode="w")
     rev_df.to_hdf(run_dir / f"wb_model_reversibility_data{suffix}.h5", key="reversibility", mode="w")
+
+    # The benchmarks read the prepared model and the observable metabolites from the
+    # run directory, as sigmaflux-sample-flux / -select-features leave them. Model
+    # preparation is what turns the toy JSON's reaction atom mappings into the
+    # per-metabolite atom_pattern annotations build_targets needs.
+    save_json_model(annotate_atom_patterns(load_json_model(TOY_MODEL_JSON)),
+                    str(run_dir / "model_prepared_for_mfa.json"))
+    pd.DataFrame({"metabolite_id": sorted({m for _, m, _ in rows})}).to_csv(
+        run_dir / "features.csv", index=False
+    )
 
     # ── Vocabs and dataset (no bypass tokens — matches inference.py) ──────────
     _, base_tracer_names = create_tracer_mapping(labeling_df)
