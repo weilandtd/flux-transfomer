@@ -246,6 +246,29 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
         except Exception:
             pass
 
+
+def annotate_atom_patterns(model):
+    """Give every metabolite an ``atom_pattern`` sized by its reaction atom mappings.
+
+    ``build_targets`` reads these patterns to decide which EMUs to simulate, so a
+    model carrying only reaction-level ``atom_mapping`` strings is not yet usable
+    for MFA. The pattern is just a distinct label per tracked atom.
+    """
+    chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    for met in model.metabolites:
+        max_n = 0
+        for rxn in met.reactions:
+            amm_str = rxn.annotation.get("atom_mapping", "")
+            for match in re.findall(r"\b{}\s*\(([^)]+)\)".format(re.escape(met.id)), amm_str):
+                max_n = max(max_n, len(match))
+        if max_n > 0:
+            met.annotation["atom_pattern"] = (
+                chars[:max_n] if max_n <= len(chars)
+                else "".join(f"a{i}" for i in range(1, max_n + 1))
+            )
+    return model
+
+
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
                         drop_subsystems=()):
     """
@@ -332,17 +355,7 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     except Exception:
         pass
 
-    # Annotate each metabolite with its atom_pattern based on reaction atom mappings
-    for met in model.metabolites:
-        max_n = 0
-        for rxn in met.reactions:
-            amm_str = rxn.annotation.get("atom_mapping", "")
-            for match in re.findall(r"\b{}\s*\(([^)]+)\)".format(re.escape(met.id)), amm_str):
-                max_n = max(max_n, len(match))
-        if max_n > 0:
-            met.annotation["atom_pattern"] = (
-                _chars[:max_n] if max_n <= len(_chars) else "".join(f"a{i}" for i in range(1, max_n + 1))
-            )
+    annotate_atom_patterns(model)
 
     _remove_out_metabolites(model)
     _standardize_exchange_directions(model)
