@@ -70,6 +70,14 @@ sigmaflux-select-features \
     --data-dir training_data
 ```
 
+The scoring method is the config key `features.token_selection_method` (`fisher` by
+default). Set it to `fisher_fast` for large models (genome-scale / whole-body) where the
+default becomes intractable: it computes each token's standalone information with the
+matrix-determinant lemma (a k×k determinant, no dense d×d Fisher grams) and keeps every
+significant token instead of running the greedy redundancy trim — O(C·d²) time / O(C·d)
+memory vs O(K·C·d³) / O(C·d²). The output `features.csv` has the same schema, so training
+and inference are unchanged.
+
 ### 4. Train the decoder — `sigmaflux-train`
 
 Trains `FluxDecoder` on the HDF5 files produced above.

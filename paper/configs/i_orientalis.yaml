@@ -91,7 +91,7 @@ labeling:
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: True          # only consider metabolites in mapping_csv
-  token_selection_method: fisher    # pca | maxr | fisher
+  token_selection_method: fisher    # pca | maxr | fisher | fisher_fast
   token_dropout: 0.2                # per-token labeling dropout during training
 
   # Fisher selection parameters — all values that determine which tokens are included:

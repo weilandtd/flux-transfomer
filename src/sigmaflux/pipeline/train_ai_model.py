@@ -213,11 +213,11 @@ def main(args):
         print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
 
     n_tokens_all = labeling_df.shape[0]
-    if getattr(args, 'token_selection_method', 'pca') == 'fisher':
+    if getattr(args, 'token_selection_method', 'pca') in ('fisher', 'fisher_fast'):
         if not os.path.isfile(args.features_csv):
             raise FileNotFoundError(
-                f"token_selection_method='fisher' requires features.csv at "
-                f"{args.features_csv}. Run extract_informative_features.py first."
+                f"token_selection_method='{getattr(args, 'token_selection_method')}' requires "
+                f"features.csv at {args.features_csv}. Run sigmaflux-select-features first."
             )
         _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
         labeling_df = labeling_df[_fisher_mask.numpy()]
@@ -481,7 +481,7 @@ def main(args):
         obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
 
         token_sel_method = getattr(args, 'token_selection_method', 'pca')
-        if token_sel_method == 'fisher':
+        if token_sel_method in ('fisher', 'fisher_fast'):
             token_information = None  # selection already applied via labeling_df filter above
         else:
             token_information = compute_token_scores(

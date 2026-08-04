@@ -150,3 +150,61 @@ def select_informative_tokens(
              "standalone_nats", "marginal_nats"]
     df = df[front + [c for c in df.columns if c not in front]]
     return df, summary
+
+
+def select_significant_tokens_fast(theta, token_states, noise_std=0.01,
+                                   n_permutations=10, seed=42, ridge=1e-6):
+    """Fast significance-only token selection via the matrix-determinant lemma.
+
+    Scales to genome / whole-body models where :func:`select_informative_tokens` is
+    intractable (dense d×d Fisher grams + a per-candidate d³ log-determinant + greedy).
+    Each token's standalone information is computed without ever forming a d×d gram:
+
+        standalone(m) = logdet(F0 + G_m) - logdet(F0)
+                      = logdet(I_k + (1/sigma^2) * B_m Sigma B_m^T)     # a k×k determinant
+
+    with ``B_m = (pinv(theta) @ L_m).T`` (k×d) and ``Sigma = cov(theta) + ridge = F0^{-1}``
+    (never inverted). Significance is a permutation test whose floor is the family-wise
+    max standalone under a broken theta<->L pairing (``pinv``/``Sigma`` are reused, so the
+    permutations are cheap). There is NO greedy redundancy step, so ``included ==
+    significant``. Complexity O(C·d²) time, O(C·d) memory (vs O(K·C·d³) / O(C·d²) for the
+    greedy Fisher path). Reproduces that path's significant set to within near-noise
+    borderline tokens.
+
+    Returns ``(df, summary)`` matching :func:`select_informative_tokens`' schema.
+    """
+    keys = list(token_states)
+    tc = np.asarray(theta, np.float64)
+    tc = tc - tc.mean(0, keepdims=True)
+    D = tc.shape[1]
+    pinv = np.linalg.pinv(tc)                                   # (D, n) — once
+    cov = np.atleast_2d(np.cov(tc.T))
+    Sigma = cov + ridge * np.trace(cov) / D * np.eye(D)        # F0^{-1} — once
+    inv_sig2 = 1.0 / (noise_std ** 2)
+    Ik = np.eye(np.asarray(token_states[keys[0]]).shape[1])
+
+    def standalone(L):
+        B = (pinv @ (L - L.mean(0, keepdims=True))).T          # (k, D)
+        s, v = np.linalg.slogdet(Ik + inv_sig2 * (B @ Sigma @ B.T))
+        return float(v) if s > 0 else 0.0
+
+    real = {t: standalone(np.asarray(token_states[t], np.float64)) for t in keys}
+    rng = np.random.default_rng(seed)
+    floor = 0.0
+    for _ in range(max(1, n_permutations)):
+        perm = rng.permutation(tc.shape[0])
+        for t in keys:
+            floor = max(floor, standalone(np.asarray(token_states[t], np.float64)[perm]))
+
+    rows = [{"metabolite_id": t.split("|", 1)[0], "isotopomer": t.split("|", 1)[1],
+             "standalone_nats": real[t], "marginal_nats": real[t],
+             "significant": real[t] > floor} for t in keys]
+    df = pd.DataFrame(rows).sort_values("standalone_nats", ascending=False).reset_index(drop=True)
+    df["rank"] = np.arange(len(df))
+    df["included"] = df["significant"]                         # no greedy trim
+    df = df[["metabolite_id", "isotopomer", "included", "significant", "rank",
+             "standalone_nats", "marginal_nats"]]
+    summary = {"n_free_flux_directions": D, "null_floor_nats": floor,
+               "n_selected": int(df["significant"].sum()),
+               "effective_rank": None, "eigenvalues": []}
+    return df, summary

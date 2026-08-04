@@ -37,6 +37,7 @@ def main(args):
     run_mi_audit        = fc.get("run_mi_audit", False)
     restrict            = fc.get("restrict_to_mapped", False)
     out_name            = fc.get("output", "features.csv")
+    method              = fc.get("token_selection_method", "fisher")
     seed                = cfg.get("seed", 42)
 
     output_path = os.path.join(args.data_dir, out_name)
@@ -76,16 +77,25 @@ def main(args):
         else:
             print("WARNING: restrict_to_mapped=true but mapping_csv not found — skipping filter")
 
-    df, summary = feat_lib.select_informative_tokens(
-        theta, token_states,
-        noise_std=noise_std,
-        gain_threshold=gain_threshold,
-        rel_gain_threshold=rel_gain_threshold,
-        n_permutations=n_permutations,
-        budget=budget,
-        token_filter=token_filter,
-        run_mi_audit=run_mi_audit,
-    )
+    if method == "fisher_fast":
+        print("\nToken selection: fisher_fast (det-lemma significance, no greedy) ...")
+        df, summary = feat_lib.select_significant_tokens_fast(
+            theta, token_states,
+            noise_std=noise_std,
+            n_permutations=n_permutations,
+            seed=seed,
+        )
+    else:
+        df, summary = feat_lib.select_informative_tokens(
+            theta, token_states,
+            noise_std=noise_std,
+            gain_threshold=gain_threshold,
+            rel_gain_threshold=rel_gain_threshold,
+            n_permutations=n_permutations,
+            budget=budget,
+            token_filter=token_filter,
+            run_mi_audit=run_mi_audit,
+        )
 
     df.to_csv(output_path, index=False)
 
