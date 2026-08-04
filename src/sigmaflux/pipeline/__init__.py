@@ -11,6 +11,8 @@ console script:
 ``sigmaflux-workflow``           :mod:`sigmaflux.pipeline.run_training_workflow`
 ``sigmaflux-infer``              :mod:`sigmaflux.pipeline.run_inference_workflow`
 ``sigmaflux-mfa-data``           :mod:`sigmaflux.pipeline.run_mfa_data`
+``sigmaflux-benchmark``          :mod:`sigmaflux.pipeline.run_ai_benchmark`
+``sigmaflux-benchmark-mfa``      :mod:`sigmaflux.pipeline.run_mfa_benchmark`
 ``sigmaflux-sample-ko-flux``     :mod:`sigmaflux.pipeline.sample_ko_flux`
 ``sigmaflux-export``            :mod:`sigmaflux.pipeline.export_model`
 ``sigmaflux-inspect``           :mod:`sigmaflux.pipeline.inspect_model`
@@ -32,7 +34,9 @@ __all__ = [
     "build_ko_split",
     "extract_informative_features",
     "generate_training_data",
+    "run_ai_benchmark",
     "run_inference_workflow",
+    "run_mfa_benchmark",
     "run_mfa_data",
     "run_training_workflow",
     "sample_flux",
