@@ -6,6 +6,11 @@ basis, token index, output names, the resolved tracer-name map — so it loads
 with no config YAML, no run directory and no COBRA JSON. It is always an
 ensemble; a single checkpoint becomes an ensemble of one.
 
+The run's prepared COBRA network travels with it too (~30 KB packed), so a
+consumer can check ``S @ v ≈ 0`` and resolve reactions to metabolites without
+the run directory: ``sigmaflux.ai.read_stoichiometry`` returns it aligned to the
+model's outputs. Pass ``--no-model-json`` to leave it out.
+
 Example:
     sigmaflux-export --source <run>/ensemble \\
         --config paper/configs/i_orientalis.yaml \\
@@ -44,7 +49,14 @@ def build_parser():
     p.add_argument("--data-dir", default=None,
                    help="Override the checkpoint's data_dir when reading validation inputs")
     p.add_argument("--model-json", default=None,
-                   help="COBRA JSON, only needed for checkpoints predating stored vocabs")
+                   help="Prepared COBRA JSON to package (default: the run directory's "
+                        "model_prepared_for_mfa.json); also rebuilds the vocabularies "
+                        "for checkpoints predating stored vocabs")
+    p.add_argument("--no-model-json", dest="with_network", action="store_false",
+                   help="Omit the COBRA network (no stoichiometry for consumers)")
+    p.add_argument("--with-model-json", dest="with_network",
+                   action="store_const", const=True, default="auto",
+                   help="Require the COBRA network: fail rather than export without it")
     p.add_argument("--no-validation", dest="with_validation", action="store_false",
                    help="Omit the validation split entirely")
     p.add_argument("--with-val-inputs", dest="with_val_inputs",
@@ -76,6 +88,7 @@ def main(args):
         description=args.description,
         with_validation=args.with_validation,
         with_val_inputs=args.with_val_inputs,
+        with_network=args.with_network,
         data_dir=args.data_dir,
         model_json=args.model_json,
         max_members=args.max_members,
@@ -94,6 +107,10 @@ def main(args):
           f"{manifest['model']['n_tokens']} tokens")
     print(f"  validation  : {'included' if val.get('included') else 'omitted'}"
           f"{', inputs stored' if val.get('inputs_included') else ''}")
+    net = manifest.get("network", {})
+    detail = (f"{net['n_reactions']} reactions, {net['n_metabolites']} metabolites"
+              if net.get("included") else "omitted")
+    print(f"  network     : {detail}")
 
     if args.check:
         model = load_model(path, device="cpu")

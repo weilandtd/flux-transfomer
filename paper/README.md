@@ -129,6 +129,16 @@ sigmaflux-export \
 | `i_orientalis-v1.0.0.sfx` (fp16) | **34.4 MB — 7.3×** |
 | `--precision fp32` | 64 MB, predictions bit-identical to the source |
 
+The export also carries the run's prepared COBRA network (~30 KB packed), so a
+consumer can rebuild the stoichiometry the predictions belong to:
+
+```python
+from sigmaflux.ai import load_model, read_stoichiometry
+
+S, metabolite_ids, cobra_model = read_stoichiometry("i_orientalis-v1.0.0.sfx")
+S @ predicted_fluxes      # ≈ 0 — columns are already in flux_names order
+```
+
 The saving comes from storing the shared payload once instead of 20×, dropping
 training diagnostics nothing reads, regenerating the 14 frozen embedding tables
 on load, and float16 weights. fp16 costs nothing that matters: on the held-out

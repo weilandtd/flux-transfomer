@@ -15,6 +15,7 @@ import subprocess
 import sys
 import textwrap
 import zipfile
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -34,6 +35,8 @@ from sigmaflux.ai.export import (
     export_model,
     inspect_model,
     load_model,
+    read_cobra_model,
+    read_stoichiometry,
     validate_model,
 )
 from sigmaflux.ai.inference import EnsembleSigmaFlux, SigmaFlux, load_predictor
@@ -138,6 +141,72 @@ def test_mass_balance_after_fp16_export(toy_run, toy_sfx):
     result = load_model(toy_sfx, device="cpu").predict(_toy_df_L(n_samples=1))
     flux = result.iloc[:toy_run["n_fluxes"]]["Value"].to_numpy()
     assert np.abs(S @ flux).max() < 1e-4
+
+
+# ── Packaged network ──────────────────────────────────────────────────────────
+
+def test_export_embeds_the_prepared_network(toy_sfx, toy_run):
+    """The run's prepared COBRA model travels inside the export, found on its own."""
+    net = inspect_model(toy_sfx)["network"]
+
+    assert net["included"]
+    assert net["source"] == "model_prepared_for_mfa.json"
+    assert net["n_reactions"] == toy_run["n_fluxes"]
+    assert net["covers_flux_names"] and net["reaction_order_matches"]
+
+
+def test_read_stoichiometry_is_aligned_to_the_outputs(toy_sfx, toy_run):
+    """S comes back in flux_names order, so it multiplies straight into a prediction."""
+    S, met_ids, cobra_model = read_stoichiometry(toy_sfx)
+    model = load_model(toy_sfx, device="cpu")
+
+    assert S.shape == (len(met_ids), len(model.flux_names))
+    assert met_ids == [m.id for m in cobra_model.metabolites]
+
+    # Column i really is flux_names[i], not the network's own ordering.
+    for i, name in enumerate(model.flux_names):
+        rxn = cobra_model.reactions.get_by_id(name)
+        for met, coeff in rxn.metabolites.items():
+            assert S[met_ids.index(met.id), i] == pytest.approx(coeff)
+
+
+def test_mass_balance_from_the_export_alone(toy_sfx):
+    """S @ v ≈ 0 using only the packaged file — the check a consumer can now run."""
+    S, _, _ = read_stoichiometry(toy_sfx)
+    model = load_model(toy_sfx, device="cpu")
+    flux = model.predict(_toy_df_L(n_samples=1))["Value"].to_numpy()[:len(model.flux_names)]
+
+    assert np.abs(S @ flux).max() < 1e-4
+
+
+def test_network_can_be_omitted(toy_run, tmp_path):
+    """--no-model-json leaves it out, and reading it then fails with a way forward."""
+    path = _export(toy_run, tmp_path, with_network=False)
+
+    assert inspect_model(path)["network"] == {"included": False}
+    with pytest.raises(SfxFormatError, match="with_network=True"):
+        read_cobra_model(path)
+
+
+def test_network_missing_a_predicted_reaction_is_refused(toy_run, tmp_path):
+    """A network that cannot describe every output is worse than none.
+
+    with_network=True says so loudly; "auto" drops it and exports anyway, because
+    a stoichiometry indexed against the wrong reaction set silently produces
+    nonsense mass balances.
+    """
+    truncated = json.loads(Path(toy_run["model_json"]).read_text())
+    truncated["reactions"] = truncated["reactions"][:-1]
+    partial = tmp_path / "partial_model.json"
+    partial.write_text(json.dumps(truncated))
+
+    with pytest.raises(ValueError, match="missing reactions this model predicts"):
+        _export(toy_run, tmp_path, model_json=str(partial), with_network=True)
+
+    auto_dir = tmp_path / "auto"
+    auto_dir.mkdir()
+    path = _export(toy_run, auto_dir, model_json=str(partial))
+    assert inspect_model(path)["network"] == {"included": False}
 
 
 # ── "Every model is an ensemble" ──────────────────────────────────────────────

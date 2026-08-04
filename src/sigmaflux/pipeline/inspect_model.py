@@ -54,6 +54,13 @@ def _summary(m, path):
         print(f"  validation    : included ({detail})")
     else:
         print("  validation    : omitted")
+    net = m.get("network", {})
+    if net.get("included"):
+        order = "" if net.get("reaction_order_matches", True) else ", reordered on read"
+        print(f"  network       : {net['n_reactions']} reactions, "
+              f"{net['n_metabolites']} metabolites ({net.get('source')}{order})")
+    else:
+        print("  network       : omitted (no stoichiometry available)")
     reported = val.get("reported") or []
     medians = [r["flux_median"] for r in reported if "flux_median" in r]
     if medians:

@@ -28,7 +28,7 @@ import pytest
 import torch
 
 from sigmaflux.ai._sfx import SCHEMA_VERSION
-from sigmaflux.ai.export import inspect_model, load_model
+from sigmaflux.ai.export import inspect_model, load_model, read_stoichiometry
 from sigmaflux.ai.inference import EnsembleSigmaFlux
 from sigmaflux.pipeline import inspect_model as inspect_cli
 
@@ -182,6 +182,25 @@ def test_measured_fluxes_reach_the_prediction(model):
     with_vm = model.predict(df_L, df_Vm=df_Vm)["Value"].values
     assert np.isfinite(with_vm).all()
     assert not np.allclose(without, with_vm), "df_Vm did not reach the model"
+
+
+def test_predicted_fluxes_are_mass_balanced(model, sfx_path):
+    """S @ v ≈ 0 from the packaged file alone, with no run directory in reach.
+
+    Skipped for releases exported before the network was packaged — re-export
+    them to get this coverage, since without a stoichiometry a consumer cannot
+    check that what it serves is a feasible flux distribution at all.
+    """
+    if not inspect_model(sfx_path).get("network", {}).get("included"):
+        pytest.skip("release predates the packaged COBRA network; re-export to cover it")
+
+    S, _, _ = read_stoichiometry(sfx_path)
+    flux = model.predict(make_df_L(model, n_samples=1))["Value"].values[:len(model.flux_names)]
+
+    assert S.shape[1] == len(model.flux_names)
+    # Relative to the flux scale: the null-space basis is float32, so an exact
+    # zero is not on offer.
+    assert np.abs(S @ flux).max() < 1e-5 * max(np.abs(flux).max(), 1.0)
 
 
 @pytest.mark.skipif(len(PRETRAINED) < 2, reason="needs two shipped models")
