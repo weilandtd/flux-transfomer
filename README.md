@@ -1,5 +1,9 @@
 # SigmaFlux
 
+[![Python application](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml/badge.svg)](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 Metabolic flux analysis from stable-isotope labeling data. SigmaFlux pairs a
 classical EMU (Elementary Metabolite Unit) ¹³C-MFA implementation with a
 transformer that predicts fluxes directly from mass-isotopomer distributions,
