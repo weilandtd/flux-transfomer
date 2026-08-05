@@ -666,10 +666,21 @@ def rank_from_samples(
     **Null calibration.**  The empirical Fisher has a residual finite-sample
     floor (a metabolite independent of the fluxes still shows tiny apparent
     information).  With ``calibrate_null`` we shuffle ``theta`` against the
-    labels, recompute the information, and take a high quantile of the null
-    standalone gains as a significance floor: only metabolites whose
-    information exceeds it are selected, and a ``significant`` column flags
-    them.  This is the permutation-null significance test for the design score.
+    labels, recompute the information, and take the *maximum* over all
+    ``n_permutations x n_tokens`` null standalone gains as a significance floor:
+    only metabolites whose information exceeds it are selected, and a
+    ``significant`` column flags them.  This is the permutation-null
+    significance test for the design score.
+
+    That maximum is a family-wise floor, so it is deliberately conservative --
+    and being an extreme-value statistic it is also unstable.  Observed floors
+    on three yeast runs with near-identical standalone distributions: 2.98
+    (I. orientalis), ~4.53 (S. cerevisiae), 8.51 (R. toruloides), the last
+    admitting 2 of 336 tokens.  Widening the candidate pool does not raise it
+    (R. toruloides gave 8.5098 at both 336 and 2260 tokens), so it is set by a
+    single extreme draw under the fixed ``null_seed``.  Prefer a high quantile
+    of ``null_vals`` if a less conservative floor is wanted; note this changes
+    which tokens every organism selects.
 
     :param theta: ``(n_samples, d)`` free-flux coordinates ``Z.T @ v``
     :param token_states: dict ``metabolite_id -> (n_samples, p_m)`` MID samples
