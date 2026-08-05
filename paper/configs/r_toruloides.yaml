@@ -42,9 +42,12 @@ sampling:
   # Convention (after standardization): met_e →  i.e. positive flux = secretion,
   # negative flux = uptake.
   #
-  # imRt has 15 exchanges and none for ethanol, acetate, glycerol or succinate:
-  # R. toruloides is a non-Crabtree, obligately aerobic yeast that does not ferment,
-  # so CO2 is its only carbon secretion product. All 15 are listed below.
+  # imRt has no exchanges for ethanol, acetate, glycerol or succinate: R. toruloides
+  # is a non-Crabtree, obligately aerobic yeast that does not ferment. Its carbon
+  # overflow is not fermentative but storage and secretion — accumulated TAG and a
+  # secreted glucose-rich biopolymer — added to the GEM by convert_maranas_models.py
+  # (see add_rt_overflow_routes there for the stoichiometry and the citation).
+  # All 17 exchanges are listed below.
   media:
     # Carbon source — mandatory uptake
     EX_glc__D_e: {lb: -12.0, ub: -1.0}
@@ -52,6 +55,10 @@ sampling:
     EX_o2_e:     {lb: -100.0, ub: 0.0}
     # Carbon secretion product
     EX_co2_e:    {lb: 0.0,  ub: 100.0}
+    # Carbon overflow: intracellular TAG accumulation (the oleaginous phenotype) and
+    # secreted beta-glucan EPS. Upper bounds are deliberately loose
+    EX_tag_c:         {lb: 0.0, ub: 5.0}
+    EX_13BDglucan_e:  {lb: 0.0, ub: 20.0}
     # Essential macronutrients — unrestricted uptake
     EX_nh4_e:    {lb: -100.0, ub: 0.0}
     EX_pi_e:     {lb: -100.0, ub: 0.0}
