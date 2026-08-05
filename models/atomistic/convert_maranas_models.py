@@ -27,13 +27,15 @@ def add_rt_overflow_routes(model) -> None:
        as a validated match. Added as an export to 13BDglucan_e plus a drain, which
        mirrors how every other secreted species leaves the model.
 
-    2. Stored triacylglycerol. Accumulation is intracellular, so tag_c gets a drain
-       with no transport step — nothing crosses the membrane.
+    2. Stored triacylglycerol. Accumulation is intracellular, so tag_c gets a demand
+       reaction with no transport step — nothing crosses the membrane. Named DM_ per
+       COBRA convention for an intracellular drain, as against the EX_ that carries
+       secreted glucan out of the extracellular pool.
 
-    Both drains are named EX_ so that `sampling.media` in the organism config governs
-    them: apply_media() closes every EX_ reaction absent from that block, so they stay
-    shut unless a run opens them deliberately. (COBRA convention would call the
-    intracellular one DM_tag_c; EX_ is used here to keep it under media control.)
+    The naming difference matters to apply_media(): it closes every EX_ reaction
+    absent from `sampling.media`, so EX_13BDglucan_e stays shut unless a run opens it
+    deliberately. DM_tag_c is never auto-closed, but listing it in that block still
+    sets its bounds, since the reopen step looks reactions up by id.
     """
     compartment_e = model.metabolites.get_by_id('glc__D_e').compartment
 
@@ -59,7 +61,7 @@ def add_rt_overflow_routes(model) -> None:
 
     tag_c = model.metabolites.get_by_id('tag_c')
     tag_pattern = tag_c.annotation['atom_pattern']
-    tag_drain = cobra.Reaction('EX_tag_c', name='triacylglycerol storage accumulation',
+    tag_drain = cobra.Reaction('DM_tag_c', name='triacylglycerol storage accumulation',
                                lower_bound=0.0, upper_bound=1000.0)
     model.add_reactions([tag_drain])
     tag_drain.add_metabolites({tag_c: -1.0})
