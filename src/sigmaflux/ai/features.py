@@ -152,6 +152,17 @@ def select_informative_tokens(
     return df, summary
 
 
+def _token_standalone_nats(L, pinv, Sigma, inv_sig2, Ik):
+    """Det-lemma standalone information (nats) of one token's labeling matrix ``L``.
+
+    ``logdet(I_k + inv_sig2 * B Sigma B^T)`` with ``B = (pinv @ centered(L)).T`` (k×D);
+    returns 0.0 when the determinant is non-positive.
+    """
+    B = (pinv @ (L - L.mean(0, keepdims=True))).T              # (k, D)
+    sign, val = np.linalg.slogdet(Ik + inv_sig2 * (B @ Sigma @ B.T))
+    return float(val) if sign > 0 else 0.0
+
+
 def select_significant_tokens_fast(theta, token_states, noise_std=0.01,
                                    n_permutations=10, seed=42, ridge=1e-6):
     """Fast significance-only token selection via the matrix-determinant lemma.
@@ -183,18 +194,15 @@ def select_significant_tokens_fast(theta, token_states, noise_std=0.01,
     inv_sig2 = 1.0 / (noise_std ** 2)
     Ik = np.eye(np.asarray(token_states[keys[0]]).shape[1])
 
-    def standalone(L):
-        B = (pinv @ (L - L.mean(0, keepdims=True))).T          # (k, D)
-        s, v = np.linalg.slogdet(Ik + inv_sig2 * (B @ Sigma @ B.T))
-        return float(v) if s > 0 else 0.0
-
-    real = {t: standalone(np.asarray(token_states[t], np.float64)) for t in keys}
+    real = {t: _token_standalone_nats(np.asarray(token_states[t], np.float64),
+                                      pinv, Sigma, inv_sig2, Ik) for t in keys}
     rng = np.random.default_rng(seed)
     floor = 0.0
     for _ in range(max(1, n_permutations)):
         perm = rng.permutation(tc.shape[0])
         for t in keys:
-            floor = max(floor, standalone(np.asarray(token_states[t], np.float64)[perm]))
+            floor = max(floor, _token_standalone_nats(
+                np.asarray(token_states[t], np.float64)[perm], pinv, Sigma, inv_sig2, Ik))
 
     rows = [{"metabolite_id": t.split("|", 1)[0], "isotopomer": t.split("|", 1)[1],
              "standalone_nats": real[t], "marginal_nats": real[t],
