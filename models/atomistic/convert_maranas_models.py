@@ -36,6 +36,22 @@ def add_rt_overflow_routes(model) -> None:
     absent from `sampling.media`, so EX_13BDglucan_e stays shut unless a run opens it
     deliberately. DM_tag_c is never auto-closed, but listing it in that block still
     sets its bounds, since the reopen step looks reactions up by id.
+
+    Effect, with growth held in the sampled window [0.01, 0.5]: max TAG accumulation
+    rises 0.0052 -> 0.7722 and the carbon leaving as CO2 at that optimum falls from
+    72% to 38%; glucan secretion reaches 11.23, comparable to glucose uptake. Max
+    growth is unchanged at 0.98969/h, so the drains add overflow capacity without
+    creating a free lunch. The raw hierarchical null space goes 50 -> 52.
+
+    These two are what the GEM is missing that this organism visibly does; they are
+    not a complete reconciliation. Carotenoid biosynthesis is also absent and is NOT
+    added here — ggdp_c (GGPP) does not exist in the network, so there is no entry
+    point to torulene/torularhodin and adding a drain alone would not create one.
+
+    Downstream note: adding these drains lowered the Fisher permutation null floor
+    from 8.5098 to 7.4487 nats, and the tokens surviving it from 2 to 6 of 336 — a
+    real improvement that nonetheless leaves the selection collapsed. The binding
+    constraint is the floor itself, not the network. See models/pretrained/README.md.
     """
     compartment_e = model.metabolites.get_by_id('glc__D_e').compartment
 
