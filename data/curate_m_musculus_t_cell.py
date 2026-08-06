@@ -18,7 +18,9 @@ Run from the repository root:
 
     python data/curate_m_musculus_t_cell.py
 
-The raw files are gitignored; only the curated workbooks are committed.
+The three raw files have since been deleted — only the curated workbooks are kept, and
+they are what the pipeline reads. This script is retained as the record of how they
+were derived; restore the sources beside it to re-run.
 
 UNITS AND SIGNS
 ---------------
