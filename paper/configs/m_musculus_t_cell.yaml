@@ -28,7 +28,7 @@ skip_constraints:
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 10000   # fallback only — each entry under `scales` sets its own count
+  n_samples: 10000   # final output written to flux_samples.csv
   thinning: 100
   processes: 8
   method: optgp        # hopsy | optgp | achr
@@ -39,35 +39,13 @@ sampling:
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
   # reactions: null falls back to training.measured_fluxes.
   #
-  # Stratification spreads each reaction's marginal but cannot reach the state where
-  # every flux is small at once, since it constrains one coordinate at a time. The
-  # `scales` ladder below is what covers that; 20 bins simply keeps each marginal
-  # well spread within a pass.
+  # 20 bins rather than the usual 10: the two cell states' fluxes differ ~20-fold,
+  # so coarse bins leave the naive end of each range thinly covered.
   stratified_sampling:
     enabled: true
     n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
     n_bins: 20                    # equal-width bins along each measured reaction's FVA range
     reactions: null               # null → training.measured_fluxes; or explicit list
-
-  # A ladder of nested sampling passes spanning the two cell states, whose fluxes
-  # differ ~20-fold. Labeling is scale-invariant, so only the measured-flux tokens
-  # carry magnitude, and the model can only learn to read them by seeing comparable
-  # flux ratios at several scales.
-  #
-  # Measured as the z-score of each published state under the resulting training
-  # distribution, which is what FluxNorm normalises against — |z| <= 2 means the
-  # model interpolates rather than extrapolates:
-  #
-  #                       activated max|z|   naive max|z|   naive ||z||
-  #   single scale                   1.06           2.05          5.19
-  #   1.0 / 0.3 / 0.1                1.71           1.10          2.79
-  #
-  # One scale leaves naive at or past 2 sigma on four reactions at once. The ladder
-  # centres the distribution between the states and both become interpolation.
-  scales:
-    - {factor: 1.0, n_samples: 6000}   # activated
-    - {factor: 0.3, n_samples: 3000}   # intermediate — keeps the ladder overlapping
-    - {factor: 0.1, n_samples: 3000}   # naive
 
   # BIOMASS is 1.0 for activated in the published fit. Naive lands near 0.05 once
   # expressed in the activated composition, so the range spans both states.
@@ -196,7 +174,7 @@ training:
   gradient_clip: 1.0
   scheduler: true
   val_fraction: 0.2
-  max_samples: 12000   # the three scale passes together produce 12000
+  max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
   combined_dim: 128       # d_model

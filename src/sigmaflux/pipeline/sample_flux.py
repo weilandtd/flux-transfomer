@@ -169,29 +169,6 @@ def constrain_by_fva(model):
     return len(zero_reactions), len(orphaned_metabolites), fva
 
 
-def scale_bounds(model, factor):
-    """Shrink every reaction's bounds toward zero by `factor`, in place.
-
-    Gives a smaller-flux polytope nested inside the prepared one, so a second
-    sampling pass can populate a low-flux physiological state that plain MCMC over
-    the full polytope never reaches — that corner is a vanishing fraction of the
-    volume once the states differ by a large factor.
-
-    A bound is only pulled toward zero, never past it, and a lower bound that FVA
-    left strictly positive is kept: those floors are what makes the state feasible
-    at all.  Reactions whose bounds would cross are left untouched.
-    """
-    rescaled = 0
-    for reaction in model.reactions:
-        lower, upper = reaction.bounds
-        new_lower = factor * lower if lower < 0 else lower
-        new_upper = factor * upper if upper > 0 else upper
-        if new_lower <= new_upper:
-            reaction.bounds = (new_lower, new_upper)
-            rescaled += 1
-    print(f"  Scaled {rescaled} reaction bounds by {factor}")
-
-
 def check_sampling_coverage(samples, fva, key_reactions=None):
     common = [r for r in samples.columns if r in fva.index]
     obs_min = samples[common].min(axis=0)
@@ -414,21 +391,6 @@ def _do_sample(model, s, seed):
     )
 
 
-def _sample_pool(model, s, cfg, fva, sub_rxns, strat_cfg, n_final, seed_offset=0):
-    """One sampling pass over the model as currently bounded."""
-    seed = cfg["seed"] + seed_offset
-    if strat_cfg.get("enabled", False):
-        n_bins = strat_cfg.get("n_bins", 5)
-        n_subsamples = strat_cfg["n_subsamples"]
-        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × {n_subsamples} samples/stratum...")
-        pool = stratified_sample(model, s, fva, sub_rxns, n_bins, n_subsamples, seed)
-        print(f"Stratified pool: {len(pool)} samples")
-        diagnose_pool_coverage(pool, fva, sub_rxns, n_bins, label="Stratified pool")
-        return draw_quasi_uniform(pool, fva, n_final, n_bins, sub_rxns)
-    print(f"Sampling {n_final} flux distributions (WT)...")
-    return _do_sample(model, s, seed)
-
-
 def main(cfg, output_dir_override=None):
     s = cfg["sampling"]
     output_dir = output_dir_for(cfg, output_dir_override)
@@ -482,30 +444,7 @@ def main(cfg, output_dir_override=None):
     strat_cfg = s.get("stratified_sampling", {})
     n_final = s["n_samples"]
 
-    # Optional extra passes over nested, smaller-flux polytopes. Needed when one
-    # organism spans states whose fluxes differ by a large factor: labeling is
-    # scale-invariant, so only the measured-flux tokens carry magnitude, and the
-    # model can only learn to read them if it sees comparable ratios at both scales.
-    scales = s.get("scales")
-    if scales:
-        pieces = []
-        for spec in scales:
-            factor = spec["factor"]
-            n_scale = spec.get("n_samples", n_final)
-            print(f"\n=== Sampling pass at scale {factor} ({n_scale} samples) ===")
-            with model:
-                if factor != 1.0:
-                    scale_bounds(model, factor)
-                    if model.optimize().status != "optimal":
-                        raise RuntimeError(f"Model infeasible at sampling scale {factor}")
-                    fva_scale = flux_variability_analysis(model, fraction_of_optimum=0)
-                else:
-                    fva_scale = fva_result
-                pieces.append(_sample_pool(model, s, cfg, fva_scale, sub_rxns,
-                                           strat_cfg, n_scale, seed_offset=int(factor * 1e6)))
-        samples = pd.concat(pieces, ignore_index=True)
-        print(f"\nCombined {len(scales)} scales: {len(samples)} samples")
-    elif strat_cfg.get("enabled", False):
+    if strat_cfg.get("enabled", False):
         n_bins = strat_cfg.get("n_bins", 5)
         n_subsamples = strat_cfg["n_subsamples"]
         print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × {n_subsamples} samples/stratum...")
