@@ -1,0 +1,194 @@
+# SigmaFlux training configuration — Mus musculus primary T cell
+#
+# One model covers both cell states. The GEM ships a single BIOMASS whose
+# coefficients are the *activated* composition, while the published MFA fits a
+# separate biomass reaction per state. Splitting BIOMASS into its macromolecule
+# components makes both representable here: naive is simply DNA_c = 0 and a
+# ~20x lower PROTEIN_c. All four components are separately measured.
+#
+# Fluxes are nmol/1E6 cells/h throughout, the units of the published flux table.
+name: M_musculus_T_Cell
+model_file: models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json
+mapping_csv: models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# Condition letters are the cell state, not a nutrient limitation:
+#   A = activated (aCD3/aCD28, IL2)    N = naive (IL7)
+experiment:
+  data_dir:       data/M_musculus_T_Cell
+  reference_flux: MFA_flux_data_MM.xlsx
+  gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
+
+# Reactions removed from the model after FVA (sampling and MFA use the uncoupled
+# subspace). FVA is still run with these reactions active so their bounds inform
+# the remaining reactions before they are dropped.
+skip_constraints:
+  - BIOMASS
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000   # final output written to flux_samples.csv
+  thinning: 100
+  processes: 8
+  method: optgp        # hopsy | optgp | achr
+  fva: true
+  ko: false
+
+  # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
+  # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
+  # reactions: null falls back to training.measured_fluxes.
+  #
+  # 20 bins rather than the usual 10: activated and naive fluxes differ by ~200x
+  # (glucose uptake 201 vs 1), so coarse bins would leave the naive regime almost
+  # unpopulated. Verify coverage in flux_samples.csv before spending GPU time.
+  stratified_sampling:
+    enabled: true
+    n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
+    n_bins: 20                    # equal-width bins along each measured reaction's FVA range
+    reactions: null               # null → training.measured_fluxes; or explicit list
+
+  # BIOMASS is 1.0 for activated in the published fit. Naive lands near 0.05 once
+  # expressed in the activated composition, so the range spans both states.
+  growth:
+    lb: 0.01
+    ub: 1.5
+
+  # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
+  # Convention (after standardization): met_e →  i.e. positive flux = secretion,
+  # negative flux = uptake.
+  #
+  # The GEM's own exchange bounds are unidirectional and disagree with its published
+  # fit — EX_ala__L_e is written uptake-only, yet the paper fits naive alanine as
+  # secreted. Amino acids and organic acids that mammalian cells both consume and
+  # release are therefore opened in both directions. Glucose and O2 stay uptake-only:
+  # the one positive glucose measurement is naive, where the error exceeds the mean.
+  media:
+    # Carbon and energy sources — mandatory uptake
+    EX_glc__D_e: {lb: -300.0, ub: 0.0}
+    EX_gln__L_e: {lb: -120.0, ub: 0.0}
+    # Electron acceptor — mandatory uptake
+    EX_o2_e:     {lb: -250.0, ub: 0.0}
+    # Overflow products
+    EX_lac__L_e: {lb: -50.0,  ub: 600.0}
+    EX_co2_e:    {lb: -50.0,  ub: 250.0}
+    EX_urea_e:   {lb: 0.0,    ub: 80.0}
+    # Water and proton — freely exchangeable
+    EX_h2o_e:    {lb: -300.0, ub: 300.0}
+    EX_h_e:      {lb: -400.0, ub: 400.0}
+    # Phosphate
+    EX_pi_e:     {lb: -20.0,  ub: 0.0}
+    # Amino acids exchanged in both directions
+    EX_ala__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asp__L_e: {lb: -10.0,  ub: 10.0}
+    EX_glu__L_e: {lb: -20.0,  ub: 20.0}
+    EX_gly_e:    {lb: -10.0,  ub: 10.0}
+    EX_ser__L_e: {lb: -20.0,  ub: 10.0}
+    # Amino acids taken up from RPMI only
+    EX_arg__L_e: {lb: -20.0,  ub: 0.0}
+    EX_asn__L_e: {lb: -20.0,  ub: 0.0}
+    EX_cys__L_e: {lb: -20.0,  ub: 0.0}
+    EX_his__L_e: {lb: -20.0,  ub: 0.0}
+    EX_ile__L_e: {lb: -20.0,  ub: 0.0}
+    EX_leu__L_e: {lb: -20.0,  ub: 0.0}
+    EX_lys__L_e: {lb: -20.0,  ub: 0.0}
+    EX_met__L_e: {lb: -20.0,  ub: 0.0}
+    EX_phe__L_e: {lb: -20.0,  ub: 0.0}
+    EX_pro__L_e: {lb: -20.0,  ub: 0.0}
+    EX_thr__L_e: {lb: -20.0,  ub: 0.0}
+    EX_trp__L_e: {lb: -20.0,  ub: 0.0}
+    EX_tyr__L_e: {lb: -20.0,  ub: 0.0}
+    EX_val__L_e: {lb: -20.0,  ub: 0.0}
+
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+labeling:
+  batch_size: 512
+  # Each entry is one tracer experiment — build_experiments creates one Experiment
+  # per entry, so these are three separate cultures, not a mixed-label experiment.
+  # `name` must match the sheet name in the curated MID workbooks.
+  tracers:
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 1.0
+      name: "U-13C glucose"
+    - tracer_id: gln__L_e
+      labeling: [1, 1, 1, 1, 1]
+      enrichment: 1.0
+      name: "U-13C glutamine"
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 1.0
+      name: "1,2-13C glucose"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only consider metabolites in mapping_csv
+  token_selection_method: fisher    # pca | maxr | fisher | fisher_fast
+  token_dropout: 0.2                # per-token labeling dropout during training
+
+  # Fisher selection parameters — all values that determine which tokens are included:
+  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
+  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
+  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
+  n_permutations: 10              # null-calibration permutations used to set significance floor
+  token_filter: selected          # significant | selected — which tokens are passed to training
+  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
+  budget: null                    # hard cap on token count (null = uncapped)
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: mmtcell_transformer.pt
+  ensemble_size: 20             # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
+  epochs: 1000
+  early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.2
+  max_samples: 10000
+
+  # Architecture (FluxDecoder cross-attention decoder)
+  combined_dim: 128       # d_model
+  num_attn_heads: 8       # n_head
+  num_transformer_layers: 4
+  dropout: 0.3
+
+  # Radial embedding dimensions (number of harmonics H per vocabulary).
+  # Resulting embedding vector length = 2*H.
+  # This model is roughly half the size of the yeast models — 198 metabolites and
+  # 204 reactions — so the compound and reaction vocabularies need fewer harmonics.
+  h_compound: 8    # compounds  — 198 metabolites → 16-dim
+  h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
+  h_tracer: 2      # tracer identities (3 tracers   →  4-dim)
+  h_reaction: 8    # reaction identities (204 reactions → 16-dim)
+  h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
+
+  flux_token_dropout: 0.5       # flux masking rate: per-batch prob. each measured-flux token is masked
+  normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
+  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
+  exclude_extracellular: true   # drop _e tokens (the LC/MS extract is intracellular)
+
+  # Measured fluxes fed as soft inputs through the fusion layer, and the strata for
+  # stratified sampling. Glucose, lactate, glutamine and O2 are the measured boundary
+  # fluxes; the four biomass components are reported directly as protein, RNA, DNA and
+  # g3p synthesis rates in the external measurements.
+  measured_fluxes:
+    - EX_glc__D_e
+    - EX_lac__L_e
+    - EX_gln__L_e
+    - EX_o2_e
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
+  loss: variance                  # variance | mse
+  null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
+  flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
