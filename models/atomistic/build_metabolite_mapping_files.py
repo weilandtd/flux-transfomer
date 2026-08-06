@@ -20,6 +20,25 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 from sigmaflux.utils import build_data_name_maps
 
 
+def _compound_names_all_sheets(*mid_xlsx):
+    """Every compound measured across every tracer sheet of the given MID workbooks.
+
+    build_data_name_maps reads a single sheet per file, which would miss compounds
+    unique to one tracer — the T-cell 1,2-13C glucose sheet is the only one carrying
+    glucose and G6P.
+    """
+    import pandas as pd
+
+    names = set()
+    for path in mid_xlsx:
+        full = os.path.join(os.path.dirname(__file__), '..', '..', path)
+        for sheet in pd.ExcelFile(full).sheet_names:
+            df = pd.read_excel(full, sheet)
+            if "Compound" in df.columns:
+                names.update(df["Compound"].dropna().astype(str))
+    return sorted(names)
+
+
 def _measured_compound_names(*mapping_csvs):
     """Compound names measured for organisms that already have a mapping CSV.
 
@@ -69,6 +88,22 @@ ORGANISMS = [
         ),
         "amm_xlsx":   "models/atomistic/R_toruloides/imRt_AMM.xlsx",
         "output_csv": "models/atomistic/R_toruloides/R_toruloides_mapping.csv",
+    },
+    {
+        "name": "M_musculus_T_Cell",
+        "mid_xlsx": None,
+        "compound_names": _compound_names_all_sheets(
+            "data/M_musculus_T_Cell/M_musculus_T_Cell_A.xlsx",
+            "data/M_musculus_T_Cell/M_musculus_T_Cell_N.xlsx",
+        ),
+        "amm_xlsx":   "models/atomistic/M_musculus_T_Cell/mmTcell_AMM_completeMFA.xlsx",
+        "output_csv": "models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_mapping.csv",
+        # This model has no cytosolic succinate and writes aconitate with a
+        # stereochemistry tag, so the shared table's assumptions do not hold.
+        "overrides": {
+            "Suc":  ["succ_m"],
+            "Acon": ["acon_C_m"],
+        },
     },
 ]
 
