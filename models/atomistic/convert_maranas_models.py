@@ -25,3 +25,11 @@ model_rt = convert_mfa_maranas('R_toruloides/imRt_GEM.xlsx', 'R_toruloides/imRt_
                                'R_toruloides/imRt_annotated.json',
                                drop_subsystems=('dilution',))
 _print_model_summary("R_toruloides", model_rt)
+
+# M_musculus_T_Cell — completeMFA workbook; biomass is named BIOMASS_c here
+model_mm = convert_mfa_maranas('M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
+                               'M_musculus_T_Cell/mmTcell_AMM_completeMFA.xlsx',
+                               'M_musculus_T_Cell/mmTcell_annotated.json',
+                               drop_subsystems=('dilution',),
+                               biomass_id='BIOMASS_c')
+_print_model_summary("M_musculus_T_Cell", model_mm)
