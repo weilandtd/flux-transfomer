@@ -253,3 +253,8 @@ paper/.results
 
 # Stray analysis output at the repo root (scripts write into <run_dir>/output)
 /output/
+
+# Raw M. musculus T-cell source data - curated by data/curate_m_musculus_t_cell.py
+data/M_musculus_T_Cell/measured MID.xlsx
+data/M_musculus_T_Cell/MM_TCELL_exterinal_measurements.csv
+data/M_musculus_T_Cell/MFA_Fluxes.csv
