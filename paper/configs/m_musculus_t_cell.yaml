@@ -48,57 +48,96 @@ sampling:
     n_bins: 20                    # equal-width bins along each measured reaction's FVA range
     reactions: null               # null → training.measured_fluxes; or explicit list
 
+  # Two nested sampling passes, one per cell state. Sampling the activated-scale
+  # polytope alone gave zero of 10000 samples that were naive-like across all eight
+  # measured fluxes, even at 10x tolerance: that corner is a vanishing fraction of
+  # the volume when the states differ ~200-fold. Labeling is scale-invariant, so
+  # only the measured-flux tokens carry magnitude and the model has to see
+  # comparable flux ratios at both scales to learn to read them.
+  #
+  # 0.05 is the measured naive/activated ratio (PROTEIN_c 0.045 against 0.940).
+  scales:
+    - {factor: 1.0,  n_samples: 10000}   # activated
+    - {factor: 0.05, n_samples: 5000}    # naive
+
   # BIOMASS is 1.0 for activated in the published fit. Naive lands near 0.05 once
   # expressed in the activated composition, so the range spans both states.
+  #
+  # The floor is low because BIOMASS couples the components during FVA: at lb 0.01 it
+  # forced DNA_c >= 0.000142, and naive T cells do not divide, so their DNA synthesis
+  # is measured as exactly zero.
   growth:
-    lb: 0.01
+    lb: 0.001
     ub: 1.5
 
   # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
   # Convention (after standardization): met_e →  i.e. positive flux = secretion,
   # negative flux = uptake.
   #
-  # The GEM's own exchange bounds are unidirectional and disagree with its published
-  # fit — EX_ala__L_e is written uptake-only, yet the paper fits naive alanine as
-  # secreted. Amino acids and organic acids that mammalian cells both consume and
-  # release are therefore opened in both directions. Glucose and O2 stay uptake-only:
-  # the one positive glucose measurement is naive, where the error exceeds the mean.
+  # Bounds are the superset that covers both cell states, set from mammalian
+  # physiology rather than from the GEM's declared reaction directions. Exchange
+  # direction is not the clean, mostly-one-way affair it is in microbes: cultured
+  # mammalian cells run amino acids both ways depending on state, and this dataset
+  # shows it — the paper fits activated alanine as taken up and naive alanine as
+  # secreted, and lactate is secreted by activated cells but consumed by naive ones.
+  # The GEM writes both of those reactions one-way, which its own fit violates.
+  #
+  # Only two directions are genuinely forbidden, on biochemical grounds:
+  #   glucose  T cells lack glucose-6-phosphatase, so there is no route to release it
+  #   O2       consumed only
   media:
-    # Carbon and energy sources — mandatory uptake
+    # Strictly consumed
     EX_glc__D_e: {lb: -300.0, ub: 0.0}
-    EX_gln__L_e: {lb: -120.0, ub: 0.0}
-    # Electron acceptor — mandatory uptake
     EX_o2_e:     {lb: -250.0, ub: 0.0}
-    # Overflow products
-    EX_lac__L_e: {lb: -50.0,  ub: 600.0}
+    # Overflow metabolism — activated cells secrete lactate, naive cells consume it
+    EX_lac__L_e: {lb: -100.0, ub: 600.0}
     EX_co2_e:    {lb: -50.0,  ub: 250.0}
-    EX_urea_e:   {lb: 0.0,    ub: 80.0}
-    # Water and proton — freely exchangeable
+    EX_urea_e:   {lb: -10.0,  ub: 80.0}
+    # Water, proton, phosphate — freely exchangeable
     EX_h2o_e:    {lb: -300.0, ub: 300.0}
     EX_h_e:      {lb: -400.0, ub: 400.0}
-    # Phosphate
-    EX_pi_e:     {lb: -20.0,  ub: 0.0}
-    # Amino acids exchanged in both directions
+    EX_pi_e:     {lb: -20.0,  ub: 20.0}
+    # Amino acids — all bidirectional. Glutamine is the second carbon source and is
+    # consumed heavily, but nothing here forbids the reverse.
+    EX_gln__L_e: {lb: -120.0, ub: 20.0}
     EX_ala__L_e: {lb: -20.0,  ub: 20.0}
-    EX_asp__L_e: {lb: -10.0,  ub: 10.0}
+    EX_arg__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asn__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asp__L_e: {lb: -20.0,  ub: 20.0}
+    EX_cys__L_e: {lb: -20.0,  ub: 20.0}
     EX_glu__L_e: {lb: -20.0,  ub: 20.0}
-    EX_gly_e:    {lb: -10.0,  ub: 10.0}
-    EX_ser__L_e: {lb: -20.0,  ub: 10.0}
-    # Amino acids taken up from RPMI only
-    EX_arg__L_e: {lb: -20.0,  ub: 0.0}
-    EX_asn__L_e: {lb: -20.0,  ub: 0.0}
-    EX_cys__L_e: {lb: -20.0,  ub: 0.0}
-    EX_his__L_e: {lb: -20.0,  ub: 0.0}
-    EX_ile__L_e: {lb: -20.0,  ub: 0.0}
-    EX_leu__L_e: {lb: -20.0,  ub: 0.0}
-    EX_lys__L_e: {lb: -20.0,  ub: 0.0}
-    EX_met__L_e: {lb: -20.0,  ub: 0.0}
-    EX_phe__L_e: {lb: -20.0,  ub: 0.0}
-    EX_pro__L_e: {lb: -20.0,  ub: 0.0}
-    EX_thr__L_e: {lb: -20.0,  ub: 0.0}
-    EX_trp__L_e: {lb: -20.0,  ub: 0.0}
-    EX_tyr__L_e: {lb: -20.0,  ub: 0.0}
-    EX_val__L_e: {lb: -20.0,  ub: 0.0}
+    EX_gly_e:    {lb: -20.0,  ub: 20.0}
+    EX_his__L_e: {lb: -20.0,  ub: 20.0}
+    EX_ile__L_e: {lb: -20.0,  ub: 20.0}
+    EX_leu__L_e: {lb: -20.0,  ub: 20.0}
+    EX_lys__L_e: {lb: -20.0,  ub: 20.0}
+    EX_met__L_e: {lb: -20.0,  ub: 20.0}
+    EX_phe__L_e: {lb: -20.0,  ub: 20.0}
+    EX_pro__L_e: {lb: -20.0,  ub: 20.0}
+    EX_ser__L_e: {lb: -20.0,  ub: 20.0}
+    EX_thr__L_e: {lb: -20.0,  ub: 20.0}
+    EX_trp__L_e: {lb: -20.0,  ub: 20.0}
+    EX_tyr__L_e: {lb: -20.0,  ub: 20.0}
+    EX_val__L_e: {lb: -20.0,  ub: 20.0}
+
+  # Plasma-membrane transporters the GEM writes one-way, which its own published fit
+  # then violates: each of these carries flux in opposite directions in the two
+  # states, so as written the model cannot reproduce the naive state at all.
+  # Opening the exchange is not enough — an irreversible carrier behind it still
+  # blocks the route. All four are bidirectional carriers in mammalian cells.
+  #
+  #   LACLtps_e  lactate    MCT1/MCT4, proton-coupled symporters (Slc16a1/Slc16a3)
+  #   ALAt_c_e   alanine    Slc1a5 / Slc38 system A and ASC
+  #   ASPt_c_e   aspartate  Slc1a3
+  #   GLYt_c_e   glycine    Slc6a9
+  #
+  # Glucose is deliberately not here: GLCt_c_e flips only in the naive measurement,
+  # which is below detection, and T cells lack glucose-6-phosphatase.
+  reaction_bounds:
+    LACLtps_e: {lb: -600.0, ub: 600.0}
+    ALAt_c_e:  {lb: -20.0,  ub: 20.0}
+    ASPt_c_e:  {lb: -20.0,  ub: 20.0}
+    GLYt_c_e:  {lb: -20.0,  ub: 20.0}
 
 
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
