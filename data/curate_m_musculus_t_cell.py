@@ -109,6 +109,14 @@ BIOMASS_TO_COMPONENT = {
 
 UMOL_TO_NMOL = 1000.0
 
+# Measurements whose magnitude does not clear their own error bar carry no
+# information, and their sign is noise.  Naive glucose is -0.004287 +- 0.006163,
+# which reads as glucose secretion — but T cells lack glucose-6-phosphatase, the
+# model forbids it, and the published fit resolves it to uptake.  Blanking the value
+# keeps the honest statement (unmeasured) instead of feeding the model an
+# impossible one; read_xlsx_extflux treats a missing flux as unknown.
+BELOW_DETECTION = {('naive', 'glc__D')}
+
 
 def _ascii(value):
     """Fold the source's non-ASCII text (naive is written with a diaeresis)."""
@@ -181,8 +189,11 @@ def curate_extflux():
 
         m = media[media['state'] == state].set_index('measurement')
         for name, reaction in MEASUREMENT_TO_EXCHANGE.items():
-            row[reaction] = -UMOL_TO_NMOL * m.loc[name, 'mean']
+            below = (state, name) in BELOW_DETECTION
+            row[reaction] = float('nan') if below else -UMOL_TO_NMOL * m.loc[name, 'mean']
             err[reaction] = UMOL_TO_NMOL * m.loc[name, 'error']
+            if below:
+                print(f"    {state} {reaction}: below detection, left blank")
         row['EX_o2_e'] = -UMOL_TO_NMOL * sum(m.loc[t, 'mean'] for t in OXYGEN_TERMS)
         err['EX_o2_e'] = UMOL_TO_NMOL * (
             sum(m.loc[t, 'error'] ** 2 for t in OXYGEN_TERMS) ** 0.5
@@ -268,6 +279,26 @@ def curate_reference_flux():
             merged[f'{letter}_{metric}'] = biomass.loc[source, f'{letter}_{metric}']
     out = out[~out['id'].isin(('BIOMASS_activated', 'BIOMASS_naive'))]
     out = pd.concat([out, pd.DataFrame([merged])], ignore_index=True)
+
+    # The published table predates the hierarchical split, so it has no component
+    # rows. Activated is `fraction` by construction (its BIOMASS is fit to 1.0 and
+    # the GEM's coefficients are that state's fluxes); naive scales by the measured
+    # ratio of synthesis rates.
+    extflux = pd.read_excel(DATA_DIR / 'M_musculus_T_Cell_ExtFlux.xlsx',
+                            sheet_name='Constraints').set_index('Condition')
+    components = []
+    for component in BIOMASS_TO_COMPONENT.values():
+        row = {'id': component, 'name': f'{component} synthesis', 'reaction': '',
+               'gpr': '', 'subsystem': 'Pseudoreaction'}
+        for letter, condition in (('A', 'A1'), ('N', 'N1')):
+            value = extflux.loc[condition, component]
+            error = extflux.loc[condition, f'{component}_err']
+            row[f'{letter}_mfa'] = value
+            row[f'{letter}_mfaLB'] = value - error
+            row[f'{letter}_mfaUB'] = value + error
+            row[f'{letter}_pfba'] = value
+        components.append(row)
+    out = pd.concat([out, pd.DataFrame(components)], ignore_index=True)
 
     flip = out['id'].isin(FLIPPED_EXCHANGES)
     for letter in ('A', 'N'):
