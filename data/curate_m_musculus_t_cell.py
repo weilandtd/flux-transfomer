@@ -32,6 +32,24 @@ secretion-positive at conversion time (_standardize_exchange_directions), so:
 
 Both then live in the same convention.  Cross-check: activated EX_ala__L_e is
 -1000 * 0.004153 = -4.153 from the measurements and -1 * 4.1375 from the paper.
+
+VALIDATION
+----------
+Feeding the curated activated flux vector through the converted model gives
+||S.v||inf = 4.7e-07 against a peak flux of 701, i.e. mass balance to machine
+precision.  That checks the whole conversion chain at once: the dropped dilution
+network, the _out removal, the 21 flipped exchanges and the transketolase mapping.
+
+The naive vector balances everywhere except protonleak_m, which is off by 12.84.
+ATPS_m produces 1.0 protonleak_m and Ht_c_m consumes 0.2663 per unit; activated
+satisfies that exactly (0.2663 * 701.52 = 186.81 = ATPS_m), naive does not
+(22.53 against 9.69).  This is an inconsistency in the published naive flux
+vector, not in the conversion, and it is left as published.
+
+19 reactions carry NA for the naive state - deoxyribonucleotide synthesis
+(RNDR*, TMDS_c, DTMPK_c, ...) and de novo lipogenesis (ACITL_c, SK_accoa_c).
+Naive T cells neither divide nor run lipogenesis, so NA means the reaction was
+absent from the naive model and is curated as blank, which reads back as zero.
 """
 import pathlib
 import re
