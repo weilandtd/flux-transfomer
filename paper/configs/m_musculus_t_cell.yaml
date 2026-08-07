@@ -17,7 +17,7 @@ device: auto  # auto | cpu | cuda
 #   A = activated (aCD3/aCD28, IL2)    N = naive (IL7)
 experiment:
   data_dir:       data/M_musculus_T_Cell
-  reference_flux: MFA_flux_data_MM.xlsx
+  reference_flux: Shen_et_al_flux_data_MM.xlsx
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
