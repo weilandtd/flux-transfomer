@@ -31,9 +31,35 @@ tracer names the config's `labeling.tracers[].name` must match.
 | `M_musculus_T_Cell_ExtFlux.xlsx` | sheet `Constraints`, conditions `A1` and `N1` |
 | `MFA_flux_data_MM.xlsx` | the published MFA fluxes, on converted-model reaction IDs |
 
-All fluxes are nmol/1E6 cells/h in SigmaFlux's secretion-positive convention. See
-`data/curate_m_musculus_t_cell.py` for the transformation from the original sources and for
-the mass-balance validation of the result.
+All fluxes are nmol/1E6 cells/h in SigmaFlux's secretion-positive convention.
+
+## How these were derived
+
+The sources were the published MFA input table (umol/1E6 cells/h, uniformly
+uptake-positive) and the published flux table (nmol/1E6 cells/h, in the raw Maranas
+per-reaction direction, which differs between exchanges). Conversion to the model's
+uniformly secretion-positive convention was therefore:
+
+| | rule |
+|---|---|
+| measurements → `ExtFlux` | `value = -1000 x mean` — one rule, the source is uniformly signed |
+| published fit → `MFA_flux_data_MM` | negate the 21 exchanges that conversion flips |
+
+Two mappings were not one-to-one. `o2 [m]` and `o2 [c]` sum to `EX_o2_e`, errors in
+quadrature; `o2 [c]` is deliberately *not* mapped to `O2USE1_c`, because the published fit
+puts that reaction at 0.51 against a measured 16.43 ± 2.45, i.e. it was left unconstrained.
+The published table predates the hierarchical biomass split, so its lumped `BIOMASS`
+rows were expanded into `PROTEIN_c`/`RNA_c`/`DNA_c`/`LIPID_c`, and lumped transketolase
+(`TKT1_c`, `TKT2_c`) was mapped onto the ping-pong half reactions the GEM uses, where the
+carrier balance gives `TKThalf_c = TKT1_c + TKT2_c`.
+
+Cross-check on the signs: activated `EX_ala__L_e` is `-1000 x 0.004153 = -4.153` from the
+measurements and `-1 x 4.1375` from the published fit.
+
+**Validation.** The curated activated flux vector balances in the converted model to
+`||S.v||inf = 4.7e-07` against a peak flux of 701 — machine precision, which checks the
+dropped dilution network, the `_out` removal, the 21 flipped exchanges and the
+transketolase mapping in one go.
 
 ## Data excluded by the original authors
 
