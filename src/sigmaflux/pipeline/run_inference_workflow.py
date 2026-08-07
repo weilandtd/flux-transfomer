@@ -113,7 +113,10 @@ def _expand_samples(
 
             df_Vm_syn = df_Vm_rep.copy()
             df_Vm_syn['Sample'] = syn_id
-            if base_val is not None and err_val is not None and err_val > 0:
+            # np.isfinite guards the unmeasured case: float(nan) passes an
+            # `is not None` check but makes rng.uniform overflow.
+            if (base_val is not None and np.isfinite(base_val)
+                    and err_val is not None and err_val > 0):
                 df_Vm_syn.loc[df_Vm_syn['Flux Name'] == flux_to_sample, 'Value'] = \
                     float(rng.uniform(base_val - err_val, base_val + err_val))
             V_parts.append(df_Vm_syn)

@@ -97,10 +97,17 @@ def read_xlsx_extflux(
 
     records     = []
     err_records = []
+    blank       = []
     for _, row in rows.iterrows():
         m      = _COND_PAT.match(str(row['Condition']))
         sample = int(m.group(2)) if m else 1
         for col in flux_cols:
+            # A blank cell is a flux that was not measured for this condition — the
+            # same situation as an absent column, so treat it the same way and leave
+            # it out. Emitting NaN instead would carry straight into the model.
+            if pd.isna(row[col]):
+                blank.append(f"{row['Condition']}/{col}")
+                continue
             records.append({'Sample': sample, 'Flux Name': col, 'Value': float(row[col])})
             if return_errors and col in err_cols_map:
                 err_records.append({
@@ -108,6 +115,13 @@ def read_xlsx_extflux(
                     'Flux Name': col,
                     'Value':     float(row[err_cols_map[col]]),
                 })
+
+    if blank:
+        import warnings
+        warnings.warn(
+            f"{len(blank)} blank flux value(s) in {xlsx_path} treated as unknown: "
+            f"{blank}"
+        )
 
     df_Vm = pd.DataFrame(records, columns=['Sample', 'Flux Name', 'Value'])
 
