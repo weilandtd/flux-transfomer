@@ -18,9 +18,9 @@ Run from the repository root:
 
     python data/curate_m_musculus_t_cell.py
 
-The three raw files have since been deleted — only the curated workbooks are kept, and
-they are what the pipeline reads. This script is retained as the record of how they
-were derived; restore the sources beside it to re-run.
+MM_TCELL_exterinal_measurements.csv is the table the published MFA was given, and is
+reproduced here verbatim. The MID and reference-flux sources were deleted; restore them
+beside this script to regenerate those two outputs.
 
 UNITS AND SIGNS
 ---------------
@@ -109,13 +109,12 @@ BIOMASS_TO_COMPONENT = {
 
 UMOL_TO_NMOL = 1000.0
 
-# Measurements whose magnitude does not clear their own error bar carry no
-# information, and their sign is noise.  Naive glucose is -0.004287 +- 0.006163,
-# which reads as glucose secretion — but T cells lack glucose-6-phosphatase, the
-# model forbids it, and the published fit resolves it to uptake.  Blanking the value
-# keeps the honest statement (unmeasured) instead of feeding the model an
-# impossible one; read_xlsx_extflux treats a missing flux as unknown.
-BELOW_DETECTION = {('naive', 'glc__D')}
+# Everything in the source table is carried through as measured.  Naive glucose is
+# -0.004287 +- 0.006163, which reads as secretion and is biochemically impossible for
+# a T cell, but it is what the published MFA was given and its fit reconciled it to
+# 0.975 uptake — well inside the error bar.  Dropping it would withhold the magnitude
+# constraint (|flux| <~ 6, against ~200 for activated) that identifies the naive state.
+BELOW_DETECTION: set = set()
 
 
 def _ascii(value):
@@ -192,8 +191,6 @@ def curate_extflux():
             below = (state, name) in BELOW_DETECTION
             row[reaction] = float('nan') if below else -UMOL_TO_NMOL * m.loc[name, 'mean']
             err[reaction] = UMOL_TO_NMOL * m.loc[name, 'error']
-            if below:
-                print(f"    {state} {reaction}: below detection, left blank")
         row['EX_o2_e'] = -UMOL_TO_NMOL * sum(m.loc[t, 'mean'] for t in OXYGEN_TERMS)
         err['EX_o2_e'] = UMOL_TO_NMOL * (
             sum(m.loc[t, 'error'] ** 2 for t in OXYGEN_TERMS) ** 0.5
