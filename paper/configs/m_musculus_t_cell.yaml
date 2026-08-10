@@ -202,9 +202,7 @@ training:
   # Listing only a subset withholds real measurements from the model, and the amino
   # acid uptakes are exactly what separates the two cell states: activated cells pull
   # them in for protein synthesis at ~20x the naive rate.
-  # Listing only a subset withholds real measurements from the model, and the amino
-  # acid uptakes are exactly what separates the two cell states: activated cells pull
-  # them in for protein synthesis at ~20x the naive rate.
+  # (duplicate comment removed; see above)
   measured_fluxes:
     # carbon sources and overflow
     - EX_glc__D_e
