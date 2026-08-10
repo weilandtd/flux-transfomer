@@ -56,9 +56,19 @@ def match_lcms_knowns(gem_xlsx, knowns_path, model_metabolite_ids=None,
     """
     knowns = read_lcms_knowns(knowns_path)
     by_name = {}
+    ambiguous = set()
     for compound in knowns['compound']:
-        by_name.setdefault(normalize_compound(compound), compound)
+        key = normalize_compound(compound)
+        if key in by_name and by_name[key] != compound:
+            ambiguous.add(key)
+        by_name.setdefault(key, compound)
 
+    if ambiguous:
+        import warnings
+        warnings.warn(
+            f"LC/MS knowns contains {len(ambiguous)} ambiguous compound name(s) after normalization "
+            f"(e.g. {sorted(list(ambiguous))[:5]}). Mappings may be incorrect for those names."
+        )
     metabolites = pd.read_excel(gem_xlsx, sheet_name=gem_sheet, usecols=[id_col, name_col])
     if model_metabolite_ids is not None:
         keep = set(model_metabolite_ids)
