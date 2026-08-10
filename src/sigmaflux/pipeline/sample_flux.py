@@ -11,6 +11,7 @@ Example:
 import argparse
 import datetime
 import os
+import warnings
 from pathlib import Path
 
 import cobra
@@ -23,7 +24,10 @@ from cobra.sampling import sample
 
 try:
     from cobra.sampling import HopsySampler
-except ImportError:
+except Exception:
+    # Not just ImportError: cobra's own hopsy module uses `hopsy.Proposal` as a default
+    # argument in a class body, so importing it without the hopsy package raises NameError
+    # rather than ImportError. Degrade to "unavailable" instead of taking the process down.
     HopsySampler = None
 from optlang.symbolics import Zero
 
@@ -360,10 +364,22 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
 
 
 def _do_sample(model, s, seed):
-    method = s.get("method", "hopsy")
+    # optgp, not hopsy: HopsySampler ships only on the cobrapy devel branch, so a released
+    # cobra cannot honour a hopsy default. Every config in paper/configs sets this explicitly.
+    method = s.get("method", "optgp")
     if method == "hopsy":
         if HopsySampler is None:
-            raise ImportError("HopsySampler not available; install dev cobrapy+hopsy or set method: optgp")
+            warnings.warn(
+                "method: hopsy was requested but HopsySampler is unavailable — SAMPLING WITH "
+                "optgp INSTEAD. The samples will not be the ones the config asked for. To use "
+                "hopsy, install the hopsy package and a cobrapy checkout from the devel branch "
+                "(HopsySampler is not in any released cobra).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            method = "optgp"
+            return sample(model, n=s["n_samples"], thinning=s["thinning"],
+                          processes=s["processes"], method=method, seed=seed)
         import hopsy as _hopsy
         proposal_key = s.get("hopsy_proposal", "uniform_coordinate_hit_and_run")
         if proposal_key not in _HOPSY_PROPOSALS:
