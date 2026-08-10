@@ -47,12 +47,13 @@ CONDITION_COLORS = {
     'C': '#f3c47f',   # golden (MFA-like)
     'N': '#7fb3d5',   # light blue
     'P': '#2c9c8f',   # teal / green
+    'A': '#c17429',   # burnt orange — activated T cell (matches plot_mid_data)
 }
 COLORS = {
     'reference': '#888888',   # identity line
     'zero':      '#cccccc',   # annotation box edge
 }
-CONDITIONS = ['C', 'N', 'P']
+CONDITIONS = ['C', 'N', 'P', 'A']
 
 # Reactions with |flux| below this are excluded from the log-log plot.
 FLUX_MIN_ABS = 1e-6
@@ -240,7 +241,11 @@ def plot_panels(df: pd.DataFrame, out_path: pathlib.Path, max_labels: int = 5):
     for ax, cond in zip(axes, CONDITIONS):
         sub = df[df['condition'] == cond]
         if not sub.empty:
-            cmap = sns.color_palette(f"dark:{CONDITION_COLORS[cond]}_r", as_cmap=True)
+            # Discrete rather than as_cmap: seaborn treats a few-valued hue as
+            # categorical and refuses a colormap there (the T cell has one D per
+            # condition, chemostats have many). The legend below is discrete anyway.
+            cmap = sns.color_palette(f"dark:{CONDITION_COLORS[cond]}_r",
+                                     n_colors=max(sub['D'].nunique(), 1))
             sns.scatterplot(data=sub, x='ref', y='pred', hue='D', ax=ax,
                             palette=cmap, s=18, edgecolor='none', legend='full')
             # One horizontal row above the axes. Inside the panel it sat on top of the
