@@ -131,6 +131,90 @@ def forward_labeling(mfa_model, fluxes, reversibility, labeling_to):
         return torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
 
 
+# ── Synthetic measurement noise ───────────────────────────────────────────────
+#
+# One implementation, used by both benchmarks, so "the AI and MFA saw the same data"
+# is true by construction rather than by two code paths happening to agree. It
+# reproduces the noise the model is *trained* under
+# (:func:`sigmaflux.ai.train.apply_labeling_noise`); anything else evaluates the AI
+# off-distribution and — worse — hands MFA data no flux state can reproduce.
+
+
+def benchmark_rng(seed, sample_ix):
+    """Per-sample generator, so a sample's noise never depends on its neighbours.
+
+    Seeding per task instead would make the stream position depend on how many
+    multi-start restarts earlier samples consumed, which is optimiser- and
+    BLAS-thread-dependent — that is, not reproducible even by re-running.
+    """
+    return np.random.default_rng([int(seed), int(sample_ix)])
+
+
+def add_labeling_noise(gt_labeling, noise_std, rng):
+    """Noisy MIDs that still sum to one, per (tracer, metabolite) group.
+
+    Mirrors :func:`sigmaflux.ai.train.apply_labeling_noise`: reconstruct the implicit
+    M+0, perturb the stored fractions *and* M+0 with unclipped Gaussian noise, then
+    renormalise by the group total.
+
+    The renormalisation is the point. An EMU simulation always returns MIDs summing
+    to one, so a measurement vector that does not is unreachable by every feasible
+    flux — an irreducible residual that inflates chi-square and reads as an optimiser
+    failing to converge when the data was simply not fittable. *gt_labeling* is
+    indexed ``(Tracer, Metabolite, Isotopomer)`` and holds M+1..M+n only; M+0 stays
+    implicit, exactly as the stored training data does.
+
+    One deliberate departure from the training implementation: negatives are clamped
+    *before* the division, not after. Training clamps the normalised fractions and
+    never clamps M+0, so wherever the true M+0 sits near zero its noise can drive it
+    negative and the stored fractions then sum above one. Measured on real T-cell
+    data that leaves ~77 of 456 groups unfittable and ~400 of chi-square permanently
+    unreachable; clamping first drives both to zero. Training arguably wants the same
+    fix, but changing it would retrain every model, so it is not touched here.
+    """
+    if noise_std <= 0:
+        return gt_labeling.copy()
+
+    stored = gt_labeling.to_numpy(dtype=np.float64)
+    group = pd.MultiIndex.from_arrays([gt_labeling.index.get_level_values("Tracer"),
+                                       gt_labeling.index.get_level_values("Metabolite")])
+    codes, _ = pd.factorize(group, sort=False)
+    n_groups = int(codes.max()) + 1 if codes.size else 0
+
+    m0 = 1.0 - np.bincount(codes, weights=stored, minlength=n_groups)
+    # Draw order matches the training implementation: stored fractions, then M+0.
+    noisy_stored = np.clip(stored + rng.normal(0.0, noise_std, size=stored.size), 0.0, None)
+    noisy_m0 = np.clip(m0 + rng.normal(0.0, noise_std, size=n_groups), 0.0, None)
+
+    total = noisy_m0 + np.bincount(codes, weights=noisy_stored, minlength=n_groups)
+    total = np.clip(total, 1e-10, None)
+    return pd.Series(noisy_stored / total[codes], index=gt_labeling.index)
+
+
+def add_flux_noise(true_values, flux_noise_std, rng):
+    """Relative flux noise, ``v·(1 + N(0, σ))`` — the training form.
+
+    Unclipped on purpose: the AI is trained against this, so bounding the error here
+    would test it on a gentler distribution than it learned.
+    """
+    values = np.asarray(true_values, dtype=np.float64)
+    if flux_noise_std <= 0:
+        return values.copy()
+    return values * (1.0 + rng.normal(0.0, flux_noise_std, size=values.size))
+
+
+def noisy_measurements(gt_labeling, gt_fluxes, noise_std, flux_noise_std, seed, sample_ix):
+    """Both measurement blocks for one sample, drawn in a fixed order.
+
+    Callers must not draw these separately: the order fixes the stream, and it is
+    what makes the AI and MFA benchmarks see the identical realisation for a given
+    ``(seed, sample_ix)``.
+    """
+    rng = benchmark_rng(seed, sample_ix)
+    return (add_labeling_noise(gt_labeling, noise_std, rng),
+            add_flux_noise(gt_fluxes, flux_noise_std, rng))
+
+
 def write_predictions(base, labeling_data, labeling_index, flux_data, reaction_ids,
                       sample_indices):
     """Write the predicted labeling and flux HDF5 pair.
