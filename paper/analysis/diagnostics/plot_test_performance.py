@@ -70,22 +70,46 @@ def parse_args():
     return p.parse_args()
 
 
+def converged_samples(bench_dir: pathlib.Path) -> set | None:
+    """Samples whose fit reached the global optimum, from the benchmark's own record.
+
+    ``sigmaflux-benchmark-mfa`` writes ``*_convergence.csv`` holding, per sample, the SSR
+    its best fit reached and the SSR the TRUE flux achieves against that same noise. The
+    truth is a feasible point of the same optimisation, so a fit scoring worse than it did
+    not find the minimum — ``ssr_ratio > 1`` is a failed optimisation, not a bad method.
+
+    Scoring R² over those fits measures the optimiser's stopping point rather than MFA's
+    accuracy. Returns None when no record exists (the AI arm, or an older MFA run), and
+    the caller then scores everything.
+    """
+    records = sorted(bench_dir.glob("pred_*_convergence.csv"))
+    if not records:
+        return None
+    df = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
+    return set(df.loc[df["ssr_ratio"] <= 1.0, "sample"].astype(int))
+
+
 def load_benchmark(bench_dir: pathlib.Path,
                    flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
     Returns the paired long frame and the number of samples the method failed to
-    solve. sigmaflux-benchmark-mfa writes all-NaN fluxes for samples where no restart
-    cleared the reduced-χ² acceptance bound; those samples drop out here and never
-    count against the method's R², so the failure count must be reported alongside it.
+    solve. A sample counts as failed when its fit did not reach the global optimum
+    (``ssr_ratio > 1``, see :func:`converged_samples`) or the optimiser returned nothing
+    usable at all. Either way it is excluded from R² and reported alongside it, so a
+    method is never credited for samples it did not actually solve.
     """
     bench_dir = pathlib.Path(bench_dir)
+    converged = converged_samples(bench_dir)
     frames, n_failed = [], 0
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
         pred_df = _read_hdf(h5_path, "fluxes")  # rows=reaction_ids, cols=absolute sample_ix
         for ix in pred_df.columns:
             ix = int(ix)
             if ix >= flux_df.shape[1]:
+                continue
+            if converged is not None and ix not in converged:
+                n_failed += 1
                 continue
             gt   = flux_df[ix]
             pred = pred_df[ix].reindex(gt.index)
