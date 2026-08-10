@@ -532,6 +532,10 @@ class EnsembleSigmaFlux:
     unidentifiable flux shifts a mean but not a median, and the members disagree
     most exactly on those reactions. Per-reaction spread is deliberately not
     returned here — it is produced by the dedicated ensemble scripts.
+
+    The median is then projected back onto the null-space basis, because it is a
+    non-linear combination and so does not inherit the ``S v = 0`` that every
+    member satisfies by construction. See :meth:`_project_flux_blocks`.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -577,6 +581,7 @@ class EnsembleSigmaFlux:
         self.name                = None
         self.model_version       = None
         self.source_path         = None
+        self._projector          = None   # built lazily by _null_space_projector()
 
     def predict(self, df_L, df_Vm=None):
         """Ensemble-median prediction. Members share inputs, so per-member outputs
@@ -584,7 +589,53 @@ class EnsembleSigmaFlux:
         preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
-        out['Value'] = np.median(values, axis=0)
+        out['Value'] = self._project_flux_blocks(np.median(values, axis=0))
+        return out
+
+    def _null_space_projector(self):
+        """``Z (Z^T Z)^-1 Z^T`` for the members' shared basis, or None if absent.
+
+        Z is orthonormal for the Varimax basis, so the Gram is the identity and the
+        projector collapses to ``Z Z^T``; a column-normalised ``targeted_ica`` basis
+        is not orthogonal, hence the Gram solve rather than a bare transpose.
+        """
+        if self._projector is not None:
+            return self._projector
+        inner = getattr(self.members[0], '_model', None)
+        Z = getattr(inner, 'Z_full', None)
+        if Z is None:
+            return None
+        Z = Z.detach().cpu().numpy().astype(np.float64)
+        gram = Z.T @ Z
+        if np.allclose(gram, np.eye(gram.shape[0]), atol=1e-6):
+            self._projector = Z @ Z.T
+        else:
+            self._projector = Z @ np.linalg.solve(gram, Z.T)
+        return self._projector
+
+    def _project_flux_blocks(self, values):
+        """Return ``values`` with every sample's flux block back in the null space.
+
+        Each member reconstructs fluxes as ``x_l @ Z_full.T``, so a member's
+        prediction satisfies ``S v = 0`` to float32. The per-reaction median does
+        not: a median is non-linear, so combining members leaves the null space and
+        the point prediction stops being a feasible flux distribution. Measured on
+        the T-cell ensemble, ``|S v|max`` was 4.6e+01 for the median against 4.2e-05
+        for any single member.
+
+        Re-projecting keeps the reason the median was chosen — a member that lands
+        on a wild value for an unidentifiable flux still does not drag the estimate
+        — and then returns the nearest point that actually satisfies the network.
+        Only the flux block moves; reversibilities are not null-space coordinates.
+        """
+        P = self._null_space_projector()
+        n_flux = len(self.flux_names or [])
+        if P is None or not n_flux:
+            return values
+        stride = n_flux + len(self.reversibility_names or [])
+        out = np.asarray(values, dtype=np.float64).copy()
+        for start in range(0, len(out), stride):        # one block per sample
+            out[start:start + n_flux] = P @ out[start:start + n_flux]
         return out
 
     # Introspection helpers delegate to member 0.
