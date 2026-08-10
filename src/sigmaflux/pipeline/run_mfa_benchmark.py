@@ -53,6 +53,7 @@ from ._benchmark import (
     build_mfa_context,
     forward_labeling,
     load_benchmark_inputs,
+    noisy_measurements,
     pin_threads,
     resolve_split_source,
     select_samples,
@@ -112,17 +113,21 @@ def build_parser():
     return p
 
 
-def make_measured_flux_data(mfa_model, measured_rxn_ids, gt_flux_series, flux_noise_std, rng):
-    # Relative flux noise: measured = true·(1 + N(0, flux_noise_std)); the variance
-    # used in the χ² objective is (flux_noise_std·|true|)² (fluxes are real magnitudes).
-    rows = []
-    for rxn_id in measured_rxn_ids:
-        if rxn_id not in gt_flux_series.index:
-            continue
-        true_val = float(gt_flux_series[rxn_id])
-        meas = true_val * (1.0 + rng.normal(0.0, flux_noise_std))
-        rows.append({"reaction": rxn_id, "mean": meas,
-                     "std": max(flux_noise_std * abs(true_val), 1e-9)})
+def measured_flux_ids(measured_rxn_ids, gt_flux_series):
+    """The measured reactions this sample actually has ground truth for, in order."""
+    return [r for r in measured_rxn_ids if r in gt_flux_series.index]
+
+
+def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, noisy_values):
+    """Wrap already-noised flux observations as FluxData.
+
+    The noise is drawn by :func:`sigmaflux.pipeline._benchmark.noisy_measurements` so
+    that the AI benchmark sees the identical realisation; the χ² variance stays
+    (flux_noise_std·|true|)², since fluxes are real magnitudes.
+    """
+    rows = [{"reaction": rxn_id, "mean": float(meas),
+             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
+            for rxn_id, meas in zip(rxn_ids, noisy_values)]
     return FluxData(mfa_model, pd.DataFrame(rows)) if rows else None
 
 
@@ -176,22 +181,23 @@ def acceptance_threshold(n_L, n_F, z=1.645):
     return 1.0 + z * np.sqrt(2.0 / h_eff)
 
 
-def build_noisy_experiments(experiments, gt_series, noise_std, rng, mfa_model,
-                            mapped_met_ids, flux_data):
-    """Build one noisy Experiment per tracer from GT labeling series."""
+def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flux_data):
+    """Build one Experiment per tracer from an already-noised labeling series.
+
+    *noisy_series* comes from :func:`sigmaflux.pipeline._benchmark.noisy_measurements`
+    and is already restricted to the observable metabolites, so the sum-to-one
+    renormalisation was applied over exactly the entries used here.
+    """
     noisy_exps = []
     for experiment in experiments:
         tracer = experiment.tracers[0]
         tracer_str = "|".join(str(t) for t in experiment.tracers)
-        tracer_data = gt_series.loc[tracer_str]  # (Metabolite, Isotopomer) Series
+        tracer_data = noisy_series.loc[tracer_str]  # (Metabolite, Isotopomer) Series
 
         met_frac_sum = defaultdict(float)
         rows = []
         for (met_id, iso_str), frac in tracer_data.items():
-            if mapped_met_ids and met_id not in mapped_met_ids:
-                continue
-            noise = np.clip(rng.normal(0.0, noise_std), -noise_std, noise_std)
-            noisy_frac = max(0.0, float(frac) + noise)
+            noisy_frac = float(frac)
             rows.append({"id": met_id, "mid": int(iso_str[2:]), "mean": noisy_frac,
                          "std": noise_std})
             met_frac_sum[met_id] += noisy_frac
@@ -437,13 +443,23 @@ def main(args):
                   f"NaN={bool(np.isnan(gt_labeling_vec).any())}")
 
         # ── Step 2: build noisy per-tracer MID + measured flux constraints ────
+        # Restrict to the observable metabolites BEFORE drawing, so the sum-to-one
+        # renormalisation runs over exactly the entries that get fitted. The draw is
+        # keyed on (seed, global_ix), so the AI benchmark sees this same realisation.
         gt_series = pd.Series(gt_labeling_vec, index=labeling_index)
+        if mapped_met_ids:
+            keep = gt_series.index.get_level_values("Metabolite").isin(mapped_met_ids)
+            gt_series = gt_series[keep]
+        flux_ids = measured_flux_ids(measured_rxn_ids, gt_flux)
+        noisy_series, noisy_flux = noisy_measurements(
+            gt_series, gt_flux.reindex(flux_ids).to_numpy(float),
+            args.noise_std, flux_noise_std, args.seed, global_ix,
+        )
         flux_data_obs = make_measured_flux_data(
-            mfa_model, measured_rxn_ids, gt_flux, flux_noise_std, rng
+            mfa_model, flux_ids, gt_flux, flux_noise_std, noisy_flux
         )
         noisy_exps = build_noisy_experiments(
-            experiments, gt_series, args.noise_std, rng, mfa_model, mapped_met_ids,
-            flux_data_obs
+            experiments, noisy_series, args.noise_std, mfa_model, flux_data_obs
         )
         n_obs = sum(len(e.mid_data) for e in noisy_exps)
         print(f"  Noisy MID: {n_obs} entries across {len(noisy_exps)} tracers")
