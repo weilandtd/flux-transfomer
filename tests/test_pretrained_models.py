@@ -217,6 +217,25 @@ def test_predicted_fluxes_are_mass_balanced(model, sfx_path):
     assert np.abs(S @ flux).max() < 1e-5 * max(np.abs(flux).max(), 1.0)
 
 
+def test_each_member_is_mass_balanced(model, sfx_path):
+    """The per-member invariant that the ensemble median is projected back onto.
+
+    A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
+    space; asserting it separately says which layer a future regression came from.
+    The ensemble meets the same bound only because ``predict`` re-projects — the
+    raw median does not, a median being non-linear.
+    """
+    if not inspect_model(sfx_path).get("network", {}).get("included"):
+        pytest.skip("release predates the packaged COBRA network; re-export to cover it")
+
+    S, _, _ = read_stoichiometry(sfx_path)
+    df_L = make_df_L(model, n_samples=1)
+    for i, member in enumerate(model.members):
+        flux = member.predict(df_L)["Value"].values[:len(model.flux_names)]
+        resid = np.abs(S @ flux).max()
+        assert resid < 1e-5 * max(np.abs(flux).max(), 1.0), f"member {i}: |S@v|max={resid:.3e}"
+
+
 @pytest.mark.skipif(len(FETCHED) < 2, reason="needs two fetched models")
 def test_models_are_distinct_organisms():
     """Two releases are two models — catches a duplicated or mislabelled artifact."""
