@@ -116,6 +116,10 @@ def build_parser():
                         "Reported for comparison only — acceptance now uses --accept-ratio, "
                         "because this bound is calibrated on the declared σ while the "
                         "clamped, renormalised MID noise has a true sd near 0.84σ.")
+    p.add_argument("--verbose", action="store_true",
+                   help="Print the optimiser trace (iteration, chi-square, gradient norm, "
+                        "elapsed) for every fit. Without it a long fit is silent until it "
+                        "finishes, so there is no way to tell a slow fit from a stuck one.")
     p.add_argument("--diagnose", action="store_true",
                    help="Fit a single sample (the one at --start-ix) with step-by-step "
                         "diagnostics and recovery metrics, writing no HDF5. Ignores "
@@ -524,7 +528,7 @@ def main(args):
                 print(f"\nFitting (max_iter={args.max_iter}, tol={args.tol}) ...")
 
             res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
-                                disp=1 if args.diagnose else 0)
+                                disp=1 if (args.diagnose or args.verbose) else 0)
             # Mean reduced chi-square, the legacy accept statistic. Reported only for
             # comparison: it is measured against the declared sigma, which overstates
             # the true noise, so it reads low and passes fits that never converged.
