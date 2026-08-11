@@ -12,9 +12,11 @@ Each benchmark run:
   1. Draws a ground-truth flux from the training flux HDF5.
   2. Simulates per-tracer 13C MID via an MFAModel forward pass (+ Gaussian noise).
   3. Adds measured-flux soft constraints (with flux_noise_std noise).
-  4. Fits MFA from a feasible near-GT initialization, restarting until the fit
-     reaches the global optimum — the residual the TRUE flux achieves against the
-     same noise, which no minimiser can beat because the truth is feasible.
+  4. Fits MFA from a random feasible flux — another training sample, chosen without
+     reference to the ground truth, because a real fit has no answer to start near.
+     Restarts until the fit reaches the global optimum: the residual the TRUE flux
+     achieves against the same noise, which no minimiser can beat since the truth is
+     itself feasible.
   5. Writes predicted fluxes and labeling in the same schema as
      ``sigmaflux-benchmark``, so the two are directly comparable.
 
@@ -95,12 +97,6 @@ def build_parser():
                    help="Relative noise std on measured flux observations "
                         "(default: cfg.training.flux_noise_std, else 0.05). "
                         "0 = no flux noise (measured fluxes pinned to GT)")
-    p.add_argument("--init-noise", type=float, default=0.20,
-                   help="Target relative L2 deviation ||v_init - v_gt|| / ||v_gt|| of the "
-                        "feasible near-GT initialization. Any value at or above the "
-                        "sample-to-sample deviation saturates the interpolation and starts "
-                        "from the random training sample itself — a start that uses no "
-                        "knowledge of the ground truth, which is what a real fit faces.")
     p.add_argument("--max-starts", type=int, default=10,
                    help="N_max multi-start restarts per sample. Restart from a new "
                         "feasible init until the fit reaches the global optimum; if none "
@@ -147,38 +143,34 @@ def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, 
     return FluxData(mfa_model, pd.DataFrame(rows)) if rows else None
 
 
-def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, gt_rev, sample_ix,
-                     init_noise, reaction_ids, rng):
-    """Feasible near-GT init by interpolating toward a real training sample.
+def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, rng):
+    """Feasible init: a different training sample, drawn at random.
 
-    The steady-state flux space is a convex polytope and every training sample is
-    feasible, so a convex combination of GT and another sample is feasible too — unlike
-    a null-space projection of a perturbed GT, which can invert fluxes and leave the
-    polytope. Pick a random sample j != sample_ix, then interpolate GT → sample j with a
-    fraction α set so the global relative deviation ||v_init - v_gt|| / ||v_gt|| equals
-    init_noise (relative L2, dominated by the large/meaningful fluxes — NOT a per-reaction
-    ratio that tiny fluxes would blow up).
+    Deliberately uses no knowledge of the ground truth. A real MFA fit has no answer to
+    start near, so seeding close to it measures the wrong thing — it reports how well
+    the optimiser polishes a solution it was handed rather than whether it can find one.
+    The difference is not small: on T-cell sample 2, a start 20% from the truth reached
+    the global optimum on the first try, while random starts missed it three times.
 
-    Returns (v_init, r_init, info) where info = {j, dev, alpha, realized_dev}.
+    Every training sample is a feasible point of the same polytope, so picking one is
+    guaranteed to satisfy S·v = 0 and stay within bounds — unlike a null-space
+    projection of a perturbed flux, which can invert reactions and leave the polytope.
+
+    *gt_flux* is used only to report how far the start landed from the answer, never to
+    construct it. Returns (v_init, r_init, info) with info = {j, dev}.
     """
-    v_gt = gt_flux.reindex(reaction_ids).values.astype(np.float64)
-    r_gt = gt_rev.reindex(reaction_ids).values.astype(np.float64)
-
     n_samples = all_flux_df.shape[1]
     j = int(rng.integers(0, n_samples))
     while j == sample_ix and n_samples > 1:
         j = int(rng.integers(0, n_samples))
-    v_j = all_flux_df.iloc[:, j].reindex(reaction_ids).values.astype(np.float64)
-    r_j = all_rev_df.iloc[:, j].reindex(reaction_ids).values.astype(np.float64)
 
+    v_init = all_flux_df.iloc[:, j].reindex(reaction_ids).values.astype(np.float64)
+    r_init = all_rev_df.iloc[:, j].reindex(reaction_ids).values.astype(np.float64)
+
+    v_gt = gt_flux.reindex(reaction_ids).values.astype(np.float64)
     gt_norm = float(np.linalg.norm(v_gt))
-    dev = float(np.linalg.norm(v_j - v_gt) / gt_norm) if gt_norm > 0 else 0.0
-    alpha = min(1.0, init_noise / dev) if dev > 0 else 0.0
-
-    v_init = v_gt + alpha * (v_j - v_gt)          # convex combo → S·v_init = 0
-    r_init = r_gt + alpha * (r_j - r_gt)          # convex combo of nonneg → ≥ 0
-    return v_init, r_init, {"j": j, "dev": dev, "alpha": alpha,
-                            "realized_dev": alpha * dev}
+    dev = float(np.linalg.norm(v_init - v_gt) / gt_norm) if gt_norm > 0 else 0.0
+    return v_init, r_init, {"j": j, "dev": dev}
 
 
 def acceptance_threshold(n_L, n_F, z=1.645):
@@ -275,7 +267,7 @@ def _labeling_agreement(pred, gt, extra_mask=None):
     return _agreement(pred[mask], gt[mask])
 
 
-def _report_init(mfa_model, init_info, init_noise, gt_flux, gt_flux_arr, gt_labeling_vec,
+def _report_init(mfa_model, init_info, gt_flux, gt_flux_arr, gt_labeling_vec,
                  labeling_to, flux_data_obs):
     """Pre-fit diagnostics: is the init feasible, and where does the objective sit?"""
     if flux_data_obs is not None:
@@ -302,10 +294,9 @@ def _report_init(mfa_model, init_info, init_noise, gt_flux, gt_flux_arr, gt_labe
     l_r2, l_corr, l_rmse = _labeling_agreement(init_lab, gt_labeling_vec)
 
     print("\n[debug] feasible init: agreement & objective split")
-    print(f"  init via sample : j={init_info['j']}  dev={init_info['dev']:.4f}  "
-          f"α={init_info['alpha']:.4f}  realized_dev={init_info['realized_dev']:.4f} "
-          f"(target {init_noise})")
-    print(f"  ||S·v_init||_max: {sv_init:.2e}  (convex combo → should be ~0)")
+    print(f"  init via sample : j={init_info['j']}  "
+          f"dev from truth={init_info['dev']:.4f} (not used to build it)")
+    print(f"  ||S·v_init||_max: {sv_init:.2e}  (a feasible sample → should be ~0)")
     print(f"  v_std==v_mean   : {same if idx_v.numel() > 0 else 'n/a'} (must be False)")
     print(f"  init flux       : R²={f_r2:.4f} r={f_corr:.4f} RMSE={f_rmse:.4f}")
     print(f"  init labeling   : R²={l_r2:.4f} r={l_corr:.4f} RMSE={l_rmse:.4f}  (GT-nonzero)")
@@ -511,18 +502,17 @@ def main(args):
         best = None
         for start in range(1 if args.diagnose else args.max_starts):
             v_init, rev_init, init_info = make_init_fluxes(
-                all_flux_df, all_rev_df, gt_flux, gt_rev, global_ix,
-                args.init_noise, reaction_ids, rng
+                all_flux_df, all_rev_df, gt_flux, global_ix, reaction_ids, rng
             )
             mfa_model.reset_initial_fluxes(pd.Series(v_init, index=reaction_ids))
-            # reset_initial_fluxes() re-seeds reversibility randomly; use the feasible
-            # interpolated reversibility instead.
+            # reset_initial_fluxes() re-seeds reversibility randomly; use the drawn
+            # sample's own reversibility, which is feasible by construction.
             with torch.no_grad():
                 mfa_model._reversibility.copy_(
                     torch.tensor(rev_init, dtype=mfa_model.dtype, device=mfa_model.device)
                 )
             if args.diagnose:
-                _report_init(mfa_model, init_info, args.init_noise, gt_flux,
+                _report_init(mfa_model, init_info, gt_flux,
                              gt_flux.reindex(reaction_ids).values.astype(np.float64),
                              gt_labeling_vec, labeling_to, flux_data_obs)
                 print(f"\nFitting (max_iter={args.max_iter}, tol={args.tol}) ...")

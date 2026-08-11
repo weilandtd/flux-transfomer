@@ -102,26 +102,26 @@ def test_acceptance_threshold_tightens_with_information():
     )
 
 
-def test_make_init_fluxes_stays_in_the_polytope():
-    """The init is a convex combination of two feasible samples, at the requested deviation.
+def test_make_init_fluxes_is_a_random_feasible_sample():
+    """The init is another training sample verbatim, chosen without using the truth.
 
-    That is the whole point of interpolating toward a real sample instead of
-    perturbing GT: S·v_init = 0 holds by construction and reversibilities stay
-    non-negative, so the fit starts inside the flux polytope.
+    Every training sample is a feasible point of the same polytope, so S·v_init = 0
+    holds by construction and reversibilities stay non-negative. Taking one unmodified
+    — rather than interpolating toward the ground truth — is what keeps the benchmark
+    honest: a fit seeded near the answer measures polishing, not solving.
     """
     reaction_ids = [f"r{i}" for i in range(6)]
     rng = np.random.default_rng(0)
     flux_df = pd.DataFrame(rng.uniform(1.0, 5.0, (6, 4)), index=reaction_ids)
     rev_df = pd.DataFrame(rng.uniform(0.0, 1.0, (6, 4)), index=reaction_ids)
-    gt_flux, gt_rev = flux_df.iloc[:, 0], rev_df.iloc[:, 0]
+    gt_flux = flux_df.iloc[:, 0]
 
-    v_init, r_init, info = make_init_fluxes(
-        flux_df, rev_df, gt_flux, gt_rev, 0, 0.1, reaction_ids, rng
-    )
+    v_init, r_init, info = make_init_fluxes(flux_df, rev_df, gt_flux, 0, reaction_ids, rng)
 
-    assert info["j"] != 0                                  # never interpolates toward itself
-    v_j = flux_df.iloc[:, info["j"]].values
-    assert v_init == pytest.approx(gt_flux.values + info["alpha"] * (v_j - gt_flux.values))
-    realized = np.linalg.norm(v_init - gt_flux.values) / np.linalg.norm(gt_flux.values)
-    assert realized == pytest.approx(0.1)                  # dev > init_noise here, so α < 1
+    assert info["j"] != 0                                  # never starts from the sample itself
+    assert v_init == pytest.approx(flux_df.iloc[:, info["j"]].values)
+    assert r_init == pytest.approx(rev_df.iloc[:, info["j"]].values)
     assert (r_init >= 0).all()
+    # `dev` is reported, not targeted: it is whatever distance the draw happened to land at.
+    expected = np.linalg.norm(v_init - gt_flux.values) / np.linalg.norm(gt_flux.values)
+    assert info["dev"] == pytest.approx(expected)
