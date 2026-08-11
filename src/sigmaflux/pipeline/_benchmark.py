@@ -14,6 +14,7 @@ the run directory's top-level ``.pt``.
 """
 
 import os
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -26,15 +27,31 @@ from .generate_training_data import build_experiments, build_labeling_index, bui
 
 
 def pin_threads():
-    """Pin the BLAS/torch thread pool to the cores SLURM actually granted.
+    """Pin the torch thread pool to the cores SLURM actually granted.
 
     Without this a benchmark task oversubscribes its allocation: torch defaults to
     every core on the node, not the ``--cpus-per-task`` it may use.
+
+    The BLAS pools cannot be pinned from here. OpenMP and MKL read their environment
+    when the shared library is first loaded, which happens on ``import torch`` — long
+    before this function runs — so assigning to ``os.environ`` now has no effect on
+    them. They must be exported by the submitting shell. Left unset, MKL takes one
+    thread per core (192 on della) inside a 6-core allocation; on a contended node the
+    resulting thrash cost ~10x, with one 30-iteration MFA fit measured at 25 s on one
+    node and 258 s on another of the same type. That is silent and easily mistaken for
+    a slow algorithm, so warn rather than let it pass.
     """
     n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
-    os.environ.setdefault("OMP_NUM_THREADS", str(n_threads))
-    os.environ.setdefault("MKL_NUM_THREADS", str(n_threads))
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", str(n_threads))
+    unpinned = [v for v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
+                if v not in os.environ]
+    if unpinned and n_threads > 1:
+        warnings.warn(
+            f"{', '.join(unpinned)} not set — BLAS may use every core on the node "
+            f"rather than the {n_threads} allocated, which can cost an order of "
+            f"magnitude in wall clock. Export them in the submitting shell; setting "
+            f"them here would be too late to take effect.",
+            RuntimeWarning, stacklevel=2,
+        )
     torch.set_num_threads(n_threads)
     return n_threads
 
