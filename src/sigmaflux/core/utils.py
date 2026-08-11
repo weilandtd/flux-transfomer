@@ -692,6 +692,28 @@ def multiply_3d_sparse_with_2d(sparse_3d, tensor_2d, transpose_2nd = False, flip
     torch.Tensor: A 3D tensor of shape [N, C, P] containing the results with type of the tensor 2d.
     """
 
+    # Fast path for the only combination the EMU backward pass uses: every slice
+    # multiplied on the right by the same dense matrix.
+    #
+    # Slice-by-slice, this is ~400 tiny sparse matmuls per call and the per-call
+    # overhead swamps the arithmetic — profiling an MFA fit put this function at 71%
+    # of total runtime, with 1.08M torch.mm invocations. Stacking the slices
+    # vertically turns it into one matmul: row (n, c) of the flattened [N*C, B]
+    # operand is row c of slice n, so [N*C, B] @ [B, P] gives exactly the stacked
+    # per-slice products, and a view restores [N, C, P]. Same arithmetic, same
+    # result, one kernel launch.
+    if not transpose_2nd and not flip_mult:
+        sp = sparse_3d.coalesce()
+        n_idx, c_idx, b_idx = sp.indices()
+        n_slices, n_rows, n_cols = sp.shape
+        flat = torch.sparse_coo_tensor(
+            torch.stack([n_idx * n_rows + c_idx, b_idx]),
+            sp.values().to(tensor_2d.dtype),
+            (n_slices * n_rows, n_cols),
+            device=tensor_2d.device,
+        ).coalesce()
+        return torch.mm(flat, tensor_2d).view(n_slices, n_rows, tensor_2d.shape[1])
+
     # Placeholder for the results
     results = []
 
