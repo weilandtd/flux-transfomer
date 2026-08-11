@@ -97,7 +97,10 @@ def build_parser():
                         "0 = no flux noise (measured fluxes pinned to GT)")
     p.add_argument("--init-noise", type=float, default=0.20,
                    help="Target relative L2 deviation ||v_init - v_gt|| / ||v_gt|| of the "
-                        "feasible near-GT initialization")
+                        "feasible near-GT initialization. Any value at or above the "
+                        "sample-to-sample deviation saturates the interpolation and starts "
+                        "from the random training sample itself — a start that uses no "
+                        "knowledge of the ground truth, which is what a real fit faces.")
     p.add_argument("--max-starts", type=int, default=10,
                    help="N_max multi-start restarts per sample. Restart from a new "
                         "feasible init until the fit reaches the global optimum; if none "
@@ -358,14 +361,14 @@ def _report_fit(mfa_model, res, gt_flux, gt_labeling_vec, labeling_to, labeling_
             print(f"    {rid:16s} {gt_v:9.3g} {pr_v:9.3g} {err:8.3g} "
                   f"{err / max(f._std, 1e-12):8.2f}")
 
-    M = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])
-    M_accept = acceptance_threshold(res["n_labeling"], res["n_fluxes"], accept_z)
+    mean_reduced_chi2 = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])
+    legacy_bound = acceptance_threshold(res["n_labeling"], res["n_fluxes"], accept_z)
 
     print("\n── Results ──────────────────────────────────────────────────────")
     print(f"  Converged         : {res['converged']}")
     print(f"  Iterations        : {res['n_iter']}")
     print(f"  Final χ²          : {res['loss']:.6f}")
-    print(f"  M (½·reduced χ²)  : {M:.4f}  (accept ≤ {M_accept:.4f})")
+    print(f"  mean reduced χ²   : {mean_reduced_chi2:.4f}  (legacy bound ≤ {legacy_bound:.4f})")
     print("")
     print("  Flux vs ground truth")
     print(f"    MAE             : {mae:.4f}")
@@ -522,8 +525,12 @@ def main(args):
 
             res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
                                 disp=1 if args.diagnose else 0)
-            M = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])      # = res["loss"] / 2
-            M_accept = acceptance_threshold(res["n_labeling"], res["n_fluxes"], args.accept_z)
+            # Mean reduced chi-square, the legacy accept statistic. Reported only for
+            # comparison: it is measured against the declared sigma, which overstates
+            # the true noise, so it reads low and passes fits that never converged.
+            mean_reduced_chi2 = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])
+            legacy_bound = acceptance_threshold(res["n_labeling"], res["n_fluxes"],
+                                                args.accept_z)
             if args.diagnose:
                 _report_fit(mfa_model, res, gt_flux, gt_labeling_vec, labeling_to,
                             labeling_index, reaction_ids, measured_rxn_ids,
@@ -542,7 +549,8 @@ def main(args):
                         "converged": bool(res["converged"]), "n_iter": int(res["n_iter"]),
                         "labeling": best_lab, "fluxes": best_flux}
             print(f"  start {start + 1}/{args.max_starts}: SSR={ssr_fit:.2f} "
-                  f"ratio={ratio:.3f} (accept≤{args.accept_ratio:g}) M={M:.4f} conv={res['converged']} "
+                  f"ratio={ratio:.3f} (accept≤{args.accept_ratio:g}) "
+                  f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
                   f"iter={res['n_iter']}")
             # Accept on reaching the global optimum, not on a reduced-χ² bound. The
             # bound is calibrated on the declared σ, but clamping and renormalising the
