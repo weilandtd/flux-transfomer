@@ -87,8 +87,10 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
-    p.add_argument("--max-iter", type=int, default=500,
-                   help="L-BFGS-B max iterations")
+    p.add_argument("--max-iter", type=int, default=5000,
+                   help="L-BFGS-B max iterations. A converged T-cell fit needs ~2200, "
+                        "so the previous default of 500 silently returned unconverged "
+                        "fits with converged=False")
     p.add_argument("--tol", type=float, default=1e-3,
                    help="Gradient tolerance (gtol) for convergence")
     p.add_argument("--noise-std", type=float, default=0.01,
@@ -474,9 +476,9 @@ def main(args):
 
         # ── Step 3: multi-start fit until the reduced-χ² bound is met ─────────
         # The measurements above are fixed for this sample; only the starting point
-        # changes across restarts. Each start interpolates GT toward a *different*
-        # random feasible training sample (convex combo → stays feasible, never inverts
-        # fluxes). Restart until M = ½·(ssr_L + ssr_F) clears the effective-df bound, or
+        # changes across restarts. Each start IS a different random feasible training
+        # sample, taken verbatim: ground truth is never used to construct it (see
+        # make_init_fluxes). Restart until ssr_fit clears accept_ratio·ssr_true, or
         # max_starts is exhausted — L-BFGS-B otherwise sticks in the first local minimum.
         mfa_model.experiments = noisy_exps
 
