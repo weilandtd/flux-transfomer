@@ -580,17 +580,35 @@ def update_states(emu_states, X, emu_size, core_met_ix):
         emu_states[emu_size][core_met_ix[emu_size][met]] = X[i]
 
     
-def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device, dtype=torch.float64):
+def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device,
+                 dtype=torch.float64, boundary_inputs=None):
     """
     emu_states: list(torch.tensor)
     emu_met_filter: list(torch.tensor)
+    boundary_inputs: {EMU or single-element OriginSet: MID tensor}, the network
+        inputs. Their labeling is given, not solved for, so they never appear in
+        core_met_ix and their rows would otherwise stay zero -- which reported the
+        tracer itself as unlabeled and left ~19% of the scored measurements
+        carrying no flux information at all.
     """
-    labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device) 
-    for subnet in emu_met_filter: 
-        for met in emu_met_filter[subnet]: 
-            if met in core_met_ix[subnet]: 
+    labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device)
+    for subnet in emu_met_filter:
+        for met in emu_met_filter[subnet]:
+            if met in core_met_ix[subnet]:
                 labeling[:(subnet+1), metabolite_hash[met.id]] = emu_states[subnet][core_met_ix[subnet][met]]
-    #return sum([es * emf for es, emf in zip(emu_states, emu_met_filter)])
+
+    # Write the inputs after the core states: an input pool is by definition not
+    # produced inside the network, so the two sets never collide. Only the
+    # whole-molecule EMU is written, since the output tensor holds one MID per
+    # metabolite and a sub-EMU would overwrite it with a shorter distribution.
+    for emu, values in (boundary_inputs or {}).items():
+        emu = emu._values[0] if hasattr(emu, "_values") else emu
+        if emu.id not in metabolite_hash:
+            continue
+        n_atoms = len(emu._metabolite.annotation.get('atom_pattern', ''))
+        if emu.size != n_atoms:
+            continue
+        labeling[:(emu.size + 1), metabolite_hash[emu.id]] = values
     return labeling
 
 
