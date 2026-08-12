@@ -32,11 +32,11 @@ class EMU(object):
     Class method for EMU.
     """
 
-    def __init__(self, metabolite, mid, ix=None):
+    def __init__(self, metabolite, mid):
 
         """
         :param metabolite: cobra.Metabolite
-        :param mid: [1,2,3,4] (EMU)
+        :param mid: [1,2,3,4] -- the 1-based carbon positions this EMU covers
         """
         if not isinstance(metabolite, cobra.Metabolite):
             raise TypeError(f'Input {metabolite} is of type {type(metabolite)} must be cobra.Metabolite')
@@ -60,11 +60,6 @@ class EMU(object):
         symetries = metabolite.annotation.get('symmetries', [])
         self.symmetries = [parse_symetry(s) for s in symetries]
 
-        if ix is None:
-            self.ix = [ i for i in range(len(mid))]
-        else:
-            self.ix = ix
-
     @property
     def size(self) -> int:
         return len(self.mid)
@@ -85,24 +80,17 @@ class EMU(object):
 
     def __eq__(self, other):
         if isinstance(other, EMU):
-            #return (self.id == other.id) & (self.mid == other.mid)
-            return (self.id == other.id) & (self.mid == other.mid) #& (self.ix == other.ix)
+            return (self.id == other.id) & (self.mid == other.mid)
         elif isinstance(other, OriginSet) and len(other) == 1:
-            # return (self.id == other._values[0].id) \
-            #        & (self.mid == other._values[0].mid)
             return (self.id == other._values[0].id) & \
-                   (self.mid == other._values[0].mid) #& \
-                   #(self.ix == other._values[0].ix)  
-            
-        return False 
+                   (self.mid == other._values[0].mid)
+        return False
 
     def __hash__(self):
         return hash(self.__repr__())
 
     def __repr__(self):
-        return str(self.id) + \
-        '_' + ''.join([str(i) for i in self.mid]) #+ \
-        #'_' + ''.join([str(i) for i in self.ix])
+        return str(self.id) + '_' + ''.join([str(i) for i in self.mid])
 
 
 class OriginSet(object):

@@ -111,7 +111,7 @@ def calculate_tracer_input(tracer_list, boundary, device=None, dtype = torch.flo
     tracer_mid = [0.0 for i in range(len(boundary.mid) + 1)]
     M0 = 1.0
     for tracer in tracer_list:
-        k = sum([tracer.labeling[m - 1] for m in boundary.ix])
+        k = sum([tracer.labeling[m - 1] for m in boundary.mid])
         tracer_mid[k] += tracer.enrichment
         M0 -= tracer.enrichment
     tracer_mid[0] += M0

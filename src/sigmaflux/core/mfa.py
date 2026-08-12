@@ -399,17 +399,6 @@ def filter_conv_inputs_with_indices(emu_inputs):
             emu_indices.append(i)
     return emus, emu_indices
 
-def calc_emu_input(emu_states, emu_inputs, mid_inputs, ):
-    this_emu_inputs = [0.0, ] * ()
-    for ix, the_input in enumerate(emu_inputs):
-        if isinstance(the_input, OriginSet) and len(OriginSet) > 1:
-            this_emu_inputs[ix] = convolution(emu_states, the_input)
-        else:
-            this_emu_inputs[ix] = extract_input(mid_inputs, the_input)
-
-    return emu_inputs
-
-
 # Invariant: every component of a multi-element OriginSet must be a core node
 # (present in core_met_ix for its subnet size).  This is guaranteed by
 # EMUExpansion._prune_orphaned_edges(); a KeyError here means the prune step
@@ -591,10 +580,6 @@ def update_states(emu_states, X, emu_size, core_met_ix):
         emu_states[emu_size][core_met_ix[emu_size][met]] = X[i]
 
     
-def extract_input(mid_inputs, origin):
-    return mid_inputs[origin.ix, :]
-
-
 def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device, dtype=torch.float64):
     """
     emu_states: list(torch.tensor)
