@@ -179,6 +179,10 @@ def integer_scale(stoich):
 
 # ── the converter ─────────────────────────────────────────────────────────────
 
+class VoidPoolError(ValueError):
+    """A reaction drops carbon into a void pool, so mass is vanishing."""
+
+
 class Converted:
     """NetworkData plus the bookkeeping needed to map fluxes in and out.
 
@@ -246,14 +250,27 @@ def input_source_pools(facts):
     return sources
 
 
-def convert(facts, symmetry=True):
+def convert(facts, symmetry=True, allow_void=None):
     """Build a :class:`Converted` from ``model_facts.json``.
 
     *symmetry* emulates our symmetric pools with half-flux orientation pairs. It
     can be turned off for debugging: x3cflux segfaults deep in
     ``ReductionOrdering::getSystemIndex`` when the pairs are present in the full
     network, though not in any small replica of it.
+
+    A void pool means a reaction's atom map moves carbon into a product the model
+    does not contain, so the carbon simply disappears -- x3cflux needs a bijection
+    and the void absorbs it. That is a defect in the model, not a property of the
+    network, and it is silent: the fit still converges, against a network that
+    loses mass. So it raises :class:`VoidPoolError` unless the reaction is named in
+    *allow_void*, which defaults to the reactions carrying a hand-written mapping
+    override -- those are known, documented deviations rather than surprises.
+
+    Almost every void pool came from stranded-pool deletion and disappears once the
+    model is regenerated (``da6c709`` drains such pools with a demand instead of
+    removing them), which took the T-cell model from five void pools to one.
     """
+    allow_void = set(MAPPING_OVERRIDES) if allow_void is None else set(allow_void)
     mets_by_id = {m["id"]: m for m in facts["metabolites"]}
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     sources = input_source_pools(facts)
@@ -480,6 +497,16 @@ def convert(facts, symmetry=True):
         drain = f"{void}__drain"
         reactions.append(x.Reaction(drain, n, False, x.Permutation(n), [void], []))
         reversible[drain] = False
+
+    unexpected = sorted(v[len("__void_"):] for v in void_pools
+                        if v[len("__void_"):] not in allow_void)
+    if unexpected:
+        raise VoidPoolError(
+            f"{len(unexpected)} reaction(s) lose carbon into a void pool: "
+            f"{unexpected}. Their atom maps name products the model no longer "
+            f"contains, so mass vanishes. Regenerate the model -- stranded pools "
+            f"now get a demand instead of being deleted -- or pass allow_void to "
+            f"accept it deliberately.")
 
     return Converted(x.NetworkData(metabolites, reactions), scale, parents,
                      reversible, [rr.name for rr in reactions],
