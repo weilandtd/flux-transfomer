@@ -87,6 +87,22 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
+    p.add_argument("--backend", choices=["native", "x3cflux"], default="native",
+                   help="Which optimiser fits the flux. 'native' is the in-house "
+                        "L-BFGS-B; 'x3cflux' runs 13CFLUX/Ipopt on the same "
+                        "measurements and is scored by the same code, so the two are "
+                        "directly comparable. x3cflux is an optional dependency.")
+    p.add_argument("--x3cflux-no-isolate", action="store_true",
+                   help="Run x3cflux fits in-process. Faster, but Ipopt segfaults from "
+                        "some starts and would take the whole task down; by default "
+                        "each start runs in a forked child so a crash costs one start "
+                        "and is recorded as crashed_starts.")
+    p.add_argument("--x3cflux-no-bounds", action="store_true",
+                   help="Drop the cobra FVA bounds from the x3cflux fit. They are on "
+                        "by default because Ipopt otherwise zeroes a branch point and "
+                        "x3cflux segfaults — but the native arm cannot take them "
+                        "(L-BFGS-B has no linear constraints), so they are the one "
+                        "real asymmetry between the arms.")
     p.add_argument("--max-iter", type=int, default=5000,
                    help="L-BFGS-B max iterations. A converged T-cell fit needs ~2200, "
                         "so the previous default of 500 silently returned unconverged "
@@ -240,6 +256,32 @@ def _chi2_split(model):
             v = model.fluxes[idx_v]
             flux_chi2 = float((((v - v_mean) / v_std) ** 2).sum().item())
     return lab_chi2, flux_chi2
+
+
+def _block_counts(model):
+    """(n_labeling, n_fluxes) currently entering the objective."""
+    scaler = torch.ones(len(model.experiments), device=model.device)
+    idx_L, *_ = get_model_labeling_data(model, scaler, with_std=True)
+    idx_v, *_ = get_model_flux_data(model, with_std=True)
+    return int(idx_L.numel()), int(idx_v.numel())
+
+
+def native_shaped_result(mfa_model, n_iter, converged):
+    """``fit_mfa_model``'s return shape, read off the model's current state.
+
+    An external backend fits in its own coordinates, so the only way its result can
+    flow through the rest of this driver unchanged is to write the fitted flux into
+    the model and re-derive the objective here. That is also what makes the two arms
+    comparable: the residual that decides acceptance is computed by *our* forward
+    model against *our* noise in both cases, never reported by the optimiser itself.
+    """
+    lab_chi2, flux_chi2 = _chi2_split(mfa_model)
+    n_L, n_F = _block_counts(mfa_model)
+    reduced_L = lab_chi2 / max(n_L, 1)
+    reduced_F = flux_chi2 / max(n_F, 1)
+    return {"loss": reduced_L + reduced_F, "converged": converged, "n_iter": n_iter,
+            "ssr_labeling": reduced_L, "ssr_fluxes": reduced_F,
+            "n_labeling": n_L, "n_fluxes": n_F}
 
 
 def _r2(pred, true):
@@ -423,9 +465,13 @@ def main(args):
     print(f"  MID noise std       : {args.noise_std}")
     print(f"  Flux noise std (rel): {flux_noise_std}")
 
+    # x3cflux does not use our backward EMU network -- the expensive half, and the
+    # one that drops dAs.pkl/dBs.pkl into the working directory.
     mfa_model, reaction_ids, experiments, labeling_to, labeling_index = build_mfa_context(
-        cobra_model, tracer_cfg, flux_df.iloc[:, 0], "MFA_benchmark", with_backward=True,
+        cobra_model, tracer_cfg, flux_df.iloc[:, 0], "MFA_benchmark",
+        with_backward=(args.backend == "native"),
     )
+    backend = None      # built on the first sample, once the fitted index is known
 
     # ── Benchmark loop ────────────────────────────────────────────────────────
     pred_lab_data, pred_flux_data, sample_indices = [], [], []
@@ -474,6 +520,23 @@ def main(args):
         n_obs = sum(len(e.mid_data) for e in noisy_exps)
         print(f"  Noisy MID: {n_obs} entries across {len(noisy_exps)} tracers")
 
+        # ── x3cflux: convert once, then rebuild only the measurements per sample ──
+        simulator = fluxmap = None
+        if args.backend == "x3cflux":
+            from ..x3cflux.facts import model_facts
+            from ..x3cflux.fit import X3CFluxBackend
+            if backend is None:
+                backend = X3CFluxBackend(
+                    model_facts(cobra_model, mfa_model, mapped_met_ids, cfg),
+                    noisy_series.index, flux_ids, args.noise_std,
+                    use_flux_bounds=not args.x3cflux_no_bounds,
+                )
+            # Same sigmas make_measured_flux_data gives the native arm.
+            flux_sigma = np.maximum(
+                flux_noise_std * np.abs(gt_flux.reindex(flux_ids).to_numpy(float)), 1e-9)
+            simulator, fluxmap = backend.simulator_for(
+                noisy_series.to_numpy(float), noisy_flux, flux_sigma)
+
         # ── Step 3: multi-start fit until the reduced-χ² bound is met ─────────
         # The measurements above are fixed for this sample; only the starting point
         # changes across restarts. Each start IS a different random feasible training
@@ -502,6 +565,7 @@ def main(args):
 
         accepted = False
         best = None
+        crashed_starts = 0
         for start in range(1 if args.diagnose else args.max_starts):
             v_init, rev_init, init_info = make_init_fluxes(
                 all_flux_df, all_rev_df, gt_flux, global_ix, reaction_ids, rng
@@ -519,8 +583,25 @@ def main(args):
                              gt_labeling_vec, labeling_to, flux_data_obs)
                 print(f"\nFitting (max_iter={args.max_iter}, tol={args.tol}) ...")
 
-            res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
-                                disp=1 if (args.diagnose or args.verbose) else 0)
+            if backend is None:
+                res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
+                                    disp=1 if (args.diagnose or args.verbose) else 0)
+            else:
+                v_fit, r_fit, info = backend.fit(
+                    simulator, fluxmap, v_init, rev_init, max_iter=args.max_iter,
+                    isolate=not args.x3cflux_no_isolate)
+                if v_fit is None:
+                    # A crashed start is recorded rather than retried silently: the
+                    # samples that crash are unlikely to be a random subset.
+                    crashed_starts += 1
+                    print(f"  start {start + 1}/{args.max_starts}: CRASHED "
+                          f"({info.get('crashed')})")
+                    continue
+                # Put the fitted flux into the model, so everything downstream --
+                # scoring, acceptance, the snapshot, the HDF5 -- is the native path.
+                forward_labeling(mfa_model, v_fit, r_fit, labeling_to)
+                res = native_shaped_result(
+                    mfa_model, info.get("n_iter", 0), info.get("status", 1) in (0, 1))
             # Mean reduced chi-square, the legacy accept statistic. Reported only for
             # comparison: it is measured against the declared sigma, which overstates
             # the true noise, so it reads low and passes fits that never converged.
@@ -583,6 +664,9 @@ def main(args):
             "starts_used": int(best["start"]) if best else args.max_starts,
             "converged": bool(best["converged"]) if best else False,
             "n_iter": int(best["n_iter"]) if best else 0,
+            # Always written, 0 for the native arm, so both backends share one schema.
+            "crashed_starts": int(crashed_starts),
+            "backend": args.backend,
         })
 
         pred_lab_data.append(pred_labeling_vec)

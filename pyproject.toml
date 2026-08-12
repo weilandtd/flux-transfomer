@@ -46,7 +46,7 @@ sigmaflux-workflow        = "sigmaflux.pipeline.run_training_workflow:cli"
 sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
 sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
 sigmaflux-benchmark       = "sigmaflux.pipeline.run_ai_benchmark:cli"
-sigmaflux-benchmark-mfa   = "sigmaflux.pipeline.run_mfa_benchmark:cli"
+sigmaflux-benchmark-mfa   = "sigmaflux.pipeline.mfa_entry:cli"
 sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
 sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
 sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
@@ -59,6 +59,14 @@ sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 # is absent, before any of our code runs. Installing hopsy keeps the import alive. The
 # HopsySampler wrapper itself is devel-branch-only, which is why this is not a runtime dep.
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "hopsy"]
+# x3cflux 3.0.4 ships cp311-only wheels, so this extra cannot be resolved on the
+# 3.10 end of requires-python; sigmaflux.x3cflux is imported lazily and its tests
+# skip when it is absent. Two install notes that pip cannot express:
+#   * cyipopt must come from conda-forge (`conda install -c conda-forge cyipopt`);
+#     the pip build needs Ipopt headers.
+#   * install x3cflux itself with --no-deps. Its hopsy dependency otherwise drags
+#     in pandas 3, which breaks pytables reads of the training HDF5 files.
+x3cflux = ["x3cflux>=3.0.4", "cvxpy"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autodoc-typehints",

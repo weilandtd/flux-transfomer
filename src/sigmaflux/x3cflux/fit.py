@@ -177,15 +177,75 @@ class X3CFluxBackend:
         return simulator, FluxMap(self.facts, self.conv, simulator.parameter_space)
 
     def fit(self, simulator, fluxmap, v_init, r_init, max_iter=5000,
-            gauss_newton=True):
+            gauss_newton=True, isolate=True):
         """Fit from one start; returns ``(v, r, info)`` in cobra coordinates.
 
         ``info`` carries Ipopt's status, its own SSR and the wall time. The residual
         that decides acceptance is computed by the caller through our forward model,
         not from ``info['ssr']``.
+
+        With *isolate*, the solve runs in a forked child (see :func:`run_isolated`)
+        and returns ``(None, None, {'crashed': reason})`` if it dies.
         """
-        result = optimize(simulator, fluxmap.to_x3c(v_init, r_init),
-                          max_iter=max_iter, bounds=self.bounds,
-                          gauss_newton=gauss_newton)
-        v, r = fluxmap.from_x3c(result.pop("theta"))
-        return v, r, result
+        def solve():
+            result = optimize(simulator, fluxmap.to_x3c(v_init, r_init),
+                              max_iter=max_iter, bounds=self.bounds,
+                              gauss_newton=gauss_newton)
+            # Map back inside the child: theta is meaningless without the parameter
+            # space, and (v, r) are small enough to hand back cheaply.
+            v, r = fluxmap.from_x3c(result.pop("theta"))
+            return v, r, result
+
+        if not isolate:
+            return solve()
+        outcome = run_isolated(solve)
+        if outcome is None:
+            return None, None, {"crashed": "child died"}
+        return outcome
+
+
+def run_isolated(call, timeout=7200):
+    """Run *call* in a forked child; return its result, or None if the child died.
+
+    Ipopt segfaults from some starting points -- a real SIGSEGV inside x3cflux, not
+    an exception and not memory pressure (observed at 318 MB RSS). In one process
+    per sample that takes the whole sample down and it vanishes from the results,
+    which is precisely the selection bias this benchmark exists to measure: the
+    samples that crash are unlikely to be a random subset. So a crash costs one
+    start, and the caller records it.
+
+    Fork rather than a fresh interpreter: the child inherits the built simulator
+    through copy-on-write, so nothing has to be serialised or written to disk, and
+    only the small ``(v, r, info)`` result travels back through the pipe.
+    """
+    import multiprocessing
+
+    context = multiprocessing.get_context("fork")
+    receiver, sender = context.Pipe(duplex=False)
+
+    def target():
+        try:
+            sender.send(("ok", call()))
+        except Exception as exc:                       # noqa: BLE001 - reported, not raised
+            sender.send(("error", repr(exc)))
+        finally:
+            sender.close()
+
+    child = context.Process(target=target)
+    child.start()
+    sender.close()
+    try:
+        ready = receiver.poll(timeout)
+        payload = receiver.recv() if ready else None
+    except EOFError:                                   # child died before sending
+        payload = None
+    finally:
+        receiver.close()
+        child.join(timeout=30)
+        if child.is_alive():
+            child.terminate()
+            child.join()
+
+    if payload is None or payload[0] != "ok":
+        return None
+    return payload[1]

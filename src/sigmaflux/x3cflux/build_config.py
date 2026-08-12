@@ -181,6 +181,24 @@ def _expr(s):
     return sympy.parse_expr(s)
 
 
+def structural_configuration(facts, conv):
+    """One measurement-free configuration, for inspecting the flux space alone.
+
+    ``create_simulator_from_data`` rejects an empty configuration list ("No
+    configuration supplied"), but it accepts a configuration carrying no
+    measurements. That is what the structural gates want: the parameter space, the
+    constraints and the nullity depend only on the network, so building them should
+    not require inventing measurement values that would then have to be explained.
+    """
+    import x3cflux as x
+
+    net_c, xch_c = build_constraints(facts, conv)
+    tracer = facts["tracers"][0]
+    return x.MeasurementConfiguration(
+        tracer["key"], "", True, build_substrates(facts, conv, tracer), [],
+        net_c, xch_c, x.ParameterConstraints([], [], []), [])
+
+
 def build_configurations(facts, conv, labeling_index, measured_flux_ids, noisy_labeling,
                          noisy_flux, flux_sigma, noise_std, flux_sigma_scale=1.0):
     """One MeasurementConfiguration per tracer, sharing network and constraints."""

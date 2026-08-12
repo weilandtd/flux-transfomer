@@ -340,6 +340,15 @@ def convert(facts, symmetry=True):
             educts = [(m, p) for m, p in educts if p]
             products = [(m, p) for m, p in products if p]
 
+            if not educts and not products:
+                # Annotated, but nothing on either side carries atoms -- the toy
+                # model's water shuttle (``H2O_src -> H2O``) is written this way.
+                # Identical to an unmapped reaction: keep the balance rows and trace
+                # no label. Falling through would index an empty educt list.
+                reactions.append(x.Reaction(rid, 0, rev, x.Permutation(0),
+                                            educt_names, product_names))
+                continue
+
             if not educts and products:
                 # Pure influx: draw from the upstream source pool so the produced
                 # pool stays balanced and traceable (see input_source_pools).
