@@ -1,5 +1,7 @@
 import os
 import string
+
+import cobra
 import warnings
 
 import pandas as pd
@@ -774,3 +776,46 @@ def find_dependent_rows(matrix):
             dependent_rows.append(i)
 
     return dependent_rows
+
+def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
+    """Give each named metabolite an explicit unlabeled environmental input pool.
+
+    A pool that exchanges with the environment is diluted by it, but the exchange
+    is invisible to the EMU network unless the environment is a *node*. ``co2_e``
+    is the case that matters: it is produced by ``CO2t_c_e`` from internal
+    decarboxylations, so it is a core mixing node, while the uptake direction of
+    ``EX_co2_e`` produces it from nothing and yields an empty origin set -- no edge,
+    no dilution. Its MID then reflects only internal carbon, and since ``PC_m``
+    refixes CO2 at ~40 flux units that error propagates into oxaloacetate and the
+    whole TCA/aspartate branch.
+
+    Adding ``co2_e_env -> co2_e`` fixes it with no new machinery: the env pool has
+    no producer, so it is an ordinary EMU network input, it carries no tracer and
+    is therefore M+0, and the fit identifies how much of the pool comes from it.
+    This is exactly the shape the medium amino acids already have.
+
+    The source is pure M+0: the measured MIDs are already corrected for natural
+    abundance, so carrying the 1.1% here would double-count it.
+    """
+    added = []
+    for met_id in metabolite_ids:
+        if met_id not in model.metabolites:
+            raise KeyError(f"{met_id} is not in the model")
+        met = model.metabolites.get_by_id(met_id)
+        pattern = met.annotation.get("atom_pattern", "")
+        if not pattern:
+            raise ValueError(f"{met_id} carries no atom_pattern, so it cannot dilute")
+        source_id = f"{met_id}{suffix}"
+        if source_id in model.metabolites:
+            continue
+        source = cobra.Metabolite(source_id, compartment=met.compartment)
+        source.annotation = {"atom_pattern": pattern}
+        model.add_metabolites([source])
+
+        rxn = cobra.Reaction(f"DILUT_{met_id}")
+        rxn.lower_bound, rxn.upper_bound = 0.0, 1000.0
+        model.add_reactions([rxn])
+        rxn.add_metabolites({source: -1, met: 1})
+        rxn.annotation = {"atom_mapping": f"{source_id} ({pattern}) -> {met_id} ({pattern})"}
+        added.append(rxn.id)
+    return added
