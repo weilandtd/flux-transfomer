@@ -22,6 +22,8 @@ from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
 
+from ..core.utils import add_dilution_inputs, media_dilution_targets
+
 try:
     from cobra.sampling import HopsySampler
 except Exception:
