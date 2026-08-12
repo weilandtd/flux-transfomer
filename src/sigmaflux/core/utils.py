@@ -1,4 +1,6 @@
+import os
 import string
+import warnings
 
 import pandas as pd
 
@@ -342,6 +344,26 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     amm = pd.read_excel(path_to_atom_map_xls, sheet_name='Atom Transition')
     amm = amm[amm['startNodeSymbol'] == atom_type]
     amm = amm[amm['rxnAbbreviation'].isin({r.id for r in model.reactions})]
+
+    # An AMM row is (reaction, metabolite, side, atoms); repeating one verbatim
+    # states the same transition twice and silently doubles that metabolite's
+    # stoichiometry in the mapping string. It is not inert: the duplicated educts
+    # make the origin set larger than its target, and EMUExpansion only adds an
+    # edge when the sizes match (expansion/emu_expansion.py), so the transition is
+    # dropped entirely rather than doubled. GLYCL_m in the M. musculus T-cell AMM
+    # is exactly this -- four rows repeated, and its forward edge went missing.
+    duplicated = amm.duplicated(
+        subset=['rxnAbbreviation', 'metAbbreviation', 'ReactantProductFlag', 'maps'])
+    if duplicated.any():
+        offenders = sorted(amm.loc[duplicated, 'rxnAbbreviation'].unique())
+        warnings.warn(
+            f"{int(duplicated.sum())} duplicate atom-transition row(s) in "
+            f"{os.path.basename(str(path_to_atom_map_xls))}, affecting "
+            f"{offenders}; keeping one copy of each. A repeated row doubles the "
+            f"metabolite in the mapping string, which makes the EMU origin set "
+            f"outgrow its target and drops the transition.",
+            RuntimeWarning, stacklevel=2)
+        amm = amm[~duplicated]
 
     _chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
 

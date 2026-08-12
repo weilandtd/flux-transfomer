@@ -1,3 +1,5 @@
+import warnings
+
 import cobra
 import networkx as nx
 from sigmaflux.expansion.atom_mapping import AtomMapping, MissingAtomMappingError
@@ -43,14 +45,29 @@ class EMUExpansion(object):
 
         self.mappings = dict()
 
+        unmapped_with_carbon = []
         for rxn in model.reactions:
             try:
                 mapping = AtomMapping(rxn)
                 self.mappings[rxn.id] = mapping
 
             except MissingAtomMappingError:
-                print("missing atommaping", rxn.id)
-                pass
+                # An unmapped reaction carries no labeling edge, so any carbon
+                # passing through it simply disappears from the EMU network. That
+                # is fine and expected for the carbon-free transport and redox
+                # reactions, which are the overwhelming majority, but a reaction
+                # that does move carbon is a hole in the network and is worth
+                # separating from the noise -- SK_accoa_c sat in this list
+                # unnoticed among 26 legitimately carbon-free reactions.
+                if any(m.annotation.get('atom_pattern') for m in rxn.metabolites):
+                    unmapped_with_carbon.append(rxn.id)
+
+        if unmapped_with_carbon:
+            warnings.warn(
+                f"{len(unmapped_with_carbon)} reaction(s) carry carbon but have no "
+                f"atom_mapping, so their carbon does not propagate: "
+                f"{sorted(unmapped_with_carbon)}",
+                RuntimeWarning, stacklevel=2)
 
         self.target_emus = target_emus
 
