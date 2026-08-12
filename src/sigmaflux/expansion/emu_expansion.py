@@ -33,6 +33,34 @@ class EMUNetwork(object):
         return self.subnetworks[item.size].has_node(item)
 
 
+def _check_origin_size(origin_set, target_emu, reaction, direction):
+    """Reject an origin set that does not supply exactly the target's atoms.
+
+    An empty origin set is legitimate and means no edge: running ``lac__L_e ->``
+    backwards produces lactate from nothing, so there is nothing upstream to trace.
+    A *non-empty* set of the wrong size is always a defect in the atom map, and
+    skipping it silently is how a reaction disappears from the labeling network
+    while still carrying flux.
+
+    GLYCL_m is the case this exists for. Its map was duplicated row-for-row, so the
+    reverse origin set came out as ``co2_m + co2_m + mlthf_m + mlthf_m`` -- size 4
+    against a size-2 target -- and glycine's entire decarboxylation route was
+    dropped. Our model then reported gly_m M+1 as exactly 0.0 against x3cflux's
+    0.33, and nothing anywhere said so.
+    """
+    if origin_set.size and origin_set.size != target_emu.size:
+        raise OriginSizeError(
+            f"{reaction.id} ({direction}): origin set {origin_set!r} carries "
+            f"{origin_set.size} atoms but target {target_emu!r} needs "
+            f"{target_emu.size}. The atom map is inconsistent -- most often a "
+            f"metabolite named more times than the stoichiometry moves it.")
+    return origin_set.size == target_emu.size
+
+
+class OriginSizeError(ValueError):
+    """An atom map yields an origin set that cannot supply its target EMU."""
+
+
 class EMUExpansion(object):
     def __init__(self, model, target_emus):
         """
@@ -121,7 +149,7 @@ class EMUExpansion(object):
                 
                 for origin_set in origin_sets:
                     # Add the edges to the respective emu network
-                    if origin_set.size == the_emu.size:
+                    if _check_origin_size(origin_set, the_emu, the_rxn, 'fwd'):
                         data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set, the_emu)
                         if data is None: 
                             has_edge = False 
@@ -137,7 +165,7 @@ class EMUExpansion(object):
                                                                                 )
 
                 for origin_set_rev in origin_sets_rev:
-                    if origin_set_rev.size == the_emu.size:
+                    if _check_origin_size(origin_set_rev, the_emu, the_rxn, 'rvs'):
                         data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set_rev, the_emu)
                         if data is None: 
                             has_edge = False 
