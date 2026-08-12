@@ -129,23 +129,52 @@ def constrain_growth(model, growth_cfg):
     set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
 
 
-def drop_skip_constraints(model, skip_constraints):
-    """Remove listed reactions and any dead-end product metabolites from the model.
+def can_consume(reaction, metabolite):
+    """Whether *reaction* can consume *metabolite* in some feasible direction.
 
-    After removing e.g. BIOMASS, pseudo-metabolites that were only consumed by
-    BIOMASS become production-only sinks. At steady state this forces their
-    producers to zero flux, making sampling infeasible. Removing them frees the
-    component reactions to vary within their FVA-tightened bounds.
+    Which side of a reaction a metabolite sits on is a labelling convention; what
+    decides whether it is consumed is the sign of the flux, and that is set by the
+    bounds. A reversible reaction listing the metabolite as a product consumes it
+    whenever it runs backwards.
+    """
+    coef = reaction.metabolites[metabolite]
+    return (coef < 0 and reaction.upper_bound > 0) or (coef > 0 and reaction.lower_bound < 0)
+
+
+def drop_skip_constraints(model, skip_constraints):
+    """Remove the listed reactions, draining any pool left with no consumer.
+
+    Removing e.g. BIOMASS strands the pseudo-metabolites it used to consume: they
+    can still be produced but nothing takes them away, so the steady-state balance
+    forces their producers to zero flux and sampling becomes infeasible.
+
+    Two things this deliberately does *not* do, both of which it used to:
+
+    * It does not decide "dead end" from the stoichiometric sign. Asking whether a
+      metabolite is a product everywhere ignores reversibility -- a reversible
+      reaction consumes its products on reverse flux -- and would strand pools
+      that are perfectly well balanced. ``can_consume`` asks about the bounds
+      instead. (The sign test also swept in orphans, since ``all()`` over no
+      reactions is vacuously true.)
+    * It does not delete the metabolite. ``remove_metabolites`` is non-destructive:
+      it strips the pool out of its reactions and leaves them in place, silently
+      unbalanced, which is an invisible and unbounded sink. On the T-cell model
+      that quietly cost ``MDH_c`` its entire carbon output and stripped citrate
+      C3-C6 from ``ACITL_c``. An explicit demand reaction keeps mass balance, keeps
+      the atom mapping usable, and shows up in the flux vector where it can be
+      inspected and bounded.
     """
     to_remove = [model.reactions.get_by_id(r) for r in skip_constraints if r in model.reactions]
     model.remove_reactions(to_remove, remove_orphans=True)
-    # Find metabolites that are now only produced and never consumed (dead-end sinks).
-    sink_mets = [m for m in model.metabolites if all(r.metabolites[m] > 0 for r in m.reactions)]
-    if sink_mets:
-        model.remove_metabolites(sink_mets)
+
+    stranded = [m for m in model.metabolites
+                if m.reactions and not any(can_consume(r, m) for r in m.reactions)]
+    demands = [model.add_boundary(m, type="demand") for m in stranded]
+
     print(f"Dropped {len(to_remove)} skip-constraints reaction(s): {[r.id for r in to_remove]}")
-    if sink_mets:
-        print(f"  Removed {len(sink_mets)} dead-end metabolite(s): {[m.id for m in sink_mets]}")
+    if demands:
+        print(f"  Added {len(demands)} demand reaction(s) for pools left without a "
+              f"consumer: {[r.id for r in demands]}")
 
 
 def constrain_by_fva(model):
