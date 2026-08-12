@@ -288,25 +288,39 @@ def convert(facts, symmetry=True):
         if f is None:
             # Non-integer: split into unit half-reactions, tied by build_config.
             parents[rid] = []
+            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid)
             for met, coef in stoich.items():
+                if met in carriers["skip"]:
+                    continue        # emitted below, paired with its carbon partner
                 sub = f"{rid}__{met}"
                 n = len(mets_by_id[met]["atom_pattern"])
                 # Consumed -> efflux (empty products); produced -> influx.
                 educts, products = ([met], []) if coef * sgn < 0 else ([], [met])
-                if products and n:
-                    # A from-nothing influx of a carbon-carrying pool has no
-                    # upstream to trace, which is the same unsourced-pool crash as
-                    # the EX_ uptakes. Give it a dedicated unlabeled source. Every
-                    # pool this affects (amp_c from PROTEIN_c/RNA_c/DNA_c/LIPID_c)
-                    # carries only inert 1001-block carbons that stay at M+0, so
-                    # feeding it unlabeled material changes no MID.
-                    src = sub + SRC_SUFFIX
-                    extra_sources[src] = n
-                    atoms[src] = n
-                    educts = [src]
                 reactions.append(x.Reaction(sub, n, False, x.Permutation(n),
                                             educts, products))
                 parents[rid].append((sub, abs(coef)))
+                reversible[sub] = False
+
+            # Carbon the reaction carries straight through -- ATP hydrolysis in the
+            # biomass lumps, where the AMP produced *is* the consumed ATP's
+            # adenosine. Emitting the two halves separately would leave the product
+            # side needing an unlabeled source, and biomass would then inject M+0
+            # carbon into a measured pool: 56.9 flux units of unlabeled AMP against
+            # a 0.29 de novo route, which pins ATP/ADP near unlabeled. Pairing them
+            # into one unit reaction keeps biomass a strict sink -- atoms leave and
+            # nothing is invented -- and the label simply follows its own carbons.
+            for spec in carriers["emit"]:
+                if spec[0] == "pair":
+                    _, educt, product, n, share = spec
+                    sub = f"{rid}__{educt}_{product}"
+                    educts, products = [educt], [product]
+                else:
+                    _, met, n, share, consumed = spec
+                    sub = f"{rid}__{met}"
+                    educts, products = ([met], []) if consumed else ([], [met])
+                reactions.append(x.Reaction(sub, n, False, x.Permutation(n),
+                                            educts, products))
+                parents[rid].append((sub, share))
                 reversible[sub] = False
             scale[rid] = sgn
             continue
@@ -471,6 +485,53 @@ def convert(facts, symmetry=True):
                      reversible, [rr.name for rr in reactions],
                      sorted(void_pools), list(symmetric), sources,
                      atom_free_reverse, extra_sources)
+
+
+def carbon_carriers(stoich, mets_by_id, sgn, rxn_id):
+    """Pair each produced carbon pool with a consumed one of the same size.
+
+    Only used on the non-integer split path, where every participant becomes a unit
+    half-reaction. That is what makes the pairing possible at all: the biomass
+    coefficients (LIPID_c consumes 4787 ATP) could never be spelled out as repeated
+    names, but as unit reactions tied by their cobra ratios they need no repetition.
+
+    Returns ``{"skip": set of metabolites handled here, "emit": list of specs}``
+    where a spec is ``("pair", educt, product, n_atoms, share)`` for carbon passing
+    straight through, or ``("half", met, n_atoms, share, consumed)`` for whatever
+    coefficient is left over once the pairing is done.
+    """
+    def n_of(met):
+        return len(mets_by_id[met]["atom_pattern"])
+
+    consumed = {m: abs(c) for m, c in stoich.items() if c * sgn < 0 and n_of(m)}
+    produced = {m: abs(c) for m, c in stoich.items() if c * sgn > 0 and n_of(m)}
+    if not produced:
+        return {"skip": set(), "emit": []}
+
+    emit, skip = [], set(consumed) | set(produced)
+    for product in sorted(produced):
+        size, remaining = n_of(product), produced[product]
+        for educt in sorted(consumed):
+            if remaining <= INT_TOL:
+                break
+            if n_of(educt) != size or consumed[educt] <= INT_TOL:
+                continue
+            share = min(remaining, consumed[educt])
+            emit.append(("pair", educt, product, size, share))
+            consumed[educt] -= share
+            remaining -= share
+        if remaining > INT_TOL:
+            # No consumed pool of the same size to draw from: the carbon would have
+            # to be invented, which is the unlabeled-source problem this avoids.
+            raise ValueError(
+                f"{rxn_id}: produces {remaining:g} {product} ({size} carbons) with no "
+                f"consumed pool of the same size to carry them; a source pool here "
+                f"would inject unlabeled carbon into a measured metabolite")
+
+    for met, left in consumed.items():
+        if left > INT_TOL:
+            emit.append(("half", met, n_of(met), left, True))
+    return {"skip": skip, "emit": emit}
 
 
 def assign_patterns(names, parsed, atoms, spare=None):
