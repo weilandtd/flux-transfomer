@@ -1,14 +1,17 @@
-"""EMU stoichiometry weights: symmetry scrambling and stoichiometric coefficients.
+"""EMU edge construction: repeated atom-map copies, and symmetry scrambling.
 
-Both properties are invisible in the usual case -- a reaction moving one copy of an
-unsymmetric metabolite weights its edge by 1 either way -- so they are pinned here on
-purpose-built two-route models where the correct MID is known by hand.
+Both are invisible in the usual case -- one copy of an unsymmetric metabolite gives
+one edge of weight 1 either way -- so they are pinned here on purpose-built
+two-route models where the correct MID is known by hand.
 
-The coefficient case is a real bug this file was written to close: ``get_subnets``
-used to reduce every coefficient to its sign, so ``CBPS2_m`` (two ATP, two ADP, each
-named once in the atom map) delivered half the label it should. It was found by
-porting the T-cell model to x3cflux, which cannot express a coefficient at all and
-forced every one of them to be written out explicitly.
+The multiplicity rule is the one this file was written to close. A reaction moving
+several molecules of the same metabolite spells each one out in the atom map with
+its own pattern (``atp (P1) + amp (P2) -> adp (P1) + adp (P2)``), and every named
+copy becomes its own EMU edge. ``get_origin_emus`` used to keep only the first,
+dropping the AMP-derived route entirely. Inferring the missing copies from the
+stoichiometric coefficient instead is *not* the fix: it guesses which atoms they
+carry, and on the T-cell model that guess moved the adenine-nucleotide pool 0.38
+MID units away from x3cflux. An under-specified map is warned about, not repaired.
 """
 
 import cobra
@@ -70,67 +73,65 @@ def _simulate(model, fluxes, targets, tracer_id, labeling, tmp_path):
 
 # ── Stoichiometric coefficients ───────────────────────────────────────────────
 
-def test_coefficient_magnitude_sets_the_mixing_ratio(tmp_path):
-    """A reaction moving two copies delivers twice the label of one moving one.
+def test_each_mapped_copy_becomes_its_own_edge(tmp_path):
+    """Multiplicity lives in the atom map, one named copy per molecule.
 
-    ``Y`` is fed by two routes carrying *equal flux*: a labeled one with coefficient
-    2 whose atom map names the metabolite once (the ``CBPS2_m`` shape) and an
-    unlabeled one with coefficient 1. Y therefore draws 20 labeled and 10 unlabeled
-    carbons, so it must come out 2/3 labeled. Weighting both edges by 1 gives 1/2,
-    which is what this test exists to catch.
+    ``ADK1_c`` is written ``atp (P1) + amp (P2) -> adp (P1) + adp (P2)``: the two
+    product molecules are named separately, each carrying the pattern of the educt
+    it came from. Both must become EMU edges of weight 1. Keeping only the first --
+    which is what ``next()`` in ``get_origin_emus`` used to do -- silently discards
+    the entire AMP-derived route, and the pool comes out unlabeled.
+
+    Here ``S`` is split into two halves that differ in labeling, so dropping either
+    edge is visible: with both, Y is an even mix of the labeled and unlabeled half.
     """
-    model = cobra.Model("coefficient")
+    model = cobra.Model("copies")
+    source_in, source, product = (_metabolite("S_in", "abcd"),
+                                  _metabolite("S", "abcd"), _metabolite("Y", "ab"))
+    model.add_metabolites([source_in, source, product])
+    _reaction(model, "EX_S_in", {source_in: 1}, " --> S_in (abcd)")
+    _reaction(model, "in_S", {source_in: -1, source: 1}, "S_in (abcd) -> S (abcd)")
+    _reaction(model, "split", {source: -1, product: 2},
+              "S (abcd) -> Y (ab) + Y (cd)")
+    _reaction(model, "EX_Y", {product: -1}, "Y (ab) --> ")
+
+    # C1 and C2 labeled: the two halves of S differ, so a dropped edge shows up.
+    mids = _simulate(model, {"EX_S_in": 10., "in_S": 10., "split": 10., "EX_Y": 20.},
+                     {"Y": 2}, "S_in", [1, 1, 0, 0], tmp_path)
+    assert mids["Y"] == pytest.approx([0.5, 0.0, 0.5], abs=1e-6)
+
+
+def test_underspecified_map_warns_and_is_not_reweighted(tmp_path):
+    """A coefficient the atom map does not spell out is reported, not guessed.
+
+    ``CBPS2_m`` moves two ATP and two ADP while naming one of each. The copies it
+    does not name could carry any atoms, so inferring them from the coefficient is
+    a guess -- and an invisible one. Weighting the edge by the coefficient instead
+    of warning moved the whole adenine-nucleotide pool by 0.38 MID units away from
+    x3cflux, which is what this test exists to prevent.
+
+    Only the mapped copy carries label, so Y here is a 50/50 mix of the two routes
+    even though ``R2`` moves two molecules -- and the warning says so.
+    """
+    model = cobra.Model("underspecified")
     labeled_in, unlabeled_in, labeled, unlabeled, product = (
         _metabolite(i, "ab") for i in ("L_in", "U_in", "L", "U", "Y"))
     model.add_metabolites([labeled_in, unlabeled_in, labeled, unlabeled, product])
-
     _reaction(model, "EX_L_in", {labeled_in: 1}, " --> L_in (ab)")
     _reaction(model, "EX_U_in", {unlabeled_in: 1}, " --> U_in (ab)")
     _reaction(model, "in_L", {labeled_in: -1, labeled: 1}, "L_in (ab) -> L (ab)")
     _reaction(model, "in_U", {unlabeled_in: -1, unlabeled: 1}, "U_in (ab) -> U (ab)")
-    # Coefficient 2, but the atom map names each metabolite only once.
+    # Coefficient 2, but only one mapped copy -- the shape CBPS2_m has.
     _reaction(model, "R2", {labeled: -2, product: 2}, "L (ab) -> Y (ab)")
     _reaction(model, "R1", {unlabeled: -1, product: 1}, "U (ab) -> Y (ab)")
     _reaction(model, "EX_Y", {product: -1}, "Y (ab) --> ")
 
-    mids = _simulate(
-        model,
-        {"EX_L_in": 20., "in_L": 20., "EX_U_in": 10., "in_U": 10.,
-         "R2": 10., "R1": 10., "EX_Y": 30.},
-        {"L": 2, "U": 2, "Y": 2}, "L_in", [1, 1], tmp_path,
-    )
+    flux = {"EX_L_in": 20., "in_L": 20., "EX_U_in": 10., "in_U": 10.,
+            "R2": 10., "R1": 10., "EX_Y": 30.}
+    with pytest.warns(RuntimeWarning, match="atom map names Y 1 time"):
+        mids = _simulate(model, flux, {"L": 2, "U": 2, "Y": 2}, "L_in", [1, 1], tmp_path)
 
-    assert mids["Y"] == pytest.approx([1 / 3, 0.0, 2 / 3], abs=1e-6)
-
-
-def test_repeated_name_and_coefficient_agree(tmp_path):
-    """Naming the metabolite twice for coefficient 2 is the same as naming it once.
-
-    ``X -> Y (ab) + Y (cd)`` splits into two edges of weight 1; ``X -> Y`` at
-    coefficient 2 is one edge of weight 2. Both deliver 2 copies per unit flux, so
-    the two spellings of the same chemistry must give the same MID -- which is the
-    invariant that keeps the fix from disturbing the reactions already written out.
-    """
-    def build(spelled_out):
-        model = cobra.Model("repeat")
-        source_in, source, product = (_metabolite("S_in", "abcd"),
-                                      _metabolite("S", "abcd"), _metabolite("Y", "ab"))
-        model.add_metabolites([source_in, source, product])
-        _reaction(model, "EX_S_in", {source_in: 1}, " --> S_in (abcd)")
-        _reaction(model, "in_S", {source_in: -1, source: 1}, "S_in (abcd) -> S (abcd)")
-        _reaction(model, "split", {source: -1, product: 2},
-                  "S (abcd) -> Y (ab) + Y (cd)" if spelled_out else "S (abcd) -> Y (ab)")
-        _reaction(model, "EX_Y", {product: -1}, "Y (ab) --> ")
-        return model
-
-    flux = {"EX_S_in": 10., "in_S": 10., "split": 10., "EX_Y": 20.}
-    # C1 and C2 labeled: the two halves of S differ, so a wrong edge weight shows up.
-    spelled = _simulate(build(True), flux, {"Y": 2}, "S_in", [1, 1, 0, 0], tmp_path)
-    implied = _simulate(build(False), flux, {"Y": 2}, "S_in", [1, 1, 0, 0], tmp_path)
-
-    assert spelled["Y"] == pytest.approx([0.5, 0.0, 0.5], abs=1e-6)
-    # The implied spelling maps only the first copy, so both copies inherit it.
-    assert implied["Y"] == pytest.approx([0.0, 0.0, 1.0], abs=1e-6)
+    assert mids["Y"] == pytest.approx([0.5, 0.0, 0.5], abs=1e-6)
 
 
 # ── Symmetry ──────────────────────────────────────────────────────────────────

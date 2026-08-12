@@ -1,3 +1,4 @@
+import warnings
 from collections import Counter, namedtuple
 from networkx import incidence_matrix
 import torch
@@ -28,29 +29,30 @@ def _mapped_copies(reaction, cache):
     return cache[reaction.id]
 
 
-def edge_multiplier(reaction, direction, target_id, cache):
-    """Target molecules this edge makes per unit flux: ``|coefficient| / mapped copies``.
+def warn_if_underspecified(reaction, direction, target_id, cache):
+    """Warn when the atom map names fewer copies of the target than it moves.
 
-    An EMU edge is one *mapped copy* of the target, but the reaction may move a
-    number of copies its atom map does not spell out. ``CBPS2_m`` moves two ATP and
-    two ADP while naming each once, so weighting the edge by 1 lets it deliver half
-    the label it should. Dividing the coefficient by the number of mapped copies
-    fixes that while leaving the common cases untouched: one copy named once gives
-    1, and ``accoa_c (ab) + accoa_c (cd) ->`` still gives 1 per edge across its two
-    edges, since there the coefficient and the copy count agree.
+    Multiplicity belongs in the *atom map*, as one named copy per molecule with its
+    own pattern -- ``atp_c (P1) + amp_c (P2) -> adp_c (P1) + adp_c (P2)``. Each copy
+    then becomes its own EMU edge and the edge weight stays 1. Inferring the missing
+    copies from the coefficient instead would be guessing which atoms they carry,
+    and guessing wrong is invisible: ``CBPS2_m`` moves two ATP and two ADP while
+    naming one of each, and weighting its edge by 2 rather than warning shifted the
+    whole adenine-nucleotide pool by 0.38 MID units against x3cflux.
 
-    Only the *target* coefficient matters. ``forward()`` builds the balance as
-    ``Σ w·v·X_origin = Σ w·v·X_target`` with ``S_plus`` a plain ``Sg > 0`` mask, so
-    an EMU's labeling is the flux-weighted mean of what produces it and the weights
-    only ever act relative to the other edges into that same target. That is also
-    why both endpoints of an edge carry the same magnitude: scaling one edge whole
-    is a no-op, and it is the ratio between competing edges that carries the
-    stoichiometry.
+    So this reports the map as incomplete and leaves the weight alone. The fix is in
+    the atom-mapping spreadsheet, not here.
     """
     product_copies, educt_copies = _mapped_copies(reaction, cache)
     # 'rvs' runs the reaction backwards, so the target is one of its educts.
-    copies = (product_copies if direction == 'fwd' else educt_copies).get(target_id, 1)
-    return abs(reaction.get_coefficient(target_id)) / max(copies, 1)
+    copies = (product_copies if direction == 'fwd' else educt_copies).get(target_id, 0)
+    coefficient = abs(reaction.get_coefficient(target_id))
+    if copies and abs(coefficient - copies) > 1e-9:
+        warnings.warn(
+            f"{reaction.id}: atom map names {target_id} {copies} time(s) but the "
+            f"stoichiometry moves {coefficient:g}. Only the mapped copies carry "
+            f"label; spell out each copy with its own pattern to fix this.",
+            RuntimeWarning, stacklevel=3)
 
 
 def get_subnets(model, subnets, device = None, dtype = torch.float64):
@@ -99,11 +101,12 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
                 raise RuntimeError("Expansion contains woring direction annotation!")
 
             origin_id, target_id = get_metabolite(edge[0])[0], get_metabolite(edge[1])[0]
-            weight = symmetry_weight * direction_factor * edge_multiplier(
-                reaction, direction, target_id, mapped_copies_cache)
+            warn_if_underspecified(reaction, direction, target_id, mapped_copies_cache)
+            weight = symmetry_weight * direction_factor
 
-            # Sign from each endpoint's own coefficient (origin consumed, target made);
-            # magnitude from the target's, so competing edges keep their true ratio.
+            # Multiplicity is carried by the edges -- one per mapped copy of the
+            # target -- so the weight stays +-1 and only the sign differs between
+            # the consumed origin and the produced target.
             for node, met_id in ((edge[0], origin_id), (edge[1], target_id)):
                 coefficient = reaction.get_coefficient(met_id)
                 Sg[emu_hash_emu_index[node], ix] = weight * coefficient / abs(coefficient)
