@@ -812,12 +812,23 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
         source.annotation = {"atom_pattern": pattern}
         model.add_metabolites([source])
 
+        # The env pool needs its own supply or it is a dead end: nothing produces
+        # it, so steady state forces the dilution flux to zero and constrain_by_fva
+        # drops the reaction as unused. This mirrors how a medium amino acid works
+        # -- EX_ser__L_e makes ser__L_e from nothing, which is what makes it an EMU
+        # network input carrying the medium's labeling.
+        supply = cobra.Reaction(f"EX_{source_id}")
+        supply.lower_bound, supply.upper_bound = 0.0, 1000.0
+        model.add_reactions([supply])
+        supply.add_metabolites({source: 1})
+        supply.annotation = {"atom_mapping": f" -> {source_id} ({pattern})"}
+
         rxn = cobra.Reaction(f"DILUT_{met_id}")
         rxn.lower_bound, rxn.upper_bound = 0.0, 1000.0
         model.add_reactions([rxn])
         rxn.add_metabolites({source: -1, met: 1})
         rxn.annotation = {"atom_mapping": f"{source_id} ({pattern}) -> {met_id} ({pattern})"}
-        added.append(rxn.id)
+        added.extend([supply.id, rxn.id])
     return added
 
 def media_dilution_targets(model, media_cfg):
