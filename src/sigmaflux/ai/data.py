@@ -333,6 +333,15 @@ def load_data_batches(base_dir, base_filename, key='labeling', max_samples=None)
             break
 
     combined_df = pd.concat(dfs, axis=1)
+
+    # The flux batches are written with global sample ids (0..9999), but the
+    # labeling and reversibility batches restart their column numbering at 0 in
+    # every chunk. Concatenating those leaves five columns labelled 0, so
+    # df[global_ix] silently returns a DataFrame rather than the sample asked for,
+    # while df.iloc[:, global_ix] is correct. Relabel positionally so both work and
+    # the three frames stay aligned.
+    if combined_df.columns.has_duplicates:
+        combined_df.columns = pd.RangeIndex(combined_df.shape[1])
     return combined_df
 
 
