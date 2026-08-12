@@ -58,42 +58,34 @@ class AtomMapping(object):
 
         origin_emus = set()
         origin_emus_rev = set()
-   
+
+        def collect(target_side, origin_side, into):
+            """One origin set per distinct mapped copy of the target, times symmetries.
+
+            A reaction may name the same product more than once, each copy drawing
+            from different educt atoms -- GLUSx_c makes two glutamate, one from
+            2-oxoglutarate and one from glutamine. Every copy is a separate way to
+            make the EMU and needs its own edge; taking only the first silently
+            dropped the others. Copies are deduplicated by mapping string first, so a
+            duplicated atom-map row stays one edge rather than becoming two.
+            """
+            for target_mapping in dict.fromkeys(
+                    v for k, v in target_side if k == target_emu.id):
+                # sym = -1 is the unpermuted orientation; a symmetric pool is the
+                # mean over all of them (weighted in emu_expansion).
+                for sym in range(-1, len(target_emu.symmetries)):
+                    into.add(OriginSet(compute_origin_emu_set(
+                        target_emu, target_side, origin_side, self.rxn, sym=sym,
+                        target_mapping=target_mapping)))
+
         # Find the origin EMUS that can make the target EMU if the reaction can go forward
         if self.forward and any(k == target_emu.id for k, _ in self.product_mappings):
-
-            # Compute the origin set for the target emu
-            the_origin_set = compute_origin_emu_set(target_emu, self.product_mappings, self.educt_mappings, self.rxn)
-            # We add the origin set to the set of origin sets
-            origin_emus.add(OriginSet(the_origin_set))
-
-            # Check for symetries in the target emu
-            if len(target_emu.symmetries) > 0:
-                # For each symetry we compute the origin emu set
-                for sym in range(len(target_emu.symmetries)):
-                    the_origin_set_sym = compute_origin_emu_set(target_emu, self.product_mappings, self.educt_mappings, self.rxn, sym=sym)
-                    # We add the origin set to the set of origin sets
-                    origin_emus.add(OriginSet(the_origin_set_sym))
-
+            collect(self.product_mappings, self.educt_mappings, origin_emus)
 
         # Find the origin EMUS that can make the target EMU if the reaction can go reverse
         if self.reverse and any(k == target_emu.id for k, _ in self.educt_mappings):
-            the_origin_set_rev = compute_origin_emu_set(target_emu, self.educt_mappings, self.product_mappings, self.rxn)
-            # We add the origin set to the set of origin sets
-            origin_emus_rev.add(OriginSet(the_origin_set_rev))
+            collect(self.educt_mappings, self.product_mappings, origin_emus_rev)
 
-            # Check for symetries in the target emu
-            if len(target_emu.symmetries) > 0:
-                # For each symetry we compute the origin emu set
-                for sym in range(len(target_emu.symmetries)):
-                    the_origin_set_rev_sym = compute_origin_emu_set(target_emu, self.educt_mappings, self.product_mappings, self.rxn, sym=sym)
-                    # We add the origin set to the set of origin sets
-                    origin_emus_rev.add(OriginSet(the_origin_set_rev_sym))
-
-
-        # if self.rxn.id == "CSm":
-        #     1/0
-           
         # Return an origin set
         return origin_emus, origin_emus_rev
     
@@ -135,7 +127,8 @@ def parse_mapping_string(map_str, rxn):
     return educts_atom_mappings, products_atom_mappings
 
 
-def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reaction, sym=-1):
+def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reaction, sym=-1,
+                           target_mapping=None):
     """AI is creating summary for compute_origin_emu_set
 
     Args:
@@ -144,6 +137,8 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
         educt_mappings (dict): Dictionary for the atom mappings of the educts
         reaction (cobra.Reaction): Reaction object to get metabolite objects
         sym (int, optional): [description]. Defaults to -1.
+        target_mapping (str, optional): which mapped copy of the target to use, for
+            products named more than once. Defaults to the first.
 
     Raises:
         ValueError: [description]
@@ -152,7 +147,8 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
         [type]: [description]
     """
     # Define the target emu
-    target_mapping = next(v for k, v in product_mappings if k == target_emu.id)
+    if target_mapping is None:
+        target_mapping = next(v for k, v in product_mappings if k == target_emu.id)
     if sym >= 0:
         # Rearrange the target_mapping according to the symetry
         # e.g. symetry[1] = ('ABC', 'ACB') means ACB is the same as ABC
