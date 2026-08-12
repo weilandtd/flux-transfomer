@@ -1,58 +1,10 @@
-import warnings
-from collections import Counter, namedtuple
+from collections import namedtuple
 from networkx import incidence_matrix
 import torch
-from sigmaflux.expansion.atom_mapping import AtomMapping, MissingAtomMappingError
 from sigmaflux.expansion.emu import get_metabolite
 
 AnnotatedStoichiometry = namedtuple('AnnotatedStoichiometry', ['matrix', 'reactions', 'directions',
                                                                'emus', 'boundary', 'core', 'index_hash'])
-
-
-def _mapped_copies(reaction, cache):
-    """``({product met -> count}, {educt met -> count})`` for *reaction*'s atom map.
-
-    Counts *distinct* mapped copies, matching the edges
-    :meth:`~sigmaflux.expansion.atom_mapping.AtomMapping.get_origin_emus` actually
-    builds: a product named twice with different atoms is two ways to make the EMU,
-    while a duplicated atom-map row is one.
-    """
-    if reaction.id not in cache:
-        try:
-            mapping = AtomMapping(reaction)
-        except MissingAtomMappingError:      # unreachable: unmapped reactions make no edges
-            cache[reaction.id] = ({}, {})
-        else:
-            cache[reaction.id] = tuple(
-                Counter(met_id for met_id, _ in dict.fromkeys(side))
-                for side in (mapping.product_mappings, mapping.educt_mappings))
-    return cache[reaction.id]
-
-
-def warn_if_underspecified(reaction, direction, target_id, cache):
-    """Warn when the atom map names fewer copies of the target than it moves.
-
-    Multiplicity belongs in the *atom map*, as one named copy per molecule with its
-    own pattern -- ``atp_c (P1) + amp_c (P2) -> adp_c (P1) + adp_c (P2)``. Each copy
-    then becomes its own EMU edge and the edge weight stays 1. Inferring the missing
-    copies from the coefficient instead would be guessing which atoms they carry,
-    and guessing wrong is invisible: ``CBPS2_m`` moves two ATP and two ADP while
-    naming one of each, and weighting its edge by 2 rather than warning shifted the
-    whole adenine-nucleotide pool by 0.38 MID units against x3cflux.
-
-    So this reports the map as incomplete and leaves the weight alone. The fix is in
-    the atom-mapping spreadsheet, not here.
-    """
-    product_copies, educt_copies = _mapped_copies(reaction, cache)
-    # 'rvs' runs the reaction backwards, so the target is one of its educts.
-    copies = (product_copies if direction == 'fwd' else educt_copies).get(target_id, 0)
-    coefficient = abs(reaction.get_coefficient(target_id))
-    if copies and abs(coefficient - copies) > 1e-9:
-        warnings.warn(
-            f"{reaction.id}: atom map names {target_id} {copies} time(s) but the "
-            f"stoichiometry moves {coefficient:g}. Only the mapped copies carry "
-            f"label; spell out each copy with its own pattern to fix this.",
-            RuntimeWarning, stacklevel=3)
 
 
 def get_subnets(model, subnets, device = None, dtype = torch.float64):
@@ -84,8 +36,6 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
         # Initialize a list to store the reactions / edge mapping
         reaction_indices = torch.zeros(len(subnet_graph.edges()), device = device, dtype = torch.int64,)
 
-        mapped_copies_cache = {}
-
         for ix, edge in enumerate(subnet_graph.edges):
             data = subnet_graph.get_edge_data(*edge)
             reaction = data['reaction']
@@ -101,7 +51,6 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
                 raise RuntimeError("Expansion contains woring direction annotation!")
 
             origin_id, target_id = get_metabolite(edge[0])[0], get_metabolite(edge[1])[0]
-            warn_if_underspecified(reaction, direction, target_id, mapped_copies_cache)
             weight = symmetry_weight * direction_factor
 
             # Multiplicity is carried by the edges -- one per mapped copy of the

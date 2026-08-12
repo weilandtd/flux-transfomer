@@ -1,10 +1,15 @@
 import re
+from collections import Counter
 from sigmaflux.expansion.utils import emu_to_bin
 from sigmaflux.expansion.emu import EMU, OriginSet
 
 
 class MissingAtomMappingError(Exception):
     pass
+
+
+class InconsistentAtomMappingError(ValueError):
+    """An atom map names a metabolite a different number of times than it moves."""
 
 
 class AtomMapping(object):
@@ -31,6 +36,33 @@ class AtomMapping(object):
         self.educt_mappings = educts_atom_mappings       # list of (met_id, mapping_str)
 
         self.rxn = rxn
+        self._check_multiplicity()
+
+    def _check_multiplicity(self):
+        """Every molecule the reaction moves must be named in the map.
+
+        Multiplicity is carried by the map, one named copy per molecule with its
+        own pattern -- ``atp (P1) + amp (P2) -> adp (P1) + adp (P2)`` -- because
+        each copy becomes its own EMU edge. A map that names fewer copies than the
+        stoichiometry moves leaves the rest carrying no label, and there is no
+        sound way to infer their atoms: guessing them from the coefficient shifted
+        the T-cell adenine-nucleotide pool by 0.38 MID units.
+
+        This raises at model load rather than warning, because the consequence is a
+        silently wrong forward model and the repair belongs in the atom-mapping
+        spreadsheet. Duplicated identical rows are not a violation -- they are
+        de-duplicated first, since they describe one molecule written twice.
+        """
+        for side in (self.product_mappings, self.educt_mappings):
+            counts = Counter(met_id for met_id, _ in dict.fromkeys(side))
+            for met_id, mapped in counts.items():
+                moved = abs(self.rxn.get_coefficient(met_id))
+                if abs(moved - mapped) > 1e-9:
+                    raise InconsistentAtomMappingError(
+                        f"{self.rxn.id}: atom map names {met_id} {mapped} time(s) but the "
+                        f"stoichiometry moves {moved:g}. Spell out each molecule with "
+                        f"its own pattern, e.g. 'atp (P1) + atp (P2) -> adp (P1) + "
+                        f"adp (P2)'.")
 
 
     @property

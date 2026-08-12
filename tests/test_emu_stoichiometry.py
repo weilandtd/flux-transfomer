@@ -23,6 +23,7 @@ import torch
 from sigmaflux.core.data import MassIsotopomerData
 from sigmaflux.core.experiment import Experiment, Tracer
 from sigmaflux.core.model import MFAModel
+from sigmaflux.expansion.atom_mapping import InconsistentAtomMappingError
 from sigmaflux.expansion.emu import EMU
 
 
@@ -101,7 +102,7 @@ def test_each_mapped_copy_becomes_its_own_edge(tmp_path):
     assert mids["Y"] == pytest.approx([0.5, 0.0, 0.5], abs=1e-6)
 
 
-def test_underspecified_map_warns_and_is_not_reweighted(tmp_path):
+def test_underspecified_map_fails_on_load(tmp_path):
     """A coefficient the atom map does not spell out is reported, not guessed.
 
     ``CBPS2_m`` moves two ATP and two ADP while naming one of each. The copies it
@@ -110,8 +111,8 @@ def test_underspecified_map_warns_and_is_not_reweighted(tmp_path):
     of warning moved the whole adenine-nucleotide pool by 0.38 MID units away from
     x3cflux, which is what this test exists to prevent.
 
-    Only the mapped copy carries label, so Y here is a 50/50 mix of the two routes
-    even though ``R2`` moves two molecules -- and the warning says so.
+    It fails at load rather than warning: the consequence is a silently wrong
+    forward model, and the repair belongs in the atom-mapping spreadsheet.
     """
     model = cobra.Model("underspecified")
     labeled_in, unlabeled_in, labeled, unlabeled, product = (
@@ -128,10 +129,8 @@ def test_underspecified_map_warns_and_is_not_reweighted(tmp_path):
 
     flux = {"EX_L_in": 20., "in_L": 20., "EX_U_in": 10., "in_U": 10.,
             "R2": 10., "R1": 10., "EX_Y": 30.}
-    with pytest.warns(RuntimeWarning, match="atom map names Y 1 time"):
-        mids = _simulate(model, flux, {"L": 2, "U": 2, "Y": 2}, "L_in", [1, 1], tmp_path)
-
-    assert mids["Y"] == pytest.approx([0.5, 0.0, 0.5], abs=1e-6)
+    with pytest.raises(InconsistentAtomMappingError, match="names Y 1 time"):
+        _simulate(model, flux, {"L": 2, "U": 2, "Y": 2}, "L_in", [1, 1], tmp_path)
 
 
 # ── Symmetry ──────────────────────────────────────────────────────────────────
