@@ -446,6 +446,14 @@ def main(cfg, output_dir_override=None):
     model.solver.configuration.tolerances.feasibility = 1e-9
 
     apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+
+    # Medium components the cell also produces are mixing nodes whose exchange
+    # carries no label, so they cannot be diluted by the medium. Give each one an
+    # explicit unlabeled input. Done here rather than in the model files because
+    # the medium is a property of the experiment, not of the organism.
+    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
+    if diluted:
+        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
     apply_reaction_bounds(model, s.get("reaction_bounds"))
     if s.get("growth"):
         constrain_growth(model, s["growth"])

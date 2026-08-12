@@ -2678,14 +2678,6 @@
 "id":"bm_carb_c",
 "name":"CARB_c biomass precursor",
 "compartment":"c"
-},
-{
-"id":"co2_e_env",
-"name":"",
-"compartment":"",
-"annotation":{
-"atom_pattern":"a"
-}
 }
 ],
 "reactions":[
@@ -9054,20 +9046,6 @@
 "lower_bound":0.0,
 "upper_bound":1000.0,
 "gene_reaction_rule":""
-},
-{
-"id":"DILUT_co2_e",
-"name":"",
-"metabolites":{
-"co2_e":1,
-"co2_e_env":-1
-},
-"lower_bound":0.0,
-"upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"co2_e_env (a) -> co2_e (a)"
-}
 }
 ],
 "genes":[],

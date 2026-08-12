@@ -819,3 +819,39 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
         rxn.annotation = {"atom_mapping": f"{source_id} ({pattern}) -> {met_id} ({pattern})"}
         added.append(rxn.id)
     return added
+
+def media_dilution_targets(model, media_cfg):
+    """Carbon-carrying media pools that the cell also makes itself.
+
+    A medium component the cell cannot synthesise is already an EMU network input:
+    nothing produces it, so the medium alone sets its MID and it dilutes by
+    construction. One the cell *also* produces is a mixing node, and the uptake
+    direction of its exchange makes it from nothing -- an empty origin set, no
+    edge -- so the medium contributes no label and cannot dilute it at all.
+
+    That is wrong regardless of net direction, and most wrong where the net flux is
+    outward: a T cell secreting lactate still sits in medium containing unlabeled
+    lactate, and the exchange dilutes the intracellular pool. On the T-cell medium
+    this selects lac__L_e, co2_e, urea_e, asp__L_e and glu__L_e.
+
+    Pools the cell cannot make are excluded because they are already medium
+    boundaries; a second feed would only dilute the tracer. How much of the medium
+    label actually reaches the cytosol is not decided here either way -- that is
+    the transporter's exchange flux, which the fit identifies.
+    """
+    targets = []
+    for exchange_id in media_cfg:
+        if exchange_id not in model.reactions:
+            continue
+        exchange = model.reactions.get_by_id(exchange_id)
+        for met in exchange.metabolites:
+            if not met.annotation.get("atom_pattern") or met.id in targets:
+                continue
+            produced_internally = any(
+                rxn is not exchange
+                and "atom_mapping" in rxn.annotation
+                and rxn.metabolites[met] > 0 and rxn.upper_bound > 0
+                for rxn in met.reactions)
+            if produced_internally:
+                targets.append(met.id)
+    return targets
