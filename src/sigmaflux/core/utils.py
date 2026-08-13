@@ -10,6 +10,8 @@ import numpy as np
 
 
 from scipy.optimize import linprog
+
+from sigmaflux.expansion.utils import atom_pattern_regex
 import re
 
 import time
@@ -282,7 +284,7 @@ def annotate_atom_patterns(model):
         max_n = 0
         for rxn in met.reactions:
             amm_str = rxn.annotation.get("atom_mapping", "")
-            for match in re.findall(r"\b{}\s*\(([^)]+)\)".format(re.escape(met.id)), amm_str):
+            for match in re.findall(atom_pattern_regex(met.id), amm_str):
                 max_n = max(max_n, len(match))
         if max_n > 0:
             met.annotation["atom_pattern"] = (
@@ -454,15 +456,15 @@ def _remove_out_metabolites(model):
     for reaction in list(model.reactions):
         mets = list(reaction.metabolites.keys())
         out_mets = [m for m in mets if m.id.endswith("_out")]
-        e_mets   = [m for m in mets if m.id.endswith("_e")]
-
-        if not out_mets or not e_mets:
-            continue
 
         # Remove _out metabolites from the reaction stoichiometry
         reaction.subtract_metabolites({m: reaction.metabolites[m] for m in out_mets})
 
-        # Strip _out entries from atom_mapping annotation
+        # An exchange has to be a dead end: it depletes its _e metabolite and nothing
+        # produces it. A surviving _out educt makes the exchange a producer instead,
+        # so the tracer inlet is a mixing node rather than an EMU network input. The
+        # name is stripped whether or not the pool is still in the stoichiometry --
+        # a workbook that already rewrote the formula leaves it only in the mapping.
         if "atom_mapping" in reaction.annotation:
             reaction.annotation["atom_mapping"] = _strip_out_from_atom_mapping(
                 reaction.annotation["atom_mapping"]
@@ -575,7 +577,7 @@ def atommap_boundary(model, strict=True):
             unmapped.append(r.id)
             continue
 
-        pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+        pattern = r'(?<![\w-])' + re.escape(metabolite.id) + r'\s*(\([^)]+\))'
         match = re.search(pattern, metabolite_reaction.annotation['atom_mapping'])
         if match:
             atom_map = match.group(1)
