@@ -5,7 +5,7 @@
 "name":"10-formyl-THF",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcdefghijklmnopqrst"
+"atom_pattern":"a"
 }
 },
 {
@@ -426,10 +426,7 @@
 {
 "id":"dhf_c",
 "name":"dihydrofolic acid",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefghijklmnopqrs"
-}
+"compartment":""
 },
 {
 "id":"dhor__S_c",
@@ -911,7 +908,7 @@
 "name":"5,10-methenyl-THF",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcdefghijklmnopqrst"
+"atom_pattern":"a"
 }
 },
 {
@@ -924,7 +921,7 @@
 "name":"5,10-methylenetetrahydrofolate",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcdefghijklmnopqrst"
+"atom_pattern":"a"
 }
 },
 {
@@ -932,7 +929,7 @@
 "name":"5,10-methylenetetrahydrofolate",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcdefghijklmnopqrst"
+"atom_pattern":"a"
 }
 },
 {
@@ -1241,18 +1238,12 @@
 {
 "id":"thf_c",
 "name":"THF",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefghijklmnopqrs"
-}
+"compartment":""
 },
 {
 "id":"thf_m",
 "name":"THF",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefghijklmnopqrs"
-}
+"compartment":""
 },
 {
 "id":"thr__L_c",
@@ -2389,7 +2380,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ser__L_c (abc) + thf_c (defghijklmnopqrstuv) -> mlthf_c (defghijklmnopqrstuvc) + gly_c (ab) + h2o_c"
+"atom_mapping":"ser__L_c (abc) + thf_c -> mlthf_c (c) + gly_c (ab) + h2o_c"
 }
 },
 {
@@ -2406,7 +2397,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ser__L_m (abc) + thf_m (defghijklmnopqrstuv) -> mlthf_m (defghijklmnopqrstuvc) + gly_m (ab) + h2o_m"
+"atom_mapping":"ser__L_m (abc) + thf_m -> mlthf_m (c) + gly_m (ab) + h2o_m"
 }
 },
 {
@@ -2425,7 +2416,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"gly_m (tu) + thf_m (abcdefghijklmnopqrs) + nad_m -> mlthf_m (abcdefghijklmnopqrsu) + co2_m (t) + nadh_m + nh4_m"
+"atom_mapping":"gly_m (ab) + nad_m + thf_m -> mlthf_m (b) + co2_m (a) + nadh_m + nh4_m"
 }
 },
 {
@@ -2440,10 +2431,7 @@
 },
 "lower_bound":0.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"dhf_c (abcdefghijklmnopqrs) + h_c + nadph_c -> thf_c (abcdefghijklmnopqrs) + nadp_c"
-}
+"gene_reaction_rule":""
 },
 {
 "id":"MTHFD_c",
@@ -2458,7 +2446,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mlthf_c (abcdefghijklmnopqrst) + nadp_c -> methf_c (abcdefghijklmnopqrst) + nadph_c"
+"atom_mapping":"mlthf_c (a) + nadp_c -> methf_c (a) + nadph_c"
 }
 },
 {
@@ -2474,7 +2462,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"methf_c (abcdefghijklmnopqrst) + h2o_c -> 10fthf_c (abcdefghijklmnopqrst) + h_c"
+"atom_mapping":"methf_c (a) + h2o_c -> 10fthf_c (a) + h_c"
 }
 },
 {
@@ -2897,7 +2885,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"aicar_c (uvwxyzABC) + 10fthf_c (abcdefghijklmnopqrst) -> fprica_c (uvwxyzABCt) + thf_c (abcdefghijklmnopqrs)"
+"atom_mapping":"aicar_c (bcdefghij) + 10fthf_c (a) -> fprica_c (bcdefghija) + thf_c"
 }
 },
 {
@@ -2934,7 +2922,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"10fthf_c (abcdefghijklmnopqrst) + gar_c (uvwxyzA) -> fgam_c (uvwxyzAt) + thf_c (abcdefghijklmnopqrs) + h_c"
+"atom_mapping":"10fthf_c (a) + gar_c (bcdefgh) -> fgam_c (bcdefgha) + h_c + thf_c"
 }
 },
 {
@@ -3515,7 +3503,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mlthf_c (jklmnopqrstuvwxyzABC) + dump_c (abcdefghi) -> dtmp_c (abcdefghiC) + dhf_c (jklmnopqrstuvwxyzAB)"
+"atom_mapping":"mlthf_c (j) + dump_c (abcdefghi) -> dtmp_c (abcdefghij) + dhf_c"
 }
 },
 {
