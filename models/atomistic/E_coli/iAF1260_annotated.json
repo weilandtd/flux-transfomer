@@ -5,7 +5,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"a"
+"atom_pattern":"abcdefghijklmnopqrst"
 }
 },
 {
@@ -843,7 +843,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"a"
+"atom_pattern":"abcdefghijklmnopqrst"
 }
 },
 {
@@ -939,7 +939,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"ab"
+"atom_pattern":"abcdefghijklmnopqrstuvw"
 }
 },
 {
@@ -1606,7 +1606,10 @@
 {
 "id":"coa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstu"
+}
 },
 {
 "id":"cobalt2_c",
@@ -2000,10 +2003,7 @@
 {
 "id":"dscl_c",
 "name":"nan",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
-}
+"compartment":""
 },
 {
 "id":"dtdp_c",
@@ -2182,10 +2182,7 @@
 {
 "id":"fe3_e",
 "name":"nan",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefghijklmnopqrstuv"
-}
+"compartment":""
 },
 {
 "id":"fe3_p",
@@ -3142,7 +3139,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abc"
+"atom_pattern":"abcdefghijklmnopqrstuvwx"
 }
 },
 {
@@ -3168,7 +3165,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"a"
+"atom_pattern":"abcdefghijklmnopqrst"
 }
 },
 {
@@ -3199,7 +3196,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"a"
+"atom_pattern":"abcdefghijklmnopqrst"
 }
 },
 {
@@ -3207,7 +3204,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcd"
+"atom_pattern":"abcdefghijklmnopqrstuvwxy"
 }
 },
 {
@@ -3215,7 +3212,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcd"
+"atom_pattern":"abcdefghijklmnopqrstuvwxy"
 }
 },
 {
@@ -3259,7 +3256,10 @@
 {
 "id":"mqn8_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"
+}
 },
 {
 "id":"mthgxl_c",
@@ -3350,22 +3350,34 @@
 {
 "id":"nad_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstu"
+}
 },
 {
 "id":"nadh_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstu"
+}
 },
 {
 "id":"nadp_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstu"
+}
 },
 {
 "id":"nadph_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstu"
+}
 },
 {
 "id":"nh4_c",
@@ -3807,7 +3819,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abc"
+"atom_pattern":"abcdefghijklmnopqrstuvwx"
 }
 },
 {
@@ -4007,7 +4019,10 @@
 {
 "id":"q8_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"
+}
 },
 {
 "id":"q8h2_c",
@@ -4070,7 +4085,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcdefghijk"
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEF"
 }
 },
 {
@@ -4206,7 +4221,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcd"
+"atom_pattern":"abcdefghijklmnop"
 }
 },
 {
@@ -4257,7 +4272,7 @@
 "name":"nan",
 "compartment":"",
 "annotation":{
-"atom_pattern":"abcd"
+"atom_pattern":"abcdefghijklmnopqrstuvwxy"
 }
 },
 {
@@ -4883,7 +4898,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dhap_c (abc) + h_c + nadph_c -> glyc3p_c (abc) + nadp_c"
+"atom_mapping":"dhap_c (abc) + nadph_c (defghijklmnopqrstuvwx) + h_c -> glyc3p_c (abc) + nadp_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -4901,7 +4916,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ggbutal_c (abcdefghi) + h2o_c + nadp_c -> gg4abut_c (abcdefghi) + h_c + nadph_c"
+"atom_mapping":"ggbutal_c (abcdefghi) + nadp_c (jklmnopqrstuvwxyzABCD) + h2o_c -> gg4abut_c (abcdefghi) + nadph_c (jklmnopqrstuvwxyzABCD) + h_c"
 }
 },
 {
@@ -4971,7 +4986,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glyc_c (abc) + nad_c -> dha_c (abc) + h_c + nadh_c"
+"atom_mapping":"glyc_c (abc) + nad_c (defghijklmnopqrstuvwx) -> dha_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c"
 }
 },
 {
@@ -4987,7 +5002,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glyclt_c (ab) + q8_c -> glx_c (ab) + q8h2_c"
+"atom_mapping":"glyclt_c (ab) + q8_c (cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY) -> glx_c (ab) + q8h2_c (cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY)"
 }
 },
 {
@@ -5018,7 +5033,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2h3oppan_c (abc) + h_c + nadh_c -> glyc-R_c (abc) + nad_c"
+"atom_mapping":"2h3oppan_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c -> glyc-R_c (abc) + nad_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -5051,7 +5066,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + glx_c (cd) + h2o_c -> mal-L_c (cdba) + coa_c + h_c"
+"atom_mapping":"glx_c (cd) + accoa_c (efghijklmnopqrstuvwxyab) + h2o_c -> mal-L_c (cdba) + coa_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -5068,7 +5083,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mal-L_c (abcd) + nad_c -> co2_c (d) + pyr_c (abc) + nadh_c"
+"atom_mapping":"mal-L_c (abcd) + nad_c (efghijklmnopqrstuvwxy) -> co2_c (d) + pyr_c (abc) + nadh_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -5085,7 +5100,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mal-L_c (abcd) + nadp_c -> co2_c (d) + pyr_c (abc) + nadph_c"
+"atom_mapping":"mal-L_c (abcd) + nadp_c (efghijklmnopqrstuvwxy) -> co2_c (d) + pyr_c (abc) + nadph_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -5167,7 +5182,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"4abutn_c (abcd) + h2o_c + nad_c -> 4abut_c (abcd) + h_c + nadh_c"
+"atom_mapping":"4abutn_c (abcd) + nad_c (efghijklmnopqrstuvwxy) + h2o_c -> 4abut_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -5200,7 +5215,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + glu-L_c (cdefg) -> acglu_c (abcdefg) + coa_c + h_c"
+"atom_mapping":"glu-L_c (cdefg) + accoa_c (hijklmnopqrstuvwxyzABab) -> acglu_c (abcdefg) + coa_c (hijklmnopqrstuvwxyzAB) + h_c"
 }
 },
 {
@@ -5282,7 +5297,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"acg5p_c (abcdefg) + h_c + nadph_c -> acg5sa_c (abcdefg) + nadp_c + pi_c"
+"atom_mapping":"acg5p_c (abcdefg) + nadph_c (hijklmnopqrstuvwxyzAB) + h_c -> acg5sa_c (abcdefg) + nadp_c (hijklmnopqrstuvwxyzAB) + pi_c"
 }
 },
 {
@@ -5349,7 +5364,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"arg-L_c (abcdef) + succoa_c (ghij) -> sucarg_c (abcdefghij) + coa_c + h_c"
+"atom_mapping":"arg-L_c (abcdef) + succoa_c (klmnopqrstuvwxyzABCDEghij) -> sucarg_c (abcdefghij) + coa_c (klmnopqrstuvwxyzABCDE) + h_c"
 }
 },
 {
@@ -5390,7 +5405,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dkmpp_c (abcdef) + h2o_c + nad_c -> 2kmb_c (abcde) + for_c (f) + h_c + nadh_c + pi_c"
+"atom_mapping":"dkmpp_c (abcdef) + nad_c (ghijklmnopqrstuvwxyzA) + nad_c (BCDEFGHIJKLMNOPQRSTUV) + h2o_c -> 2kmb_c (abcde) + for_c (f) + nadh_c (ghijklmnopqrstuvwxyzA) + nadh_c (BCDEFGHIJKLMNOPQRSTUV) + h_c + pi_c"
 }
 },
 {
@@ -5424,7 +5439,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glu5p_c (abcde) + h_c + nadph_c -> glu5sa_c (abcde) + nadp_c + pi_c"
+"atom_mapping":"glu5p_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c -> glu5sa_c (abcde) + nadp_c (fghijklmnopqrstuvwxyz) + pi_c"
 }
 },
 {
@@ -5552,7 +5567,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"1pyr5c_c (abcde) + h_c + nadph_c -> pro-L_c (abcde) + nadp_c"
+"atom_mapping":"1pyr5c_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c -> pro-L_c (abcde) + nadp_c (fghijklmnopqrstuvwxyz)"
 }
 },
 {
@@ -5620,7 +5635,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"sucgsa_c (abcdefghi) + h2o_c + nad_c -> sucglu_c (abcdefghi) + h_c + nadh_c"
+"atom_mapping":"sucgsa_c (abcdefghi) + nad_c (jklmnopqrstuvwxyzABCD) + h2o_c -> sucglu_c (abcdefghi) + nadh_c (jklmnopqrstuvwxyzABCD) + h_c"
 }
 },
 {
@@ -5671,7 +5686,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"sucsal_c (abcd) + h2o_c + nad_c -> succ_c (abcd) + h_c + nadh_c"
+"atom_mapping":"sucsal_c (abcd) + nad_c (efghijklmnopqrstuvwxy) + h2o_c -> succ_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -5689,7 +5704,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"sucsal_c (abcd) + h2o_c + nadp_c -> succ_c (abcd) + h_c + nadph_c"
+"atom_mapping":"sucsal_c (abcd) + nadp_c (efghijklmnopqrstuvwxy) + h2o_c -> succ_c (abcd) + nadph_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -5887,7 +5902,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3odecACP_c (abcdefghij) + h_c + nadph_c -> 3hdecACP_c (abcdefghij) + nadp_c"
+"atom_mapping":"3odecACP_c (abcdefghij) + nadph_c (klmnopqrstuvwxyzABCDE) + h_c -> 3hdecACP_c (abcdefghij) + nadp_c (klmnopqrstuvwxyzABCDE)"
 }
 },
 {
@@ -5904,7 +5919,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3oddecACP_c (abcdefghijkl) + h_c + nadph_c -> 3hddecACP_c (abcdefghijkl) + nadp_c"
+"atom_mapping":"3oddecACP_c (abcdefghijkl) + nadph_c (mnopqrstuvwxyzABCDEFG) + h_c -> 3hddecACP_c (abcdefghijkl) + nadp_c (mnopqrstuvwxyzABCDEFG)"
 }
 },
 {
@@ -5921,7 +5936,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ocddec5eACP_c (abcdefghijkl) + h_c + nadph_c -> 3hcddec5eACP_c (abcdefghijkl) + nadp_c"
+"atom_mapping":"3ocddec5eACP_c (abcdefghijkl) + nadph_c (mnopqrstuvwxyzABCDEFG) + h_c -> 3hcddec5eACP_c (abcdefghijkl) + nadp_c (mnopqrstuvwxyzABCDEFG)"
 }
 },
 {
@@ -5938,7 +5953,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3omrsACP_c (abcdefghijklmn) + h_c + nadph_c -> 3hmrsACP_c (abcdefghijklmn) + nadp_c"
+"atom_mapping":"3omrsACP_c (abcdefghijklmn) + nadph_c (opqrstuvwxyzABCDEFGHI) + h_c -> 3hmrsACP_c (abcdefghijklmn) + nadp_c (opqrstuvwxyzABCDEFGHI)"
 }
 },
 {
@@ -5955,7 +5970,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ocmrs7eACP_c (abcdefghijklmn) + h_c + nadph_c -> 3hcmrs7eACP_c (abcdefghijklmn) + nadp_c"
+"atom_mapping":"3ocmrs7eACP_c (abcdefghijklmn) + nadph_c (opqrstuvwxyzABCDEFGHI) + h_c -> 3hcmrs7eACP_c (abcdefghijklmn) + nadp_c (opqrstuvwxyzABCDEFGHI)"
 }
 },
 {
@@ -5972,7 +5987,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3opalmACP_c (abcdefghijklmnop) + h_c + nadph_c -> 3hpalmACP_c (abcdefghijklmnop) + nadp_c"
+"atom_mapping":"3opalmACP_c (abcdefghijklmnop) + nadph_c (qrstuvwxyzABCDEFGHIJK) + h_c -> 3hpalmACP_c (abcdefghijklmnop) + nadp_c (qrstuvwxyzABCDEFGHIJK)"
 }
 },
 {
@@ -5989,7 +6004,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ocpalm9eACP_c (abcdefghijklmnop) + h_c + nadph_c -> 3hcpalm9eACP_c (abcdefghijklmnop) + nadp_c"
+"atom_mapping":"3ocpalm9eACP_c (abcdefghijklmnop) + nadph_c (qrstuvwxyzABCDEFGHIJK) + h_c -> 3hcpalm9eACP_c (abcdefghijklmnop) + nadp_c (qrstuvwxyzABCDEFGHIJK)"
 }
 },
 {
@@ -6006,7 +6021,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ocvac11eACP_c (abcdefghijklmnopqr) + h_c + nadph_c -> 3hcvac11eACP_c (abcdefghijklmnopqr) + nadp_c"
+"atom_mapping":"3ocvac11eACP_c (abcdefghijklmnopqr) + nadph_c (stuvwxyzABCDEFGHIJKLM) + h_c -> 3hcvac11eACP_c (abcdefghijklmnopqr) + nadp_c (stuvwxyzABCDEFGHIJKLM)"
 }
 },
 {
@@ -6023,7 +6038,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"actACP_c (abcd) + h_c + nadph_c -> 3haACP_c (abcd) + nadp_c"
+"atom_mapping":"actACP_c (abcd) + nadph_c (efghijklmnopqrstuvwxy) + h_c -> 3haACP_c (abcd) + nadp_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -6040,7 +6055,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ohexACP_c (abcdef) + h_c + nadph_c -> 3hhexACP_c (abcdef) + nadp_c"
+"atom_mapping":"3ohexACP_c (abcdef) + nadph_c (ghijklmnopqrstuvwxyzA) + h_c -> 3hhexACP_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -6057,7 +6072,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3ooctACP_c (abcdefgh) + h_c + nadph_c -> 3hoctACP_c (abcdefgh) + nadp_c"
+"atom_mapping":"3ooctACP_c (abcdefgh) + nadph_c (ijklmnopqrstuvwxyzABC) + h_c -> 3hoctACP_c (abcdefgh) + nadp_c (ijklmnopqrstuvwxyzABC)"
 }
 },
 {
@@ -6272,7 +6287,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"tdec2eACP_c (abcdefghij) + h_c + nadph_c -> dcaACP_c (abcdefghij) + nadp_c"
+"atom_mapping":"tdec2eACP_c (abcdefghij) + nadph_c (klmnopqrstuvwxyzABCDE) + h_c -> dcaACP_c (abcdefghij) + nadp_c (klmnopqrstuvwxyzABCDE)"
 }
 },
 {
@@ -6289,7 +6304,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"tddec2eACP_c (abcdefghijkl) + h_c + nadph_c -> ddcaACP_c (abcdefghijkl) + nadp_c"
+"atom_mapping":"tddec2eACP_c (abcdefghijkl) + nadph_c (mnopqrstuvwxyzABCDEFG) + h_c -> ddcaACP_c (abcdefghijkl) + nadp_c (mnopqrstuvwxyzABCDEFG)"
 }
 },
 {
@@ -6306,7 +6321,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"t3c5ddeceACP_c (abcdefghijkl) + h_c + nadph_c -> cddec5eACP_c (abcdefghijkl) + nadp_c"
+"atom_mapping":"t3c5ddeceACP_c (abcdefghijkl) + nadph_c (mnopqrstuvwxyzABCDEFG) + h_c -> cddec5eACP_c (abcdefghijkl) + nadp_c (mnopqrstuvwxyzABCDEFG)"
 }
 },
 {
@@ -6323,7 +6338,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"tmrs2eACP_c (abcdefghijklmn) + h_c + nadph_c -> myrsACP_c (abcdefghijklmn) + nadp_c"
+"atom_mapping":"tmrs2eACP_c (abcdefghijklmn) + nadph_c (opqrstuvwxyzABCDEFGHI) + h_c -> myrsACP_c (abcdefghijklmn) + nadp_c (opqrstuvwxyzABCDEFGHI)"
 }
 },
 {
@@ -6340,7 +6355,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"t3c7mrseACP_c (abcdefghijklmn) + h_c + nadph_c -> tdeACP_c (abcdefghijklmn) + nadp_c"
+"atom_mapping":"t3c7mrseACP_c (abcdefghijklmn) + nadph_c (opqrstuvwxyzABCDEFGHI) + h_c -> tdeACP_c (abcdefghijklmn) + nadp_c (opqrstuvwxyzABCDEFGHI)"
 }
 },
 {
@@ -6357,7 +6372,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"tpalm2eACP_c (abcdefghijklmnop) + h_c + nadph_c -> palmACP_c (abcdefghijklmnop) + nadp_c"
+"atom_mapping":"tpalm2eACP_c (abcdefghijklmnop) + nadph_c (qrstuvwxyzABCDEFGHIJK) + h_c -> palmACP_c (abcdefghijklmnop) + nadp_c (qrstuvwxyzABCDEFGHIJK)"
 }
 },
 {
@@ -6374,7 +6389,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"t3c9palmeACP_c (abcdefghijklmnop) + h_c + nadph_c -> hdeACP_c (abcdefghijklmnop) + nadp_c"
+"atom_mapping":"t3c9palmeACP_c (abcdefghijklmnop) + nadph_c (qrstuvwxyzABCDEFGHIJK) + h_c -> hdeACP_c (abcdefghijklmnop) + nadp_c (qrstuvwxyzABCDEFGHIJK)"
 }
 },
 {
@@ -6391,7 +6406,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"t3c11vaceACP_c (abcdefghijklmnopqr) + h_c + nadph_c -> octeACP_c (abcdefghijklmnopqr) + nadp_c"
+"atom_mapping":"t3c11vaceACP_c (abcdefghijklmnopqr) + nadph_c (stuvwxyzABCDEFGHIJKLM) + h_c -> octeACP_c (abcdefghijklmnopqr) + nadp_c (stuvwxyzABCDEFGHIJKLM)"
 }
 },
 {
@@ -6408,7 +6423,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"but2eACP_c (abcd) + h_c + nadph_c -> butACP_c (abcd) + nadp_c"
+"atom_mapping":"but2eACP_c (abcd) + nadph_c (efghijklmnopqrstuvwxy) + h_c -> butACP_c (abcd) + nadp_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -6425,7 +6440,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"thex2eACP_c (abcdef) + h_c + nadph_c -> hexACP_c (abcdef) + nadp_c"
+"atom_mapping":"thex2eACP_c (abcdef) + nadph_c (ghijklmnopqrstuvwxyzA) + h_c -> hexACP_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -6442,7 +6457,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"toct2eACP_c (abcdefgh) + h_c + nadph_c -> ocACP_c (abcdefgh) + nadp_c"
+"atom_mapping":"toct2eACP_c (abcdefgh) + nadph_c (ijklmnopqrstuvwxyzABC) + h_c -> ocACP_c (abcdefgh) + nadp_c (ijklmnopqrstuvwxyzABC)"
 }
 },
 {
@@ -6459,7 +6474,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + gam1p_c (cdefgh) -> acgam1p_c (abcdefgh) + coa_c + h_c"
+"atom_mapping":"gam1p_c (cdefgh) + accoa_c (ijklmnopqrstuvwxyzABCab) -> acgam1p_c (abcdefgh) + coa_c (ijklmnopqrstuvwxyzABC) + h_c"
 }
 },
 {
@@ -6595,7 +6610,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dtdp4d6dm_c (abcdefghijklmnop) + h_c + nadph_c -> dtdprmn_c (abcdefghijklmnop) + nadp_c"
+"atom_mapping":"dtdp4d6dm_c (abcdefghijklmnop) + nadph_c (qrstuvwxyzABCDEFGHIJK) + h_c -> dtdprmn_c (abcdefghijklmnop) + nadp_c (qrstuvwxyzABCDEFGHIJK)"
 }
 },
 {
@@ -6731,7 +6746,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"uaccg_c (abcdefghijklmnopqrst) + h_c + nadph_c -> uamr_c (abcdefghijklmnopqrst) + nadp_c"
+"atom_mapping":"uaccg_c (abcdefghijklmnopqrst) + nadph_c (uvwxyzABCDEFGHIJKLMNO) + h_c -> uamr_c (abcdefghijklmnopqrst) + nadp_c (uvwxyzABCDEFGHIJKLMNO)"
 }
 },
 {
@@ -6815,7 +6830,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"akg_c (abcde) + coa_c + nad_c -> co2_c (a) + succoa_c (bcde) + nadh_c"
+"atom_mapping":"akg_c (abcde) + coa_c (fghijklmnopqrstuvwxyz) + nad_c (ABCDEFGHIJKLMNOPQRSTU) -> co2_c (a) + succoa_c (fghijklmnopqrstuvwxyzbcde) + nadh_c (ABCDEFGHIJKLMNOPQRSTU)"
 }
 },
 {
@@ -6833,7 +6848,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + oaa_c (cdef) + h2o_c -> cit_c (abdefc) + coa_c + h_c"
+"atom_mapping":"oaa_c (cdef) + accoa_c (ghijklmnopqrstuvwxyzAab) + h2o_c -> cit_c (abdefc) + coa_c (ghijklmnopqrstuvwxyzA) + h_c"
 }
 },
 {
@@ -6865,7 +6880,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"icit_c (abcdef) + nadp_c -> akg_c (abcde) + co2_c (f) + nadph_c"
+"atom_mapping":"icit_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA) -> akg_c (abcde) + co2_c (f) + nadph_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -6882,7 +6897,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mal-L_c (abcd) + nad_c -> oaa_c (abcd) + h_c + nadh_c"
+"atom_mapping":"mal-L_c (abcd) + nad_c (efghijklmnopqrstuvwxy) -> oaa_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -6898,7 +6913,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mal-L_c (abcd) + q8_c -> oaa_c (abcd) + q8h2_c"
+"atom_mapping":"mal-L_c (abcd) + q8_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0) -> oaa_c (abcd) + q8h2_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0)"
 }
 },
 {
@@ -6914,7 +6929,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mal-L_c (abcd) + mqn8_c -> oaa_c (abcd) + mql8_c"
+"atom_mapping":"mal-L_c (abcd) + mqn8_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012) -> oaa_c (abcd) + mql8_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012)"
 }
 },
 {
@@ -6932,7 +6947,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"succ_c (abcd) + atp_c (efghijklmn) + coa_c -> adp_c (efghijklmn) + succoa_c (abcd) + pi_c"
+"atom_mapping":"succ_c (abcd) + atp_c (efghijklmn) + coa_c (opqrstuvwxyzABCDEFGHI) -> adp_c (efghijklmn) + succoa_c (opqrstuvwxyzABCDEFGHIabcd) + pi_c"
 }
 },
 {
@@ -6997,7 +7012,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"air_c (abcdefgh) + h2o_c + nad_c -> 4ampm_c (acdegh) + for_c (b) + for_c (f) + h_c + nadh_c"
+"atom_mapping":"air_c (abcdefgh) + nad_c (ijklmnopqrstuvwxyzABC) + h2o_c -> 4ampm_c (acdegh) + for_c (b) + for_c (f) + nadh_c (ijklmnopqrstuvwxyzABC) + h_c"
 }
 },
 {
@@ -7014,7 +7029,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"5apru_c (abcdefghi) + h_c + nadph_c -> 5aprbu_c (abcdefghi) + nadp_c"
+"atom_mapping":"5apru_c (abcdefghi) + nadph_c (jklmnopqrstuvwxyzABCD) + h_c -> 5aprbu_c (abcdefghi) + nadp_c (jklmnopqrstuvwxyzABCD)"
 }
 },
 {
@@ -7144,7 +7159,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"23ddhb_c (abcdefg) + nad_c -> 23dhb_c (abcdefg) + h_c + nadh_c"
+"atom_mapping":"23ddhb_c (abcdefg) + nad_c (hijklmnopqrstuvwxyzAB) -> 23dhb_c (abcdefg) + nadh_c (hijklmnopqrstuvwxyzAB) + h_c"
 }
 },
 {
@@ -7178,7 +7193,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dhf_c (abcdefghijklmnopqrs) + h_c + nadph_c -> thf_c (abcdefghijklmnopqrs) + nadp_c"
+"atom_mapping":"dhf_c (abcdefghijklmnopqrs) + nadph_c (tuvwxyzABCDEFGHIJKLMN) + h_c -> thf_c (abcdefghijklmnopqrs) + nadp_c (tuvwxyzABCDEFGHIJKLMN)"
 }
 },
 {
@@ -7343,7 +7358,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"atp_c (abcdefghij) + dpcoa_c -> adp_c (abcdefghij) + coa_c + h_c"
+"atom_mapping":"atp_c (abcdefghij) + dpcoa_c (klmnopqrstuvwxyzABCDE) -> adp_c (abcdefghij) + coa_c (klmnopqrstuvwxyzABCDE) + h_c"
 }
 },
 {
@@ -7360,7 +7375,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2dhp_c (abcdef) + h_c + nadph_c -> pant-R_c (abcdef) + nadp_c"
+"atom_mapping":"2dhp_c (abcdef) + nadph_c (ghijklmnopqrstuvwxyzA) + h_c -> pant-R_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -7377,7 +7392,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dxyl5p_c (abcde) + h_c + nadph_c -> 2me4p_c (abcde) + nadp_c"
+"atom_mapping":"dxyl5p_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c -> 2me4p_c (abcde) + nadp_c (fghijklmnopqrstuvwxyz)"
 }
 },
 {
@@ -7412,7 +7427,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"e4p_c (abcd) + h2o_c + nad_c -> 4per_c (abcd) + h_c + nadh_c"
+"atom_mapping":"e4p_c (abcd) + nad_c (efghijklmnopqrstuvwxy) + h2o_c -> 4per_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -7510,7 +7525,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glutrna_c (abcde) + h_c + nadph_c -> glu1sa_c (abcde) + nadp_c + trnaglu_c"
+"atom_mapping":"glutrna_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c -> glu1sa_c (abcde) + nadp_c (fghijklmnopqrstuvwxyz) + trnaglu_c"
 }
 },
 {
@@ -7726,7 +7741,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"h2mb4p_c (abcde) + h_c + nadh_c -> ipdp_c (abcde) + h2o_c + nad_c"
+"atom_mapping":"h2mb4p_c (abcde) + nadh_c (fghijklmnopqrstuvwxyz) + h_c -> ipdp_c (abcde) + nad_c (fghijklmnopqrstuvwxyz) + h2o_c"
 }
 },
 {
@@ -7743,7 +7758,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2mecdp_c (abcde) + nadh_c -> h2mb4p_c (abcde) + h2o_c + nad_c"
+"atom_mapping":"2mecdp_c (abcde) + nadh_c (fghijklmnopqrstuvwxyz) -> h2mb4p_c (abcde) + nad_c (fghijklmnopqrstuvwxyz) + h2o_c"
 }
 },
 {
@@ -7792,7 +7807,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3mob_c (abcde) + mlthf_c (f) + h2o_c -> 2dhp_c (abcdef) + thf_c"
+"atom_mapping":"3mob_c (abcde) + mlthf_c (ghijklmnopqrstuvwxyf) + h2o_c -> 2dhp_c (abcdef) + thf_c (ghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -7809,7 +7824,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"atp_c (abcdefghij) + nad_c -> adp_c (abcdefghij) + h_c + nadp_c"
+"atom_mapping":"atp_c (abcdefghij) + nad_c (klmnopqrstuvwxyzABCDE) -> adp_c (abcdefghij) + nadp_c (klmnopqrstuvwxyzABCDE) + h_c"
 }
 },
 {
@@ -7828,7 +7843,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"atp_c (abcdefghij) + dnad_c + nh4_c -> amp_c (abcdefghij) + h_c + nad_c + ppi_c"
+"atom_mapping":"atp_c (abcdefghij) + dnad_c (klmnopqrstuvwxyzABCDE) + nh4_c -> amp_c (abcdefghij) + nad_c (klmnopqrstuvwxyzABCDE) + h_c + ppi_c"
 }
 },
 {
@@ -7861,7 +7876,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"sbzcoa_c (abcdefghijk) -> dhna_c (abcdefghijk) + coa_c"
+"atom_mapping":"sbzcoa_c (lmnopqrstuvwxyzABCDEFabcdefghijk) -> dhna_c (abcdefghijk) + coa_c (lmnopqrstuvwxyzABCDEF)"
 }
 },
 {
@@ -8005,7 +8020,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"akg_c (abcde) + h_c + thmpp_c -> co2_c (a) + ssaltpp_c (bcde)"
+"atom_mapping":"akg_c (abcde) + thmpp_c (fghijklmnopq) + h_c -> co2_c (a) + ssaltpp_c (fghijklmnopqbcde)"
 }
 },
 {
@@ -8061,7 +8076,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dxyl5p_c (abcde) + phthr_c (fghi) + nad_c -> co2_c (f) + pdx5p_c (abcdeghi) + h_c + h2o_c + nadh_c + pi_c"
+"atom_mapping":"dxyl5p_c (abcde) + phthr_c (fghi) + nad_c (jklmnopqrstuvwxyzABCD) -> co2_c (f) + pdx5p_c (abcdeghi) + nadh_c (jklmnopqrstuvwxyzABCD) + h_c + h2o_c + pi_c"
 }
 },
 {
@@ -8078,7 +8093,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"4per_c (abcd) + nad_c -> ohpb_c (abcd) + h_c + nadh_c"
+"atom_mapping":"4per_c (abcd) + nad_c (efghijklmnopqrstuvwxy) -> ohpb_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -8311,7 +8326,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ichor_c (abcdefghij) + ssaltpp_c (klmn) -> 2shchc_c (klmnabcdefg) + pyr_c (jih) + thmpp_c"
+"atom_mapping":"ichor_c (abcdefghij) + ssaltpp_c (opqrstuvwxyzklmn) -> 2shchc_c (klmnabcdefg) + pyr_c (jih) + thmpp_c (opqrstuvwxyz)"
 }
 },
 {
@@ -8326,10 +8341,7 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"dscl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) + nad_c -> scl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) + h_c + nadh_c"
-}
+"gene_reaction_rule":""
 },
 {
 "id":"SHCHF",
@@ -8362,7 +8374,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"sucbz_c (abcdefghijk) + atp_c (lmnopqrstu) + coa_c -> amp_c (lmnopqrstu) + sbzcoa_c (abcdefghijk) + ppi_c"
+"atom_mapping":"sucbz_c (abcdefghijk) + atp_c (lmnopqrstu) + coa_c (vwxyzABCDEFGHIJKLMNOP) -> amp_c (lmnopqrstu) + sbzcoa_c (vwxyzABCDEFGHIJKLMNOPabcdefghijk) + ppi_c"
 }
 },
 {
@@ -8599,7 +8611,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + ser-L_c (cde) -> acser_c (abcde) + coa_c"
+"atom_mapping":"ser-L_c (cde) + accoa_c (fghijklmnopqrstuvwxyzab) -> acser_c (abcde) + coa_c (fghijklmnopqrstuvwxyz)"
 }
 },
 {
@@ -8930,7 +8942,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glc-D_out (abcdef) -> glc-D_e (abcdef)"
+"atom_mapping":" -> glc-D_e (abcdef)"
 }
 },
 {
@@ -9197,7 +9209,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"10fthf_c (a) + h2o_c -> for_c (a) + h_c + thf_c"
+"atom_mapping":"10fthf_c (bcdefghijklmnopqrsta) + h2o_c -> for_c (a) + thf_c (bcdefghijklmnopqrst) + h_c"
 }
 },
 {
@@ -9215,7 +9227,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"gcald_c (ab) + h2o_c + nad_c -> glyclt_c (ab) + h_c + nadh_c"
+"atom_mapping":"gcald_c (ab) + nad_c (cdefghijklmnopqrstuvw) + h2o_c -> glyclt_c (ab) + nadh_c (cdefghijklmnopqrstuvw) + h_c"
 }
 },
 {
@@ -9234,7 +9246,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"gly_c (ab) + nad_c + thf_c -> co2_c (a) + mlthf_c (b) + nadh_c + nh4_c"
+"atom_mapping":"gly_c (ab) + thf_c (cdefghijklmnopqrstu) + nad_c (vwxyzABCDEFGHIJKLMNOP) -> co2_c (a) + mlthf_c (cdefghijklmnopqrstub) + nadh_c (vwxyzABCDEFGHIJKLMNOP) + nh4_c"
 }
 },
 {
@@ -9250,7 +9262,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"methf_c (a) + h2o_c -> 10fthf_c (a) + h_c"
+"atom_mapping":"methf_c (bcdefghijklmnopqrsta) + h2o_c -> 10fthf_c (bcdefghijklmnopqrsta) + h_c"
 }
 },
 {
@@ -9266,7 +9278,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mlthf_c (a) + nadp_c -> methf_c (a) + nadph_c"
+"atom_mapping":"mlthf_c (bcdefghijklmnopqrsta) + nadp_c (uvwxyzABCDEFGHIJKLMNO) -> methf_c (bcdefghijklmnopqrsta) + nadph_c (uvwxyzABCDEFGHIJKLMNO)"
 }
 },
 {
@@ -9283,7 +9295,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mlthf_c (a) + h_c + nadh_c -> 5mthf_c (a) + nad_c"
+"atom_mapping":"mlthf_c (bcdefghijklmnopqrsta) + nadh_c (uvwxyzABCDEFGHIJKLMNO) + h_c -> 5mthf_c (bcdefghijklmnopqrsta) + nad_c (uvwxyzABCDEFGHIJKLMNO)"
 }
 },
 {
@@ -9337,7 +9349,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"glu-L_c (abcde) + h2o_c + nadp_c -> akg_c (abcde) + h_c + nadph_c + nh4_c"
+"atom_mapping":"glu-L_c (abcde) + nadp_c (fghijklmnopqrstuvwxyz) + h2o_c -> akg_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c + nh4_c"
 }
 },
 {
@@ -9402,7 +9414,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"acetol_c (abc) + h_c + nadh_c -> 12ppd-R_c (abc) + nad_c"
+"atom_mapping":"acetol_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c -> 12ppd-R_c (abc) + nad_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -9768,7 +9780,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ser-L_c (abc) + thf_c -> gly_c (ab) + mlthf_c (c) + h2o_c"
+"atom_mapping":"ser-L_c (abc) + thf_c (defghijklmnopqrstuv) -> gly_c (ab) + mlthf_c (defghijklmnopqrstuvc) + h2o_c"
 }
 },
 {
@@ -9784,7 +9796,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + gly_c (cd) -> 2aobut_c (cdab) + coa_c"
+"atom_mapping":"gly_c (cd) + accoa_c (efghijklmnopqrstuvwxyab) -> 2aobut_c (cdab) + coa_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -9818,7 +9830,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3pg_c (abc) + nad_c -> 3php_c (abc) + h_c + nadh_c"
+"atom_mapping":"3pg_c (abc) + nad_c (defghijklmnopqrstuvwx) -> 3php_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c"
 }
 },
 {
@@ -9882,7 +9894,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"thr-L_c (abcd) + nad_c -> 2aobut_c (abcd) + h_c + nadh_c"
+"atom_mapping":"thr-L_c (abcd) + nad_c (efghijklmnopqrstuvwxy) -> 2aobut_c (abcd) + nadh_c (efghijklmnopqrstuvwxy) + h_c"
 }
 },
 {
@@ -9977,7 +9989,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"g3p_c (abc) + nad_c + pi_c -> 13dpg_c (abc) + h_c + nadh_c"
+"atom_mapping":"g3p_c (abc) + nad_c (defghijklmnopqrstuvwx) + pi_c -> 13dpg_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c"
 }
 },
 {
@@ -10045,7 +10057,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"pyr_c (abc) + coa_c + nad_c -> accoa_c (bc) + co2_c (a) + nadh_c"
+"atom_mapping":"pyr_c (abc) + coa_c (defghijklmnopqrstuvwx) + nad_c (yzABCDEFGHIJKLMNOPQRS) -> co2_c (a) + accoa_c (defghijklmnopqrstuvwxbc) + nadh_c (yzABCDEFGHIJKLMNOPQRS)"
 }
 },
 {
@@ -10223,7 +10235,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"histd_c (abcdef) + h2o_c + nad_c -> his-L_c (abcdef) + h_c + nadh_c"
+"atom_mapping":"histd_c (abcdef) + nad_c (ghijklmnopqrstuvwxyzA) + nad_c (BCDEFGHIJKLMNOPQRSTUV) + h2o_c -> his-L_c (abcdef) + nadh_c (ghijklmnopqrstuvwxyzA) + nadh_c (BCDEFGHIJKLMNOPQRSTUV) + h_c"
 }
 },
 {
@@ -11280,7 +11292,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + hco3_c (m) + atp_c (cdefghijkl) -> adp_c (cdefghijkl) + malcoa_c (abm) + h_c + pi_c"
+"atom_mapping":"hco3_c (m) + atp_c (cdefghijkl) + accoa_c (nopqrstuvwxyzABCDEFGHab) -> adp_c (cdefghijkl) + malcoa_c (nopqrstuvwxyzABCDEFGHabm) + h_c + pi_c"
 }
 },
 {
@@ -11296,7 +11308,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + ACP_c -> acACP_c (ab) + coa_c"
+"atom_mapping":"accoa_c (cdefghijklmnopqrstuvwab) + ACP_c -> acACP_c (ab) + coa_c (cdefghijklmnopqrstuvw)"
 }
 },
 {
@@ -11330,7 +11342,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"malcoa_c (abc) + ACP_c -> malACP_c (abc) + coa_c"
+"atom_mapping":"malcoa_c (defghijklmnopqrstuvwxabc) + ACP_c -> malACP_c (abc) + coa_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -11411,7 +11423,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"hom-L_c (abcd) + succoa_c (efgh) -> suchms_c (abcdefgh) + coa_c"
+"atom_mapping":"hom-L_c (abcd) + succoa_c (ijklmnopqrstuvwxyzABCefgh) -> suchms_c (abcdefgh) + coa_c (ijklmnopqrstuvwxyzABC)"
 }
 },
 {
@@ -11446,7 +11458,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"5mthf_c (a) + hcys-L_c (bcde) -> met-L_c (bcdea) + h_c + thf_c"
+"atom_mapping":"5mthf_c (fghijklmnopqrstuvwxa) + hcys-L_c (bcde) -> met-L_c (bcdea) + thf_c (fghijklmnopqrstuvwx) + h_c"
 }
 },
 {
@@ -11513,7 +11525,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mthgxl_c (abc) + h_c + nadph_c -> acetol_c (abc) + nadp_c"
+"atom_mapping":"mthgxl_c (abc) + nadph_c (defghijklmnopqrstuvwx) + h_c -> acetol_c (abc) + nadp_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -11563,7 +11575,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mthgxl_c (abc) + h_c + nadh_c -> lald-D_c (abc) + nad_c"
+"atom_mapping":"mthgxl_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c -> lald-D_c (abc) + nad_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -11580,7 +11592,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"lald-D_c (abc) + h_c + nadh_c -> 12ppd-R_c (abc) + nad_c"
+"atom_mapping":"lald-D_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c -> 12ppd-R_c (abc) + nad_c (defghijklmnopqrstuvwx)"
 }
 },
 {
@@ -12123,7 +12135,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dump_c (abcdefghi) + mlthf_c (j) -> dtmp_c (abcdefghij) + dhf_c"
+"atom_mapping":"dump_c (abcdefghi) + mlthf_c (klmnopqrstuvwxyzABCj) -> dtmp_c (abcdefghij) + dhf_c (klmnopqrstuvwxyzABC)"
 }
 },
 {
@@ -12234,7 +12246,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"lac-D_c (abc) + q8_c -> pyr_c (abc) + q8h2_c"
+"atom_mapping":"lac-D_c (abc) + q8_c (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ) -> pyr_c (abc) + q8h2_c (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)"
 }
 },
 {
@@ -12351,7 +12363,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"pyr_c (abc) + h2o_c + q8_c -> ac_c (bc) + co2_c (a) + q8h2_c"
+"atom_mapping":"pyr_c (abc) + q8_c (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ) + h2o_c -> ac_c (bc) + co2_c (a) + q8h2_c (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ)"
 }
 },
 {
@@ -12383,7 +12395,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"succ_c (abcd) + q8_c -> fum_c (abcd) + q8h2_c"
+"atom_mapping":"succ_c (abcd) + q8_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0) -> fum_c (abcd) + q8h2_c (efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0)"
 }
 },
 {
@@ -12459,7 +12471,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"g6p_c (abcdef) + nadp_c -> 6pgl_c (abcdef) + h_c + nadph_c"
+"atom_mapping":"g6p_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA) -> 6pgl_c (abcdef) + nadph_c (ghijklmnopqrstuvwxyzA) + h_c"
 }
 },
 {
@@ -12476,7 +12488,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"6pgc_c (abcdef) + nadp_c -> co2_c (a) + ru5p-D_c (bcdef) + nadph_c"
+"atom_mapping":"6pgc_c (abcdef) + nadp_c (ghijklmnopqrstuvwxyzA) -> co2_c (a) + ru5p-D_c (bcdef) + nadph_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -12633,7 +12645,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"10fthf_c (a) + aicar_c (bcdefghij) -> fprica_c (bcdefghija) + thf_c"
+"atom_mapping":"10fthf_c (klmnopqrstuvwxyzABCa) + aicar_c (bcdefghij) -> fprica_c (bcdefghija) + thf_c (klmnopqrstuvwxyzABC)"
 }
 },
 {
@@ -12720,7 +12732,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"dhor-S_c (abcde) + q8_c -> orot_c (abcde) + q8h2_c"
+"atom_mapping":"dhor-S_c (abcde) + q8_c (fghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01) -> orot_c (abcde) + q8h2_c (fghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01)"
 }
 },
 {
@@ -12753,7 +12765,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"10fthf_c (a) + gar_c (bcdefgh) -> fgam_c (bcdefgha) + h_c + thf_c"
+"atom_mapping":"10fthf_c (ijklmnopqrstuvwxyzAa) + gar_c (bcdefgh) -> fgam_c (bcdefgha) + thf_c (ijklmnopqrstuvwxyzA) + h_c"
 }
 },
 {
@@ -12789,7 +12801,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"gmp_c (abcdefghij) + h_c + nadph_c -> imp_c (abcdefghij) + nadp_c + nh4_c"
+"atom_mapping":"gmp_c (abcdefghij) + nadph_c (klmnopqrstuvwxyzABCDE) + h_c -> imp_c (abcdefghij) + nadp_c (klmnopqrstuvwxyzABCDE) + nh4_c"
 }
 },
 {
@@ -12843,7 +12855,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"imp_c (abcdefghij) + h2o_c + nad_c -> xmp_c (abcdefghij) + h_c + nadh_c"
+"atom_mapping":"imp_c (abcdefghij) + nad_c (klmnopqrstuvwxyzABCDE) + h2o_c -> xmp_c (abcdefghij) + nadh_c (klmnopqrstuvwxyzABCDE) + h_c"
 }
 },
 {
@@ -12970,7 +12982,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"acald_c (ab) + coa_c + nad_c -> accoa_c (ab) + h_c + nadh_c"
+"atom_mapping":"acald_c (ab) + coa_c (cdefghijklmnopqrstuvw) + nad_c (xyzABCDEFGHIJKLMNOPQR) -> accoa_c (cdefghijklmnopqrstuvwab) + nadh_c (xyzABCDEFGHIJKLMNOPQR) + h_c"
 }
 },
 {
@@ -13003,7 +13015,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"etoh_c (ab) + h_c + nadh_c -> acald_c (ab) + nad_c"
+"atom_mapping":"etoh_c (ab) + nadh_c (cdefghijklmnopqrstuvw) + h_c -> acald_c (ab) + nad_c (cdefghijklmnopqrstuvw)"
 }
 },
 {
@@ -13036,7 +13048,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"lac-D_c (abc) + nad_c -> pyr_c (abc) + h_c + nadh_c"
+"atom_mapping":"lac-D_c (abc) + nad_c (defghijklmnopqrstuvwx) -> pyr_c (abc) + nadh_c (defghijklmnopqrstuvwx) + h_c"
 }
 },
 {
@@ -13068,7 +13080,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + pi_c -> actp_c (ab) + coa_c"
+"atom_mapping":"accoa_c (cdefghijklmnopqrstuvwab) + pi_c -> actp_c (ab) + coa_c (cdefghijklmnopqrstuvw)"
 }
 },
 {
@@ -13102,7 +13114,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"4pasp_c (abcd) + h_c + nadph_c -> aspsa_c (abcd) + nadp_c + pi_c"
+"atom_mapping":"4pasp_c (abcd) + nadph_c (efghijklmnopqrstuvwxy) + h_c -> aspsa_c (abcd) + nadp_c (efghijklmnopqrstuvwxy) + pi_c"
 }
 },
 {
@@ -13165,7 +13177,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"23dhdp_c (abcdefg) + h_c + nadph_c -> thdp_c (abcdefg) + nadp_c"
+"atom_mapping":"23dhdp_c (abcdefg) + nadph_c (hijklmnopqrstuvwxyzAB) + h_c -> thdp_c (abcdefg) + nadp_c (hijklmnopqrstuvwxyzAB)"
 }
 },
 {
@@ -13199,7 +13211,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"aspsa_c (abcd) + h_c + nadph_c -> hom-L_c (abcd) + nadp_c"
+"atom_mapping":"aspsa_c (abcd) + nadph_c (efghijklmnopqrstuvwxy) + h_c -> hom-L_c (abcd) + nadp_c (efghijklmnopqrstuvwxy)"
 }
 },
 {
@@ -13265,7 +13277,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"succoa_c (abcd) + thdp_c (efghijk) + h2o_c -> sl2a6o_c (efghijkabcd) + coa_c"
+"atom_mapping":"thdp_c (efghijk) + succoa_c (lmnopqrstuvwxyzABCDEFabcd) + h2o_c -> sl2a6o_c (efghijkabcd) + coa_c (lmnopqrstuvwxyzABCDEF)"
 }
 },
 {
@@ -14704,7 +14716,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"pphn_c (abcdefghij) + nad_c -> 34hpp_c (abcdefghi) + co2_c (j) + nadh_c"
+"atom_mapping":"pphn_c (abcdefghij) + nad_c (klmnopqrstuvwxyzABCDE) -> 34hpp_c (abcdefghi) + co2_c (j) + nadh_c (klmnopqrstuvwxyzABCDE)"
 }
 },
 {
@@ -14768,7 +14780,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3dhsk_c (abcdefg) + h_c + nadph_c -> skm_c (abcdefg) + nadp_c"
+"atom_mapping":"3dhsk_c (abcdefg) + nadph_c (hijklmnopqrstuvwxyzAB) + h_c -> skm_c (abcdefg) + nadp_c (hijklmnopqrstuvwxyzAB)"
 }
 },
 {
@@ -14959,7 +14971,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3c2hmp_c (abcdefg) + nad_c -> 3c4mop_c (abcdefg) + h_c + nadh_c"
+"atom_mapping":"3c2hmp_c (abcdefg) + nad_c (hijklmnopqrstuvwxyzAB) -> 3c4mop_c (abcdefg) + nadh_c (hijklmnopqrstuvwxyzAB) + h_c"
 }
 },
 {
@@ -15007,7 +15019,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"3mob_c (abcde) + accoa_c (fg) + h2o_c -> 3c3hmp_c (fgbcdea) + coa_c + h_c"
+"atom_mapping":"3mob_c (abcde) + accoa_c (hijklmnopqrstuvwxyzABfg) + h2o_c -> 3c3hmp_c (fgbcdea) + coa_c (hijklmnopqrstuvwxyzAB) + h_c"
 }
 },
 {
@@ -15024,7 +15036,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"alac-S_c (abcde) + h_c + nadph_c -> 23dhmb_c (abdec) + nadp_c"
+"atom_mapping":"alac-S_c (abcde) + nadph_c (fghijklmnopqrstuvwxyz) + h_c -> 23dhmb_c (abdec) + nadp_c (fghijklmnopqrstuvwxyz)"
 }
 },
 {
@@ -15041,7 +15053,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2ahbut_c (abcdef) + h_c + nadph_c -> 23dhmp_c (abecdf) + nadp_c"
+"atom_mapping":"2ahbut_c (abcdef) + nadph_c (ghijklmnopqrstuvwxyzA) + h_c -> 23dhmp_c (abecdf) + nadp_c (ghijklmnopqrstuvwxyzA)"
 }
 },
 {
@@ -15173,7 +15185,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"acald_c (ab) + h2o_c + nad_c -> ac_c (ab) + h_c + nadh_c"
+"atom_mapping":"acald_c (ab) + nad_c (cdefghijklmnopqrstuvw) + h2o_c -> ac_c (ab) + nadh_c (cdefghijklmnopqrstuvw) + h_c"
 }
 },
 {
@@ -15237,7 +15249,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"oaa_c (abcd) + ppcoa_c (efg) + h2o_c -> 2mcit_c (efbcdag) + coa_c + h_c"
+"atom_mapping":"oaa_c (abcd) + ppcoa_c (hijklmnopqrstuvwxyzABefg) + h2o_c -> 2mcit_c (efbcdag) + coa_c (hijklmnopqrstuvwxyzAB) + h_c"
 }
 },
 {
@@ -15268,7 +15280,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mmcoa-S_c (abcd) + h_c -> co2_c (a) + ppcoa_c (bcd)"
+"atom_mapping":"mmcoa-S_c (efghijklmnopqrstuvwxyabcd) + h_c -> co2_c (a) + ppcoa_c (efghijklmnopqrstuvwxybcd)"
 }
 },
 {
@@ -15282,7 +15294,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"mmcoa-R_c (abcd) -> mmcoa-S_c (abcd)"
+"atom_mapping":"mmcoa-R_c (efghijklmnopqrstuvwxyabcd) -> mmcoa-S_c (efghijklmnopqrstuvwxyabcd)"
 }
 },
 {
@@ -15296,7 +15308,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"succoa_c (abcd) -> mmcoa-R_c (abcd)"
+"atom_mapping":"succoa_c (efghijklmnopqrstuvwxyabcd) -> mmcoa-R_c (efghijklmnopqrstuvwxyabcd)"
 }
 },
 {
@@ -15312,7 +15324,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2obut_c (abcd) + coa_c -> for_c (a) + ppcoa_c (bcd)"
+"atom_mapping":"2obut_c (abcd) + coa_c (efghijklmnopqrstuvwxy) -> for_c (a) + ppcoa_c (efghijklmnopqrstuvwxybcd)"
 }
 },
 {
@@ -15384,7 +15396,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"akg_c (abcde) + gln-L_c (fghij) + h_c + nadph_c -> glu-L_c (abcde) + glu-L_c (fghij) + nadp_c"
+"atom_mapping":"akg_c (abcde) + gln-L_c (fghij) + nadph_c (klmnopqrstuvwxyzABCDE) + h_c -> glu-L_c (abcde) + glu-L_c (fghij) + nadp_c (klmnopqrstuvwxyzABCDE)"
 }
 },
 {
@@ -16382,10 +16394,7 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY) -> "
-}
+"gene_reaction_rule":""
 },
 {
 "id":"EX_q8h2_c",
@@ -16395,10 +16404,7 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW) -> "
-}
+"gene_reaction_rule":""
 },
 {
 "id":"EX_sheme_c",
@@ -16408,10 +16414,7 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"sheme_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) -> "
-}
+"gene_reaction_rule":""
 },
 {
 "id":"EX_thmpp_c",
@@ -16421,10 +16424,7 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"thmpp_c (abcdefghijkl) -> "
-}
+"gene_reaction_rule":""
 }
 ],
 "genes":[],
