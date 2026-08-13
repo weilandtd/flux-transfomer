@@ -29,6 +29,15 @@ pip install -e ".[dev]"     # + pytest, ruff, mypy
 pip install -e ".[docs]"    # + sphinx
 ```
 
+For the full stack, including the optional x3cflux MFA backend, use conda instead —
+x3cflux needs Ipopt, and pip's `cyipopt` is an sdist that wants Ipopt headers at
+build time, so it has to come from conda-forge:
+
+```bash
+conda env create -f environment.yml   # from the repo root: `-e .` resolves against cwd
+conda activate sigmaflux
+```
+
 Verify:
 
 ```bash

@@ -19,10 +19,11 @@ The pieces:
 ``fit``
     Gauss-Newton Ipopt driver with per-start subprocess isolation.
 
-``x3cflux`` itself is an optional dependency (``pip install sigmaflux[x3cflux]``;
-the wheel is cp311-only), so nothing here is imported at package-import time --
-importing this module must stay free of it, exactly as ``sigmaflux.pipeline``
-stays free of torch. Use :func:`available` to test for it.
+``x3cflux`` itself is an optional dependency, so nothing here is imported at
+package-import time -- importing this module must stay free of it, exactly as
+``sigmaflux.pipeline`` stays free of torch. Use :func:`available` to test for it.
+Installing it means the wheel *and* conda-forge ``cyipopt``, since pip's cyipopt is
+an sdist that needs Ipopt headers; ``conda env create -f environment.yml`` does both.
 
 **Import order matters.** ``cyipopt`` links ``libspral``, which needs
 ``CXXABI_1.3.15`` -- present in the conda env's ``libstdc++.so.6`` (conda-forge
@@ -66,8 +67,8 @@ def require():
         import x3cflux
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise ImportError(
-            "the x3cflux backend needs the optional 'x3cflux' dependency: "
-            "pip install 'sigmaflux[x3cflux]'. The wheel is cp311-only, so it "
-            "requires a Python 3.11 environment."
+            "the x3cflux backend needs the optional 'x3cflux' dependency and "
+            "conda-forge cyipopt, which pip cannot build: "
+            "conda env create -f environment.yml"
         ) from exc
     return x3cflux
