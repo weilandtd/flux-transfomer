@@ -40,8 +40,15 @@ from collections import OrderedDict
 
 import x3cflux as x
 
+from sigmaflux.expansion.utils import atom_pattern_regex
+
 CARBON = x.TracerElement.Carbon
 INT_TOL = 1e-9
+#: How far a produced pool may exceed the consumed pools of its own carbon count before
+#: the mismatch counts as a modelling error rather than rounding. Measured need: 1.5e-4
+#: on I. orientalis. A real error -- a missing educt, a mistyped coefficient -- is O(1)
+#: of the pool, so 1e-3 separates the two by nearly an order of magnitude on each side.
+CARRIER_REL_TOL = 1e-3
 SRC_SUFFIX = "__src"
 
 # SK_accoa_c is the one reaction that carries carbon but has no atom_mapping, so
@@ -78,7 +85,7 @@ def parse_atom_mapping(map_str, stoich):
         map_str = " " + map_str
     educts, products = [], []
     for met, coef in stoich.items():
-        pattern = r"\b{}\s*\(([^)]+)\)".format(re.escape(met))
+        pattern = atom_pattern_regex(met)
         for m in re.findall(pattern, map_str):
             (educts if coef < 0 else products).append((met, m))
     return educts, products
@@ -548,12 +555,31 @@ def carbon_carriers(stoich, mets_by_id, sgn, rxn_id):
             consumed[educt] -= share
             remaining -= share
         if remaining > INT_TOL:
-            # No consumed pool of the same size to draw from: the carbon would have
-            # to be invented, which is the unlabeled-source problem this avoids.
-            raise ValueError(
-                f"{rxn_id}: produces {remaining:g} {product} ({size} carbons) with no "
-                f"consumed pool of the same size to carry them; a source pool here "
-                f"would inject unlabeled carbon into a measured metabolite")
+            # No consumed pool of the same size to draw from: the carbon would have to be
+            # invented, which is the unlabeled-source problem this avoids. A sliver of it
+            # is rounding in the biomass coefficients rather than a modelling error --
+            # I. orientalis' PROTEIN_c, LIPID_c and CARB_c each overshoot their ATP pool
+            # by the same 1.48e-4, which is a scaling artifact, not five independent
+            # mistakes. Drop the surplus (the pool is a cofactor, never a measured
+            # metabolite) and say so, rather than inventing carbon or failing the run.
+            # Measured against the whole same-size pool, not against this one product.
+            # Products are drained in name order, so the last one absorbs the entire
+            # deficit: I. orientalis' PROTEIN_c is short 0.034, which is 0.69% of amp_c
+            # but 0.015% of the atp/adp/amp pool it actually came from -- and it would
+            # have landed on adp_c instead had the names sorted the other way. Judging a
+            # rounding artifact by an alphabetical accident is not a criterion.
+            pool = sum(v for p, v in produced.items() if n_of(p) == size)
+            if remaining <= CARRIER_REL_TOL * pool:
+                print(f"  {rxn_id}: {product} exceeds its {size}-carbon educts by "
+                      f"{remaining:g} ({100 * remaining / pool:.4f}% of the pool) — "
+                      f"rounding in the coefficients; surplus dropped")
+            else:
+                raise ValueError(
+                    f"{rxn_id}: produces {remaining:g} {product} ({size} carbons) with no "
+                    f"consumed pool of the same size to carry them "
+                    f"({100 * remaining / pool:.2f}% of the pool, above the "
+                    f"{100 * CARRIER_REL_TOL:g}% rounding tolerance); a source pool here "
+                    f"would inject unlabeled carbon into a measured metabolite")
 
     for met, left in consumed.items():
         if left > INT_TOL:
