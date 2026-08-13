@@ -38,6 +38,7 @@ multi-start hyperparameters before committing to the full array benchmark:
 
 import argparse
 import os
+import time
 from collections import defaultdict
 
 import numpy as np
@@ -427,6 +428,7 @@ def _report_fit(mfa_model, res, gt_flux, gt_labeling_vec, labeling_to, labeling_
 
 
 def main(args):
+    run_started = time.perf_counter()
     pin_threads()
     cfg, root = load_config(args.config, args.root)
 
@@ -472,6 +474,11 @@ def main(args):
         with_backward=(args.backend == "native"),
     )
     backend = None      # built on the first sample, once the fitted index is known
+    # The fixed cost every array task pays before it fits anything. Reported because
+    # the launcher's sizing formula subtracts it from the per-task budget, and it is
+    # the one term a per-sample timing cannot show.
+    print(f"\n  Setup complete in {time.perf_counter() - run_started:.0f}s "
+          f"(model load + EMU network)")
 
     # ── Benchmark loop ────────────────────────────────────────────────────────
     pred_lab_data, pred_flux_data, sample_indices = [], [], []
@@ -480,6 +487,13 @@ def main(args):
 
     for run_ix in range(n_runs):
         global_ix = int(sel[run_ix])   # real HDF5 column index of this sample
+        # Wall clock for the whole sample: setup, every start including the ones that
+        # crash, and the scoring. This is what sizes the SLURM array, so it has to be
+        # the cost a task actually pays. x3cflux's own per-start ``info["seconds"]``
+        # goes deliberately unused -- it excludes the per-sample simulator build and
+        # has no native counterpart, so the two arms would not be measuring the same
+        # thing.
+        sample_started = time.perf_counter()
         gt_flux = flux_df.iloc[:, run_ix]
         gt_rev = rev_df.iloc[:, run_ix]
         print(f"\n── Run {run_ix + 1}/{n_runs}  (sample {global_ix}) ──────────────────")
@@ -644,17 +658,18 @@ def main(args):
         # NaN silently removes the hardest samples from the benchmark, which flatters
         # whatever produced them; ssr_ratio is written alongside instead, so downstream
         # can filter on "did this reach the global optimum" and still see what it drops.
+        sample_seconds = time.perf_counter() - sample_started
         if best is not None and not np.isnan(best["ssr_fit"]):
             pred_labeling_vec = best["labeling"]
             pred_flux_vec = best["fluxes"]
             mark = "✓ reached the global optimum" if accepted else "✗ above the true optimum"
             print(f"  {mark} after {best['start']} start(s): "
                   f"SSR {best['ssr_fit']:.2f} vs true {ssr_true:.2f} "
-                  f"(ratio {best['ratio']:.3f})")
+                  f"(ratio {best['ratio']:.3f})  [{sample_seconds:.1f}s]")
         else:  # the optimiser never returned a usable state for this sample
             pred_labeling_vec = np.full(len(labeling_index), np.nan)
             pred_flux_vec = np.full(len(reaction_ids), np.nan)
-            print("  ✗ no usable fit → NaN")
+            print(f"  ✗ no usable fit → NaN  [{sample_seconds:.1f}s]")
         diagnostics.append({
             "sample": global_ix,
             "ssr_fit": float(best["ssr_fit"]) if best else np.nan,
@@ -667,6 +682,8 @@ def main(args):
             # Always written, 0 for the native arm, so both backends share one schema.
             "crashed_starts": int(crashed_starts),
             "backend": args.backend,
+            # What the array is sized from; see submit_mfa_benchmark.sh's PILOT mode.
+            "seconds": round(sample_seconds, 2),
         })
 
         pred_lab_data.append(pred_labeling_vec)
