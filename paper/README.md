@@ -205,14 +205,26 @@ sigmaflux-benchmark \
 sigmaflux-benchmark-mfa \
     --config paper/configs/i_orientalis.yaml \
     --data-dir <run_dir> --n-benchmarks 2 --start-ix 0   # → <run_dir>/mfa_benchmark/
+
+sigmaflux-benchmark-mfa --backend x3cflux \
+    --config paper/configs/i_orientalis.yaml \
+    --data-dir <run_dir> --n-benchmarks 2 --start-ix 0   # 13CFLUX/Ipopt, same schema
 ```
 
+`--backend x3cflux` runs the identical fits through x3cflux 3.0.4 — an independent,
+published implementation — on the same data with the same noise realisation, so the
+MFA arm measures MFA rather than our L-BFGS-B. It needs the conda environment
+(`conda env create -f environment.yml`), and it is ~two orders of magnitude faster
+per fit because it uses a Gauss-Newton Hessian.
+
 `--start-ix` / `--n-benchmarks` are an offset window into the split, not raw HDF5
-columns, so a SLURM array tiles it deterministically — that is how
-`paper/submit/submit_mfa_benchmark.sh` covers the 2000 validation samples with 1000
-tasks. MFA is fit with up to `--max-starts` restarts from a feasible near-GT init;
-a sample whose best fit never clears the reduced-χ² acceptance bound is written as
-all-NaN rather than as a bad fit.
+columns, so a SLURM array tiles it deterministically. `paper/submit/submit_mfa_benchmark.sh`
+derives the array's shape from a measured seconds-per-sample per backend rather than
+hardcoding it — see `PILOT=` in that script. MFA is fit with up to `--max-starts`
+restarts from a feasible near-GT init; the best fit is always written, never NaN-ed
+for missing a bar, and `pred_<start>_<end>_convergence.csv` carries `ssr_ratio`,
+`reached_optimum` and `seconds` so a reader can filter on "did this reach the global
+optimum" and still see what that drops.
 
 To tune the noise and optimiser settings before launching an array, fit a single
 sample with full diagnostics (GT feasibility, init agreement, per-block χ² split,
