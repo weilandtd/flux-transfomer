@@ -373,13 +373,23 @@ def main(args):
             target_reactions=args.measured_fluxes,
         )
         if not basis_status['separable']:
-            print(f"WARNING: targeted basis failed ({basis_status['fallback_reason']}); "
-                  f"falling back to Varimax basis")
-            Z_full = compute_sparse_nullspace(stoichiometric_matrix)
+            # No silent substitution. Swapping in a Varimax basis leaves the measured
+            # fluxes without a dedicated coordinate while the run still calls itself
+            # 'targeted', which is how the T cell trained for months against a basis
+            # nobody asked for. Redundant targets are now dropped individually, so
+            # reaching here means something the caller has to decide about.
+            raise RuntimeError(
+                f"targeted basis could not be built: {basis_status['fallback_reason']}. "
+                f"Choose a different null_space_type explicitly, or fix measured_fluxes."
+            )
         else:
-            n_t = len(args.measured_fluxes)
+            n_t = len(basis_status['targets_kept'])
             print(f"Targeted basis: {n_t} measured reaction DOF(s) at cols 0–{n_t - 1}, "
                   f"cond(S_D)={basis_status['cond_SD']:.2e}")
+            if basis_status['targets_dropped']:
+                print(f"  {len(basis_status['targets_dropped'])} redundant target(s) share a "
+                      f"DOF with a more connected one: "
+                      f"{', '.join(basis_status['targets_dropped'])}")
     elif args.null_space_type == 'ica_informed':
         flux_matrix = flux_df.values.T   # (n_samples, n_reactions)
         Z_full, basis_status = compute_ica_nullspace(
@@ -391,25 +401,22 @@ def main(args):
         rxn_names = list(flux_df.index)
         flux_matrix = flux_df.values.T
         if not args.measured_fluxes:
-            print("WARNING: targeted_ica with no measured_fluxes; using ica_informed")
-            Z_full, basis_status = compute_ica_nullspace(
-                stoichiometric_matrix, flux_matrix, **args.ica_nullspace_params
+            # targeted_ica without targets is a contradiction, not a default to paper over.
+            raise ValueError(
+                "null_space_type 'targeted_ica' needs training.measured_fluxes. "
+                "Set null_space_type: ica_informed if that is what you meant."
             )
-            if basis_status['fallback']:
-                print(f"ICA-informed basis: FastICA failed; fell back to Varimax (d={Z_full.shape[1]})")
-        else:
-            Z_full, basis_status = compute_targeted_ica_nullspace(
-                stoichiometric_matrix, flux_matrix,
-                reaction_names=rxn_names,
-                target_reactions=args.measured_fluxes,
-                **args.ica_nullspace_params,
-            )
-            if not basis_status.get('fallback', False) and basis_status.get('separable', True):
-                n_t = len(args.measured_fluxes)
-                print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
-                      f"{basis_status['n_ica_free']} ICA free modes, "
-                      f"{basis_status['n_complement_free']} complement "
-                      f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
+        Z_full, basis_status = compute_targeted_ica_nullspace(
+            stoichiometric_matrix, flux_matrix,
+            reaction_names=rxn_names,
+            target_reactions=args.measured_fluxes,
+            **args.ica_nullspace_params,
+        )
+        n_t = len(basis_status['targets_kept'])
+        print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
+              f"{basis_status['n_ica_free']} ICA free modes, "
+              f"{basis_status['n_complement_free']} complement "
+              f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
     elif args.null_space_type == 'boundary':
         from sigmaflux.ai.boundary_basis import compute_boundary_basis
         boundary_solver = getattr(args, 'boundary_solver', None)

@@ -93,14 +93,24 @@ class TestBasicCorrectness:
 
     def test_status_fields_present(self):
         Z, status = compute_targeted_nullspace(self.S, self.names, ["r0"])
-        for key in ('separable', 'fallback_reason', 'cond_SD', 'col_norms',
+        for key in ('separable', 'fallback_reason', 'targets_kept', 'targets_dropped',
+                    'cond_SD', 'col_norms',
                     'target_indices', 'dep_cols', 'free_cols'):
             assert key in status, f"Missing status key: {key}"
 
     def test_target_indices_in_status(self):
-        targets = ["r1", "r3"]
+        # r0 and r2 are independent here, so both keep a DOF and both appear.
+        targets = ["r0", "r2"]
         Z, status = compute_targeted_nullspace(self.S, self.names, targets)
-        assert status['target_indices'] == [self.names.index(t) for t in targets]
+        assert status['targets_dropped'] == []
+        assert status['target_indices'] == [self.names.index(t) for t in status['targets_kept']]
+        assert sorted(status['targets_kept']) == sorted(targets)
+
+    def test_target_indices_track_kept_targets_only(self):
+        """r1 and r3 are coupled, so only one keeps a DOF and only it is indexed."""
+        Z, status = compute_targeted_nullspace(self.S, self.names, ["r1", "r3"])
+        assert len(status['targets_kept']) == 1
+        assert status['target_indices'] == [self.names.index(status['targets_kept'][0])]
 
 
 # ---------------------------------------------------------------------------
@@ -108,15 +118,33 @@ class TestBasicCorrectness:
 # ---------------------------------------------------------------------------
 
 class TestSeparabilityFailure:
-    def test_coupled_targets_returns_not_separable(self):
-        """Reactions that are in series (fixed flux ratio) cannot be separated."""
-        # Use the same S as _make_S_and_names(): r0 and r1 are in series
-        # (v1 = v0 in every null-space vector), so rank(G) = 1 < 2 = |T|.
+    def test_coupled_targets_keep_an_independent_subset(self):
+        """A target that is an exact combination of another is dropped, not fatal.
+
+        r0 and r1 are in series (v1 = v0 in every null-space vector), so rank(G) = 1 < 2.
+        Failing outright would cost r0 its dedicated DOF as well, for nothing: r1's flux
+        is still determined, just through r0.
+        """
         S, names = _make_S_and_names()
         Z, status = compute_targeted_nullspace(S, names, ["r0", "r1"])
-        assert not status['separable']
-        assert 'coupled' in status['fallback_reason'] or 'rank' in status['fallback_reason']
-        assert Z is None
+        assert status['separable']
+        assert Z is not None
+        assert len(status['targets_kept']) == 1
+        assert status['targets_dropped'] == [n for n in ("r0", "r1")
+                                             if n not in status['targets_kept']]
+
+    def test_more_connected_target_wins(self):
+        """When targets are coupled, the one touching more metabolites keeps the DOF.
+
+        A reaction that couples many metabolites constrains more of the network, so it
+        is the more useful one to hold a coordinate. On the T cell this is what keeps
+        PROTEIN_c over the amino-acid exchanges that are collinear with it.
+        """
+        S, names = _make_S_and_names()
+        # r1 touches metabolites B and C; r4 touches only D.
+        assert np.count_nonzero(S[:, names.index("r1")]) > np.count_nonzero(S[:, names.index("r4")])
+        _, status = compute_targeted_nullspace(S, names, ["r4", "r1", "r0"])
+        assert "r1" in status['targets_kept']
 
     def test_single_target_always_separable_if_nonzero(self):
         """A single target is separable as long as it has any null-space component."""
@@ -184,12 +212,19 @@ class TestErrorCases:
         with pytest.raises(ValueError, match="not in list|compute_targeted_nullspace"):
             compute_targeted_nullspace(S, names, ["NOTAREACTION"])
 
-    def test_too_many_targets_raises_value_error(self):
+    def test_more_targets_than_dimensions_drops_the_surplus(self):
+        """Asking for more targets than the null space has dimensions is not an error.
+
+        At most k of them can be independent, so the surplus is redundant by
+        construction and is dropped like any other redundancy.
+        """
         S, names = _make_S_and_names()
         k = S.shape[1] - np.linalg.matrix_rank(S)   # = 2
-        # Ask for k+1 = 3 targets
-        with pytest.raises(ValueError, match="null-space dimension"):
-            compute_targeted_nullspace(S, names, ["r0", "r1", "r2"])
+        Z, status = compute_targeted_nullspace(S, names, ["r0", "r1", "r2"])
+        assert status['separable']
+        assert len(status['targets_kept']) <= k
+        assert status['targets_dropped']
+        assert np.allclose(S @ Z, 0, atol=1e-8)
 
     def test_empty_target_list_raises(self):
         S, names = _make_S_and_names()

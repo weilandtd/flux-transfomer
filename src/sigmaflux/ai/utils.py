@@ -212,14 +212,31 @@ def compute_targeted_nullspace(
     warn_cond_threshold : float
         Log a warning when cond(S_D) exceeds this value.
 
+    Redundant targets are dropped rather than failing the whole construction. When the
+    target rows do not span a full-rank subspace of null(S), some targets are exact
+    linear combinations of others -- 22 measured fluxes on the T cell span only rank 15,
+    because the amino-acid exchanges are pinned to protein synthesis. Giving up there
+    costs every target its dedicated DOF, including the ones that were independent, so
+    instead a maximal independent subset is kept.
+
+    Which ones survive is decided by how many metabolites a reaction touches, most
+    first. A reaction that couples many metabolites constrains more of the network
+    downstream, so it is the more useful thing to hold a coordinate: on the T cell that
+    keeps PROTEIN_c (24 metabolites) and drops the seven single-metabolite amino-acid
+    exchanges that are collinear with it. Ties break on the caller's order, so the
+    selection is deterministic.
+
     Returns
     -------
-    Z : np.ndarray, shape (n, n-r), or None if separability check fails
+    Z : np.ndarray, shape (n, n-r), or None if no basis could be built at all
     status : dict with keys
-        separable       bool   — False means targets are stoichiometrically coupled
+        separable       bool   — True when a targeted basis was built, possibly on a
+                                 subset; False only when none could be
         fallback_reason str    — set when separable=False
+        targets_kept    list   — targets that received their own DOF
+        targets_dropped list   — redundant targets, each an exact combination of the kept
         cond_SD         float  — condition number of the dependent block (0 when failed)
-        target_indices  list   — column indices of target reactions in S
+        target_indices  list   — column indices of the KEPT target reactions in S
         dep_cols        list   — column indices chosen as the dependent block
         free_cols       list   — column indices of free DOFs (targets first)
     """
@@ -240,25 +257,38 @@ def compute_targeted_nullspace(
             'cond_SD': 0.0, 'target_indices': target_idx,
             'dep_cols': [], 'free_cols': [],
         }
-    if len(target_reactions) > k:
-        raise ValueError(
-            f"compute_targeted_nullspace: {len(target_reactions)} targets but "
-            f"null-space dimension is only {k}"
-        )
+    # Asking for more targets than the null-space dimension is not an error: at most k
+    # of them can be independent, so the surplus is redundant by construction and the
+    # selection below drops it like any other redundancy.
 
-    # Step 1 — separability check: target rows must span a full-rank subspace in null(S)
-    G = Z_raw[target_idx, :]             # (|T|, k)
-    rank_G = np.linalg.matrix_rank(G, tol=tol * np.linalg.norm(G))
-    if rank_G < len(target_reactions):
+    # Step 1 — keep a maximal independent subset of targets, most-connected first.
+    # Adding a target that is already an exact combination of the kept ones would make
+    # the identity block singular, so it is skipped; its flux is still determined, just
+    # through the others rather than through a coordinate of its own.
+    order = sorted(
+        range(len(target_reactions)),
+        key=lambda i: (-int(np.count_nonzero(S[:, target_idx[i]])), i),
+    )
+    kept, dropped = [], []
+    for i in order:
+        trial = kept + [target_idx[i]]
+        G = Z_raw[trial, :]
+        if np.linalg.matrix_rank(G, tol=tol * max(np.linalg.norm(G), 1.0)) == len(trial):
+            kept.append(target_idx[i])
+        else:
+            dropped.append(target_reactions[i])
+    # An empty target list is a legitimate request for an untargeted basis; only a
+    # request that asked for targets and could keep none is a failure.
+    if target_reactions and not kept:
         return None, {
             'separable': False,
-            'fallback_reason': (
-                f'targets are stoichiometrically coupled: '
-                f'rank(G)={rank_G} < {len(target_reactions)}'
-            ),
-            'cond_SD': 0.0, 'target_indices': target_idx,
+            'fallback_reason': 'no target has a null-space component',
+            'targets_kept': [], 'targets_dropped': list(target_reactions),
+            'cond_SD': 0.0, 'target_indices': [],
             'dep_cols': [], 'free_cols': [],
         }
+    target_idx = kept
+    targets_kept = [reaction_names[i] for i in kept]
 
     # Step 2 — identify r = rank(S) independent metabolite rows via QR on S.T
     # scipy.linalg.qr with pivoting=True: S.T[:, piv] = Q @ R  →  piv gives column
@@ -318,13 +348,15 @@ def compute_targeted_nullspace(
     # separability is fully preserved.  The rotation maximises sparsity of the free
     # dimensions so they concentrate on specific metabolic pathways rather than being
     # arbitrary LU artefacts.
-    n_targets = len(target_reactions)
+    n_targets = len(target_idx)
     if n - r > n_targets + 1:
         Z[:, n_targets:] = _varimax_rotate(Z[:, n_targets:].copy())
 
     return Z, {
         'separable': True,
         'fallback_reason': '',
+        'targets_kept': targets_kept,
+        'targets_dropped': dropped,
         'cond_SD': cond_SD,
         'col_norms': col_norms,
         'target_indices': target_idx,
@@ -585,18 +617,22 @@ def compute_targeted_ica_nullspace(
     # ── Step 1: targeted construction ────────────────────────────────────────
     Z_targ, tgt_status = compute_targeted_nullspace(S, reaction_names, target_reactions)
     if not tgt_status['separable']:
-        print(f"targeted_ica: separability failed ({tgt_status['fallback_reason']}); "
-              f"falling back to ica_informed")
-        Z_fb, ica_status = compute_ica_nullspace(S, flux_samples, seed=seed)
-        return Z_fb, {
-            'separable': False, 'cond_SD': 0.0, 'target_indices': tgt_status['target_indices'],
-            'n_ica_free': ica_status['n_ica_components'],
-            'n_complement_free': ica_status['n_complement'],
-            'n_active_free': ica_status['n_active'],
-            'fallback': False,
-        }
+        # Deliberately not falling through to ica_informed. That substitution is
+        # invisible in the resulting checkpoint -- the run reports null_space_type
+        # targeted_ica while the measured fluxes hold no coordinate at all -- and it
+        # cost the T cell its DNA_c and RNA_c predictions. Redundant targets no longer
+        # trigger this; reaching it means no target has a null-space component.
+        raise RuntimeError(
+            f"targeted_ica basis could not be built: {tgt_status['fallback_reason']}. "
+            f"Set null_space_type explicitly if that is what you want."
+        )
 
-    n_targets = len(target_reactions)
+    # The kept targets, not everything asked for: redundant ones share a DOF with a
+    # more connected target rather than getting their own, so they are not in the block.
+    n_targets = len(tgt_status['targets_kept'])
+    if tgt_status['targets_dropped']:
+        print(f"targeted_ica: {n_targets}/{len(target_reactions)} targets got their own DOF; "
+              f"redundant: {', '.join(tgt_status['targets_dropped'])}")
     d = Z_targ.shape[1]
     n_free = d - n_targets
 
@@ -604,6 +640,8 @@ def compute_targeted_ica_nullspace(
     if n_free < 2:
         return Z_targ, {
             'separable': True, 'cond_SD': tgt_status['cond_SD'],
+            'targets_kept': tgt_status['targets_kept'],
+            'targets_dropped': tgt_status['targets_dropped'],
             'target_indices': tgt_status['target_indices'],
             'n_ica_free': 0, 'n_complement_free': n_free,
             'n_active_free': n_free, 'fallback': False,
@@ -647,6 +685,8 @@ def compute_targeted_ica_nullspace(
         print("targeted_ica: FastICA failed; keeping Varimax free columns")
         return Z_targ, {
             'separable': True, 'cond_SD': tgt_status['cond_SD'],
+            'targets_kept': tgt_status['targets_kept'],
+            'targets_dropped': tgt_status['targets_dropped'],
             'target_indices': tgt_status['target_indices'],
             'n_ica_free': 0, 'n_complement_free': n_free,
             'n_active_free': n_active, 'fallback': True,
@@ -687,6 +727,8 @@ def compute_targeted_ica_nullspace(
     return Z, {
         'separable': True,
         'cond_SD': tgt_status['cond_SD'],
+        'targets_kept': tgt_status['targets_kept'],
+        'targets_dropped': tgt_status['targets_dropped'],
         'target_indices': tgt_status['target_indices'],
         'n_ica_free': k_ica,
         'n_complement_free': n_comp,
