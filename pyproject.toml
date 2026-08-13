@@ -22,7 +22,9 @@ classifiers = [
 dependencies = [
     "torch>=2.0",
     "numpy>=1.24",
-    "pandas>=2.0",
+    # pandas 3 breaks pytables reads of the training HDF5 files, and this bound is
+    # also what constrains hopsy's unbounded pandas requirement.
+    "pandas>=2.0,<3",
     "scipy>=1.10",
     "cobra>=0.29",
     "networkx>=3.0",
@@ -59,14 +61,13 @@ sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 # is absent, before any of our code runs. Installing hopsy keeps the import alive. The
 # HopsySampler wrapper itself is devel-branch-only, which is why this is not a runtime dep.
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "hopsy"]
-# x3cflux 3.0.4 ships cp311-only wheels, so this extra cannot be resolved on the
-# 3.10 end of requires-python; sigmaflux.x3cflux is imported lazily and its tests
-# skip when it is absent. Two install notes that pip cannot express:
-#   * cyipopt must come from conda-forge (`conda install -c conda-forge cyipopt`);
-#     the pip build needs Ipopt headers.
-#   * install x3cflux itself with --no-deps. Its hopsy dependency otherwise drags
-#     in pandas 3, which breaks pytables reads of the training HDF5 files.
-x3cflux = ["x3cflux>=3.0.4", "cvxpy"]
+# The second MFA backend. sigmaflux.x3cflux is imported lazily and its tests skip
+# when it is absent, so this stays optional. One install note pip cannot express:
+# x3cflux needs Ipopt, and pip's cyipopt is an sdist that wants Ipopt headers at
+# build time -- so cyipopt has to come from conda-forge, which is what
+# environment.yml does. Install with `conda env create -f environment.yml`, not with
+# this extra alone.
+x3cflux = ["x3cflux>=3.0.4"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autodoc-typehints",
