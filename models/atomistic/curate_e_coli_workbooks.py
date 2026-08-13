@@ -97,6 +97,24 @@ UNIDENTIFIABLE_ROUTES = {
                'MLDCP1Bpp', 'PGPP160pp', 'DHORD5', 'FADRx2', 'FE3tex', 'NACODA'},
 }
 
+# Triage of the 58 iAF1260 reactions that carry carbon but have no atom map, which
+# emu_expansion now reports as a RuntimeWarning. Left in deliberately:
+#
+#   45  return only carrier carbon -- adp/udp/ump/cmp/amp, ahcys, and the q8h2/mql8
+#       quinones. 13C-MFA does not trace a nucleotide or a redox carrier's skeleton,
+#       so an unmapped edge there costs nothing. The quinones are also why the config
+#       supplies EX_mql8_c / EX_q8h2_c: the subset cannot make them either way.
+#   10  murein carboxy/transpeptidases (MCTP*, MDDCP*, MLDCP*) releasing ala-D_p
+#    3  cardiolipin synthases (CLPNS*) releasing glyc_p
+#
+# The murein group is the only one worth naming. Nothing mapped produces ala-D_p, so
+# it is an EMU network input carrying no tracer; DALAt2pp then moves it to ala-D_c and
+# ALAR is reversible (-1000, 1000), so cell-wall turnover can feed unlabeled carbon
+# back into ala-L_c -- a pool the LC/MS mapping calls measurable. The path is real but
+# peripheral: murein recycling flux is orders below alanine synthesis on glucose
+# minimal medium. Mapping it would mean atom maps for the whole murein sub-network,
+# which the MFA-purposed workbook does not carry. Revisit if alanine fits poorly.
+
 # Reactions that are bare sources/sinks rather than chemistry, and so become the
 # exchange for the metabolite they feed. This is per model on purpose: the two
 # workbooks use the same reaction names for different things. iAF1260's `gluc_up` is
