@@ -208,6 +208,45 @@ def add_labeling_noise(gt_labeling, noise_std, rng):
     return pd.Series(noisy_stored / total[codes], index=gt_labeling.index)
 
 
+def labeling_chi2_scale(measured, noise_std, rng, n_draws=16):
+    """E[χ²]/n for the labeling block, in units of the *declared* σ.
+
+    The χ² goodness-of-fit test assumes the residual sd equals the σ the objective
+    divides by. Here it does not: :func:`add_labeling_noise` renormalises each group
+    to sum to one, which correlates the perturbations and shrinks the residual well
+    below ``noise_std``. Taking σ at face value therefore makes the test accept
+    essentially every fit, which is why an earlier reduced-χ² bound was abandoned as
+    uninformative.
+
+    This measures the deflation instead of assuming it away, by re-noising the
+    *measured* MIDs and reading off the mean squared standardised residual. It needs
+    no ground truth: the shrinkage is a property of the MID values and the group
+    structure, not of whether those values are the true ones — the same thing a lab
+    does when it characterises its instrument rather than trusting the spec sheet.
+
+    Only the stored fractions are scored, matching the objective. M+0 is deliberately
+    excluded: its residual is a sum of the whole group's perturbations, so its variance
+    grows with group size and averaging it in here would report ~1.05 for a block whose
+    stored elements sit near 0.75.
+
+    Returns the variance scale ``s``, so ``SSR/s`` is the statistic that follows
+    χ²(dof) and ``s·χ²_{1-α}(dof)`` is the bound to compare a raw SSR against.
+
+    Each draw already averages over every MID element, so a handful of draws pins ``s``
+    to well under a percent and the estimate costs no simulation at all. Re-noising an
+    already-noisy vector biases ``s`` up a few percent — the base is clipped at zero and
+    most MIDs sit near it — which loosens the bound slightly rather than tightening it.
+    """
+    if noise_std <= 0:
+        return 1.0
+    stored = measured.to_numpy(dtype=np.float64)
+    total = 0.0
+    for _ in range(n_draws):
+        draw = add_labeling_noise(measured, noise_std, rng).to_numpy(dtype=np.float64)
+        total += ((draw - stored) ** 2).sum()
+    return float(total / (n_draws * stored.size * noise_std ** 2))
+
+
 def add_flux_noise(true_values, flux_noise_std, rng):
     """Relative flux noise, ``v·(1 + N(0, σ))`` — the training form.
 

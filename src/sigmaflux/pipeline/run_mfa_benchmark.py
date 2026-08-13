@@ -14,9 +14,11 @@ Each benchmark run:
   3. Adds measured-flux soft constraints (with flux_noise_std noise).
   4. Fits MFA from a random feasible flux — another training sample, chosen without
      reference to the ground truth, because a real fit has no answer to start near.
-     Restarts until the fit reaches the global optimum: the residual the TRUE flux
-     achieves against the same noise, which no minimiser can beat since the truth is
-     itself feasible.
+     Restarts until the fit passes the standard ¹³C-MFA goodness-of-fit test
+     (Antoniewicz, Kelleher & Stephanopoulos 2006): SSR ≤ χ²_{1-α}(n_meas - n_params).
+     That is the criterion a real experiment can apply; comparing against the residual
+     at the true flux cannot, and is looser besides — the truth spends no parameters,
+     so a converged fit beats it by (n-p)/n on average.
   5. Writes predicted fluxes and labeling in the same schema as
      ``sigmaflux-benchmark``, so the two are directly comparable.
 
@@ -44,6 +46,7 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 import torch
+from scipy import stats
 
 from ..core.data import (
     FluxData,
@@ -56,6 +59,7 @@ from ..core.mfa import fit_mfa_model
 from ._benchmark import (
     build_mfa_context,
     forward_labeling,
+    labeling_chi2_scale,
     load_benchmark_inputs,
     noisy_measurements,
     pin_threads,
@@ -121,16 +125,33 @@ def build_parser():
                         "feasible init until the fit reaches the global optimum; if none "
                         "does, the best of the N_max is kept (never NaN) and its distance "
                         "from optimal is recorded as ssr_ratio.")
+    p.add_argument("--accept-rule", choices=["chi2", "ratio"], default="chi2",
+                   help="How a fit is judged acceptable, which is also when the "
+                        "multi-start loop stops. 'chi2' is the standard 13C-MFA "
+                        "goodness-of-fit test (Antoniewicz et al. 2006): SSR <= "
+                        "χ²_{1-α}(n_measurements - n_parameters), using no ground truth. "
+                        "'ratio' is the older SSR <= --accept-ratio · SSR_true, which "
+                        "needs an answer no real experiment has.")
+    p.add_argument("--chi2-alpha", type=float, default=0.05,
+                   help="Significance level for the χ² goodness-of-fit test (default "
+                        "0.05, i.e. reject fits above the 95th percentile of χ²(dof))")
+    p.add_argument("--chi2-scale", type=float, default=None,
+                   help="Variance of the standardised residual under the noise model "
+                        "(default: measured from the MID renormalisation). The declared "
+                        "σ is optimistic because renormalising each group to sum to one "
+                        "shrinks the residual, and an unscaled test accepts ~100%% of "
+                        "fits. Pass 1.0 to take σ at face value.")
     p.add_argument("--accept-ratio", type=float, default=1.0,
-                   help="Accept a fit when SSR <= this multiple of the SSR the TRUE flux "
-                        "achieves against the same noise. 1.0 = must reach the global "
-                        "optimum, since the ground truth is a feasible point of the same "
-                        "problem. Raise it to admit near-optimal fits.")
+                   help="Only with --accept-rule ratio: accept when SSR <= this multiple "
+                        "of the SSR the TRUE flux achieves against the same noise. Note "
+                        "the truth spends no parameters, so a converged fit beats it by "
+                        "(n-p)/n on average — this bound is looser than the χ² test and "
+                        "stops the restart loop early.")
     p.add_argument("--accept-z", type=float, default=1.645,
                    help="z-score for the legacy reduced-χ² bound M ≤ 1 + z·sqrt(2/h_eff). "
-                        "Reported for comparison only — acceptance now uses --accept-ratio, "
-                        "because this bound is calibrated on the declared σ while the "
-                        "clamped, renormalised MID noise has a true sd near 0.84σ.")
+                        "Reported for comparison only; it divides by the measurement "
+                        "count rather than the degrees of freedom and ignores the σ "
+                        "deflation, so it accepted nearly everything.")
     p.add_argument("--verbose", action="store_true",
                    help="Print the optimiser trace (iteration, chi-square, gradient norm, "
                         "elapsed) for every fit. Without it a long fit is silent until it "
@@ -190,6 +211,46 @@ def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, 
     gt_norm = float(np.linalg.norm(v_gt))
     dev = float(np.linalg.norm(v_init - v_gt) / gt_norm) if gt_norm > 0 else 0.0
     return v_init, r_init, {"j": j, "dev": dev}
+
+
+def fitted_parameter_count(model):
+    """Free parameters the fit spends: null-space net-flux coordinates + exchanges.
+
+    ``fit_mfa_model`` optimises ``v_net = T·p`` with ``T = null(S)`` plus one
+    reversibility per reversible reaction, so this is the ``p`` that the χ² test
+    subtracts from the measurement count. The x3cflux arm eliminates the same
+    stoichiometry into the same free space, so the count applies to both backends.
+    """
+    from ..core.mfa import gen_SVD_kernel
+
+    k = gen_SVD_kernel(model.stoichiometry.cpu().numpy()).shape[1]
+    return int(k + int(model._reversibility_mask.sum().item()))
+
+
+def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
+    """Upper bound on the raw SSR for a statistically acceptable fit.
+
+    The standard ¹³C-MFA goodness-of-fit test (Antoniewicz, Kelleher & Stephanopoulos
+    2006, *Metab Eng* 8:324): at a global optimum of a correct model with known
+    measurement σ, the weighted SSR follows χ² on ``dof = n_measurements - n_params``.
+    A fit is accepted when its SSR falls below ``χ²_{1-α}(dof)``; anything above is
+    statistically distinguishable from the data and the optimiser is restarted.
+
+    This replaces comparing against the residual at the *true* flux, which needs
+    ground truth no real experiment has. It is also the stricter test: the truth
+    spends no parameters, so a converged fit beats it by ``(n-p)/n`` on average —
+    ``SSR < SSR_true`` is what a correct fit looks like, not evidence of one.
+
+    *scale_labeling* is the variance of the standardised residual in the labeling block
+    under the actual noise model (see
+    :func:`~sigmaflux.pipeline._benchmark.labeling_chi2_scale`). The flux block needs no
+    correction — its noise is unclipped and its σ is the same ``|v|·σ_rel`` used to
+    generate it — so the two blocks are blended by size. ``SSR/scale`` is what is
+    χ²-distributed, hence the bound on the raw SSR carries the factor.
+    """
+    dof = max(n_L + n_F - n_params, 1)
+    scale = (scale_labeling * n_L + 1.0 * n_F) / max(n_L + n_F, 1)
+    return float(scale * stats.chi2.ppf(1.0 - alpha, dof)), dof, scale
 
 
 def acceptance_threshold(n_L, n_F, z=1.645):
@@ -474,6 +535,7 @@ def main(args):
         with_backward=(args.backend == "native"),
     )
     backend = None      # built on the first sample, once the fitted index is known
+    chi2_bound = chi2_dof = chi2_scale = None   # built on the first sample too
     # The fixed cost every array task pays before it fits anything. Reported because
     # the launcher's sizing formula subtracts it from the per-task budget, and it is
     # the one term a per-sample timing cannot show.
@@ -551,13 +613,27 @@ def main(args):
             simulator, fluxmap = backend.simulator_for(
                 noisy_series.to_numpy(float), noisy_flux, flux_sigma)
 
-        # ── Step 3: multi-start fit until the reduced-χ² bound is met ─────────
+        # ── Step 3: multi-start fit until the fit is statistically acceptable ──
         # The measurements above are fixed for this sample; only the starting point
         # changes across restarts. Each start IS a different random feasible training
         # sample, taken verbatim: ground truth is never used to construct it (see
-        # make_init_fluxes). Restart until ssr_fit clears accept_ratio·ssr_true, or
+        # make_init_fluxes). Restart until the fit passes the acceptance test, or
         # max_starts is exhausted — L-BFGS-B otherwise sticks in the first local minimum.
         mfa_model.experiments = noisy_exps
+
+        # The acceptance bound is a property of the measurement layout and the parameter
+        # count, neither of which varies across samples, so it is built once and reused.
+        if chi2_bound is None:
+            n_L, n_F = _block_counts(mfa_model)
+            n_params = fitted_parameter_count(mfa_model)
+            scale_L = (args.chi2_scale if args.chi2_scale is not None
+                       else labeling_chi2_scale(noisy_series, args.noise_std,
+                                                np.random.default_rng(args.seed)))
+            chi2_bound, chi2_dof, chi2_scale = chi2_acceptance(
+                n_L, n_F, n_params, scale_L, args.chi2_alpha)
+            print(f"  Goodness-of-fit test: {n_L}+{n_F} measurements − {n_params} "
+                  f"parameters = {chi2_dof} dof, σ² scale {chi2_scale:.3f} → "
+                  f"accept SSR ≤ {chi2_bound:.1f} (α={args.chi2_alpha})")
 
         # The residual the TRUE flux achieves against this very noise. Not zero: the
         # truth reproduces the noiseless MIDs, so its residual IS the noise energy,
@@ -620,8 +696,6 @@ def main(args):
             # comparison: it is measured against the declared sigma, which overstates
             # the true noise, so it reads low and passes fits that never converged.
             mean_reduced_chi2 = 0.5 * (res["ssr_labeling"] + res["ssr_fluxes"])
-            legacy_bound = acceptance_threshold(res["n_labeling"], res["n_fluxes"],
-                                                args.accept_z)
             if args.diagnose:
                 _report_fit(mfa_model, res, gt_flux, gt_labeling_vec, labeling_to,
                             labeling_index, reaction_ids, measured_rxn_ids,
@@ -640,16 +714,14 @@ def main(args):
                         "converged": bool(res["converged"]), "n_iter": int(res["n_iter"]),
                         "labeling": best_lab, "fluxes": best_flux}
             print(f"  start {start + 1}/{args.max_starts}: SSR={ssr_fit:.2f} "
-                  f"ratio={ratio:.3f} (accept≤{args.accept_ratio:g}) "
+                  f"(χ² accept≤{chi2_bound:.1f}, dof={chi2_dof}) ratio={ratio:.3f} "
                   f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
                   f"iter={res['n_iter']}")
-            # Accept on reaching the global optimum, not on a reduced-χ² bound. The
-            # bound is calibrated on the declared σ, but clamping and renormalising the
-            # MID noise leaves its true sd near 0.84σ, so a fit can clear the bound at
-            # reduced χ² ≈ 1.1 while the true optimum sits near 0.70 — accepted, yet
-            # visibly not converged. Comparing to ssr_true is free of that calibration.
-            if ssr_fit <= args.accept_ratio * ssr_true:
-                accepted = True
+            if args.accept_rule == "chi2":
+                accepted = ssr_fit <= chi2_bound
+            else:
+                accepted = ssr_fit <= args.accept_ratio * ssr_true
+            if accepted:
                 break
 
         # ── Step 4: record the best solution found, plus how far it is from optimal ──
@@ -662,7 +734,8 @@ def main(args):
         if best is not None and not np.isnan(best["ssr_fit"]):
             pred_labeling_vec = best["labeling"]
             pred_flux_vec = best["fluxes"]
-            mark = "✓ reached the global optimum" if accepted else "✗ above the true optimum"
+            mark = ("✓ statistically acceptable" if accepted
+                    else "✗ rejected by the goodness-of-fit test")
             print(f"  {mark} after {best['start']} start(s): "
                   f"SSR {best['ssr_fit']:.2f} vs true {ssr_true:.2f} "
                   f"(ratio {best['ratio']:.3f})  [{sample_seconds:.1f}s]")
@@ -684,6 +757,11 @@ def main(args):
             "backend": args.backend,
             # What the array is sized from; see submit_mfa_benchmark.sh's PILOT mode.
             "seconds": round(sample_seconds, 2),
+            # The goodness-of-fit test that decided `reached_optimum`, so a reader can
+            # re-apply or re-tune it without re-running the benchmark.
+            "accept_rule": args.accept_rule,
+            "chi2_dof": int(chi2_dof) if chi2_dof else np.nan,
+            "chi2_bound": float(chi2_bound) if chi2_bound else np.nan,
         })
 
         pred_lab_data.append(pred_labeling_vec)
