@@ -33,3 +33,17 @@ model_mm = convert_mfa_maranas('M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
                                drop_subsystems=('dilution',),
                                biomass_id='BIOMASS_c')
 _print_model_summary("M_musculus_T_Cell", model_mm)
+
+# E_coli_core / E_coli — the workbooks are normalised in place by
+# curate_e_coli_workbooks.py first; run that before this if either xlsx changes.
+# Both spell biomass 'biomass_out', which the configs' measured_fluxes and the
+# single lumped BIOMASS both refer to as 'BIOMASS'.
+model_ec_core = convert_mfa_maranas('E_coli_core/example_GEM.xlsx', 'E_coli_core/example_AMM.xlsx',
+                                    'E_coli_core/e_coli_core_annotated.json',
+                                    biomass_id='biomass_out')
+_print_model_summary("E_coli_core", model_ec_core)
+
+model_ec = convert_mfa_maranas('E_coli/iAF1260_GEM.xlsx', 'E_coli/iAF1260_AMM.xlsx',
+                               'E_coli/iAF1260_annotated.json',
+                               biomass_id='biomass_out')
+_print_model_summary("E_coli", model_ec)
