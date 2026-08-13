@@ -1,6 +1,6 @@
 import re
 from collections import Counter
-from sigmaflux.expansion.utils import emu_to_bin
+from sigmaflux.expansion.utils import atom_pattern_regex, emu_to_bin
 from sigmaflux.expansion.emu import EMU, OriginSet
 
 
@@ -142,16 +142,14 @@ def parse_mapping_string(map_str, rxn):
 
     # Reactants
     for met in rxn.reactants:
-        # Optimized regex pattern with word boundaries and flexible spacing
-        pattern = r"\b{}\s*\(([^)]+)\)".format(re.escape(met.id))
+        pattern = atom_pattern_regex(met.id)
         mappings = re.findall(pattern, map_str)
         for the_mapping in mappings:
             educts_atom_mappings.append((met.id, the_mapping))
 
     # Products
     for met in rxn.products:
-        # Optimized regex pattern with word boundaries and flexible spacing
-        pattern = r"\b{}\s*\(([^)]+)\)".format(re.escape(met.id))
+        pattern = atom_pattern_regex(met.id)
         mappings = re.findall(pattern, map_str)
         for the_mapping in mappings:
             products_atom_mappings.append((met.id, the_mapping))

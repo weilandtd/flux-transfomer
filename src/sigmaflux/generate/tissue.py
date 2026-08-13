@@ -122,7 +122,7 @@ def get_tissue_model_from_model(model, bounds = [0,20]):
 
         if "atom_mapping" in x.annotation: 
             annotation = x.annotation["atom_mapping"]
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(metabolite.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match:
                 atom_map = match.group(1)
@@ -195,7 +195,7 @@ def get_organ_model_from_model(model, bounds = [0,20]):
 
         if "atom_mapping" in x.annotation: 
             annotation = x.annotation["atom_mapping"]
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(metabolite.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match:
                 atom_map = match.group(1)
@@ -242,7 +242,7 @@ def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]):
     for r in met.reactions: 
         if "atom_mapping" in r.annotation: 
             annotation = r.annotation["atom_mapping"]
-            pattern = re.escape(met.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(met.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match: 
                 break
@@ -270,7 +270,7 @@ def add_output_reaction(model, met, suffix = "IN", bounds = [0,20]):
     for r in met.reactions: 
         if "atom_mapping" in r.annotation: 
             annotation = r.annotation["atom_mapping"]
-            pattern = re.escape(met.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(met.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match: 
                 break

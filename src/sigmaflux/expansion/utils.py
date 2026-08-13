@@ -1,8 +1,20 @@
 """
 
 """
+import re
 
 SYMMETRY = ['symmetric', 'Symmetric', 'Symmetry', 'symmetry', '[sym]']
+
+
+def atom_pattern_regex(met_id):
+    r"""Regex capturing ``met_id``'s parenthesised atom pattern in a mapping string.
+
+    A hyphen is an ordinary id character in BiGG naming (``glc-D_e``), so it must be
+    excluded on the left along with ``\w``. ``\b`` alone matches between the ``-``
+    and the ``f`` of ``arbtn-fe3_e (abc..v)``, which hands a lookup for ``fe3_e``
+    the 22-atom pattern of a different metabolite.
+    """
+    return r"(?<![\w-]){}\s*\(([^)]+)\)".format(re.escape(met_id))
 
 
 def can_make_met(reaction, metabolite):

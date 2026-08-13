@@ -141,12 +141,10 @@ def add_tracers_to_model(tracers, model, tracer_influx= 0.01, bound =20):
 
         # exchange_reaction  = model.reactions.get_by_id(f"EX_{tracer.id[:-2]}[v]")
 
-        # pattern = re.escape(tracer.id) + r'\s*(\([^)]+\))'
-        # match = re.search(pattern, exchange_reaction.annotation["atom_mapping"])
         for r in tracer.reactions: 
             if "atom_mapping" in r.annotation: 
                 annotation = r.annotation["atom_mapping"]
-                pattern = re.escape(tracer.id) + r'\s*(\([^)]+\))'
+                pattern = r'(?<![\w-])' + re.escape(tracer.id) + r'\s*(\([^)]+\))'
                 match = re.search(pattern, annotation)
                 if match: 
                     break
