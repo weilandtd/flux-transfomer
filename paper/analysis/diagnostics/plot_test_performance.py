@@ -10,10 +10,13 @@ them to the benchmark predictions. Produces SVG figures:
 Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
-All R² are plain (unfiltered). sigmaflux-benchmark-mfa already rejects fits that fail
-the reduced-χ² acceptance bound and writes them as NaN, so every MFA sample reaching
-this script is a statistically acceptable fit; the spread that remains is genuine
-flux non-identifiability, not numerical failure, and must not be filtered away.
+**All R² are plain and unfiltered — do not add an outlier cut here.** The benchmark
+already drops every sample whose fit did not reach the global optimum (`ssr_ratio > 1`,
+see `converged_samples`), so what reaches this script is the set of solutions each
+method actually found. The spread that remains is genuine flux non-identifiability, and
+filtering it measures how a method does on the samples it happened to get right — which
+is exactly the selection bias the benchmark exists to expose. Two such filters have been
+tried and removed: an NMAD cut, and a Q-Q tail extrapolation.
 
 Usage:
     python paper/analysis/plot_test_performance.py paper/.results/i_orientalis_20260614
@@ -29,7 +32,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import norm
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
@@ -37,8 +39,6 @@ from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
 R2_THRESHOLD = 0.8
-QQ_ALPHA = 0.1                 # expected number of samples beyond the outlier cut under the
-                               # bulk model, per reaction; smaller = more conservative cut
 # Clip floor sits on the 0.2 tick grid so every interval on the axis is 0.2 wide and the
 # ticks are at their true data positions. The earlier −0.1 floor labelled "≤0" made the
 # first interval 0.3 against 0.2 for the rest, and mislabelled its own position.
@@ -128,41 +128,8 @@ def load_benchmark(bench_dir: pathlib.Path,
     return pd.concat(frames, ignore_index=True), n_failed
 
 
-def _robust_scale(resid: np.ndarray) -> float:
-    """Scale of the bulk of a residual distribution, read off its central quantiles.
-
-    IQR/1.349 is the σ a normal would need to produce the observed Q1..Q3, so it is
-    set by the middle half of the samples and is unaffected by the tail.
-    """
-    q1, q3 = np.percentile(resid, [25, 75])
-    return (q3 - q1) / 1.349
-
-
-def qq_inlier_mask(resid: np.ndarray, alpha: float = QQ_ALPHA) -> np.ndarray:
-    """Outlier cut obtained by extrapolating the central quantiles into the tail.
-
-    Fit the bulk scale from Q1..Q3 (`_robust_scale`), then cut at the quantile where
-    that fitted model expects only `alpha` samples out of n to remain — i.e. where the
-    observed tail departs from the straight line of the normal Q-Q plot. Unlike a fixed
-    n-MAD rule the cut widens with n, so it does not get more aggressive as samples are
-    added. Degenerate spread (IQR == 0) keeps everything.
-    """
-    n = len(resid)
-    scale = _robust_scale(resid)
-    if scale <= 0 or n < 2:
-        return np.ones(n, dtype=bool)
-    z_cut = norm.ppf(1.0 - alpha / (2.0 * n))
-    return np.abs(resid - np.median(resid)) <= z_cut * scale
-
-
-def per_flux_r2(df: pd.DataFrame, exclude_outliers: bool = True) -> pd.Series:
-    """R² for each reaction across samples.
-
-    With `exclude_outliers`, samples outside the Q-Q extrapolated bulk (see
-    `qq_inlier_mask`) are dropped first. This measures how well a method does when it
-    lands on a sensible solution, and must always be reported next to the unfiltered R²
-    and the exclusion rate from `outlier_fraction` — the excluded MFA fits are not
-    numerical failures, they clear the benchmark's own reduced-χ² acceptance bound.
+def per_flux_r2(df: pd.DataFrame) -> pd.Series:
+    """R² for each reaction across every sample the method solved.
 
     Reactions whose GT is constant across samples carry no variance to explain and
     yield NaN; they are dropped.
@@ -170,38 +137,12 @@ def per_flux_r2(df: pd.DataFrame, exclude_outliers: bool = True) -> pd.Series:
     def _r2(g):
         gt   = g["gt"].to_numpy()
         pred = g["pred"].to_numpy()
-        if exclude_outliers:
-            keep = qq_inlier_mask(pred - gt)
-            gt, pred = gt[keep], pred[keep]
         if len(gt) < 2:
             return np.nan
         ss_res = ((pred - gt) ** 2).sum()
         ss_tot = ((gt - gt.mean()) ** 2).sum()
         return 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
-
-
-def outlier_fraction(df: pd.DataFrame) -> pd.Series:
-    """Fraction of samples the Q-Q cut removes, per reaction."""
-    def _frac(g):
-        return float(1.0 - qq_inlier_mask(g["pred"].to_numpy() - g["gt"].to_numpy()).mean())
-    return df.groupby("reaction").apply(_frac, include_groups=False).dropna()
-
-
-def standardized_residuals(df: pd.DataFrame) -> np.ndarray:
-    """Per-reaction residuals divided by that reaction's bulk scale, pooled.
-
-    Standardising per reaction makes reactions with different flux magnitudes
-    comparable, so a single Q-Q plot can show whether one common bulk model describes
-    them all — and where it stops holding.
-    """
-    out = []
-    for _, g in df.groupby("reaction"):
-        r = g["pred"].to_numpy() - g["gt"].to_numpy()
-        scale = _robust_scale(r)
-        if scale > 0:
-            out.append((r - np.median(r)) / scale)
-    return np.concatenate(out) if out else np.empty(0)
 
 
 def overall_r2(df: pd.DataFrame) -> float:
@@ -223,55 +164,10 @@ def identifiability_table(r2_mfa: pd.Series, r2_ai: pd.Series) -> pd.DataFrame:
     # Explicit per-method flags for downstream selectors. The predicted-flux panels use
     # mfa_identifiable: those panels compare against the reference MFA fluxes, so where MFA
     # cannot determine a flux the reference value itself is unreliable and the comparison is
-    # meaningless regardless of how SigmaFlux does. Note both flags use the Q-Q-filtered R²
-    # — on the unfiltered R² MFA clears the bar for no reaction at all and the panels would
-    # be empty.
+    # meaningless regardless of how SigmaFlux does.
     tbl["sf_identifiable"] = ai_id
     tbl["mfa_identifiable"] = mfa_id
     return tbl.sort_values(["identifiable_by", "r2_ai"], ascending=[True, False])
-
-
-def _cut_z(n_per_reaction: int, alpha: float = QQ_ALPHA) -> float:
-    """The standardized-residual cut `qq_inlier_mask` applies to a reaction of n samples."""
-    return float(norm.ppf(1.0 - alpha / (2.0 * n_per_reaction)))
-
-
-def plot_qq(resid: dict, n_per_reaction: dict, output_dir: pathlib.Path,
-            filename: str = "qq_residuals.svg", n_points: int = 600, ylim: float = 12.0):
-    """Normal Q-Q plot of pooled standardized residuals, with the outlier cut marked.
-
-    This is the audit for `qq_inlier_mask`: the bulk of each method should track the
-    diagonal (the model fitted from its own central quantiles), and the cut sits where
-    the observed tail lifts off that line. Everything outside the dashed lines is what
-    the filtered R² drops. The cut is set by the per-reaction sample count, not the
-    pooled count, so it matches what the mask actually applies.
-    """
-    probs = (np.arange(n_points) + 0.5) / n_points
-    theo  = norm.ppf(probs)
-
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    lim = float(np.abs(theo).max()) * 1.05
-    ax.plot([-lim, lim], [-lim, lim], color="#AAAAAA", lw=0.8, zorder=0)
-
-    for key, vals in resid.items():
-        if len(vals) == 0:
-            continue
-        z_cut = _cut_z(n_per_reaction[key])
-        ax.plot(theo, np.quantile(vals, probs), color=COLORS[key], lw=1.8,
-                label=f"{LABEL[key]} — {100 * np.mean(np.abs(vals) > z_cut):.1f}% cut")
-        for s in (-1, 1):
-            ax.axhline(s * z_cut, color=COLORS[key], lw=0.7, ls="--", alpha=0.6, zorder=0)
-
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-ylim, ylim)
-    ax.set_xlabel("Normal quantile")
-    ax.set_ylabel("Standardized residual\n(per-reaction, IQR-scaled)")
-    ax.legend(frameon=False, fontsize=9, loc="upper left")
-    sns.despine(ax=ax)
-
-    fig.savefig(output_dir / filename, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {output_dir / filename}")
 
 
 def plot_metric_cdf(series: dict, xlabel: str, ylabel: str, filename: str,
@@ -434,26 +330,16 @@ def main():
     print(f"  {len(df_ai):,} pairs from {df_ai['reaction'].nunique()} reactions "
           f"({df_ai['sample'].nunique()} samples, {n_failed_ai} unsolved)")
 
-    r2_mfa,   r2_ai   = per_flux_r2(df_mfa), per_flux_r2(df_ai)
-    raw_mfa,  raw_ai  = (per_flux_r2(df_mfa, exclude_outliers=False),
-                         per_flux_r2(df_ai,  exclude_outliers=False))
-    out_mfa,  out_ai  = outlier_fraction(df_mfa), outlier_fraction(df_ai)
+    r2_mfa, r2_ai = per_flux_r2(df_mfa), per_flux_r2(df_ai)
 
-    # The filtered R² answers "how well does the method do when it lands on a sensible
-    # solution". It is only interpretable next to the unfiltered R² and the exclusion
-    # rate, because the two differ enormously for MFA and barely at all for SigmaFlux —
-    # the excluded MFA fits still clear the benchmark's reduced-χ² acceptance bound.
-    for name, r2, raw, out, df, n_failed in [
-            ("MFA", r2_mfa, raw_mfa, out_mfa, df_mfa, n_failed_mfa),
-            ("SigmaFlux", r2_ai, raw_ai, out_ai, df_ai, n_failed_ai)]:
+    for name, r2, df, n_failed in [
+            ("MFA", r2_mfa, df_mfa, n_failed_mfa),
+            ("SigmaFlux", r2_ai, df_ai, n_failed_ai)]:
         n_total = df["sample"].nunique() + n_failed
-        print(f"\n{name:9s} — median R²: {r2.median():+.3f} after Q-Q outlier cut "
-              f"(α={QQ_ALPHA:g}) | {raw.median():+.3f} unfiltered")
-        print(f"            reactions R² > {R2_THRESHOLD}: {int((r2 > R2_THRESHOLD).sum())} "
-              f"of {len(r2)} | {int((raw > R2_THRESHOLD).sum())} unfiltered")
-        print(f"            samples cut as outliers: {100 * out.mean():.1f}% "
-              f"(median {100 * out.median():.1f}% per reaction)")
-        print(f"            overall R² (pooled, unfiltered): {overall_r2(df):.3f}")
+        print(f"\n{name:9s} — median R²: {r2.median():+.3f}")
+        print(f"            reactions R² > {R2_THRESHOLD}: "
+              f"{int((r2 > R2_THRESHOLD).sum())} of {len(r2)}")
+        print(f"            overall R² (pooled): {overall_r2(df):.3f}")
         print(f"            samples with no acceptable solution: "
               f"{n_failed} of {n_total} ({100 * n_failed / n_total:.1f}%)")
 
@@ -476,9 +362,6 @@ def main():
                     "Per-reaction flux R²", "Fraction of reactions",
                     "r2_cdf_mfa.svg", output_dir,
                     ticks=X_TICKS, tick_labels=X_LABELS)
-    plot_qq({"mfa": standardized_residuals(df_mfa), "ai": standardized_residuals(df_ai)},
-            {"mfa": df_mfa["sample"].nunique(), "ai": df_ai["sample"].nunique()},
-            output_dir)
     plot_scatter(df_mfa, df_ai, output_dir)
 
 
