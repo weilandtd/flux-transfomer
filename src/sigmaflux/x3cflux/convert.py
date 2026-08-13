@@ -59,7 +59,12 @@ CARRIER_REL_TOL = 1e-3
 #: path it strands 164 carbons in a void pool. Draining the educts instead keeps it a
 #: strict sink: atoms leave, nothing unlabeled is invented, and the label follows its own
 #: carbons. Identical in I. orientalis and S. cerevisiae.
-SINK_LUMPS = {"lumpIPC_c"}
+#: ``lumpFACOA160_c`` / ``lumpFACOA170_c`` are the two fatty-acyl-CoA lumps that carry
+#: carbon with no ``atom_mapping`` at all: 8 acetyl-CoA condensed into one C16 chain,
+#: plus 7 ATP -> ADP and 7 HCO3 -> CO2 of activation chemistry. Only these two lack a
+#: map -- lumpFACOA180 through 260 have one and must keep it, since joining this set
+#: discards the map -- so the set is named explicitly rather than matched by prefix.
+SINK_LUMPS = {"lumpIPC_c", "lumpFACOA160_c", "lumpFACOA170_c"}
 SRC_SUFFIX = "__src"
 
 # SK_accoa_c is the one reaction that carries carbon but has no atom_mapping, so
@@ -78,6 +83,16 @@ SRC_SUFFIX = "__src"
 MAPPING_OVERRIDES = {
     "SK_accoa_c": "accoa_c (ab) + hco3_c (c) + atp_c (defghijklm) "
                   "-> co2_c (c) + adp_c (defghijklm)",
+    # Fumarate reductase, the one carbon-bearing reaction here whose map is a plain
+    # chemical fact rather than a modelling choice: the four-carbon backbone passes
+    # straight through, as its own reverse SUCDq6_m already spells out
+    # ("succ_m (abcd) + q6_m -> fum_m (abcd) + q6h2_m").
+    #
+    # Both pools are symmetric ('abcd.dcba'), so this single map is deliberately not the
+    # whole story: convert() sees the symmetry annotation and emits two half-flux
+    # orientations, abcd->abcd and abcd->dcba. Writing the symmetry into the map instead
+    # would double-count it.
+    "FRD_m": "fum_m (abcd) -> succ_m (abcd)",
 }
 
 
