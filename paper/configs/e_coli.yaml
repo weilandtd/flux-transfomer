@@ -84,6 +84,11 @@ sampling:
     EX_sheme_c:  {lb: -10.0, ub: 0.0}
     EX_thmpp_c:  {lb: -10.0, ub: 0.0}
 
+  # The MFA needs glucose entry one-way: reversible, GLCtex gives glc-D_e a producer
+  # and the tracer inlet stops being an EMU network input.
+  reaction_bounds:
+    GLCtex: {lb: 0.0, ub: 15.0}
+
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
   batch_size: 512
