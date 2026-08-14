@@ -1054,7 +1054,10 @@
 {
 "id":"adocbl_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9"
+}
 },
 {
 "id":"adp_c",
@@ -1422,7 +1425,10 @@
 {
 "id":"cbl1_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+}
 },
 {
 "id":"cbl1_e",
@@ -1551,17 +1557,26 @@
 {
 "id":"clpn160_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca"
+}
 },
 {
 "id":"clpn161_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca"
+}
 },
 {
 "id":"clpn181_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2"
+}
 },
 {
 "id":"cmp_c",
@@ -1629,17 +1644,26 @@
 {
 "id":"colipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
+}
 },
 {
 "id":"colipa_e",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
+}
 },
 {
 "id":"colipa_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
+}
 },
 {
 "id":"cpppg3_c",
@@ -2003,7 +2027,10 @@
 {
 "id":"dscl_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
+}
 },
 {
 "id":"dtdp_c",
@@ -2104,7 +2131,10 @@
 {
 "id":"enter_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCD"
+}
 },
 {
 "id":"etoh_c",
@@ -2149,7 +2179,10 @@
 {
 "id":"fadh2_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzA"
+}
 },
 {
 "id":"fdp_c",
@@ -2299,7 +2332,10 @@
 {
 "id":"gagicolipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120"
+}
 },
 {
 "id":"gam1p_c",
@@ -2352,7 +2388,10 @@
 {
 "id":"ggagicolipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126"
+}
 },
 {
 "id":"ggbutal_c",
@@ -2365,7 +2404,10 @@
 {
 "id":"gggagicolipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c"
+}
 },
 {
 "id":"ggptrc_c",
@@ -2378,7 +2420,10 @@
 {
 "id":"gicolipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a"
+}
 },
 {
 "id":"glc-D_c",
@@ -2759,7 +2804,10 @@
 {
 "id":"hhlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff"
+}
 },
 {
 "id":"his-L_c",
@@ -2796,7 +2844,10 @@
 {
 "id":"hlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8"
+}
 },
 {
 "id":"hmbil_c",
@@ -2825,7 +2876,10 @@
 {
 "id":"hphhlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106"
+}
 },
 {
 "id":"hxan_c",
@@ -2862,7 +2916,10 @@
 {
 "id":"icolipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114"
+}
 },
 {
 "id":"Ile_d",
@@ -2980,12 +3037,18 @@
 {
 "id":"kdo2lipid4_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5"
+}
 },
 {
 "id":"kdo2lipid4L_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2"
+}
 },
 {
 "id":"kdo8p_c",
@@ -2998,12 +3061,18 @@
 {
 "id":"kdolipid4_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd"
+}
 },
 {
 "id":"kphphhlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e"
+}
 },
 {
 "id":"lac-D_c",
@@ -3082,17 +3151,26 @@
 {
 "id":"lipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0"
+}
 },
 {
 "id":"lipidA_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
+}
 },
 {
 "id":"lipidAds_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
+}
 },
 {
 "id":"lipidX_c",
@@ -3272,62 +3350,98 @@
 {
 "id":"murein3p3p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
+}
 },
 {
 "id":"murein3px4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8"
+}
 },
 {
 "id":"murein4p3p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8"
+}
 },
 {
 "id":"murein4p4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
+}
 },
 {
 "id":"murein4px4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
+}
 },
 {
 "id":"murein4px4px4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1"
+}
 },
 {
 "id":"murein5p3p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
+}
 },
 {
 "id":"murein5p4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce"
+}
 },
 {
 "id":"murein5p5p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1"
+}
 },
 {
 "id":"murein5p5p5p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb"
+}
 },
 {
 "id":"murein5px4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce"
+}
 },
 {
 "id":"murein5px4px4p_p",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4"
+}
 },
 {
 "id":"myrsACP_c",
@@ -3752,7 +3866,10 @@
 {
 "id":"phhlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff"
+}
 },
 {
 "id":"phom_c",
@@ -3765,7 +3882,10 @@
 {
 "id":"phphhlipa_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106"
+}
 },
 {
 "id":"phpyr_c",
@@ -4545,7 +4665,10 @@
 {
 "id":"uaagmda_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1"
+}
 },
 {
 "id":"uaccg_c",
@@ -4566,7 +4689,10 @@
 {
 "id":"uagmda_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9"
+}
 },
 {
 "id":"uama_c",
@@ -6552,7 +6678,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"udcpp_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012) + ugmda_c (3456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2) -> uagmda_c (3456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012) + ump_c (\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2)"
+}
 },
 {
 "id":"PGAMT",
@@ -6692,7 +6821,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"uacgam_c (abcdefghijklmnopq) + uagmda_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea) -> uaagmda_c (rstuvwxyzABCDEFGHIJabcdefghKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea) + udp_c (ijklmnopq) + h_c"
+}
 },
 {
 "id":"UAMAGS",
@@ -6994,7 +7126,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"2dmmql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX) + amet_c (YZ0123456789\u00c0\u00c1\u00c2) + amet_c (\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) -> mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX2) + ahcys_c (YZ013456789\u00c0\u00c1\u00c2) + mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\u00d1) + ahcys_c (\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0) + h_c"
+}
 },
 {
 "id":"AMPMS2",
@@ -7077,7 +7212,10 @@
 },
 "lower_bound":-1000.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + cbl1_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_c -> adocbl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + pppi_c"
+}
 },
 {
 "id":"CDPMEK",
@@ -7309,7 +7447,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"2omhmbl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV) + amet_c (WXYZ0123456789\u00c0) + amet_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf) -> q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV0) + ahcys_c (WXYZ123456789\u00c0) + q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV\u00cf) + ahcys_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h_c"
+}
 },
 {
 "id":"DNMPPA",
@@ -7442,7 +7583,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"23dhba_c (abcdefghijklmnopq) + 23dhba_c (rstuvwxyzABCDEFGH) + 23dhba_c (IJKLMNOPQRSTUVWXY) + seramp_c (Z0123456789\u00c0\u00c1) + seramp_c (\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + seramp_c (\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc) -> amp_c (Z012345678) + amp_c (\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb) + amp_c (\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9) + amp_c (hijklmnopq) + amp_c (yzABCDEFGH) + amp_c (PQRSTUVWXY) + enter_c (abcdefgrstuvwxIJKLMNO9\u00c0\u00c1\u00cc\u00cd\u00ce\u00da\u00db\u00dc) + h_c"
+}
 },
 {
 "id":"FCLT",
@@ -8341,7 +8485,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"dscl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) + nad_c (QRSTUVWXYZ0123456789\u00c0) -> scl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) + nadh_c (QRSTUVWXYZ0123456789\u00c0) + h_c"
+}
 },
 {
 "id":"SHCHF",
@@ -8477,7 +8624,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"amet_c (abcdefghijklmno) + amet_c (pqrstuvwxyzABCD) + uppg3_c (EFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7) -> ahcys_c (abcdfghijklmno) + ahcys_c (pqrsuvwxyzABCD) + dscl_c (EFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7et) + h_c"
+}
 },
 {
 "id":"UPP3S",
@@ -8627,7 +8777,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadph_c (abcdefghijklmnopqrstu) + nadph_c (vwxyzABCDEFGHIJKLMNOP) + nadph_c (QRSTUVWXYZ0123456789\u00c0) + h_c + so3_c -> nadp_c (abcdefghijklmnopqrstu) + nadp_c (vwxyzABCDEFGHIJKLMNOP) + nadp_c (QRSTUVWXYZ0123456789\u00c0) + h2o_c + h2s_c"
+}
 },
 {
 "id":"DM_4HBA",
@@ -9427,7 +9580,10 @@
 },
 "lower_bound":-1000.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"pg160_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL) + pg160_p (MNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd) -> clpn160_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd) + glyc_p (MNO)"
+}
 },
 {
 "id":"CLPNS161pp",
@@ -9439,7 +9595,10 @@
 },
 "lower_bound":-1000.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"pg161_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL) + pg161_p (MNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd) -> clpn161_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd) + glyc_p (MNO)"
+}
 },
 {
 "id":"CLPNS181pp",
@@ -9451,7 +9610,10 @@
 },
 "lower_bound":-1000.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"pg181_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP) + pg181_p (QRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5) -> clpn181_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5) + glyc_p (QRS)"
+}
 },
 {
 "id":"DASYN160",
@@ -10394,7 +10556,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"arbtn-fe3_c (abcdefghijklmnopqrstuv) + arbtn-fe3_c (wxyzABCDEFGHIJKLMNOPQR) + fadh2_c (STUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8) -> arbtn_c (abcdefghijklmnopqrstuv) + arbtn_c (wxyzABCDEFGHIJKLMNOPQR) + fad_c (STUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8) + fe2_c + h_c"
+}
 },
 {
 "id":"ARBTNtpp",
@@ -10834,7 +10999,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + colipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) + h2o_c -> adp_c (abcdefghij) + colipa_p (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) + h_c + pi_c"
+}
 },
 {
 "id":"COLIPAtex",
@@ -10845,7 +11013,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"colipa_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133) -> colipa_e (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133)"
+}
 },
 {
 "id":"EDTXS1",
@@ -10858,7 +11029,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"ddcaACP_c (abcdefghijkl) + kdo2lipid4_c (mnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2) -> kdo2lipid4L_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2) + ACP_c"
+}
 },
 {
 "id":"EDTXS2",
@@ -10871,7 +11045,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"kdo2lipid4L_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2) + myrsACP_c (\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0) -> lipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0) + ACP_c"
+}
 },
 {
 "id":"GALT1",
@@ -10885,7 +11062,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"gicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a) + udpg_c (\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129) -> gagicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120) + udp_c (\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129) + h_c"
+}
 },
 {
 "id":"GLCTR1",
@@ -10899,7 +11079,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"icolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114) + udpg_c (\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123) -> gicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a) + udp_c (\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123) + h_c"
+}
 },
 {
 "id":"GLCTR2",
@@ -10913,7 +11096,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"gagicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120) + udpg_c (\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f) -> ggagicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126) + udp_c (\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f) + h_c"
+}
 },
 {
 "id":"GLCTR3",
@@ -10927,7 +11113,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"ggagicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126) + udpg_c (\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135) -> gggagicolipa_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c) + udp_c (\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135) + h_c"
+}
 },
 {
 "id":"GMHEPAT",
@@ -10991,7 +11180,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + hhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109) -> adp_c (abcdefghij) + phhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109) + h_c"
+}
 },
 {
 "id":"HEPK2",
@@ -11005,7 +11197,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + hphhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110) -> adp_c (abcdefghij) + phphhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110) + h_c"
+}
 },
 {
 "id":"HEPT1",
@@ -11019,7 +11214,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"adphep-LD_c (abcdefghijklmnopq) + lipa_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102) -> adp_c (abcdefghij) + hlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102) + h_c"
+}
 },
 {
 "id":"HEPT2",
@@ -11033,7 +11231,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"adphep-LD_c (abcdefghijklmnopq) + hlipa_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109) -> adp_c (abcdefghij) + hhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109) + h_c"
+}
 },
 {
 "id":"HEPT3",
@@ -11047,7 +11248,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"adphep-LD_c (abcdefghijklmnopq) + phhlipa_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110) -> adp_c (abcdefghij) + hphhlipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110) + h_c"
+}
 },
 {
 "id":"HEPT4",
@@ -11061,7 +11265,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"adphep-LD_c (abcdefghijklmnopq) + gggagicolipa_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) -> adp_c (abcdefghij) + colipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) + h_c"
+}
 },
 {
 "id":"KDOCT2",
@@ -11124,7 +11331,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"lipidX_c (abcdefghijklmnopqrstuvwxyzABCDEFGH) + u23ga_c (IJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) -> lipidAds_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5) + udp_c (\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h_c"
+}
 },
 {
 "id":"MOAT",
@@ -11138,7 +11348,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"ckdo_c (abcdefghijklmnopq) + lipidA_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6) -> cmp_c (abcdefghi) + kdolipid4_c (jklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6) + h_c"
+}
 },
 {
 "id":"MOAT2",
@@ -11152,7 +11365,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"ckdo_c (abcdefghijklmnopq) + kdolipid4_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df) -> cmp_c (abcdefghi) + kdo2lipid4_c (jklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df) + h_c"
+}
 },
 {
 "id":"MOAT3C",
@@ -11166,7 +11382,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"ckdo_c (abcdefghijklmnopq) + phphhlipa_c (rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117) -> cmp_c (abcdefghi) + kphphhlipa_c (jklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117) + h_c"
+}
 },
 {
 "id":"RHAT1",
@@ -11180,7 +11399,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"dtdprmn_c (abcdefghijklmnop) + kphphhlipa_c (qrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e) -> dtdp_c (abcdefghij) + icolipa_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e) + h_c"
+}
 },
 {
 "id":"S7PI",
@@ -11208,7 +11430,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + lipidAds_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf) -> adp_c (abcdefghij) + lipidA_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf) + h_c"
+}
 },
 {
 "id":"U23GAAT",
@@ -11635,7 +11860,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) -> ala-D_p (OPQ) + murein5px4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1)"
+}
 },
 {
 "id":"MCTP2App",
@@ -11647,7 +11875,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb) -> ala-D_p (OPQ) + ala-D_p (\u00d2\u00d3\u00d4) + murein5px4px4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb)"
+}
 },
 {
 "id":"MDDCP1pp",
@@ -11660,7 +11891,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5px4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h2o_p -> ala-D_p (abc) + murein4px4p_p (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce)"
+}
 },
 {
 "id":"MDDCP2pp",
@@ -11673,7 +11907,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5px4px4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4) + h2o_p -> ala-D_p (abc) + murein4px4px4p_p (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4)"
+}
 },
 {
 "id":"MDDCP3pp",
@@ -11686,7 +11923,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) + h2o_p -> ala-D_p (OPQ) + murein5p4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1)"
+}
 },
 {
 "id":"MDDCP4pp",
@@ -11699,7 +11939,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h2o_p -> ala-D_p (abc) + murein4p4p_p (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce)"
+}
 },
 {
 "id":"MDDCP5pp",
@@ -11712,7 +11955,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p3p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb) + h2o_p -> ala-D_p (abc) + murein4p3p_p (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb)"
+}
 },
 {
 "id":"MLDCP1App",
@@ -11725,7 +11971,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5px4p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h2o_p -> alaala_p (abcdef) + murein3px4p_p (ghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce)"
+}
 },
 {
 "id":"MLDCP2App",
@@ -11738,7 +11987,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) + h2o_p -> alaala_p (OPQRST) + murein5p3p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1)"
+}
 },
 {
 "id":"MLDCP2Bpp",
@@ -11751,7 +12003,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein4p3p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8) + h2o_p -> ala-D_p (abc) + murein3p3p_p (defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8)"
+}
 },
 {
 "id":"MPTG",
@@ -11764,7 +12019,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"uaagmda_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1) + uaagmda_c (\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d\u013e\u013f\u0140\u0141) -> murein5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a) + udcpdp_c (OPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1) + udcpdp_c (\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d\u013e\u013f\u0140\u0141) + h_c"
+}
 },
 {
 "id":"MPTG2",
@@ -11778,7 +12036,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"murein5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) + uaagmda_c (\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132) -> murein5p5p5p_p (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb) + udcpdp_c (\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132) + h_c"
+}
 },
 {
 "id":"CYNTAH",
@@ -12201,7 +12462,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY) + h_c + o2_c -> mqn8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY) + h_p + h2o_c"
+}
 },
 {
 "id":"CYTBDpp",
@@ -12216,7 +12480,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW) + h_c + o2_c -> q8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW) + h_p + h2o_c"
+}
 },
 {
 "id":"CYTBO3_4pp",
@@ -12231,7 +12498,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW) + h_c + o2_c -> q8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW) + h_p + h2o_c"
+}
 },
 {
 "id":"LDH_D2",
@@ -12261,7 +12531,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadh_c (abcdefghijklmnopqrstu) + mqn8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_c -> nad_c (abcdefghijklmnopqrstu) + mql8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9)"
+}
 },
 {
 "id":"NADH16pp",
@@ -12276,7 +12549,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadh_c (abcdefghijklmnopqrstu) + q8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7) + h_c -> nad_c (abcdefghijklmnopqrstu) + q8h2_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7) + h_p"
+}
 },
 {
 "id":"NADH17pp",
@@ -12291,7 +12567,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadh_c (abcdefghijklmnopqrstu) + mqn8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_c -> nad_c (abcdefghijklmnopqrstu) + mql8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_p"
+}
 },
 {
 "id":"NADH5",
@@ -12305,7 +12584,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadh_c (abcdefghijklmnopqrstu) + q8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7) + h_c -> nad_c (abcdefghijklmnopqrstu) + q8h2_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7)"
+}
 },
 {
 "id":"NADPHQR2",
@@ -12319,7 +12601,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadph_c (abcdefghijklmnopqrstu) + q8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7) + h_c -> nadp_c (abcdefghijklmnopqrstu) + q8h2_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7)"
+}
 },
 {
 "id":"NADPHQR3",
@@ -12333,7 +12618,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadph_c (abcdefghijklmnopqrstu) + mqn8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_c -> nadp_c (abcdefghijklmnopqrstu) + mql8_c (vwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9)"
+}
 },
 {
 "id":"NADTRHD",
@@ -12346,7 +12634,10 @@
 },
 "lower_bound":-1000.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nad_c (abcdefghijklmnopqrstu) + nadph_c (vwxyzABCDEFGHIJKLMNOP) -> nadh_c (abcdefghijklmnopqrstu) + nadp_c (vwxyzABCDEFGHIJKLMNOP)"
+}
 },
 {
 "id":"POX",
@@ -12411,7 +12702,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadh_c (abcdefghijklmnopqrstu) + nadp_c (vwxyzABCDEFGHIJKLMNOP) + h_p -> nad_c (abcdefghijklmnopqrstu) + nadph_c (vwxyzABCDEFGHIJKLMNOP) + h_c"
+}
 },
 {
 "id":"TRDR",
@@ -12425,7 +12719,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"nadph_c (abcdefghijklmnopqrstu) + h_c + trdox_c -> nadp_c (abcdefghijklmnopqrstu) + trdrd_c"
+}
 },
 {
 "id":"EDA",
@@ -13474,7 +13771,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (abcdefghij) + cbl1_p (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h2o_c -> adp_c (abcdefghij) + cbl1_c (klmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9) + h_c + pi_c"
+}
 },
 {
 "id":"CO2tpp",
@@ -16374,7 +16674,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"colipa_e (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133) -> "
+}
 },
 {
 "id":"EX_fe3_e",
