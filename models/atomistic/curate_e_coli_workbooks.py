@@ -97,13 +97,12 @@ UNIDENTIFIABLE_ROUTES = {
                'MLDCP1Bpp', 'PGPP160pp', 'DHORD5', 'FADRx2', 'FE3tex', 'NACODA'},
 }
 
-# The 58 iAF1260 reactions carrying carbon with no atom map (an emu_expansion
-# RuntimeWarning) stay: 45 return only carrier carbon -- nucleotides, ahcys, quinones --
-# which 13C-MFA never traces. The rest are murein peptidases releasing ala-D_p and
-# cardiolipin synthases releasing glyc_p. Only the murein group matters: ala-D_p has no
-# mapped producer, so it enters as unlabeled, and reversible ALAR carries it back into
-# the measured ala-L_c. That flux is orders below alanine synthesis on glucose minimal
-# medium, and mapping it needs the whole murein sub-network. Revisit if alanine fits poorly.
+# Only nine iAF1260 reactions carry carbon without an atom map: BIOMASS, the two
+# demand sinks, the two _out boundaries, and the four supplied cofactor exchanges,
+# whose label comes from their media dilution input instead. Everything else the
+# workbook maps is mapped -- the murein, LPS and lipid-A reactions need more than 62
+# atom labels each (MPTG 190, RHAT1 155), which the mapping string could not encode
+# until ATOM_LABELS widened past ASCII.
 
 # Reactions that are bare sources/sinks rather than chemistry, and so become the
 # exchange for the metabolite they feed. This is per model on purpose: the two
