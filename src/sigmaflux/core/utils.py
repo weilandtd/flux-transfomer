@@ -64,6 +64,26 @@ _ATOMIC_MASSES: dict = {
 }
 
 
+def _build_atom_labels():
+    r"""One printable, delimiter-free character per tracked atom.
+
+    An ``atom_mapping`` string carries one character per atom -- ``met (abcdef)`` --
+    and every consumer takes ``len(pattern)`` as the atom count, so a label has to be
+    exactly one code point. a-z A-Z 0-9 gives 62 of them, which iAF1260 exceeds once
+    the carrier skeletons are carried: MPTG needs 190 labels, RHAT1 155, MOAT3C 148.
+    Extending into the alphanumeric Unicode range keeps the one-character invariant
+    and takes the ceiling to ~5700. Nothing here can collide with the ``()+->,`` and
+    space that delimit the mapping string.
+    """
+    base = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    extra = [chr(c) for c in range(0xC0, 0x2000)
+             if chr(c).isalnum() and chr(c).isprintable() and chr(c) not in base]
+    return base + ''.join(extra)
+
+
+ATOM_LABELS = _build_atom_labels()
+
+
 def _biomass_component(met_id: str) -> str | None:
     """Which macromolecule a BIOMASS building block belongs to (None = shared cofactor)."""
     if met_id in _SHARED_MET_IDS:
@@ -279,7 +299,6 @@ def annotate_atom_patterns(model):
     model carrying only reaction-level ``atom_mapping`` strings is not yet usable
     for MFA. The pattern is just a distinct label per tracked atom.
     """
-    chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
     for met in model.metabolites:
         max_n = 0
         for rxn in met.reactions:
@@ -287,10 +306,7 @@ def annotate_atom_patterns(model):
             for match in re.findall(atom_pattern_regex(met.id), amm_str):
                 max_n = max(max_n, len(match))
         if max_n > 0:
-            met.annotation["atom_pattern"] = (
-                chars[:max_n] if max_n <= len(chars)
-                else "".join(f"a{i}" for i in range(1, max_n + 1))
-            )
+            met.annotation["atom_pattern"] = ATOM_LABELS[:max_n]
     return model
 
 
@@ -369,7 +385,7 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
             RuntimeWarning, stacklevel=2)
         amm = amm[~duplicated]
 
-    _chars = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    _chars = ATOM_LABELS
 
     for rxn_id, grp in amm.groupby('rxnAbbreviation', sort=False):
         try:
@@ -390,8 +406,14 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
             products  += [m.id for m in rxn.products  if m.id not in amm_mets]
 
             rxn.annotation['atom_mapping'] = ' + '.join(reactants) + ' -> ' + ' + '.join(products)
-        except Exception:
+        except KeyError:
+            # The AMM names a reaction the GEM does not contain; nothing to annotate.
             pass
+        except Exception as exc:
+            # Anything else means the workbook described a mapping we failed to encode,
+            # and leaving the reaction silently unmapped hides carbon from the fit.
+            warnings.warn(f"could not build the atom mapping for {rxn_id}: "
+                          f"{type(exc).__name__}: {exc}", RuntimeWarning, stacklevel=2)
 
     # Symmetries
     try:
