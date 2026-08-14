@@ -21,8 +21,10 @@ four components that do exist.
 Usage:
     python models/atomistic/build_hierarchical_models.py
 """
+import json
 import pathlib
 import sys
+import warnings
 
 import pandas as pd
 from cobra.io import load_json_model, save_json_model
@@ -30,7 +32,8 @@ from cobra.io import load_json_model, save_json_model
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / 'src'))
 
 from sigmaflux.core.utils import (  # noqa: E402
-    BIOMASS_COMPONENT_IDS, derive_biomass_fractions, split_biomass_hierarchical,
+    BIOMASS_COMPONENT_IDS, apply_terminal_annotations, derive_biomass_fractions,
+    read_terminal_sheet, split_biomass_hierarchical,
 )
 
 # Mass fractions of the two shipped hierarchical models, for reference only.
@@ -45,12 +48,14 @@ CONFIGS = [
     dict(
         flat_json='models/atomistic/R_toruloides/imRt_annotated.json',
         gem_xlsx='models/atomistic/R_toruloides/imRt_GEM.xlsx',
+        amm_xlsx='models/atomistic/R_toruloides/imRt_AMM.xlsx',
         out_json='models/atomistic/R_toruloides/imRt_annotated_hierarchical.json',
         fractions=None,   # derived from the BIOMASS stoichiometry
     ),
     dict(
         flat_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated.json',
         gem_xlsx='models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
+        amm_xlsx='models/atomistic/M_musculus_T_Cell/mmTcell_AMM_completeMFA.xlsx',
         out_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json',
         # Derived (0.9396/0.0434/0.0142/0.0028) agrees with the measured activated
         # composition in MM_TCELL_exterinal_measurements.csv (0.9406/0.0458/0.0104/0.0033),
@@ -59,12 +64,23 @@ CONFIGS = [
     ),
 ]
 
+# The two shipped models are not rebuilt, but the Terminal sheet still has to reach them:
+# it is an annotation, so re-applying it leaves every stoichiometry byte untouched while
+# the declaration lands on the model the configs actually point `model_file` at.
+ANNOTATE_ONLY = [
+    ('models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
+     'models/atomistic/S_cerevisiae/scAMM.xlsx'),
+    ('models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
+     'models/atomistic/I_orientalis/imIsor_AMM.xlsx'),
+]
+
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
-def build_hierarchical(flat_json, gem_xlsx, out_json, fractions=None):
+def build_hierarchical(flat_json, gem_xlsx, amm_xlsx, out_json, fractions=None):
     flat_json = _REPO_ROOT / flat_json
     gem_xlsx  = _REPO_ROOT / gem_xlsx
+    amm_xlsx  = _REPO_ROOT / amm_xlsx
     out_json  = _REPO_ROOT / out_json
 
     model = load_json_model(flat_json)
@@ -79,6 +95,8 @@ def build_hierarchical(flat_json, gem_xlsx, out_json, fractions=None):
             print(f"    {cid:<10} {fractions[cid]:.5f}")
 
     split_biomass_hierarchical(model, fractions)
+    # Only now do the bm_* pools exist for the Terminal sheet to name.
+    apply_terminal_annotations(model, amm_xlsx)
     save_json_model(model, str(out_json))
 
     biomass = model.reactions.get_by_id('BIOMASS')
@@ -87,7 +105,41 @@ def build_hierarchical(flat_json, gem_xlsx, out_json, fractions=None):
     print(f"  BIOMASS consumes: {sorted(m.id for m in biomass.metabolites)}")
 
 
+def reannotate_terminal(hierarchical_json, amm_xlsx):
+    """Re-apply the Terminal sheet to a shipped model, changing nothing else.
+
+    Patches the JSON directly rather than round-tripping through cobra: these two files
+    were written out-of-band, each with its own serializer settings, so
+    `save_json_model` would reformat all ~10k lines and bury the handful that actually
+    change. The layout is read off the file itself and written back unchanged.
+    """
+    path = _REPO_ROOT / hierarchical_json
+    raw = path.read_text()
+    doc = json.loads(raw)
+
+    opening = raw.split('\n', 2)[1]
+    indent = len(opening) - len(opening.lstrip(' '))
+    separators = (',', ': ' if '": ' in opening else ':')
+
+    pool_ids, rxn_ids = read_terminal_sheet(_REPO_ROOT / amm_xlsx)
+    for idents, section, what in ((pool_ids, 'metabolites', 'pool'),
+                                  (rxn_ids, 'reactions', 'reaction')):
+        by_id = {entry['id']: entry for entry in doc[section]}
+        for ident in idents:
+            if ident not in by_id:
+                warnings.warn(f"Terminal sheet names {what} {ident}, which is not in "
+                              f"{path.name}", RuntimeWarning)
+                continue
+            by_id[ident].setdefault('annotation', {})['terminal'] = True
+
+    path.write_text(json.dumps(doc, indent=indent, separators=separators))
+    print(f"  {path.name}: terminal pools {pool_ids}, reactions {rxn_ids}")
+
+
 if __name__ == '__main__':
     for cfg in CONFIGS:
         print(cfg['out_json'])
         build_hierarchical(**cfg)
+    for hierarchical_json, amm_xlsx in ANNOTATE_ONLY:
+        print(hierarchical_json)
+        reannotate_terminal(hierarchical_json, amm_xlsx)
