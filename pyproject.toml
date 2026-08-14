@@ -53,7 +53,12 @@ sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
 sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
+# hopsy is a test-only dependency, not a runtime one. cobra >= 0.32 ships
+# cobra/sampling/hopsy.py, which evaluates `hopsy.UniformCoordinateHitAndRunProposal` as a
+# default argument at class-definition time — so `import cobra` raises NameError when hopsy
+# is absent, before any of our code runs. Installing hopsy keeps the import alive. The
+# HopsySampler wrapper itself is devel-branch-only, which is why this is not a runtime dep.
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "hopsy"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autodoc-typehints",

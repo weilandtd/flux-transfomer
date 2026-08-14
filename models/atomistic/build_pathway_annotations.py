@@ -26,12 +26,21 @@ SUBSYSTEM_TO_COARSE = {
     "Methylglyoxal metabolism":                          "Central carbon metabolism",
     "Oxidative phosphorylation":                         "Central carbon metabolism",
     "Glyc3P-DHAP shuttle":                               "Central carbon metabolism",
+    "Lactate production":                                "Central carbon metabolism",
+    "Anaplerotic reaction":                              "Central carbon metabolism",
     # Amino acid metabolism
     "Alanine, aspartate and glutamate metabolism":       "Amino acid metabolism",
     "Arginine and proline metabolism":                   "Amino acid metabolism",
     "Cysteine and methionine metabolism":                "Amino acid metabolism",
     "Glycine, serine and threonine metabolism":          "Amino acid metabolism",
     "Histidine metabolism":                              "Amino acid metabolism",
+    # The M. musculus GEM splits the amino acid groups more finely than the yeasts
+    "Glycine and serine metabolism":                     "Amino acid metabolism",
+    "Alanine metabolism":                                "Amino acid metabolism",
+    "Aspartate metabolism":                              "Amino acid metabolism",
+    "Asparagine biosynthesis":                           "Amino acid metabolism",
+    "Glutamine metabolism":                              "Amino acid metabolism",
+    "Glutamate metabolism":                              "Amino acid metabolism",
     "Lysine metabolism":                                 "Amino acid metabolism",
     "Phenylalanine, tyrosine and tryptophan metabolism": "Amino acid metabolism",
     "Tryptophan metabolism":                             "Amino acid metabolism",
@@ -87,6 +96,11 @@ CONFIGS = [
         model_json='models/atomistic/R_toruloides/imRt_annotated_hierarchical.json',
         gem_xlsx='models/atomistic/R_toruloides/imRt_GEM.xlsx',
         out_csv='models/atomistic/R_toruloides/metabolite_pathways.csv',
+    ),
+    dict(
+        model_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json',
+        gem_xlsx='models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
+        out_csv='models/atomistic/M_musculus_T_Cell/metabolite_pathways.csv',
     ),
 ]
 

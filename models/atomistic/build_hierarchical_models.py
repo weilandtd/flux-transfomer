@@ -8,10 +8,15 @@ Energy is redistributed out of BIOMASS into the components afterwards. This is w
 the organism configs point `model_file` at, because the component fluxes are
 separately measurable while the aggregate is not.
 
-Only R. toruloides is regenerated here. The S. cerevisiae and I. orientalis
-hierarchical models back the two released .sfx ensembles and must not be rewritten;
-their published mass fractions are recorded in PUBLISHED_FRACTIONS for reference, and
-tests/test_biomass_split.py pins the split against the S. cerevisiae artifact.
+Only R. toruloides and the M. musculus T cell are regenerated here. The S. cerevisiae
+and I. orientalis hierarchical models back the two released .sfx ensembles and must not
+be rewritten; their published mass fractions are recorded in PUBLISHED_FRACTIONS for
+reference, and tests/test_biomass_split.py pins the split against the S. cerevisiae
+artifact.
+
+Not every model carries all five macromolecules — the T-cell biomass has no
+carbohydrate, so CARB_c is skipped and the energy fractions are renormalised over the
+four components that do exist.
 
 Usage:
     python models/atomistic/build_hierarchical_models.py
@@ -42,6 +47,15 @@ CONFIGS = [
         gem_xlsx='models/atomistic/R_toruloides/imRt_GEM.xlsx',
         out_json='models/atomistic/R_toruloides/imRt_annotated_hierarchical.json',
         fractions=None,   # derived from the BIOMASS stoichiometry
+    ),
+    dict(
+        flat_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated.json',
+        gem_xlsx='models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
+        out_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json',
+        # Derived (0.9396/0.0434/0.0142/0.0028) agrees with the measured activated
+        # composition in MM_TCELL_exterinal_measurements.csv (0.9406/0.0458/0.0104/0.0033),
+        # so keep the model's own stoichiometry as the basis.
+        fractions=None,
     ),
 ]
 

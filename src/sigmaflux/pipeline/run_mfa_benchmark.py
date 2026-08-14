@@ -13,7 +13,8 @@ Each benchmark run:
   2. Simulates per-tracer 13C MID via an MFAModel forward pass (+ Gaussian noise).
   3. Adds measured-flux soft constraints (with flux_noise_std noise).
   4. Fits MFA from a feasible near-GT initialization, restarting until the fit
-     clears the reduced-χ² acceptance bound.
+     reaches the global optimum — the residual the TRUE flux achieves against the
+     same noise, which no minimiser can beat because the truth is feasible.
   5. Writes predicted fluxes and labeling in the same schema as
      ``sigmaflux-benchmark``, so the two are directly comparable.
 
@@ -53,6 +54,7 @@ from ._benchmark import (
     build_mfa_context,
     forward_labeling,
     load_benchmark_inputs,
+    noisy_measurements,
     pin_threads,
     resolve_split_source,
     select_samples,
@@ -98,11 +100,19 @@ def build_parser():
                         "feasible near-GT initialization")
     p.add_argument("--max-starts", type=int, default=10,
                    help="N_max multi-start restarts per sample. Restart from a new "
-                        "feasible init until the reduced-χ² acceptance bound is met; "
-                        "if none of the N_max starts is acceptable, write NaN.")
+                        "feasible init until the fit reaches the global optimum; if none "
+                        "does, the best of the N_max is kept (never NaN) and its distance "
+                        "from optimal is recorded as ssr_ratio.")
+    p.add_argument("--accept-ratio", type=float, default=1.0,
+                   help="Accept a fit when SSR <= this multiple of the SSR the TRUE flux "
+                        "achieves against the same noise. 1.0 = must reach the global "
+                        "optimum, since the ground truth is a feasible point of the same "
+                        "problem. Raise it to admit near-optimal fits.")
     p.add_argument("--accept-z", type=float, default=1.645,
-                   help="z-score for the acceptance bound M ≤ 1 + z·sqrt(2/h_eff) "
-                        "(1.645 = one-sided 95%%).")
+                   help="z-score for the legacy reduced-χ² bound M ≤ 1 + z·sqrt(2/h_eff). "
+                        "Reported for comparison only — acceptance now uses --accept-ratio, "
+                        "because this bound is calibrated on the declared σ while the "
+                        "clamped, renormalised MID noise has a true sd near 0.84σ.")
     p.add_argument("--diagnose", action="store_true",
                    help="Fit a single sample (the one at --start-ix) with step-by-step "
                         "diagnostics and recovery metrics, writing no HDF5. Ignores "
@@ -112,17 +122,21 @@ def build_parser():
     return p
 
 
-def make_measured_flux_data(mfa_model, measured_rxn_ids, gt_flux_series, flux_noise_std, rng):
-    # Relative flux noise: measured = true·(1 + N(0, flux_noise_std)); the variance
-    # used in the χ² objective is (flux_noise_std·|true|)² (fluxes are real magnitudes).
-    rows = []
-    for rxn_id in measured_rxn_ids:
-        if rxn_id not in gt_flux_series.index:
-            continue
-        true_val = float(gt_flux_series[rxn_id])
-        meas = true_val * (1.0 + rng.normal(0.0, flux_noise_std))
-        rows.append({"reaction": rxn_id, "mean": meas,
-                     "std": max(flux_noise_std * abs(true_val), 1e-9)})
+def measured_flux_ids(measured_rxn_ids, gt_flux_series):
+    """The measured reactions this sample actually has ground truth for, in order."""
+    return [r for r in measured_rxn_ids if r in gt_flux_series.index]
+
+
+def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, noisy_values):
+    """Wrap already-noised flux observations as FluxData.
+
+    The noise is drawn by :func:`sigmaflux.pipeline._benchmark.noisy_measurements` so
+    that the AI benchmark sees the identical realisation; the χ² variance stays
+    (flux_noise_std·|true|)², since fluxes are real magnitudes.
+    """
+    rows = [{"reaction": rxn_id, "mean": float(meas),
+             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
+            for rxn_id, meas in zip(rxn_ids, noisy_values)]
     return FluxData(mfa_model, pd.DataFrame(rows)) if rows else None
 
 
@@ -176,22 +190,23 @@ def acceptance_threshold(n_L, n_F, z=1.645):
     return 1.0 + z * np.sqrt(2.0 / h_eff)
 
 
-def build_noisy_experiments(experiments, gt_series, noise_std, rng, mfa_model,
-                            mapped_met_ids, flux_data):
-    """Build one noisy Experiment per tracer from GT labeling series."""
+def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flux_data):
+    """Build one Experiment per tracer from an already-noised labeling series.
+
+    *noisy_series* comes from :func:`sigmaflux.pipeline._benchmark.noisy_measurements`
+    and is already restricted to the observable metabolites, so the sum-to-one
+    renormalisation was applied over exactly the entries used here.
+    """
     noisy_exps = []
     for experiment in experiments:
         tracer = experiment.tracers[0]
         tracer_str = "|".join(str(t) for t in experiment.tracers)
-        tracer_data = gt_series.loc[tracer_str]  # (Metabolite, Isotopomer) Series
+        tracer_data = noisy_series.loc[tracer_str]  # (Metabolite, Isotopomer) Series
 
         met_frac_sum = defaultdict(float)
         rows = []
         for (met_id, iso_str), frac in tracer_data.items():
-            if mapped_met_ids and met_id not in mapped_met_ids:
-                continue
-            noise = np.clip(rng.normal(0.0, noise_std), -noise_std, noise_std)
-            noisy_frac = max(0.0, float(frac) + noise)
+            noisy_frac = float(frac)
             rows.append({"id": met_id, "mid": int(iso_str[2:]), "mean": noisy_frac,
                          "std": noise_std})
             met_frac_sum[met_id] += noisy_frac
@@ -414,6 +429,7 @@ def main(args):
 
     # ── Benchmark loop ────────────────────────────────────────────────────────
     pred_lab_data, pred_flux_data, sample_indices = [], [], []
+    diagnostics = []
     pred_base = os.path.join(output_dir, f"pred_{tag}")
 
     for run_ix in range(n_runs):
@@ -437,13 +453,23 @@ def main(args):
                   f"NaN={bool(np.isnan(gt_labeling_vec).any())}")
 
         # ── Step 2: build noisy per-tracer MID + measured flux constraints ────
+        # Restrict to the observable metabolites BEFORE drawing, so the sum-to-one
+        # renormalisation runs over exactly the entries that get fitted. The draw is
+        # keyed on (seed, global_ix), so the AI benchmark sees this same realisation.
         gt_series = pd.Series(gt_labeling_vec, index=labeling_index)
+        if mapped_met_ids:
+            keep = gt_series.index.get_level_values("Metabolite").isin(mapped_met_ids)
+            gt_series = gt_series[keep]
+        flux_ids = measured_flux_ids(measured_rxn_ids, gt_flux)
+        noisy_series, noisy_flux = noisy_measurements(
+            gt_series, gt_flux.reindex(flux_ids).to_numpy(float),
+            args.noise_std, flux_noise_std, args.seed, global_ix,
+        )
         flux_data_obs = make_measured_flux_data(
-            mfa_model, measured_rxn_ids, gt_flux, flux_noise_std, rng
+            mfa_model, flux_ids, gt_flux, flux_noise_std, noisy_flux
         )
         noisy_exps = build_noisy_experiments(
-            experiments, gt_series, args.noise_std, rng, mfa_model, mapped_met_ids,
-            flux_data_obs
+            experiments, noisy_series, args.noise_std, mfa_model, flux_data_obs
         )
         n_obs = sum(len(e.mid_data) for e in noisy_exps)
         print(f"  Noisy MID: {n_obs} entries across {len(noisy_exps)} tracers")
@@ -455,7 +481,27 @@ def main(args):
         # fluxes). Restart until M = ½·(ssr_L + ssr_F) clears the effective-df bound, or
         # max_starts is exhausted — L-BFGS-B otherwise sticks in the first local minimum.
         mfa_model.experiments = noisy_exps
+
+        # The residual the TRUE flux achieves against this very noise. Not zero: the
+        # truth reproduces the noiseless MIDs, so its residual IS the noise energy,
+        # Σ(noise/σ)².
+        #
+        # The truth is a feasible point of this very optimisation — `reversible_fluxes`
+        # floors reversibility at min_rev_flux and the GT labeling above was simulated
+        # through that same floor — so a minimiser that scores worse than it has
+        # demonstrably not found the minimum. That is the whole argument: no linearity,
+        # no Gaussian assumption, no degrees-of-freedom count. A converged fit will
+        # usually score somewhat better than the truth, but ssr_ratio > 1 is already
+        # proof the optimiser stopped short, whatever its reduced χ² claims.
+        forward_labeling(mfa_model, gt_flux.reindex(reaction_ids).values,
+                         gt_rev.reindex(reaction_ids).values, labeling_to)
+        lab_true, flux_true = _chi2_split(mfa_model)
+        ssr_true = lab_true + flux_true
+        print(f"  SSR at the true optimum: {ssr_true:.2f} "
+              f"(labeling {lab_true:.2f} + flux {flux_true:.2f})")
+
         accepted = False
+        best = None
         for start in range(1 if args.diagnose else args.max_starts):
             v_init, rev_init, init_info = make_init_fluxes(
                 all_flux_df, all_rev_df, gt_flux, gt_rev, global_ix,
@@ -483,27 +529,65 @@ def main(args):
                             labeling_index, reaction_ids, measured_rxn_ids,
                             mapped_met_ids, flux_data_obs, args.accept_z)
                 return 0
-            print(f"  start {start + 1}/{args.max_starts}: M={M:.4f} (accept≤{M_accept:.4f}) "
-                  f"Loss={res['loss']:.5f} conv={res['converged']} iter={res['n_iter']}")
-            if M <= M_accept:
+            lab_fit, flux_fit = _chi2_split(mfa_model)
+            ssr_fit = lab_fit + flux_fit
+            ratio = ssr_fit / ssr_true if ssr_true > 0 else np.inf
+            if best is None or ssr_fit < best["ssr_fit"]:
+                # Snapshot the state here: a later restart may score worse, and the model
+                # only ever holds the most recent fit.
+                with torch.no_grad():
+                    best_lab = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
+                    best_flux = mfa_model.fluxes.detach().cpu().numpy().copy()
+                best = {"ssr_fit": ssr_fit, "ratio": ratio, "start": start + 1,
+                        "converged": bool(res["converged"]), "n_iter": int(res["n_iter"]),
+                        "labeling": best_lab, "fluxes": best_flux}
+            print(f"  start {start + 1}/{args.max_starts}: SSR={ssr_fit:.2f} "
+                  f"ratio={ratio:.3f} (accept≤{args.accept_ratio:g}) M={M:.4f} conv={res['converged']} "
+                  f"iter={res['n_iter']}")
+            # Accept on reaching the global optimum, not on a reduced-χ² bound. The
+            # bound is calibrated on the declared σ, but clamping and renormalising the
+            # MID noise leaves its true sd near 0.84σ, so a fit can clear the bound at
+            # reduced χ² ≈ 1.1 while the true optimum sits near 0.70 — accepted, yet
+            # visibly not converged. Comparing to ssr_true is free of that calibration.
+            if ssr_fit <= args.accept_ratio * ssr_true:
                 accepted = True
                 break
 
-        # ── Step 4: record predicted labeling/fluxes (NaN if no start accepted) ──
-        if accepted:  # model holds the accepted solution (fit writes x_opt back)
-            with torch.no_grad():
-                pred_labeling_vec = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
-            pred_flux_vec = mfa_model.fluxes.detach().cpu().numpy()
-            print(f"  ✓ accepted after {start + 1} start(s)")
-        else:  # not a real solution — write NaN so it is excluded from the benchmark
+        # ── Step 4: record the best solution found, plus how far it is from optimal ──
+        #
+        # Always keep the best fit rather than NaN-ing a sample that missed the bar. A
+        # NaN silently removes the hardest samples from the benchmark, which flatters
+        # whatever produced them; ssr_ratio is written alongside instead, so downstream
+        # can filter on "did this reach the global optimum" and still see what it drops.
+        if best is not None and not np.isnan(best["ssr_fit"]):
+            pred_labeling_vec = best["labeling"]
+            pred_flux_vec = best["fluxes"]
+            mark = "✓ reached the global optimum" if accepted else "✗ above the true optimum"
+            print(f"  {mark} after {best['start']} start(s): "
+                  f"SSR {best['ssr_fit']:.2f} vs true {ssr_true:.2f} "
+                  f"(ratio {best['ratio']:.3f})")
+        else:  # the optimiser never returned a usable state for this sample
             pred_labeling_vec = np.full(len(labeling_index), np.nan)
             pred_flux_vec = np.full(len(reaction_ids), np.nan)
-            print(f"  ✗ no acceptable fit in {args.max_starts} starts → NaN")
+            print("  ✗ no usable fit → NaN")
+        diagnostics.append({
+            "sample": global_ix,
+            "ssr_fit": float(best["ssr_fit"]) if best else np.nan,
+            "ssr_true": float(ssr_true),
+            "ssr_ratio": float(best["ratio"]) if best else np.nan,
+            "reached_optimum": bool(accepted),
+            "starts_used": int(best["start"]) if best else args.max_starts,
+            "converged": bool(best["converged"]) if best else False,
+            "n_iter": int(best["n_iter"]) if best else 0,
+        })
 
         pred_lab_data.append(pred_labeling_vec)
         pred_flux_data.append(pred_flux_vec)
         sample_indices.append(global_ix)
 
+        # Convergence diagnostics travel with the predictions: without them a reader
+        # cannot tell an optimal fit from one that merely stopped.
+        pd.DataFrame(diagnostics).to_csv(f"{pred_base}_convergence.csv", index=False)
         write_predictions(pred_base, pred_lab_data, labeling_index, pred_flux_data,
                           reaction_ids, sample_indices)
         print(f"  Saved ({run_ix + 1}/{n_runs})")

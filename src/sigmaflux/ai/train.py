@@ -284,12 +284,20 @@ def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
     # Implicit M+0
     m0_per_group = 1.0 - group_sums  # (B, num_groups)
 
-    # Add noise to stored fractions and M+0
+    # Add noise to stored fractions and M+0.
+    #
+    # Clamped at zero BEFORE the renormalisation below, not after. Clamping the
+    # normalised fractions instead — and never clamping M+0 — lets a metabolite whose
+    # true M+0 sits near zero take negative noise, so the stored fractions renormalise
+    # to more than one and the implied M+0 goes negative. That is not a MID: an EMU
+    # simulation can never produce it, so the model would be trained on labeling no
+    # flux state can generate. Measured on real T-cell data, the old form left 78 of
+    # 456 metabolite groups summing above one, with implied M+0 down to -0.13.
     noise_stored = torch.randn_like(fracs) * noise_std
     noise_m0 = torch.randn(B, num_groups, device=device, dtype=dtype) * noise_std
 
-    noisy_stored = fracs + noise_stored  # (B, num_tokens)
-    noisy_m0 = m0_per_group + noise_m0  # (B, num_groups)
+    noisy_stored = (fracs + noise_stored).clamp(min=0.0)  # (B, num_tokens)
+    noisy_m0 = (m0_per_group + noise_m0).clamp(min=0.0)  # (B, num_groups)
 
     # Sum of noisy stored per group
     noisy_flat = noisy_stored.reshape(-1)
@@ -305,8 +313,10 @@ def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
     total_flat = total_per_group.reshape(-1).gather(0, combined_idx)  # (B*num_tokens,)
     total_per_token = total_flat.reshape(B, num_tokens)  # (B, num_tokens)
 
-    # Renormalize fractions
-    noisy_fractions = (noisy_stored / total_per_token).clamp(0.0, 1.0).unsqueeze(-1)
+    # Renormalize fractions. Both terms are already non-negative, so the quotient is
+    # in [0, 1] and the group sums to one by construction — no post-hoc clamp, which
+    # is what broke the constraint before.
+    noisy_fractions = (noisy_stored / total_per_token).unsqueeze(-1)
 
     return noisy_fractions
 

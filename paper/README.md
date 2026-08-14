@@ -23,6 +23,25 @@ Key options:
 Sample count, epochs and device are config keys (`sampling:`, `training:`,
 `device:`), not command-line flags.
 
+## Organisms
+
+| Config | Model | Condition letters |
+|---|---|---|
+| `i_orientalis.yaml` | `imIsor_annotated_hierarchical.json` | `C`/`N`/`P` nutrient limitation, `B` batch |
+| `s_cerevisiae.yaml` | `sc_annotated_hierarchical.json` | same |
+| `r_toruloides.yaml` | `imRt_annotated_hierarchical.json` | no experimental data yet |
+| `m_musculus_t_cell.yaml` | `mmTcell_annotated_hierarchical.json` | `A` activated, `N` naive |
+
+Condition letters are scoped per organism: `N` is nitrogen limitation for the yeasts
+and the naive cell state for the T cell.
+
+`i_orientalis_ko.yaml` and `i_orientalis_labelonly.yaml` are variants of the first,
+for the knockout benchmark and for training without measured fluxes.
+
+The T cell is the one mammalian model. Fluxes are nmol/1E6 cells/h rather than
+mmol/gDW/h, one biomass covers both cell states through the macromolecule component
+reactions, and it carries no carbohydrate, so `CARB_c` is absent.
+
 ---
 
 ## Individual steps

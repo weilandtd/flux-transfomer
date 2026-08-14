@@ -149,6 +149,13 @@ def split_biomass_hierarchical(model, fractions: dict) -> None:
             building_blocks[component][met] = coeff
 
     for component_id, blocks in building_blocks.items():
+        # A model need not carry all five macromolecules — the M. musculus T-cell
+        # biomass has no carbohydrate.  Creating CARB_c anyway would leave a
+        # bm_carb_c that BIOMASS consumes at coefficient zero, i.e. a free-floating
+        # generator, so skip the component entirely.
+        if not blocks:
+            print(f"split_biomass_hierarchical: no building blocks for {component_id}, skipping")
+            continue
         fraction = fractions[component_id]
         bm_met = cobra.Metabolite(id=_COMPONENT_TO_BM[component_id],
                                   name=f"{component_id} biomass precursor", compartment='c')
@@ -177,15 +184,27 @@ def redistribute_biomass_energy(model) -> None:
     component reaction proportionally via _BIOMASS_ENERGY_FRACS, scaled so the
     net stoichiometric flux balance is unchanged.  The BIOMASS reaction is then
     stripped to only bm_* pseudo-metabolites.
+
+    Models that carry only some of the five macromolecules get the energy fractions
+    renormalised over the components that exist.  The fractions must sum to 1 or the
+    energy left in BIOMASS would be discarded by the strip at the end rather than
+    moved, silently unbalancing the model.
     """
     rxn_ids = {r.id for r in model.reactions}
     if 'BIOMASS' not in rxn_ids:
         print("redistribute_biomass_energy: BIOMASS not found, skipping")
         return
-    if not all(c in rxn_ids for c in BIOMASS_COMPONENT_IDS):
-        missing = [c for c in BIOMASS_COMPONENT_IDS if c not in rxn_ids]
-        print(f"redistribute_biomass_energy: missing component reactions {missing}, skipping")
+    present = [c for c in BIOMASS_COMPONENT_IDS if c in rxn_ids]
+    if not present:
+        print("redistribute_biomass_energy: no component reactions, skipping")
         return
+
+    total_frac = sum(_BIOMASS_ENERGY_FRACS[c] for c in present)
+    energy_fracs = {c: _BIOMASS_ENERGY_FRACS[c] / total_frac for c in present}
+    if len(present) < len(BIOMASS_COMPONENT_IDS):
+        missing = [c for c in BIOMASS_COMPONENT_IDS if c not in rxn_ids]
+        print(f"redistribute_biomass_energy: absent components {missing}, "
+              f"renormalised energy fractions over {present}")
 
     biomass = model.reactions.get_by_id('BIOMASS')
     stoich = {m.id: c for m, c in biomass.metabolites.items()}
@@ -202,7 +221,7 @@ def redistribute_biomass_energy(model) -> None:
     atp_rna_specific = utp_stoich            # ATP co-consumed with RNA NTP synthesis
     atp_energy = atp_total - atp_rna_specific  # energy ATP to distribute by fracs
 
-    for comp_id, frac in _BIOMASS_ENERGY_FRACS.items():
+    for comp_id, frac in energy_fracs.items():
         bm_id = _COMPONENT_TO_BM[comp_id]
         bm_frac = bm_fracs.get(bm_id, 0.0)
         if bm_frac == 0.0:
@@ -228,7 +247,7 @@ def redistribute_biomass_energy(model) -> None:
     remove_from_biomass = {m: -c for m, c in biomass.metabolites.items()
                            if not m.id.startswith('bm_')}
     biomass.add_metabolites(remove_from_biomass)
-    print(f"redistribute_biomass_energy: distributed energy to {list(BIOMASS_COMPONENT_IDS)}")
+    print(f"redistribute_biomass_energy: distributed energy to {present}")
 
 
 def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'):
@@ -270,7 +289,7 @@ def annotate_atom_patterns(model):
 
 
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
-                        drop_subsystems=()):
+                        drop_subsystems=(), biomass_id=None):
     """
     Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated
     with SigmaFlux atom_mapping strings, ready for MFAModel().
@@ -288,6 +307,10 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
         not model.  Their formulas are dropped before parsing — some carry
         zero-coefficient reactants that COBRA would silently discard, leaving atom
         mappings that reference metabolites no longer in the reaction.
+    :param biomass_id: id of the GEM's biomass reaction when it is not already the
+        canonical 'BIOMASS', e.g. 'BIOMASS_c' in the M. musculus workbook.  It is
+        renamed on load so the flat model, the hierarchical split and the configs'
+        skip_constraints all agree on one name.
     """
     import cobra
 
@@ -309,6 +332,11 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
         rxn.build_reaction_from_string(str(row['Reaction Formula']))
 
     _remove_metabolites_orphaned_by(model, dropped_formulas)
+
+    if biomass_id is not None:
+        model.reactions.get_by_id(biomass_id).id = 'BIOMASS'
+        model.repair()
+        print(f"Renamed biomass reaction {biomass_id} -> BIOMASS")
 
     # Annotate with atom mappings
     amm = pd.read_excel(path_to_atom_map_xls, sheet_name='Atom Transition')

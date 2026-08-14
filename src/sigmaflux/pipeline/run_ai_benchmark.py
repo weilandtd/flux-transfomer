@@ -24,6 +24,7 @@ import argparse
 import os
 
 import numpy as np
+import pandas as pd
 import torch
 
 from ..ai.data import find_checkpoint
@@ -32,6 +33,7 @@ from ._benchmark import (
     build_mfa_context,
     forward_labeling,
     load_benchmark_inputs,
+    noisy_measurements,
     pin_threads,
     select_samples,
     write_predictions,
@@ -72,36 +74,48 @@ def build_parser():
     return p
 
 
-def build_df_L(labeling_df, cols, noise_std, rng, inv_tracer):
-    """Convert the selected columns of the training labeling to df_L for ``predict()``."""
-    batch = labeling_df.iloc[:, cols].copy()
-    batch.columns = list(range(len(cols)))
+def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
+    """Convert the selected columns of the training labeling to df_L for ``predict()``.
+
+    Noise comes from the shared per-sample generator, so the MFA benchmark scoring the
+    same sample sees the identical realisation rather than an independent draw.
+    """
+    noisy_cols = {}
+    for run_ix, col in enumerate(cols):
+        gt = labeling_df.iloc[:, int(col)]
+        gt.index.names = ["Tracer", "Metabolite", "Isotopomer"]
+        noisy_cols[run_ix], _ = noisy_measurements(gt, np.empty(0), noise_std, 0.0,
+                                                   seed, int(col))
+    batch = pd.DataFrame(noisy_cols)
     long = batch.stack().reset_index()
     long.columns = ["Tracer", "Metabolite ID", "Isotopomer", "Sample", "Fraction"]
     long["Tracer Name"] = long["Tracer"].map(inv_tracer)
     unknown = long["Tracer Name"].isna().sum()
     if unknown:
         raise ValueError(f"{unknown} tokens have unknown tracer IDs — check _tracer_name_to_id mapping")
-    noise = np.clip(rng.normal(0.0, noise_std, size=len(long)), -noise_std, noise_std)
-    long["Fraction"] = (long["Fraction"].values + noise).clip(min=0.0)
     return long[["Tracer Name", "Metabolite ID", "Isotopomer", "Sample", "Fraction"]]
 
 
-def build_df_Vm(training_flux_df, measured_rxn_ids, cols, flux_noise_std, rng):
-    """Build df_Vm with noisy measured flux values for the selected columns."""
+def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_std,
+                labeling_df, seed):
+    """Build df_Vm with noisy measured flux values for the selected columns.
+
+    The labeling block is drawn first and discarded here purely to advance the shared
+    generator in the same order the MFA benchmark uses, so both land on the identical
+    flux realisation for a given sample.
+    """
     present = [r for r in measured_rxn_ids if r in training_flux_df.index]
     if not present:
         return None
-    batch = training_flux_df.loc[present].iloc[:, cols].copy()
-    batch.columns = list(range(len(cols)))
-    long = batch.stack().reset_index()
-    long.columns = ["Flux Name", "Sample", "Value"]
-    true_vals = long["Value"].values.copy()
-    bounds = flux_noise_std * np.abs(true_vals)
-    safe_std = np.where(bounds > 0, bounds, 1e-12)
-    noise = np.clip(rng.normal(0.0, safe_std, size=len(long)), -bounds, bounds)
-    long["Value"] = true_vals + noise
-    return long[["Flux Name", "Sample", "Value"]]
+    rows = []
+    for run_ix, col in enumerate(cols):
+        gt_lab = labeling_df.iloc[:, int(col)]
+        gt_lab.index.names = ["Tracer", "Metabolite", "Isotopomer"]
+        true_vals = training_flux_df.loc[present].iloc[:, int(col)].to_numpy(float)
+        _, noisy = noisy_measurements(gt_lab, true_vals, noise_std, flux_noise_std,
+                                      seed, int(col))
+        rows.append(pd.DataFrame({"Flux Name": present, "Sample": run_ix, "Value": noisy}))
+    return pd.concat(rows, ignore_index=True)
 
 
 def main(args):
@@ -148,8 +162,9 @@ def main(args):
 
     # ── Run AI predictions for the full chunk at once ─────────────────────────
     print(f"\nBuilding input tensors for {n_runs} samples ...")
-    df_L = build_df_L(training_labeling_df, sel, args.noise_std, rng, inv_tracer)
-    df_Vm = build_df_Vm(training_flux_df, measured_rxn_ids, sel, args.flux_noise_std, rng)
+    df_L = build_df_L(training_labeling_df, sel, args.noise_std, args.seed, inv_tracer)
+    df_Vm = build_df_Vm(training_flux_df, measured_rxn_ids, sel, args.noise_std,
+                        args.flux_noise_std, training_labeling_df, args.seed)
 
     print(f"Running SigmaFlux.predict() on {n_runs} samples ...")
     result = sf.predict(df_L, df_Vm=df_Vm)

@@ -3,3 +3,7 @@ pytest>=7.0
 pytest-cov
 ruff
 mypy
+# Keeps `import cobra` working: cobra >= 0.32 imports cobra.sampling.hopsy unconditionally,
+# and that module dereferences hopsy at class-definition time. Test-only — the HopsySampler
+# wrapper it enables lives on the cobrapy devel branch, so it is not a runtime dependency.
+hopsy

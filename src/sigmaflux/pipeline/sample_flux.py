@@ -11,6 +11,7 @@ Example:
 import argparse
 import datetime
 import os
+import warnings
 from pathlib import Path
 
 import cobra
@@ -23,7 +24,10 @@ from cobra.sampling import sample
 
 try:
     from cobra.sampling import HopsySampler
-except ImportError:
+except Exception:
+    # Not just ImportError: cobra's own hopsy module uses `hopsy.Proposal` as a default
+    # argument in a class body, so importing it without the hopsy package raises NameError
+    # rather than ImportError. Degrade to "unavailable" instead of taking the process down.
     HopsySampler = None
 from optlang.symbolics import Zero
 
@@ -100,6 +104,25 @@ def apply_media(model, media_cfg, close_unlisted=True):
     else:
         print(f"Applied media: constrained {len(media_cfg) - len(missing)} measured "
               f"reactions; other exchanges left at their model bounds")
+
+
+def apply_reaction_bounds(model, bounds_cfg):
+    """Override bounds on named non-exchange reactions, before FVA.
+
+    `media` only reaches EX_ reactions, but a GEM's internal directions can be wrong
+    for the organism being modelled.  Transport directionality is the usual case:
+    microbial models can mostly write a transporter one-way, while cultured mammalian
+    cells run amino acid and monocarboxylate carriers in whichever direction the
+    gradient dictates, so the same reaction reverses between conditions.
+    """
+    if not bounds_cfg:
+        return
+    for reaction_id, bounds in bounds_cfg.items():
+        if reaction_id not in model.reactions:
+            print(f"  reaction_bounds: '{reaction_id}' not in model, skipped")
+            continue
+        set_bounds(model, reaction_id, bounds["lb"], bounds["ub"])
+    print(f"Applied reaction_bounds overrides: {sorted(bounds_cfg)}")
 
 
 def constrain_growth(model, growth_cfg):
@@ -341,10 +364,22 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
 
 
 def _do_sample(model, s, seed):
-    method = s.get("method", "hopsy")
+    # optgp, not hopsy: HopsySampler ships only on the cobrapy devel branch, so a released
+    # cobra cannot honour a hopsy default. Every config in paper/configs sets this explicitly.
+    method = s.get("method", "optgp")
     if method == "hopsy":
         if HopsySampler is None:
-            raise ImportError("HopsySampler not available; install dev cobrapy+hopsy or set method: optgp")
+            warnings.warn(
+                "method: hopsy was requested but HopsySampler is unavailable — SAMPLING WITH "
+                "optgp INSTEAD. The samples will not be the ones the config asked for. To use "
+                "hopsy, install the hopsy package and a cobrapy checkout from the devel branch "
+                "(HopsySampler is not in any released cobra).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            method = "optgp"
+            return sample(model, n=s["n_samples"], thinning=s["thinning"],
+                          processes=s["processes"], method=method, seed=seed)
         import hopsy as _hopsy
         proposal_key = s.get("hopsy_proposal", "uniform_coordinate_hit_and_run")
         if proposal_key not in _HOPSY_PROPOSALS:
@@ -382,6 +417,7 @@ def main(cfg, output_dir_override=None):
     model.solver.configuration.tolerances.feasibility = 1e-9
 
     apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+    apply_reaction_bounds(model, s.get("reaction_bounds"))
     if s.get("growth"):
         constrain_growth(model, s["growth"])
 

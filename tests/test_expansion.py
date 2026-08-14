@@ -29,6 +29,7 @@ def assert_no_redundant_edges(emu_network):
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'I_orientalis', 'imIsor_annotated.json'), 'IO', 'yeast'),
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'S_cerevisiae', 'sc_annotated.json'), 'SC', 'yeast'),
     (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'R_toruloides', 'imRt_annotated.json'), 'RT', 'yeast'),
+    (os.path.join(PROJECT_DIR, 'models', 'atomistic', 'M_musculus_T_Cell', 'mmTcell_annotated.json'), 'MM', 'yeast'),
 ])
 def test_no_redundant_edges(path, name, dataset):
     model = load_json_model(path)
