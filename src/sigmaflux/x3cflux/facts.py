@@ -24,6 +24,7 @@ def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
         # MFAModel uses for _reversibility_mask.
         "reversible": bool(r.reversibility),
         "atom_mapping": r.annotation.get("atom_mapping", ""),
+        "terminal": bool(r.annotation.get("terminal", False)),
         "stoichiometry": {m.id: c for m, c in r.metabolites.items()},
     } for r in cobra_model.reactions]
 

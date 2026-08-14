@@ -442,20 +442,30 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     except Exception:
         term = None          # a workbook without the sheet simply declares no terminals
     if term is not None:
-        if 'Metab_name' not in term.columns:
+        if 'Metab_name' not in term.columns and 'Rxn_name' not in term.columns:
             raise ValueError(f"{path_to_atom_map_xls}: the Terminal sheet needs a "
-                             f"'Metab_name' column, found {list(term.columns)}")
-        for name in term['Metab_name'].dropna():
-            met_id = str(name).strip()
-            if not met_id:
+                             f"'Metab_name' or 'Rxn_name' column, found "
+                             f"{list(term.columns)}")
+        # A terminal *reaction* is the escape hatch for a lump whose carbon cannot be
+        # written as an atom map at all: lumpFACOA160_c condenses 8 acetyl-CoA with 7
+        # ATP and 7 HCO3, which is 93 atoms against the 62 symbols a pattern can use.
+        # Declaring it terminal says its carbon leaves the labelled network, the same
+        # statement a terminal pool makes, without inventing chemistry to say it.
+        for col, lookup, what in (('Metab_name', model.metabolites, 'pool'),
+                                  ('Rxn_name', model.reactions, 'reaction')):
+            if col not in term.columns:
                 continue
-            try:
-                model.metabolites.get_by_id(met_id).annotation['terminal'] = True
-            except KeyError:
-                # Naming a pool the GEM does not contain means the declaration silently
-                # does nothing, which is the failure mode this sheet exists to avoid.
-                warnings.warn(f"Terminal sheet names {met_id}, which is not in the model",
-                              RuntimeWarning, stacklevel=2)
+            for name in term[col].dropna():
+                ident = str(name).strip()
+                if not ident:
+                    continue
+                try:
+                    lookup.get_by_id(ident).annotation['terminal'] = True
+                except KeyError:
+                    # Naming something the GEM does not contain means the declaration
+                    # silently does nothing, the failure this sheet exists to avoid.
+                    warnings.warn(f"Terminal sheet names {what} {ident}, which is not "
+                                  f"in the model", RuntimeWarning, stacklevel=2)
 
     annotate_atom_patterns(model)
 

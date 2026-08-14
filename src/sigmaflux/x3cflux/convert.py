@@ -323,11 +323,16 @@ def convert(facts, symmetry=True, allow_void=None):
         flip = ub <= 0
         sgn = -1.0 if flip else 1.0
 
-        f = integer_scale(stoich)
+        # A reaction the AMM declares terminal joins the non-integer reactions on the
+        # split path whatever its coefficients look like: its carbon leaves the labelled
+        # network, so it drains as unit half-reactions rather than needing an atom map.
+        terminal_rxn = bool(r.get("terminal"))
+        f = None if terminal_rxn else integer_scale(stoich)
         if f is None:
             # Non-integer: split into unit half-reactions, tied by build_config.
             parents[rid] = []
-            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid)
+            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid,
+                                       drop_unpaired=terminal_rxn)
             for met, coef in stoich.items():
                 if met in carriers["skip"]:
                     continue        # emitted below, paired with its carbon partner
@@ -543,7 +548,7 @@ def convert(facts, symmetry=True, allow_void=None):
                      atom_free_reverse, extra_sources)
 
 
-def carbon_carriers(stoich, mets_by_id, sgn, rxn_id):
+def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, drop_unpaired=False):
     """Pair each produced carbon pool with a consumed one of the same size.
 
     Only used on the non-integer split path, where every participant becomes a unit
@@ -591,7 +596,11 @@ def carbon_carriers(stoich, mets_by_id, sgn, rxn_id):
             # have landed on adp_c instead had the names sorted the other way. Judging a
             # rounding artifact by an alphabetical accident is not a criterion.
             pool = sum(v for p, v in produced.items() if n_of(p) == size)
-            if remaining <= CARRIER_REL_TOL * pool:
+            if drop_unpaired:
+                # Declared terminal: the product is simply not emitted, so its carbon
+                # leaves with the educts instead of being drawn from an unlabeled source.
+                print(f"  {rxn_id}: {product} ({size} C) not carried — declared terminal")
+            elif remaining <= CARRIER_REL_TOL * pool:
                 print(f"  {rxn_id}: {product} exceeds its {size}-carbon educts by "
                       f"{remaining:g} ({100 * remaining / pool:.4f}% of the pool) — "
                       f"rounding in the coefficients; surplus dropped")
