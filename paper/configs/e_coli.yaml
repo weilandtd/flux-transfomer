@@ -77,12 +77,15 @@ sampling:
     EX_pyr_e:    {lb: 0.0, ub: 30.0}
     EX_h2_e:     {lb: 0.0, ub: 30.0}
     EX_urea_e:   {lb: 0.0, ub: 30.0}
-    # Cofactors the subset cannot synthesise; supplied so BIOMASS can carry flux.
-    # None is carbon-tracked, so they do not enter the labeling.
-    EX_mql8_c:   {lb: -10.0, ub: 0.0}
-    EX_q8h2_c:   {lb: -10.0, ub: 0.0}
-    EX_sheme_c:  {lb: -10.0, ub: 0.0}
-    EX_thmpp_c:  {lb: -10.0, ub: 0.0}
+    # Cofactors the subset cannot synthesise. They are listed so media_dilution_targets
+    # selects them, which is what supplies them: each gets an unlabeled <met>_env feed.
+    # The exchange itself stays shut, because a second supply route on the same pool is
+    # the duplicate-boundary defect again, and an unmapped one injects 51 carbons of
+    # quinone with no atom map behind it.
+    EX_mql8_c:   {lb: 0.0, ub: 0.0}
+    EX_q8h2_c:   {lb: 0.0, ub: 0.0}
+    EX_sheme_c:  {lb: 0.0, ub: 0.0}
+    EX_thmpp_c:  {lb: 0.0, ub: 0.0}
 
   # The MFA needs glucose entry one-way: reversible, GLCtex gives glc-D_e a producer
   # and the tracer inlet stops being an EMU network input.
