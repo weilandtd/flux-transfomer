@@ -1444,22 +1444,34 @@
 {
 "id":"bm_protein_c",
 "name":"PROTEIN_c biomass precursor",
-"compartment":"c"
+"compartment":"c",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"bm_rna_c",
 "name":"RNA_c biomass precursor",
-"compartment":"c"
+"compartment":"c",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"bm_dna_c",
 "name":"DNA_c biomass precursor",
-"compartment":"c"
+"compartment":"c",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"bm_lipid_c",
 "name":"LIPID_c biomass precursor",
-"compartment":"c"
+"compartment":"c",
+"annotation":{
+"terminal":true
+}
 }
 ],
 "reactions":[

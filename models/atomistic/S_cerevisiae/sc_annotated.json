@@ -2583,7 +2583,10 @@
 {
 "id":"ffabiom_c",
 "name":"free fatty acid synthesis for biomass (via thioesterase)",
-"compartment":""
+"compartment":"",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"glyc3p_m",
@@ -8080,7 +8083,8 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ser__L_c (abc) + ser__L_c (def) + ser__L_c (ghi) + ser__L_c (jkl) + pail_c (mnopqrstu) + pail_c (vwxyzABCD) + pail_c (EFGHIJKLM) + pail_c (NOPQRSTUV) + hxccoa_c + nadph_c + o2_c + pmtcoa_c + ttccoa_c -> dag_c (mno) + dag_c (vwx) + dag_c (EFG) + dag_c (NOP) + co2_c (a) + co2_c (d) + co2_c (g) + co2_c (j) + ipcbiom_c (bcpqrstu) + ipcbiom_c (efyzABCD) + ipcbiom_c (hiHIJKLM) + ipcbiom_c (klQRSTUV) + coa_c + h2o_c + h_c + nadp_c"
+"atom_mapping":"ser__L_c (abc) + ser__L_c (def) + ser__L_c (ghi) + ser__L_c (jkl) + pail_c (mnopqrstu) + pail_c (vwxyzABCD) + pail_c (EFGHIJKLM) + pail_c (NOPQRSTUV) + hxccoa_c + nadph_c + o2_c + pmtcoa_c + ttccoa_c -> dag_c (mno) + dag_c (vwx) + dag_c (EFG) + dag_c (NOP) + co2_c (a) + co2_c (d) + co2_c (g) + co2_c (j) + ipcbiom_c (bcpqrstu) + ipcbiom_c (efyzABCD) + ipcbiom_c (hiHIJKLM) + ipcbiom_c (klQRSTUV) + coa_c + h2o_c + h_c + nadp_c",
+"terminal":true
 }
 },
 {
