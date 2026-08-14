@@ -310,6 +310,58 @@ def annotate_atom_patterns(model):
     return model
 
 
+def read_terminal_sheet(path_to_atom_map_xls):
+    """``(terminal pool ids, terminal reaction ids)`` declared by the AMM workbook.
+
+    Terminal is where the model stops following the label. Unlike a symmetry this is a
+    modelling decision, not a chemical fact: the acyl chains entering ``lumpIPC_c`` are
+    terminal because the truncated ``ipcbiom_c`` cannot represent them, so their carbon
+    leaves the network rather than being carried into a product that cannot hold it. It
+    is declared in the workbook, next to the symmetries, precisely so that revising it is
+    a curation step rather than a code change.
+
+    The two columns are independently ragged, so each is read on its own.
+    """
+    try:
+        term = pd.read_excel(path_to_atom_map_xls, sheet_name='Terminal')
+    except Exception:
+        return [], []        # a workbook without the sheet simply declares no terminals
+
+    if 'Metab_name' not in term.columns and 'Rxn_name' not in term.columns:
+        raise ValueError(f"{path_to_atom_map_xls}: the Terminal sheet needs a "
+                         f"'Metab_name' or 'Rxn_name' column, found "
+                         f"{list(term.columns)}")
+    # A terminal *reaction* is the escape hatch for a lump whose atom map cannot carry
+    # its own carbon: lumpIPC_c condenses C16/C24/C26 acyl-CoA into an 8-carbon
+    # ipcbiom_c, stranding 164 of its 212 carbons. Declaring the reaction terminal says
+    # that carbon leaves the labelled network -- the same statement a terminal pool
+    # makes -- without inventing chemistry to say it.
+    return tuple([str(n).strip() for n in term[col].dropna() if str(n).strip()]
+                 if col in term.columns else []
+                 for col in ('Metab_name', 'Rxn_name'))
+
+
+def apply_terminal_annotations(model, path_to_atom_map_xls):
+    """Mark the pools and reactions the AMM's Terminal sheet declares terminal.
+
+    Applied twice: once by :func:`convert_mfa_maranas` on the flat model, and again after
+    :func:`split_biomass_hierarchical`, because the ``bm_*`` pools a Terminal sheet names
+    do not exist until that split creates them.
+    """
+    pool_ids, rxn_ids = read_terminal_sheet(path_to_atom_map_xls)
+    for idents, lookup, what in ((pool_ids, model.metabolites, 'pool'),
+                                 (rxn_ids, model.reactions, 'reaction')):
+        for ident in idents:
+            try:
+                lookup.get_by_id(ident).annotation['terminal'] = True
+            except KeyError:
+                # Naming something the model does not contain means the declaration
+                # silently does nothing, the failure this sheet exists to avoid.
+                warnings.warn(f"Terminal sheet names {what} {ident}, which is not "
+                              f"in the model", RuntimeWarning, stacklevel=2)
+    return model
+
+
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
                         drop_subsystems=(), biomass_id=None):
     """
@@ -431,41 +483,9 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     except Exception:
         pass
 
-    # Terminal pools -- where the model stops following the label. Unlike a symmetry this
-    # is a modelling decision, not a chemical fact: the lipid pools are terminal because
-    # we track the dag backbone and not the fatty-acyl chains, so their carbon leaves the
-    # network rather than being carried into a product that cannot represent it. It is
-    # declared in the workbook, next to the symmetries, precisely so that revising it is a
-    # curation step rather than a code change.
-    try:
-        term = pd.read_excel(path_to_atom_map_xls, sheet_name='Terminal')
-    except Exception:
-        term = None          # a workbook without the sheet simply declares no terminals
-    if term is not None:
-        if 'Metab_name' not in term.columns and 'Rxn_name' not in term.columns:
-            raise ValueError(f"{path_to_atom_map_xls}: the Terminal sheet needs a "
-                             f"'Metab_name' or 'Rxn_name' column, found "
-                             f"{list(term.columns)}")
-        # A terminal *reaction* is the escape hatch for a lump whose carbon cannot be
-        # written as an atom map at all: lumpFACOA160_c condenses 8 acetyl-CoA with 7
-        # ATP and 7 HCO3, which is 93 atoms against the 62 symbols a pattern can use.
-        # Declaring it terminal says its carbon leaves the labelled network, the same
-        # statement a terminal pool makes, without inventing chemistry to say it.
-        for col, lookup, what in (('Metab_name', model.metabolites, 'pool'),
-                                  ('Rxn_name', model.reactions, 'reaction')):
-            if col not in term.columns:
-                continue
-            for name in term[col].dropna():
-                ident = str(name).strip()
-                if not ident:
-                    continue
-                try:
-                    lookup.get_by_id(ident).annotation['terminal'] = True
-                except KeyError:
-                    # Naming something the GEM does not contain means the declaration
-                    # silently does nothing, the failure this sheet exists to avoid.
-                    warnings.warn(f"Terminal sheet names {what} {ident}, which is not "
-                                  f"in the model", RuntimeWarning, stacklevel=2)
+    # The bm_* pools this may name do not exist yet -- split_biomass_hierarchical creates
+    # them -- so build_hierarchical_models.py applies the sheet a second time afterwards.
+    apply_terminal_annotations(model, path_to_atom_map_xls)
 
     annotate_atom_patterns(model)
 
