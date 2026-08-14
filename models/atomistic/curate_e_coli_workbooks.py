@@ -215,7 +215,7 @@ def canonicalise_boundaries(name, reactions, metabolites):
         big = reactions[col].abs() > BOUND_LIMIT
         reactions.loc[big, col] = sign * BOUND_LIMIT * (reactions.loc[big, col] != 0)
     print(f"    boundaries: {len(renamed)} renamed, {len(added)} exchanges added, "
-          f"{len(DROP_REACTIONS & set(ids))} dropped")
+          f"{len(DROP_REACTIONS[name] & set(ids))} dropped")
     return reactions
 
 
@@ -241,6 +241,19 @@ def curate(name, gem, amm):
     metabolites = sheets['Metabolites'].copy()
     metabolites['metid'] = metabolites['metid'].map(to_canonical)
     reactions = canonicalise_boundaries(name, reactions, metabolites)
+
+    # Dropping the dilution sub-network strands the pools it fed -- Ala_d, Ala_x and
+    # the rest of the `_d`/`_x` measured/diluter pairs, plus glc-D_pre behind gluc_pre.
+    # They reach the model as metabolites in no reaction, where they cost a compound
+    # token each and inflate the vocabulary the config's h_compound is sized against.
+    named = set()
+    for formula in reactions['Reaction Formula'].astype(str):
+        named.update(re.findall(r'[A-Za-z0-9_\-\[\]]+', formula))
+    stranded = ~metabolites['metid'].astype(str).isin(named)
+    if stranded.any():
+        print(f"    dropped {int(stranded.sum())} metabolites left in no reaction")
+        metabolites = metabolites[~stranded]
+
     sheets['Reactions'], sheets['Metabolites'] = reactions, metabolites
 
     with pd.ExcelWriter(gem_path) as writer:
