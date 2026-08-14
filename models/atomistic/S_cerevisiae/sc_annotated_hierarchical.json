@@ -7918,7 +7918,10 @@
 },
 "lower_bound":0.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"atp_c (xyzABCDEFG) + atp_c (HIJKLMNOPQ) + atp_c (RSTUVWXYZ0) + atp_c (123456789\u00c0) + atp_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca) + atp_c (\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4) + atp_c (\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df) + hco3_c (a) + hco3_c (b) + hco3_c (c) + hco3_c (d) + hco3_c (e) + hco3_c (f) + hco3_c (g) + accoa_c (hi) + accoa_c (jk) + accoa_c (lm) + accoa_c (no) + accoa_c (pq) + accoa_c (rs) + accoa_c (tu) + accoa_c (vw) + h_c + nadph_c -> adp_c (xyzABCDEFG) + adp_c (HIJKLMNOPQ) + adp_c (RSTUVWXYZ0) + adp_c (123456789\u00c0) + adp_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca) + adp_c (\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4) + adp_c (\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df) + co2_c (a) + co2_c (b) + co2_c (c) + co2_c (d) + co2_c (e) + co2_c (f) + co2_c (g) + pmtcoa_c (vwturspqnolmjkhi) + coa_c + h2o_c + nadp_c + pi_c"
+}
 },
 {
 "id":"lumpFACOA180_c",

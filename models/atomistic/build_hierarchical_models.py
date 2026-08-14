@@ -64,15 +64,25 @@ CONFIGS = [
     ),
 ]
 
-# The two shipped models are not rebuilt, but the Terminal sheet still has to reach them:
-# it is an annotation, so re-applying it leaves every stoichiometry byte untouched while
-# the declaration lands on the model the configs actually point `model_file` at.
+# The two shipped models are not rebuilt, but curation still has to reach them: what the
+# biomass split freezes is their stoichiometry, not the atom maps and terminal
+# declarations the workbook owns. Both are annotations, so re-applying them leaves every
+# stoichiometry byte untouched while the curation lands on the model the configs actually
+# point `model_file` at. Without this, a recovered atom map (d9d7492) or a Terminal row
+# reaches the flat model and silently stops there.
 ANNOTATE_ONLY = [
-    ('models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
-     'models/atomistic/S_cerevisiae/scAMM.xlsx'),
-    ('models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
-     'models/atomistic/I_orientalis/imIsor_AMM.xlsx'),
+    dict(hierarchical_json='models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
+         flat_json='models/atomistic/S_cerevisiae/sc_annotated.json',
+         amm_xlsx='models/atomistic/S_cerevisiae/scAMM.xlsx'),
+    dict(hierarchical_json='models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
+         flat_json='models/atomistic/I_orientalis/imIsor_annotated.json',
+         amm_xlsx='models/atomistic/I_orientalis/imIsor_AMM.xlsx'),
 ]
+
+# Annotations the flat model owns; everything else in a shipped model stays as shipped.
+_SYNCED = (('reactions', 'atom_mapping'),
+           ('metabolites', 'atom_pattern'),
+           ('metabolites', 'symmetries'))
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
@@ -105,8 +115,8 @@ def build_hierarchical(flat_json, gem_xlsx, amm_xlsx, out_json, fractions=None):
     print(f"  BIOMASS consumes: {sorted(m.id for m in biomass.metabolites)}")
 
 
-def reannotate_terminal(hierarchical_json, amm_xlsx):
-    """Re-apply the Terminal sheet to a shipped model, changing nothing else.
+def resync_annotations(hierarchical_json, flat_json, amm_xlsx):
+    """Refresh a shipped model's annotations from the workbook, changing nothing else.
 
     Patches the JSON directly rather than round-tripping through cobra: these two files
     were written out-of-band, each with its own serializer settings, so
@@ -120,6 +130,19 @@ def reannotate_terminal(hierarchical_json, amm_xlsx):
     opening = raw.split('\n', 2)[1]
     indent = len(opening) - len(opening.lstrip(' '))
     separators = (',', ': ' if '": ' in opening else ':')
+
+    # The five biomass component reactions exist only in the hierarchical model, so a
+    # missing id means the split created it, not that the annotation was lost.
+    flat = json.loads((_REPO_ROOT / flat_json).read_text())
+    for section, key in _SYNCED:
+        source = {e['id']: e.get('annotation', {}).get(key) for e in flat[section]}
+        for entry in doc[section]:
+            fresh = source.get(entry['id'])
+            stale = entry.get('annotation', {}).get(key)
+            if entry['id'] not in source or fresh == stale:
+                continue
+            entry.setdefault('annotation', {})[key] = fresh
+            print(f"    {section[:-1]} {entry['id']}: {key} refreshed from the workbook")
 
     pool_ids, rxn_ids = read_terminal_sheet(_REPO_ROOT / amm_xlsx)
     for idents, section, what in ((pool_ids, 'metabolites', 'pool'),
@@ -140,6 +163,6 @@ if __name__ == '__main__':
     for cfg in CONFIGS:
         print(cfg['out_json'])
         build_hierarchical(**cfg)
-    for hierarchical_json, amm_xlsx in ANNOTATE_ONLY:
-        print(hierarchical_json)
-        reannotate_terminal(hierarchical_json, amm_xlsx)
+    for cfg in ANNOTATE_ONLY:
+        print(cfg['hierarchical_json'])
+        resync_annotations(**cfg)
