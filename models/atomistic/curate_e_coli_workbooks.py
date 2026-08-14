@@ -65,9 +65,18 @@ _BRACKET = re.compile(r'\[([a-zA-Z]+)\]')
 _DILUTION = re.compile(r'^dil_\d+$|_dil\d*$|^sink')
 
 # Ad-hoc boundary reactions to drop once a proper exchange exists for the metabolite
-# they served. `gluc_pre` additionally feeds off an orphan (`glc-D_pre` has no
-# producer), so it can never carry flux.
-DROP_REACTIONS = {'gluc_pre'}
+# they served. Per model, because the two workbooks give the same name to different
+# chemistry: iAF1260's `ac_out`/`co2_out` are bare boundaries (`ac_e -->`) duplicating
+# the EX_ac_e and EX_co2_e that canonicalise_boundaries adds, and two exchanges on one
+# pool leave the split between them unidentifiable -- a free direction carrying no
+# information, the defect UNIDENTIFIABLE_ROUTES removes. The core model's reactions of
+# the same name are the real cytosol-to-medium transports `Ac -> Ac_e` and
+# `CO2 -> CO2_e`, and dropping those severs acetate and CO2 export entirely.
+# `gluc_pre` feeds off an orphan (`glc-D_pre` has no producer) so it never carries flux.
+DROP_REACTIONS = {
+    'E_coli_core': set(),
+    'E_coli': {'gluc_pre', 'ac_out', 'co2_out'},
+}
 
 # Removal of unidentifiable reactions without connection to carbon metabolism.
 #
@@ -177,7 +186,7 @@ def canonicalise_boundaries(name, reactions, metabolites):
         reactions.loc[mask, 'Reaction Formula'] = f"(1) {met} -->"
         reactions.loc[mask, ['Lower bound', 'Upper bound']] = [-BOUND_LIMIT, BOUND_LIMIT]
 
-    reactions = reactions[~reactions['Rxn ID'].isin(DROP_REACTIONS)]
+    reactions = reactions[~reactions['Rxn ID'].isin(DROP_REACTIONS[name])]
     redundant = UNIDENTIFIABLE_ROUTES[name] & set(reactions['Rxn ID'].astype(str))
     if redundant:
         print(f"    dropped {len(redundant)} unidentifiable carbon-free routes: {sorted(redundant)}")
