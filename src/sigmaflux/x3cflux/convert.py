@@ -49,22 +49,6 @@ INT_TOL = 1e-9
 #: on I. orientalis. A real error -- a missing educt, a mistyped coefficient -- is O(1)
 #: of the pool, so 1e-3 separates the two by nearly an order of magnitude on each side.
 CARRIER_REL_TOL = 1e-3
-#: Lumped reactions whose atom map cannot carry their own carbon, handled exactly like
-#: the biomass lumps: split into per-metabolite unit reactions, consumed pools drained as
-#: sinks, and produced carbon with no same-size educt dropped rather than invented.
-#:
-#: ``lumpIPC_c`` is the yeast inositol-phosphorylceramide lump -- 212 carbons in from
-#: pail/palmitoyl-CoA/serine/C24/C26-CoA, 48 out into co2/dag/ipcbiom, because the
-#: truncated ``ipcbiom_c`` (8 C) cannot represent the acyl chains. Taking the atom-map
-#: path it strands 164 carbons in a void pool. Draining the educts instead keeps it a
-#: strict sink: atoms leave, nothing unlabeled is invented, and the label follows its own
-#: carbons. Identical in I. orientalis and S. cerevisiae.
-#: ``lumpFACOA160_c`` / ``lumpFACOA170_c`` are the two fatty-acyl-CoA lumps that carry
-#: carbon with no ``atom_mapping`` at all: 8 acetyl-CoA condensed into one C16 chain,
-#: plus 7 ATP -> ADP and 7 HCO3 -> CO2 of activation chemistry. Only these two lack a
-#: map -- lumpFACOA180 through 260 have one and must keep it, since joining this set
-#: discards the map -- so the set is named explicitly rather than matched by prefix.
-SINK_LUMPS = {"lumpIPC_c", "lumpFACOA160_c", "lumpFACOA170_c"}
 SRC_SUFFIX = "__src"
 
 # SK_accoa_c is the one reaction that carries carbon but has no atom_mapping, so
@@ -312,7 +296,12 @@ def convert(facts, symmetry=True, allow_void=None):
 
     metabolites = []
     for m in facts["metabolites"]:
-        n = len(m["atom_pattern"])
+        # A pool declared terminal in the AMM is where the model stops following the
+        # label, so it enters x3cflux carrying no atoms: carbon reaching it leaves the
+        # labelled network instead of having to be carried into a product that cannot
+        # represent it. That is a curation decision, which is why it is read from the
+        # workbook rather than decided here.
+        n = 0 if m.get("terminal") else len(m["atom_pattern"])
         metabolites.append(x.Metabolite(m["id"], n, {CARBON: n}))
 
     # Symmetric pools: 'abcd.dcba' -> ('abcd', 'dcba')
@@ -334,15 +323,11 @@ def convert(facts, symmetry=True, allow_void=None):
         flip = ub <= 0
         sgn = -1.0 if flip else 1.0
 
-        # SINK_LUMPS join the non-integer reactions on the split path even though their
-        # coefficients are whole numbers: what makes a reaction belong here is an atom map
-        # that cannot carry its carbon, not the shape of its stoichiometry.
-        sink_lump = rid in SINK_LUMPS
-        f = None if sink_lump else integer_scale(stoich)
+        f = integer_scale(stoich)
         if f is None:
             # Non-integer: split into unit half-reactions, tied by build_config.
             parents[rid] = []
-            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid, strict_sink=sink_lump)
+            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid)
             for met, coef in stoich.items():
                 if met in carriers["skip"]:
                     continue        # emitted below, paired with its carbon partner
@@ -535,8 +520,15 @@ def convert(facts, symmetry=True, allow_void=None):
         reactions.append(x.Reaction(drain, n, False, x.Permutation(n), [void], []))
         reversible[drain] = False
 
+    # Carbon that ends in a pool the AMM declares terminal is not lost by accident --
+    # that pool is where the model stops following the label -- so those reactions are
+    # expected to strand atoms and are not reported as errors.
+    terminal_ids = {m["id"] for m in facts["metabolites"] if m.get("terminal")}
+    to_terminal = {r["id"] for r in facts["reactions"]
+                   if any(m in terminal_ids and c > 0
+                          for m, c in r["stoichiometry"].items())}
     unexpected = sorted(v[len("__void_"):] for v in void_pools
-                        if v[len("__void_"):] not in allow_void)
+                        if v[len("__void_"):] not in allow_void | to_terminal)
     if unexpected:
         raise VoidPoolError(
             f"{len(unexpected)} reaction(s) lose carbon into a void pool: "
@@ -551,7 +543,7 @@ def convert(facts, symmetry=True, allow_void=None):
                      atom_free_reverse, extra_sources)
 
 
-def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, strict_sink=False):
+def carbon_carriers(stoich, mets_by_id, sgn, rxn_id):
     """Pair each produced carbon pool with a consumed one of the same size.
 
     Only used on the non-integer split path, where every participant becomes a unit
@@ -599,12 +591,7 @@ def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, strict_sink=False):
             # have landed on adp_c instead had the names sorted the other way. Judging a
             # rounding artifact by an alphabetical accident is not a criterion.
             pool = sum(v for p, v in produced.items() if n_of(p) == size)
-            if strict_sink:
-                # A declared sink lump: the product is simply not emitted, so its carbon
-                # leaves with the educts instead of being conjured from an unlabeled pool.
-                print(f"  {rxn_id}: {product} ({size} C) has no same-size educt; "
-                      f"{remaining:g} dropped — strict sink")
-            elif remaining <= CARRIER_REL_TOL * pool:
+            if remaining <= CARRIER_REL_TOL * pool:
                 print(f"  {rxn_id}: {product} exceeds its {size}-carbon educts by "
                       f"{remaining:g} ({100 * remaining / pool:.4f}% of the pool) — "
                       f"rounding in the coefficients; surplus dropped")

@@ -31,6 +31,7 @@ def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
         "id": m.id,
         "atom_pattern": m.annotation.get("atom_pattern", ""),
         "symmetries": list(m.annotation.get("symmetries", [])),
+        "terminal": bool(m.annotation.get("terminal", False)),
     } for m in cobra_model.metabolites]
 
     # The EMU network's boundary nodes -- those with no incoming edge, which

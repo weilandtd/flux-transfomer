@@ -431,6 +431,32 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     except Exception:
         pass
 
+    # Terminal pools -- where the model stops following the label. Unlike a symmetry this
+    # is a modelling decision, not a chemical fact: the lipid pools are terminal because
+    # we track the dag backbone and not the fatty-acyl chains, so their carbon leaves the
+    # network rather than being carried into a product that cannot represent it. It is
+    # declared in the workbook, next to the symmetries, precisely so that revising it is a
+    # curation step rather than a code change.
+    try:
+        term = pd.read_excel(path_to_atom_map_xls, sheet_name='Terminal')
+    except Exception:
+        term = None          # a workbook without the sheet simply declares no terminals
+    if term is not None:
+        if 'Metab_name' not in term.columns:
+            raise ValueError(f"{path_to_atom_map_xls}: the Terminal sheet needs a "
+                             f"'Metab_name' column, found {list(term.columns)}")
+        for name in term['Metab_name'].dropna():
+            met_id = str(name).strip()
+            if not met_id:
+                continue
+            try:
+                model.metabolites.get_by_id(met_id).annotation['terminal'] = True
+            except KeyError:
+                # Naming a pool the GEM does not contain means the declaration silently
+                # does nothing, which is the failure mode this sheet exists to avoid.
+                warnings.warn(f"Terminal sheet names {met_id}, which is not in the model",
+                              RuntimeWarning, stacklevel=2)
+
     annotate_atom_patterns(model)
 
     _remove_out_metabolites(model)
