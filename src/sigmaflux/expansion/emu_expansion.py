@@ -131,54 +131,32 @@ class EMUExpansion(object):
                     continue
                 the_atom_mapping = self.mappings[the_rxn.id]
 
-                #DWR: one atom maping can have multiple origin sets
+                # One atom mapping can have multiple origin sets, each carrying its
+                # own weight -- see AtomMapping.get_origin_emus.
                 origin_sets, origin_sets_rev = the_atom_mapping.get_origin_emus(the_emu)
 
-                # Symmetries of the target emu
-                symmetry_weight = 1/(1+len(the_emu.symmetries))
-
-                # Print some debug info
-                # print(f"Origin sets for {the_emu}: {origin_sets}, {origin_sets_rev}")
-
                 # New emus that are not yet in the network
-                all_origin_sets = origin_sets.union(origin_sets_rev)
+                all_origin_sets = set(origin_sets) | set(origin_sets_rev)
                 sum_all_origin_sets = sum(all_origin_sets, OriginSet({}))
 
                 new_emus = [o_emu for o_emu in sum_all_origin_sets
                             if not self.emu_network.has_emu(o_emu)]
-                
-                for origin_set in origin_sets:
-                    # Add the edges to the respective emu network
-                    if _check_origin_size(origin_set, the_emu, the_rxn, 'fwd'):
-                        data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set, the_emu)
-                        if data is None: 
-                            has_edge = False 
-                        else: 
-                            compare = [d['reaction'] == the_rxn and d['direction'] == 'fwd' for d in data.values()]
-                            has_edge = any(compare) 
 
-                        if not has_edge: 
-                            self.emu_network.subnetworks[the_emu.size].add_edge(origin_set, the_emu,
-                                                                                reaction=the_rxn, 
-                                                                                direction='fwd',
-                                                                                symmetry_weight=symmetry_weight,
-                                                                                )
-
-                for origin_set_rev in origin_sets_rev:
-                    if _check_origin_size(origin_set_rev, the_emu, the_rxn, 'rvs'):
-                        data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set_rev, the_emu)
-                        if data is None: 
-                            has_edge = False 
-                        else: 
-                            compare = [d['reaction'] == the_rxn and d['direction'] == 'rvs' for d in data.values()]
-                            has_edge = any(compare) 
-
-                        if not has_edge: 
-                            self.emu_network.subnetworks[the_emu.size].add_edge(origin_set_rev, the_emu,
-                                                                            reaction=the_rxn, 
-                                                                            direction='rvs',
-                                                                            symmetry_weight=symmetry_weight,
-                                                                            )
+                for direction, sets in (('fwd', origin_sets), ('rvs', origin_sets_rev)):
+                    for origin_set, weight in sets.items():
+                        if not _check_origin_size(origin_set, the_emu, the_rxn, direction):
+                            continue
+                        subnet = self.emu_network.subnetworks[the_emu.size]
+                        data = subnet.get_edge_data(origin_set, the_emu)
+                        # The same (origin set, target) can be revisited when an EMU
+                        # is queued more than once; the weight is already total, so a
+                        # second edge would double it.
+                        if data is not None and any(
+                                d['reaction'] == the_rxn and d['direction'] == direction
+                                for d in data.values()):
+                            continue
+                        subnet.add_edge(origin_set, the_emu, reaction=the_rxn,
+                                        direction=direction, weight=weight)
 
                 #Add a new subnetwork of size new_emu if necessary
                 for the_new_emu in new_emus:

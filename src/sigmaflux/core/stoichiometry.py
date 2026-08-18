@@ -1,10 +1,5 @@
-from collections import namedtuple
-from networkx import incidence_matrix
 import torch
 from sigmaflux.expansion.emu import get_metabolite
-
-AnnotatedStoichiometry = namedtuple('AnnotatedStoichiometry', ['matrix', 'reactions', 'directions',
-                                                               'emus', 'boundary', 'core', 'index_hash'])
 
 
 def get_subnets(model, subnets, device = None, dtype = torch.float64):
@@ -40,7 +35,7 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
             data = subnet_graph.get_edge_data(*edge)
             reaction = data['reaction']
             direction = data['direction']
-            symmetry_weight = data['symmetry_weight']
+            edge_weight = data['weight']
             if direction == 'fwd':
                 reaction_indices[ix] = model._flux_hash[reaction.id]
                 direction_factor = 1
@@ -51,11 +46,12 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
                 raise RuntimeError("Expansion contains woring direction annotation!")
 
             origin_id, target_id = get_metabolite(edge[0])[0], get_metabolite(edge[1])[0]
-            weight = symmetry_weight * direction_factor
+            weight = edge_weight * direction_factor
 
-            # Multiplicity is carried by the edges -- one per mapped copy of the
-            # target -- so the weight stays +-1 and only the sign differs between
-            # the consumed origin and the produced target.
+            # Multiplicity is carried by the edge weight -- how many copies of the
+            # target this origin set makes, see AtomMapping.get_origin_emus -- so
+            # only the sign differs between the consumed origin and the produced
+            # target.
             for node, met_id in ((edge[0], origin_id), (edge[1], target_id)):
                 coefficient = reaction.get_coefficient(met_id)
                 Sg[emu_hash_emu_index[node], ix] = weight * coefficient / abs(coefficient)
@@ -68,29 +64,3 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
         reaction_hashes[size]  = reaction_indices  
 
     return subnet_stoichs,subnet_stoichs_plus,emu_hashes, boundary_indices, core_indices,reaction_hashes
-
-def get_subnet_stoichiometries(subnets, device=None, dtype=torch.float32):
-    stoichiometries = dict()
-    for size, the_subnet in subnets.items():
-        matrix = torch.tensor(incidence_matrix(the_subnet, oriented=True).todense(),
-                              dtype=dtype, device=device)
-        emus = the_subnet.nodes
-        reactions = [e[2]['reaction'] for e in the_subnet.edges.data()]
-        directions = [e[2]['direction'] for e in the_subnet.edges.data()]
-        # Input nodes
-        index_hash = {u: i for i, u in enumerate(the_subnet.nodes())}
-        boundary = [u for u in the_subnet.nodes() if len(list(the_subnet.predecessors(u))) == 0]
-        core = list(set(emus) - set(boundary))
-
-        stoichiometries[size] = AnnotatedStoichiometry(matrix, reactions, directions, emus,
-                                                       boundary, core, index_hash)
-
-    return stoichiometries
-
-
-def get_boundaries(stoichiometries):
-    boundaries = list()
-    for _, stoich in stoichiometries.items():
-        for bd in stoich.boundary:
-            boundaries.append(bd)
-    return boundaries

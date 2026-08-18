@@ -81,34 +81,54 @@ class AtomMapping(object):
     def mappings(self) -> list:
         return self.product_mappings + self.educt_mappings
 
-    def get_origin_emus(self, target_emu) -> list:
-        """
-        Here the magic happens
+    def get_origin_emus(self, target_emu) -> tuple:
+        """Weighted origin sets for the target EMU, forward and reverse.
+
+        Each is a ``{OriginSet: weight}`` mapping. A weight is a count, not a
+        fraction: one reaction's weights sum to the number of copies of the target
+        it moves, which is its stoichiometric coefficient.
+
         :param target_emu: mfa.expansion.EMU
-        :return: list of mfa.expasion.EMU
+        :return: (dict, dict) forward and reverse origin sets to weight
         """
 
-        origin_emus = set()
-        origin_emus_rev = set()
+        origin_emus = {}
+        origin_emus_rev = {}
 
         def collect(target_side, origin_side, into):
-            """One origin set per distinct mapped copy of the target, times symmetries.
+            """One weighted origin set per distinct mapped copy, times symmetries.
 
             A reaction may name the same product more than once, each copy drawing
             from different educt atoms -- GLUSx_c makes two glutamate, one from
             2-oxoglutarate and one from glutamine. Every copy is a separate way to
-            make the EMU and needs its own edge; taking only the first silently
+            make the EMU and carries its own weight; taking only the first silently
             dropped the others. Copies are deduplicated by mapping string first, so a
-            duplicated atom-map row stays one edge rather than becoming two.
+            duplicated atom-map row stays one copy rather than becoming two.
+
+            Weights *accumulate* rather than overwrite, because two copies can
+            resolve to the same origin EMU and must still count twice. ``CBPS_c``'s
+            ``atp_c (qrstuvwxyz) + atp_c (abcdefghij) -> adp_c (qrstuvwxyz) + adp_c
+            (abcdefghij)`` moves two adp, both drawn from atp_c at the same
+            positions, so both copies produce the identical ``atp_c_1..10`` origin
+            set. Collecting into a set collapsed them and delivered half of CBPS_c's
+            flux to adp_c -- and 1/7 of lumpFACOA160_c's and 1/4 of lumpIPC_c's to
+            co2_c, which is what pulled every carboxylation product (OAA, malate,
+            aspartate, citrulline, arginine) away from x3cflux.
+
+            Symmetry orientations are the opposite case and *should* merge: they are
+            alternative readings of one molecule, so each carries ``1/n`` of a copy
+            and two identical readings correctly re-add to one.
             """
+            n_orientations = 1 + len(target_emu.symmetries)
             for target_mapping in dict.fromkeys(
                     v for k, v in target_side if k == target_emu.id):
                 # sym = -1 is the unpermuted orientation; a symmetric pool is the
-                # mean over all of them (weighted in emu_expansion).
+                # mean over all of them.
                 for sym in range(-1, len(target_emu.symmetries)):
-                    into.add(OriginSet(compute_origin_emu_set(
+                    origin = OriginSet(compute_origin_emu_set(
                         target_emu, target_side, origin_side, self.rxn, sym=sym,
-                        target_mapping=target_mapping)))
+                        target_mapping=target_mapping))
+                    into[origin] = into.get(origin, 0.0) + 1.0 / n_orientations
 
         # Find the origin EMUS that can make the target EMU if the reaction can go forward
         if self.forward and any(k == target_emu.id for k, _ in self.product_mappings):
@@ -118,7 +138,6 @@ class AtomMapping(object):
         if self.reverse and any(k == target_emu.id for k, _ in self.educt_mappings):
             collect(self.educt_mappings, self.product_mappings, origin_emus_rev)
 
-        # Return an origin set
         return origin_emus, origin_emus_rev
     
 
