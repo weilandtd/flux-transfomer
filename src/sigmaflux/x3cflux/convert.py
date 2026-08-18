@@ -51,34 +51,6 @@ INT_TOL = 1e-9
 CARRIER_REL_TOL = 1e-3
 SRC_SUFFIX = "__src"
 
-# SK_accoa_c is the one reaction that carries carbon but has no atom_mapping, so
-# it cannot be declared with num_atoms = 0 the way the carbon-free unmapped
-# reactions are: x3cflux would compute atom offsets for accoa_c/hco3_c/co2_c
-# against a 0-atom permutation and walk off the end (a segfault, not an
-# exception). Our expansion instead skips the reaction entirely, so co2_c receives
-# nothing from it. x3cflux has no way to express "this reaction moves mass but not
-# label", so the minimal defensible stand-in maps the chemically identical carbon
-# hco3_c -> co2_c and voids acetyl-CoA's two. This is a real deviation from our
-# forward model and G2 measures its size.
-#
-# This override cannot be retired by any fix on our side: adding the real mapping
-# is a biology call on the atom-mapping spreadsheet (hco3_c (a) -> co2_c (a) in
-# mmTcell_AMM_completeMFA.xlsx), not a code change.
-MAPPING_OVERRIDES = {
-    "SK_accoa_c": "accoa_c (ab) + hco3_c (c) + atp_c (defghijklm) "
-                  "-> co2_c (c) + adp_c (defghijklm)",
-    # Fumarate reductase, the one carbon-bearing reaction here whose map is a plain
-    # chemical fact rather than a modelling choice: the four-carbon backbone passes
-    # straight through, as its own reverse SUCDq6_m already spells out
-    # ("succ_m (abcd) + q6_m -> fum_m (abcd) + q6h2_m").
-    #
-    # Both pools are symmetric ('abcd.dcba'), so this single map is deliberately not the
-    # whole story: convert() sees the symmetry annotation and emits two half-flux
-    # orientations, abcd->abcd and abcd->dcba. Writing the symmetry into the map instead
-    # would double-count it.
-    "FRD_m": "fum_m (abcd) -> succ_m (abcd)",
-}
-
 
 # ── atom-mapping parsing ──────────────────────────────────────────────────────
 
@@ -132,8 +104,8 @@ def build_permutation(educts, products, rxn_id):
 
     Since ``da6c709`` a stranded pool gets an explicit demand instead of being
     deleted, so on regenerated data ``n_void`` should be 0 everywhere and the void
-    machinery becomes dead weight -- that is what gate G2 is used to confirm before
-    removing it.
+    machinery becomes dead weight -- that is what the labeling agreement check is
+    used to confirm before removing it.
     """
     e_pos, n_e = _bit_positions(educts)
     p_pos, n_p = _bit_positions(products)
@@ -328,29 +300,34 @@ def convert(facts, symmetry=True, allow_void=None):
     and the void absorbs it. That is a defect in the model, not a property of the
     network, and it is silent: the fit still converges, against a network that
     loses mass. So it raises :class:`VoidPoolError` unless the reaction is named in
-    *allow_void*, which defaults to the reactions carrying a hand-written mapping
-    override -- those are known, documented deviations rather than surprises.
+    *allow_void*, which is empty by default: every deliberate label boundary is
+    declared in the workbook's Terminal sheet instead, where the model that needs it
+    can be read next to the reason it does.
 
     Almost every void pool came from stranded-pool deletion and disappears once the
     model is regenerated (``da6c709`` drains such pools with a demand instead of
     removing them), which took the T-cell model from five void pools to one.
     """
-    allow_void = set(MAPPING_OVERRIDES) if allow_void is None else set(allow_void)
+    allow_void = set() if allow_void is None else set(allow_void)
     mets_by_id = {m["id"]: m for m in facts["metabolites"]}
-    atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
+    # A pool declared terminal in the AMM is where the model stops following the label,
+    # so it carries no atoms: carbon reaching it leaves the labelled network instead of
+    # having to be carried into a product that cannot represent it. That is a curation
+    # decision, which is why it is read from the workbook rather than decided here.
+    #
+    # This has to be the *only* answer to "how many atoms does this pool have". Sizing
+    # the permutations off the untouched atom_pattern while declaring the pool with zero
+    # leaves x3cflux reading atom offsets past the end of the permutation -- a segfault,
+    # not an exception -- and check_network catches it only as
+    # "num_atoms=212 but product_names carry 180 atoms".
+    atoms = {m["id"]: 0 if m.get("terminal") else len(m["atom_pattern"])
+             for m in facts["metabolites"]}
     sources = input_source_pools(facts)
     for met, src in sources.items():
         atoms[src] = atoms[met]
 
-    metabolites = []
-    for m in facts["metabolites"]:
-        # A pool declared terminal in the AMM is where the model stops following the
-        # label, so it enters x3cflux carrying no atoms: carbon reaching it leaves the
-        # labelled network instead of having to be carried into a product that cannot
-        # represent it. That is a curation decision, which is why it is read from the
-        # workbook rather than decided here.
-        n = 0 if m.get("terminal") else len(m["atom_pattern"])
-        metabolites.append(x.Metabolite(m["id"], n, {CARBON: n}))
+    metabolites = [x.Metabolite(m["id"], atoms[m["id"]], {CARBON: atoms[m["id"]]})
+                   for m in facts["metabolites"]]
 
     # Symmetric pools: 'abcd.dcba' -> ('abcd', 'dcba')
     symmetric = {m["id"]: tuple(m["symmetries"][0].split("."))
@@ -424,7 +401,7 @@ def convert(facts, symmetry=True, allow_void=None):
         educt_names = expand_names(scaled, -1)
         product_names = expand_names(scaled, +1)
 
-        mapping = MAPPING_OVERRIDES.get(rid, r["atom_mapping"])
+        mapping = r["atom_mapping"]
         if mapping:
             educts, products = parse_atom_mapping(mapping, stoich)
             educts = _cap_to_stoichiometry(educts, stoich, rid)
@@ -542,8 +519,8 @@ def convert(facts, symmetry=True, allow_void=None):
                         void_effluxes.append((void, n_void))
                     names_p = names_p + [void]
                 if sym_here:
-                    # Two half-flux orientations, matching our
-                    # symmetry_weight = 1/(1+len(symmetries)) = 1/2.
+                    # Two half-flux orientations, matching the 1/(1+len(symmetries))
+                    # = 1/2 our expansion weights each orientation with.
                     sub = f"{rid}__sym{k}"
                     # Both copies must be the same reaction stoichiometrically.
                     assert len(orientations) == 2
