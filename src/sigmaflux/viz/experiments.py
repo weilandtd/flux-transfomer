@@ -7,21 +7,7 @@ import numpy as np
 # Function to generate a MassIsotopomerData plot as a bar plot with error bars
 
 def plot_mass_isotopomer_data(experiment: Experiment, metabolite_id: str, show: bool = True) -> plt.Axes:
-    """
-    Function to plot all MassIsotopomerData from one experiment in a grid plot 
-
-    parameters
-    ----------
-    experiment: Experiment
-        Experiment object containing the MassIsotopomerData to be plotted
-
-    metabolite_id: str
-        The id of the metabolite to be plotted
-
-    returns
-    -------
-    None
-    """
+    """Bar plot with error bars of the measured MID for one metabolite in an experiment."""
     # Get the MassIsotopomerData for the metabolite
     mid_data = {m.metabolite.id: m for m in experiment.mid_data}
     data = mid_data[metabolite_id]
@@ -40,18 +26,7 @@ def plot_mass_isotopomer_data(experiment: Experiment, metabolite_id: str, show: 
 
 # Plot each MassIsotopomerData for each metabolite in a grid plot
 def plot_mass_isotopomer_data_grid(experiment: Experiment, show: bool = True) -> plt.Axes:
-    """
-    Function to plot all MassIsotopomerData from one experiment in a grid plot 
-
-    parameters
-    ----------
-    experiment: Experiment
-        Experiment object containing the MassIsotopomerData to be plotted
-
-    returns
-    -------
-    None
-    """
+    """Grid of bar plots with error bars of the measured MID for every metabolite in an experiment."""
     # Use tracer enrichments to inform ylim
     tracer_enrichment = max([t.serum_enrichment for t in experiment.tracers])
     

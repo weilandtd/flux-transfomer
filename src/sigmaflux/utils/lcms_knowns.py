@@ -45,14 +45,10 @@ def read_lcms_knowns(knowns_path) -> pd.DataFrame:
 
 def match_lcms_knowns(gem_xlsx, knowns_path, model_metabolite_ids=None,
                       gem_sheet='Metabolites', id_col='metid', name_col='metname'):
-    """Map LC/MS compound names onto model metabolite IDs.
+    """Map LC/MS compound names onto model metabolite IDs by normalized name, returning a DataFrame [experimental_id, model_id] with one row per matching compartment.
 
-    The GEM supplies the metabolite names; `model_metabolite_ids`, when given, keeps
-    only metabolites that survived conversion into the COBRA model.
-
-    Returns a DataFrame [experimental_id, model_id] in the same shape as the mapping
-    CSVs, where experimental_id is the LC/MS compound name.  One compound maps to
-    every matching compartment, so cytosolic and mitochondrial pools both appear.
+    `model_metabolite_ids`, when given, restricts to metabolites that survived
+    conversion into the COBRA model.
     """
     knowns = read_lcms_knowns(knowns_path)
     by_name = {}

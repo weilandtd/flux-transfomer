@@ -8,16 +8,7 @@ from sigmaflux.expansion.utils import can_make_met
 
 
 def _produces_from_nothing(rxn, metabolite):
-    """
-    Check if a reaction introduces the metabolite "from nothing", i.e. the
-    producing side of the reaction carries no educt metabolite.  Such a
-    production is not connected to any upstream EMU node and marks the
-    metabolite as a network input (boundary).
-
-    :param rxn: cobra.Reaction
-    :param metabolite: cobra.Metabolite
-    :return: bool
-    """
+    """Whether rxn produces metabolite "from nothing" (no educt on the producing side), marking it as a network input (boundary)."""
     # forward production: metabolite is a product, educts are the reactants
     if rxn.upper_bound > 0 and metabolite in rxn.products and len(rxn.reactants) == 0:
         return True
@@ -28,16 +19,11 @@ def _produces_from_nothing(rxn, metabolite):
 
 
 class EMU(object):
-    """
-    Class method for EMU.
-    """
+    """An Elementary Metabolite Unit: a metabolite plus a set of 1-based carbon positions it covers."""
 
     def __init__(self, metabolite, mid):
 
-        """
-        :param metabolite: cobra.Metabolite
-        :param mid: [1,2,3,4] -- the 1-based carbon positions this EMU covers
-        """
+        """mid is the 1-based carbon positions this EMU covers, e.g. [1,2,3,4]."""
         if not isinstance(metabolite, cobra.Metabolite):
             raise TypeError(f'Input {metabolite} is of type {type(metabolite)} must be cobra.Metabolite')
 
@@ -168,11 +154,7 @@ def get_metabolite(item):
 
 
 def parse_symetry(s):
-    """
-    Parse a symetry string like 'ABC,ACB' into a tuple ('ABC', 'ACB')
-    :param s: str
-    :return: tuple
-    """
+    """Parse a symmetry string like 'ABC.ACB' into a tuple ('ABC', 'ACB')."""
     parts = s.split('.')
     if len(parts) != 2:
         raise ValueError(f'Error in symetry string {s}')

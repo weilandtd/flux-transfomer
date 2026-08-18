@@ -41,11 +41,7 @@ class MFAModel(TorchModule, Model):
                  dtype=torch.float64,
                  max_reversibility_ratio=10.0,
                  seed=None):
-        """
-
-        :param model: cobra.Model annotated with atom transitions
-        :param experiments: list of mfa.core.Experiment
-        """
+        """Build a differentiable MFA model from an atom-mapped cobra.Model, sampling initial fluxes/reversibilities if not provided."""
 
         Model.__init__(self, model.copy(), name)
         TorchModule.__init__(self)
@@ -234,22 +230,13 @@ class MFAModel(TorchModule, Model):
 
     @time_function
     def prepare(self, experiments, dA=None, dB=None, with_backward=True, targets=None):
-        """
-        Prepares the model expression to be run with MFA
-        :param experiments: list of mfa.core.Experiment
-        :param dA: optional path to precomputed dA data
-        :param dB: optional path to precomputed dB data
-        :param with_backward: whether to prepare model for backward propagation
-        :param targets: optional set of target EMUs to prepare the model for otherwise
-                        the targets will be inferred from the experiments
-        :return: None
+        """Build the EMU expansion network for these experiments and precompute forward/backward matrices.
+
+        targets defaults to the EMUs referenced by the experiments' MID data if not given.
         """
 
         self.experiments = experiments
 
-        """
-        Integrate data from experiments to build the network
-        """
         if targets is None:
             targets = set()
             for the_experiment in self.experiments:

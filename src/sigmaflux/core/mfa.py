@@ -23,36 +23,11 @@ def fit_mfa_model(model,
                   checkpoint_file=None,
                   labeling_checkpoint_file=None,
                   disp=0):
-    """Fit an MFA model using chi-squared minimization with null-space reparameterization.
+    """Fit an MFA model by minimizing reduced chi-squared over labeling and flux data via L-BFGS-B.
 
-    The mass-balance constraint S·v = 0 is satisfied automatically by parameterizing
-    net fluxes as v_net = T @ p, where T = null(S) (right null space of S).
-    Exchange fluxes (reversibility) r are bounded below by min_rev_flux.
-    Optimization uses scipy L-BFGS-B with autograd-based gradient.
-
-    Objective (reduced χ² per data block, so the few flux measurements are not drowned
-    out by the many labeling measurements):
-        (1/n_L) Σ (L_sim − L_meas)² / σ²_L  +  (1/n_F) Σ (v_sim − v_meas)² / σ²_v
-
-    Parameters
-    ----------
-    model : MFAModel
-    simultanous_experiments : int
-    max_iter : int
-    tol : float
-        Projected-gradient tolerance (gtol) for L-BFGS-B convergence.
-    checkpoint_file, labeling_checkpoint_file : str or None
-    disp : int
-        Verbosity: 0 = silent, >1 = per-iteration output.
-
-    Returns
-    -------
-    dict
-        {"loss": float, "converged": bool, "n_iter": int,
-         "ssr_labeling": float, "ssr_fluxes": float,
-         "n_labeling": int, "n_fluxes": int}
-        where ``loss`` is the reduced χ² (mean_ssr_labeling + mean_ssr_fluxes) and
-        ``ssr_labeling`` / ``ssr_fluxes`` are the per-block reduced χ² (χ²_L/n_L, χ²_F/n_F).
+    Net fluxes are parameterized as v_net = T @ p with T = null(S), so the mass-balance
+    constraint S·v = 0 holds automatically; gradients come from autograd. Returns a dict with
+    loss, converged, n_iter, ssr_labeling, ssr_fluxes, n_labeling, n_fluxes.
     """
     n = model.num_reactions
     dtype, device = model.dtype, model.device
@@ -232,12 +207,7 @@ def fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
                             optimizer_checkpoint=None,
                             lr_scheduler=None, with_std=True,
                             early_stop_tol=None):
-    """Legacy penalized-Lagrangian MFA optimizer (soft constraints, L1/L2 reg).
-
-    Retained for reproducing analyses published before :func:`fit_mfa_model` was
-    rewritten as a null-space chi-squared fit. New work should use
-    :func:`fit_mfa_model`.
-    """
+    """Legacy penalized-Lagrangian MFA optimizer (soft mass-balance/positivity constraints, L1/L2 reg); use :func:`fit_mfa_model` instead."""
     from tqdm import trange
     from sigmaflux.core.scaling import Scaling
 
@@ -404,9 +374,7 @@ def filter_conv_inputs_with_indices(emu_inputs):
 # EMUExpansion._prune_orphaned_edges(); a KeyError here means the prune step
 # was skipped or a new code path bypasses it.
 def convolution(core_met_ix, emu_states, origin_set, device, dtype):
-    """
-    emu_states matrix is a dictionary of # of subnets torch tensors with # of core emu x # of mids
-    """
+    """Convolve the MIDs of an OriginSet's member EMUs pairwise into the joint MID distribution."""
     emu_size = origin_set.size
 
     if len(origin_set) > 2:
@@ -464,18 +432,9 @@ def convolution(core_met_ix, emu_states, origin_set, device, dtype):
 #    return torch.tensor([sum([x[alpha - beta] * y[beta] for beta in range(alpha + 1)]) for alpha in range(emu_size + 1)],dtype = torch.float32, device=device)
 
 def conv(x, y, emu_size, device, dtype):
-    """Mass-isotopomer convolution ``result[n, a] = sum_b x[n, a-b] * y[b]``.
+    """Mass-isotopomer convolution ``result[n, a] = sum_b x[n, a-b] * y[b]``, via one matmul against the Toeplitz matrix of *y*.
 
-    Written as one matmul against the lower-triangular Toeplitz matrix of *y*
-    (``M[j, a] = y[a-j]`` for ``a >= j``), rather than a Python loop over ``a`` that
-    rebuilds an ``arange`` and gathers columns on every pass. The tensors here are
-    tiny — ``emu_size`` is at most a handful — so loop overhead dominated the
-    arithmetic: this was the largest remaining self-time in an MFA fit at 2.3 s of
-    11.5 s, and the rewrite is 2-5x faster on the shapes the profile shows.
-
-    Not bit-identical to the loop: a single matmul accumulates in a different order,
-    which moves results by ~1e-15 in float64 (a few ulp). The fit is unaffected in
-    any meaningful sense, but exact reproduction against older runs will not hold.
+    Accumulation order differs from a naive loop, so results can differ by ~1 ulp in float64.
     """
     k = emu_size + 1
     y_flat = y.reshape(-1)[:k]
@@ -487,9 +446,7 @@ def conv(x, y, emu_size, device, dtype):
 
 # can this be done more efficiently? 
 def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_set, device, dtype):
-    """
-    emu_states matrix [M,K]
-    """
+    """Derivative of convolution() with respect to fluxes, for a multi-element OriginSet, via the product rule."""
     emu_size = origin_set.size
     if len(origin_set) > 2:
         emus = origin_set._values
@@ -582,14 +539,10 @@ def update_states(emu_states, X, emu_size, core_met_ix):
     
 def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device,
                  dtype=torch.float64, boundary_inputs=None):
-    """
-    emu_states: list(torch.tensor)
-    emu_met_filter: list(torch.tensor)
-    boundary_inputs: {EMU or single-element OriginSet: MID tensor}, the network
-        inputs. Their labeling is given, not solved for, so they never appear in
-        core_met_ix and their rows would otherwise stay zero -- which reported the
-        tracer itself as unlabeled and left ~19% of the scored measurements
-        carrying no flux information at all.
+    """Assemble per-metabolite MID tensors from solved core states, then overlay boundary_inputs.
+
+    boundary_inputs are network inputs whose labeling is given rather than solved for, so they
+    never appear in core_met_ix and must be written in separately.
     """
     labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device)
     for subnet in emu_met_filter:
@@ -624,9 +577,7 @@ def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, 
 
 
 def build_emu_met_filter(model, metabolites, device=None):
-    """
-
-    """
+    """Map each metabolite to the largest-subnet EMU that represents it, for indexing into the solved EMU states."""
     #emu_met_filter = [0.0 * torch.ones(model.max_mid_size, model.max_emu_mets, dtype=torch.float32, device=device)
     #                  for _ in range(model.max_emu_size)]
     emu_met_filter ={i+1: [] for i in range(model.max_emu_size)}

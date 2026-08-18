@@ -10,10 +10,7 @@ from sigmaflux.expansion.utils import can_make_met
 
 class EMUNetwork(object):
     def __init__(self, max_size):
-        """
-        Class for that describes the collective emu expansion
-        :param max_size:
-        """
+        """Collection of EMU subnetworks, one per EMU size up to max_size."""
 
         self.max_size = max_size
         self.subnetworks = dict()
@@ -36,17 +33,10 @@ class EMUNetwork(object):
 def _check_origin_size(origin_set, target_emu, reaction, direction):
     """Reject an origin set that does not supply exactly the target's atoms.
 
-    An empty origin set is legitimate and means no edge: running ``lac__L_e ->``
-    backwards produces lactate from nothing, so there is nothing upstream to trace.
-    A *non-empty* set of the wrong size is always a defect in the atom map, and
-    skipping it silently is how a reaction disappears from the labeling network
-    while still carrying flux.
-
-    GLYCL_m is the case this exists for. Its map was duplicated row-for-row, so the
-    reverse origin set came out as ``co2_m + co2_m + mlthf_m + mlthf_m`` -- size 4
-    against a size-2 target -- and glycine's entire decarboxylation route was
-    dropped. Our model then reported gly_m M+1 as exactly 0.0 against x3cflux's
-    0.33, and nothing anywhere said so.
+    An empty origin set is legitimate (no edge, e.g. a boundary input from nothing);
+    a non-empty set of the wrong size is always a defect in the atom map, and must
+    raise rather than be silently skipped so the reaction doesn't vanish from the
+    labeling network while still carrying flux.
     """
     if origin_set.size and origin_set.size != target_emu.size:
         raise OriginSizeError(
@@ -63,11 +53,7 @@ class OriginSizeError(ValueError):
 
 class EMUExpansion(object):
     def __init__(self, model, target_emus):
-        """
-
-        :param model: Annotated cobra model
-        :param target_emus: set MID [MID, ... ]
-        """
+        """Build atom mappings for every reaction in model, warning about any carbon-carrying reaction left unmapped."""
 
         self.model = model
 
@@ -103,10 +89,7 @@ class EMUExpansion(object):
         self.emu_network = EMUNetwork(max_size)
 
     def expand_network(self):
-        """
-
-        :return: EMU reaction network object
-        """
+        """Build the EMU network by tracing each target EMU back to its origin EMUs, then prune orphaned/disconnected nodes."""
         emus_to_expand = list(self.target_emus)
         # Sort the emus to expand start with largest
         emus_to_expand = sorted(emus_to_expand, key=lambda obj: obj.size, reverse=True)

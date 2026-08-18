@@ -20,14 +20,7 @@ def right_kernel_stoich_matrix_qr(S):
     return kernel
 
 def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
-    """
-    This is an attempt to solve the sparse nullspace problem by using 
-    the elementary flux mode formulation from
-    https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1003378
-
-    Note that this formulation requieres a cplex or gurobi installation. 
-
-    """
+    """Find a sparse right nullspace of S via an elementary-flux-mode MILP formulation. Requires cplex or gurobi."""
     if solver not in ["cplex", "gurobi"]:
         raise NotImplementedError("Only cplex and gurbi interfaces support the indicator constraint!")
 
@@ -176,20 +169,7 @@ def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
 
 # Legacy formulation 
 def right_kernel_stoich_matrix_legacy(S, eps=1e-3):
-    """
-    Compute the right kernel of the stoichiometric matrix S
-    using mixed integer linear programming.
-
-    Parameters
-    ----------
-    S : array_like
-        Stoichiometric matrix
-
-    eps (optinal): 
-
-    method (optional):  
-    
-    """
+    """Legacy MILP-based right kernel of S; superseded by right_kernel_stoich_matrix_milp."""
 
     rank_S = np.linalg.matrix_rank(S)
     # kernel = np.zeros((S.shape[1], S.shape[1] - rank_S))

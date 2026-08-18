@@ -69,14 +69,7 @@ def label_model(model, label):
 
 
 def get_tissue_model_from_model(model, bounds = [0,20]):
-    """This function takes a model and creates a new issue model from the given model .
-
-    Args:
-        model ([type]): [description]
-
-    Returns:
-        [type]: [description]
-    """
+    """Replace each boundary exchange with arterial and venous input/exchange reaction pairs ([a]/[v] compartments), carrying over atom mappings."""
 
     reactions = []
     metabolites = []
@@ -148,14 +141,7 @@ def get_tissue_model_from_model(model, bounds = [0,20]):
 
 
 def get_organ_model_from_model(model, bounds = [0,20]):
-    """This function takes a model and creates a new issue model from the given model .
-
-    Args:
-        model ([type]): [description]
-
-    Returns:
-        [type]: [description]
-    """
+    """Replace each boundary exchange with arterial and venous exchange reactions ([a]/[v] compartments, no separate input reaction), carrying over atom mappings."""
 
     reactions = []
     metabolites = []

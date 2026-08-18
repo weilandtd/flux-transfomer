@@ -8,20 +8,7 @@ import re
 
 class Experiment(object):
     def __init__(self, mid_data, tracers, fluxes=None, enrichment = None):
-        """
-        
-        parameters
-        ----------
-        mid_data: MassIsotopomerData
-            Mass isotopomer data    
-
-        tracers: list of Tracer
-
-        fluxes: FluxData
-
-        enrichment: list of float   
-
-        """
+        """Bundle MID data, tracers, and optional flux data for one labeling experiment."""
 
         if not isinstance(mid_data, MassIsotopomerData):
             raise ValueError(f'data is of type {type(mid_data)} not {MassIsotopomerData}')
@@ -62,8 +49,7 @@ class Experiment(object):
 
 class Tracer(object):
     def __init__(self, metabolite, enrichment, labeling, serum_enrichment=1.0):
-        """
-        """
+        """A labeled tracer applied to a specific metabolite."""
         self.metabolite = metabolite
         self.enrichment = enrichment
         self.labeling = labeling
@@ -119,11 +105,7 @@ def calculate_tracer_input(tracer_list, boundary, device=None, dtype = torch.flo
 
 
 def add_tracers_to_model(tracers, model, tracer_influx= 0.01, bound =20): 
-    """
-        :param tracers: list of cobra.metabolite 
-        :param model: MFA model
-        :param tracer_influx: µm/min (to be chosen to be minimally perturbative)
-    """
+    """Add input/infusion reactions for each tracer metabolite, carrying its atom mapping onto the new reactions."""
 
     for tracer in tracers: 
         new_met = Metabolite(

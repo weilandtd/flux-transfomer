@@ -81,16 +81,7 @@ _ATOMIC_MASSES: dict = {
 
 
 def _build_atom_labels():
-    r"""One printable, delimiter-free character per tracked atom.
-
-    An ``atom_mapping`` string carries one character per atom -- ``met (abcdef)`` --
-    and every consumer takes ``len(pattern)`` as the atom count, so a label has to be
-    exactly one code point. a-z A-Z 0-9 gives 62 of them, which iAF1260 exceeds once
-    the carrier skeletons are carried: MPTG needs 190 labels, RHAT1 155, MOAT3C 148.
-    Extending into the alphanumeric Unicode range keeps the one-character invariant
-    and takes the ceiling to ~5700. Nothing here can collide with the ``()+->,`` and
-    space that delimit the mapping string.
-    """
+    r"""One printable, delimiter-free character per tracked atom (~5700 of them via alphanumeric Unicode, since ASCII alnum's 62 is too few for some reactions)."""
     base = string.ascii_lowercase + string.ascii_uppercase + string.digits
     extra = [chr(c) for c in range(0xC0, 0x2000)
              if chr(c).isalnum() and chr(c).isprintable() and chr(c) not in base]
@@ -142,17 +133,10 @@ def _formula_mass(formula) -> float:
 
 
 def derive_biomass_fractions(model, formulas: dict) -> dict:
-    """Macromolecule mass fractions implied by the aggregate BIOMASS stoichiometry.
+    """Macromolecule mass fractions implied by the aggregate BIOMASS stoichiometry, normalised to sum to 1.
 
-    `formulas` maps metabolite id -> chemical formula (the GEM's `metformula`
-    column).  Each building block contributes coefficient x molecular weight to its
-    macromolecule, and the five totals are normalised to sum to 1.
-
-    These fractions are a units convention, not a physical constraint: they cancel
-    out of the net stoichiometry, so they only set the scale of the five component
-    fluxes.  They are approximate — the lipid formulas carry placeholder tokens and
-    the polysaccharides are written per monomer — so prefer measured values when a
-    biomass composition is available for the organism.
+    `formulas` maps metabolite id -> chemical formula. Approximate (placeholder lipid
+    tokens, per-monomer polysaccharides); prefer measured values when available.
     """
     biomass = model.reactions.get_by_id('BIOMASS')
     masses = {cid: 0.0 for cid in BIOMASS_COMPONENT_IDS}
@@ -169,17 +153,12 @@ def derive_biomass_fractions(model, formulas: dict) -> dict:
 
 
 def split_biomass_hierarchical(model, fractions: dict) -> None:
-    """Split the aggregate BIOMASS into the 5 macromolecule component reactions.
+    """Split the aggregate BIOMASS into 5 macromolecule component reactions (PROTEIN_c, RNA_c, DNA_c, LIPID_c, CARB_c) exposed as separately measurable fluxes.
 
-    Each component reaction consumes its building blocks at `coefficient / fraction`
-    and produces one `bm_*_c` pseudo-metabolite; BIOMASS is left consuming only those
-    pseudo-metabolites, at the mass fractions.  The composition through BIOMASS is
-    therefore unchanged — the split exposes PROTEIN_c, RNA_c, DNA_c, LIPID_c and
-    CARB_c as separately measurable fluxes.
-
-    Energy is then moved out of BIOMASS by `redistribute_biomass_energy`, without
-    which the components become energy-decoupled drains once BIOMASS is dropped
-    during sampling and labeling loses all sensitivity to them.
+    Each component consumes its building blocks at `coefficient / fraction` and feeds
+    BIOMASS through one `bm_*_c` pseudo-metabolite, leaving BIOMASS's composition
+    unchanged. Also calls `redistribute_biomass_energy`, without which the components
+    would become energy-decoupled once BIOMASS is dropped during sampling.
     """
     import cobra
 
@@ -221,23 +200,11 @@ def split_biomass_hierarchical(model, fractions: dict) -> None:
 
 
 def redistribute_biomass_energy(model) -> None:
-    """Move ATP/cofactor stoichiometry from BIOMASS into the 5 component reactions.
+    """Move shared cofactor stoichiometry (ATP, H2O, ions) from BIOMASS into the 5 component reactions, proportionally to _BIOMASS_ENERGY_FRACS, then strip BIOMASS to only bm_* pseudo-metabolites.
 
-    The SC hierarchical model keeps all energy (ATP, H2O, ions) in the BIOMASS
-    reaction while component reactions (PROTEIN_c etc.) only carry building-block
-    metabolites.  After skip_constraints drops BIOMASS during sampling, these
-    reactions become energy-decoupled drains and labeling loses all sensitivity
-    to their fluxes — causing feature selection to fail.
-
-    This function redistributes the shared cofactors from BIOMASS to each
-    component reaction proportionally via _BIOMASS_ENERGY_FRACS, scaled so the
-    net stoichiometric flux balance is unchanged.  The BIOMASS reaction is then
-    stripped to only bm_* pseudo-metabolites.
-
-    Models that carry only some of the five macromolecules get the energy fractions
-    renormalised over the components that exist.  The fractions must sum to 1 or the
-    energy left in BIOMASS would be discarded by the strip at the end rather than
-    moved, silently unbalancing the model.
+    Needed because component reactions otherwise carry only building blocks and become
+    energy-decoupled drains once BIOMASS is dropped during sampling. Missing components
+    have their energy fraction renormalised over the ones present.
     """
     rxn_ids = {r.id for r in model.reactions}
     if 'BIOMASS' not in rxn_ids:
@@ -307,12 +274,7 @@ def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'
 
 
 def annotate_atom_patterns(model):
-    """Give every metabolite an ``atom_pattern`` sized by its reaction atom mappings.
-
-    ``build_targets`` reads these patterns to decide which EMUs to simulate, so a
-    model carrying only reaction-level ``atom_mapping`` strings is not yet usable
-    for MFA. The pattern is just a distinct label per tracked atom.
-    """
+    """Give every metabolite an ``atom_pattern`` (a distinct label per tracked atom) sized by its reaction atom mappings, which ``build_targets`` needs to decide which EMUs to simulate."""
     for met in model.metabolites:
         counts = {}
         for rxn in met.reactions:
@@ -335,17 +297,7 @@ def annotate_atom_patterns(model):
 
 
 def read_terminal_sheet(path_to_atom_map_xls):
-    """``(terminal pool ids, terminal reaction ids)`` declared by the AMM workbook.
-
-    Terminal is where the model stops following the label. Unlike a symmetry this is a
-    modelling decision, not a chemical fact: the acyl chains entering ``lumpIPC_c`` are
-    terminal because the truncated ``ipcbiom_c`` cannot represent them, so their carbon
-    leaves the network rather than being carried into a product that cannot hold it. It
-    is declared in the workbook, next to the symmetries, precisely so that revising it is
-    a curation step rather than a code change.
-
-    The two columns are independently ragged, so each is read on its own.
-    """
+    """``(terminal pool ids, terminal reaction ids)`` declared by the AMM workbook's Terminal sheet, marking where the model stops following the label. The two columns are independently ragged, so each is read on its own."""
     try:
         term = pd.read_excel(path_to_atom_map_xls, sheet_name='Terminal')
     except ValueError:
@@ -374,10 +326,9 @@ def read_terminal_sheet(path_to_atom_map_xls):
 def apply_terminal_annotations(model, path_to_atom_map_xls, created_later=frozenset()):
     """Mark the pools and reactions the AMM's Terminal sheet declares terminal.
 
-    Applied twice: once by :func:`convert_mfa_maranas` on the flat model, and again after
-    :func:`split_biomass_hierarchical`, because the ``bm_*`` pools a Terminal sheet names
-    do not exist until that split creates them. *created_later* names those pools, so the
-    first pass stays quiet about them and the second still reports a genuine typo.
+    Applied both before and after :func:`split_biomass_hierarchical`, since the ``bm_*``
+    pools it may name don't exist until that split creates them; *created_later* lists
+    those pools so the first pass doesn't warn about them.
     """
     pool_ids, rxn_ids = read_terminal_sheet(path_to_atom_map_xls)
     for idents, lookup, what in ((pool_ids, model.metabolites, 'pool'),
@@ -397,27 +348,14 @@ def apply_terminal_annotations(model, path_to_atom_map_xls, created_later=frozen
 
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
                         drop_subsystems=(), biomass_id=None):
-    """
-    Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated
-    with SigmaFlux atom_mapping strings, ready for MFAModel().
+    """Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated with SigmaFlux atom_mapping strings, ready for MFAModel().
 
-    Maranas AMM format (one row per metabolite per reaction, atoms as integers)
-    is converted to SigmaFlux string format, e.g.:
-        reaction.annotation['atom_mapping'] = "accoa_c (ab) + accoa_c (cd) -> aacoa_c (abcd) + coa_c"
-
-    :param path_to_cobra: path to Maranas GEM xlsx (Reactions + Metabolites sheets)
-    :param path_to_atom_map_xls: path to Maranas AMM xlsx (Atom Transition + Symmetry sheets)
-    :param path_to_output: if given, save annotated model as JSON
-    :param atom_type: element to track, default 'C'
-    :param drop_subsystems: subsystems to exclude, e.g. ('dilution',) for the
-        completeMFA workbooks whose explicit dilution sub-network SigmaFlux does
-        not model.  Their formulas are dropped before parsing — some carry
-        zero-coefficient reactants that COBRA would silently discard, leaving atom
-        mappings that reference metabolites no longer in the reaction.
-    :param biomass_id: id of the GEM's biomass reaction when it is not already the
-        canonical 'BIOMASS', e.g. 'BIOMASS_c' in the M. musculus workbook.  It is
-        renamed on load so the flat model, the hierarchical split and the configs'
-        skip_constraints all agree on one name.
+    Converts the Maranas AMM format (one row per metabolite per reaction, atoms as
+    integers) to SigmaFlux string format, e.g.
+    ``"accoa_c (ab) + accoa_c (cd) -> aacoa_c (abcd) + coa_c"``. `drop_subsystems`
+    excludes subsystems (their formulas are dropped before parsing, since some carry
+    zero-coefficient reactants COBRA would silently discard). `biomass_id` renames a
+    non-canonical biomass reaction to 'BIOMASS' on load.
     """
     import cobra
 
@@ -562,16 +500,9 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
 
 
 def audit_carbon_balance(model):
-    """Report every mapped internal reaction whose atom map loses or invents carbon.
+    """Report every mapped internal reaction whose atom map loses or invents carbon (an atom map must be a bijection).
 
-    An atom map has to be a bijection. Where it is not, x3cflux sweeps the unmatched
-    educt atoms into a void pool and the network quietly stops conserving mass, while
-    our own expansion just stops following the label -- the two forward models then
-    disagree for a reason nothing downstream names. `lumpIPC_c` sat like that in all
-    three yeast models, mapping 48 of its 212 carbons, and was found only by tracing
-    an x3cflux crash back through a pinned biomass component.
-
-    Boundaries are exempt: carbon *should* leave at an exchange or a demand, and a pool
+    Boundaries are exempt: carbon should leave at an exchange or demand, and a pool
     the AMM declares terminal is one the model has decided to stop tracking.
     """
     def carbon(met):
@@ -602,10 +533,8 @@ def audit_carbon_balance(model):
 def _remove_metabolites_orphaned_by(model, dropped_formulas):
     """Remove metabolites left without reactions by a `drop_subsystems` filter.
 
-    Only metabolites that the dropped formulas actually mention are removed.
-    Metabolites that carry no reaction in the workbook to begin with are kept —
-    the I. orientalis GEM lists ~200 such dead `*_i` / `sink_*` entries, and
-    pruning them would silently change a model that already ships as a release.
+    Only metabolites mentioned in the dropped formulas are removed; metabolites that
+    already carried no reaction are left alone.
     """
     if not dropped_formulas:
         return
@@ -620,18 +549,7 @@ def _remove_metabolites_orphaned_by(model, dropped_formulas):
 
 
 def _remove_out_metabolites(model):
-    """Convert Maranas _out boundary metabolites to proper COBRA exchange reactions.
-
-    In Maranas MFA models, EX_ reactions connect an _e metabolite to an _out
-    metabolite (the external environment pool).  This converts them to standard
-    COBRA boundary reactions that simply deplete the _e metabolite:
-
-        Before:  EX_glc__D_e : glc__D_e → glc__D_out
-        After:   EX_glc__D_e : glc__D_e →
-
-    Atom-mapping annotations are updated to remove _out references, and all
-    orphaned _out metabolites are removed from the model.
-    """
+    """Convert Maranas _out boundary metabolites to proper COBRA exchange reactions that simply deplete the _e metabolite (``glc__D_e -> glc__D_out`` becomes ``glc__D_e ->``), updating atom_mapping annotations and dropping orphaned _out metabolites."""
     for reaction in list(model.reactions):
         mets = list(reaction.metabolites.keys())
         out_mets = [m for m in mets if m.id.endswith("_out")]
@@ -656,20 +574,7 @@ def _remove_out_metabolites(model):
 
 
 def _standardize_exchange_directions(model):
-    """Ensure all EX_ reactions are in the depletion direction: met_e → (coeff -1).
-
-    In Maranas models the stoichiometric direction of exchange reactions is
-    inconsistent — some produce the _e metabolite (+1, uptake-positive) while
-    others consume it (-1, secretion-positive).  This normalises every EX_
-    reaction so that:
-
-        positive flux = secretion  (metabolite leaves the system)
-        negative flux = uptake     (metabolite enters the system)
-
-    Reactions that already follow the convention are left untouched.
-    For reactions where the _e metabolite has coefficient +1, the stoichiometry
-    is flipped and the bounds are negated and swapped.
-    """
+    """Normalise every EX_ reaction to the depletion direction (met_e coeff -1), so positive flux is secretion and negative flux is uptake; Maranas models mix both conventions."""
     flipped = []
     for reaction in model.reactions:
         if not reaction.id.startswith("EX_"):
@@ -695,12 +600,7 @@ def _standardize_exchange_directions(model):
 
 
 def _strip_out_from_atom_mapping(amm_str):
-    """Remove all _out metabolite entries from an atom_mapping string.
-
-    Handles entries at any position: first term, after '+', and on either
-    side of '->'.  Entries may optionally carry an atom label, e.g.
-    ``glc__D_out (abcdef)``.
-    """
+    """Remove all _out metabolite entries (optionally carrying an atom label) from an atom_mapping string, at any position on either side of '->'."""
     if "->" not in amm_str:
         return amm_str
 
@@ -715,26 +615,10 @@ def _strip_out_from_atom_mapping(amm_str):
 
 
 def atommap_boundary(model, strict=True):
-    """Give every boundary reaction the atom map of the metabolite it exchanges.
+    """Give every boundary reaction the atom map of the metabolite it exchanges, copied from an interior reaction that already maps it. Modifies model in place.
 
-    Boundary (exchange/sink/source) reactions carry no atom mapping of their
-    own, but the EMU expansion needs one to treat them as label inputs. The
-    mapping is copied from any interior reaction that already maps the exchanged
-    metabolite.
-
-    Parameters
-    ----------
-    model : cobra.Model
-        Modified in place.
-    strict : bool
-        Raise when an exchanged metabolite appears in no mapped reaction. Set
-        False to skip those boundaries instead — useful for models where some
-        exchanged species carry no tracked atoms (ions, water, protons).
-
-    Returns
-    -------
-    list of str
-        Ids of boundary reactions left without a mapping.
+    If strict, raises when an exchanged metabolite appears in no mapped reaction;
+    otherwise returns the ids of boundary reactions left unmapped.
     """
     all_rxns = set(model.reactions)
     unmapped = []
@@ -796,16 +680,7 @@ def solve_for_theta(K,V):
 ### Sparse utils ### 
 
 def select_sparse_column(sparse_matrix, col_idx):
-    """
-    Select a single column from a sparse matrix, setting all other columns to zero.
-
-    Args:
-    sparse_matrix (torch.Tensor): The input sparse matrix.
-    col_idx (int): The index of the column to select.
-
-    Returns:
-    torch.Tensor: A new sparse matrix with only the selected column.
-    """
+    """Select a single column from a sparse matrix, setting all other columns to zero."""
     rows, cols = sparse_matrix.shape
 
     # Extract indices and values from the original sparse matrix
@@ -826,15 +701,7 @@ def select_sparse_column(sparse_matrix, col_idx):
     return new_sparse_matrix
 
 def flatten_sparse_matrix(sparse_matrix):
-    """
-    Flatten a 2D sparse matrix into a 1D sparse vector.
-
-    Args:
-    sparse_matrix (torch.Tensor): A 2D sparse matrix.
-
-    Returns:
-    torch.Tensor: A 1D sparse vector.
-    """
+    """Flatten a 2D sparse matrix into a 1D sparse vector."""
     rows, cols = sparse_matrix.shape
     indices = sparse_matrix._indices()
     values = sparse_matrix._values()
@@ -848,17 +715,7 @@ def flatten_sparse_matrix(sparse_matrix):
     return flat_sparse_matrix
 
 def reshape_sparse_tensor_to_3D(sparse_tensor, new_shape):
-    """
-    Reshape a 2D sparse tensor to a 3D sparse tensor.
-    
-    Args:
-    sparse_tensor (torch.Tensor): A 2D sparse tensor.
-    new_shape (tuple): The desired shape (N, X, Y).
-
-    Returns:
-    torch.Tensor: A 3D sparse tensor.
-    
-    """
+    """Reshape a 2D sparse tensor of shape (N, X*Y) to a 3D sparse tensor of shape new_shape = (N, X, Y)."""
     if len(new_shape) != 3:
         raise ValueError("New shape must be a tuple of 3 dimensions (N, X, Y)")
 
@@ -883,19 +740,7 @@ def reshape_sparse_tensor_to_3D(sparse_tensor, new_shape):
     return new_sparse_tensor
 
 def multiply_3d_sparse_with_2d(sparse_3d, tensor_2d, transpose_2nd = False, flip_mult = False):
-    """
-    Multiply each 2D slice of a 3D sparse tensor (along the first dimension) 
-    with a 2D dense tensor, leveraging sparse-dense multiplication optimizations.
-
-    Args:
-    sparse_3d (torch.Tensor): A 3D sparse tensor of shape [N, C, B].
-    tensor_2d (torch.Tensor): A 2D sparse tensor of shape [B, P].
-    transpose_2nd (bool): Whether to transpose the second dimension of the sparse matrix.
-    flip_mult: whether tensor_2D is multiplied on the right or left of sparse_3d
-
-    Returns:
-    torch.Tensor: A 3D tensor of shape [N, C, P] containing the results with type of the tensor 2d.
-    """
+    """Multiply each 2D slice of a 3D sparse tensor [N, C, B] (along dim 0) with a 2D dense tensor [B, P], giving [N, C, P]. transpose_2nd/flip_mult select which side and orientation."""
 
     # Fast path for the only combination the EMU backward pass uses: every slice
     # multiplied on the right by the same dense matrix.
@@ -959,24 +804,10 @@ def find_dependent_rows(matrix):
     return dependent_rows
 
 def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
-    """Give each named metabolite an explicit unlabeled environmental input pool.
+    """Give each named metabolite an explicit unlabeled (M+0) environmental input pool (``met_env -> met``), so it dilutes in the EMU network even when it is also produced internally.
 
-    A pool that exchanges with the environment is diluted by it, but the exchange
-    is invisible to the EMU network unless the environment is a *node*. ``co2_e``
-    is the case that matters: it is produced by ``CO2t_c_e`` from internal
-    decarboxylations, so it is a core mixing node, while the uptake direction of
-    ``EX_co2_e`` produces it from nothing and yields an empty origin set -- no edge,
-    no dilution. Its MID then reflects only internal carbon, and since ``PC_m``
-    refixes CO2 at ~40 flux units that error propagates into oxaloacetate and the
-    whole TCA/aspartate branch.
-
-    Adding ``co2_e_env -> co2_e`` fixes it with no new machinery: the env pool has
-    no producer, so it is an ordinary EMU network input, it carries no tracer and
-    is therefore M+0, and the fit identifies how much of the pool comes from it.
-    This is exactly the shape the medium amino acids already have.
-
-    The source is pure M+0: the measured MIDs are already corrected for natural
-    abundance, so carrying the 1.1% here would double-count it.
+    Needed for pools like ``co2_e`` that are both an internal mixing node and an
+    exchange whose uptake direction alone yields no EMU edge and thus no dilution.
     """
     added = []
     for met_id in metabolite_ids:
@@ -1013,23 +844,11 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
     return added
 
 def media_dilution_targets(model, media_cfg):
-    """Carbon-carrying media pools that the cell also makes itself.
+    """Carbon-carrying media pools that the cell also produces internally, and so are candidates for `add_dilution_inputs`.
 
-    A medium component the cell cannot synthesise is already an EMU network input:
-    nothing produces it, so the medium alone sets its MID and it dilutes by
-    construction. One the cell *also* produces is a mixing node, and the uptake
-    direction of its exchange makes it from nothing -- an empty origin set, no
-    edge -- so the medium contributes no label and cannot dilute it at all.
-
-    That is wrong regardless of net direction, and most wrong where the net flux is
-    outward: a T cell secreting lactate still sits in medium containing unlabeled
-    lactate, and the exchange dilutes the intracellular pool. On the T-cell medium
-    this selects lac__L_e, co2_e, urea_e, asp__L_e and glu__L_e.
-
-    Pools the cell cannot make are excluded because they are already medium
-    boundaries; a second feed would only dilute the tracer. How much of the medium
-    label actually reaches the cytosol is not decided here either way -- that is
-    the transporter's exchange flux, which the fit identifies.
+    A medium component the cell cannot synthesise is already an EMU network input and
+    dilutes by construction; one it also produces is a mixing node whose exchange
+    uptake alone yields no EMU edge, so it needs an explicit dilution input instead.
     """
     targets = []
     for exchange_id in media_cfg:

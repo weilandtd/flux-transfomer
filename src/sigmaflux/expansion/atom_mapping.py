@@ -18,10 +18,7 @@ class AtomMapping(object):
     """
 
     def __init__(self, rxn):
-        """
-
-        :param rxn: cobra.Reaction() with atom_mapping annotation
-        """
+        """Parse and validate the atom_mapping annotation of a cobra.Reaction."""
 
         if 'atom_mapping' not in rxn.annotation:
             # Todo check if this should be an error or Warning
@@ -39,20 +36,7 @@ class AtomMapping(object):
         self._check_multiplicity()
 
     def _check_multiplicity(self):
-        """Every molecule the reaction moves must be named in the map.
-
-        Multiplicity is carried by the map, one named copy per molecule with its
-        own pattern -- ``atp (P1) + amp (P2) -> adp (P1) + adp (P2)`` -- because
-        each copy becomes its own EMU edge. A map that names fewer copies than the
-        stoichiometry moves leaves the rest carrying no label, and there is no
-        sound way to infer their atoms: guessing them from the coefficient shifted
-        the T-cell adenine-nucleotide pool by 0.38 MID units.
-
-        This raises at model load rather than warning, because the consequence is a
-        silently wrong forward model and the repair belongs in the atom-mapping
-        spreadsheet. Duplicated identical rows are not a violation -- they are
-        de-duplicated first, since they describe one molecule written twice.
-        """
+        """Every molecule the reaction moves must be named in the map, once per copy (each copy becomes its own EMU edge). Raises at load rather than warning, since an under-named map is a silently wrong forward model."""
         for side in (self.product_mappings, self.educt_mappings):
             counts = Counter(met_id for met_id, _ in dict.fromkeys(side))
             for met_id, mapped in counts.items():
@@ -82,14 +66,10 @@ class AtomMapping(object):
         return self.product_mappings + self.educt_mappings
 
     def get_origin_emus(self, target_emu) -> tuple:
-        """Weighted origin sets for the target EMU, forward and reverse.
+        """Weighted origin sets for the target EMU, forward and reverse, each a ``{OriginSet: weight}`` mapping.
 
-        Each is a ``{OriginSet: weight}`` mapping. A weight is a count, not a
-        fraction: one reaction's weights sum to the number of copies of the target
-        it moves, which is its stoichiometric coefficient.
-
-        :param target_emu: mfa.expansion.EMU
-        :return: (dict, dict) forward and reverse origin sets to weight
+        A weight is a count, not a fraction: one reaction's weights sum to the
+        stoichiometric coefficient of the target it moves.
         """
 
         origin_emus = {}
@@ -99,25 +79,10 @@ class AtomMapping(object):
             """One weighted origin set per distinct mapped copy, times symmetries.
 
             A reaction may name the same product more than once, each copy drawing
-            from different educt atoms -- GLUSx_c makes two glutamate, one from
-            2-oxoglutarate and one from glutamine. Every copy is a separate way to
-            make the EMU and carries its own weight; taking only the first silently
-            dropped the others. Copies are deduplicated by mapping string first, so a
-            duplicated atom-map row stays one copy rather than becoming two.
-
-            Weights *accumulate* rather than overwrite, because two copies can
-            resolve to the same origin EMU and must still count twice. ``CBPS_c``'s
-            ``atp_c (qrstuvwxyz) + atp_c (abcdefghij) -> adp_c (qrstuvwxyz) + adp_c
-            (abcdefghij)`` moves two adp, both drawn from atp_c at the same
-            positions, so both copies produce the identical ``atp_c_1..10`` origin
-            set. Collecting into a set collapsed them and delivered half of CBPS_c's
-            flux to adp_c -- and 1/7 of lumpFACOA160_c's and 1/4 of lumpIPC_c's to
-            co2_c, which is what pulled every carboxylation product (OAA, malate,
-            aspartate, citrulline, arginine) away from x3cflux.
-
-            Symmetry orientations are the opposite case and *should* merge: they are
-            alternative readings of one molecule, so each carries ``1/n`` of a copy
-            and two identical readings correctly re-add to one.
+            from different educt atoms; every copy is its own weight and weights
+            *accumulate* (not overwrite) since two copies can resolve to the same
+            origin EMU. Symmetry orientations, in contrast, are alternative readings
+            of one molecule and should merge, each carrying ``1/n`` of a copy.
             """
             n_orientations = 1 + len(target_emu.symmetries)
             for target_mapping in dict.fromkeys(
@@ -144,13 +109,7 @@ class AtomMapping(object):
 
 
 def parse_mapping_string(map_str, rxn):
-    """
-    Parse reaction string based on cobra reaction
-
-    :param map_str: " met_a_c (abc) -> met_b_c (ab) + met_c_c (c)"
-    :param rxn: cobra.Reaction
-    :return: list()
-    """
+    """Parse an atom_mapping string like ``" met_a_c (abc) -> met_b_c (ab) + met_c_c (c)"`` into (educt_mappings, product_mappings) lists of (met_id, mapping_str)."""
 
     # TODO make this more robust, needs space before reactant to work 
     if not map_str.startswith(' '):
@@ -178,22 +137,11 @@ def parse_mapping_string(map_str, rxn):
 
 def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reaction, sym=-1,
                            target_mapping=None):
-    """AI is creating summary for compute_origin_emu_set
+    """Trace the target EMU's labeled atoms back through the mapping to find the OriginSet of educt EMUs that produce it.
 
-    Args:
-        target_emu (EMU): Target EMU to find origins for
-        product_mappings (dict): Dictionary for the atom mappings of the products
-        educt_mappings (dict): Dictionary for the atom mappings of the educts
-        reaction (cobra.Reaction): Reaction object to get metabolite objects
-        sym (int, optional): [description]. Defaults to -1.
-        target_mapping (str, optional): which mapped copy of the target to use, for
-            products named more than once. Defaults to the first.
-
-    Raises:
-        ValueError: [description]
-
-    Returns:
-        [type]: [description]
+    sym selects a symmetry orientation to apply to the target mapping before tracing
+    (-1 = unpermuted). target_mapping picks which mapped copy of the target to use,
+    for products named more than once (defaults to the first).
     """
     # Define the target emu
     if target_mapping is None:

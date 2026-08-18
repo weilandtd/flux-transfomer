@@ -32,41 +32,12 @@ def build_data_name_maps(
     experimental_names: list[str] | None = None,
     overrides: dict[str, list[str]] | None = None,
 ) -> pd.DataFrame:
-    """
-    Generate metabolite_name_mapping.csv mapping experimental compound names
-    to model metabolite IDs.
+    """Generate metabolite_name_mapping.csv mapping experimental compound names to model metabolite IDs, and return it as a DataFrame.
 
-    Parameters
-    ----------
-    experimental_xlsx : str | list[str] | None
-        Path(s) to experimental MID xlsx. Compound names are unioned across all
-        files. The first sheet matching [A-Z]+_[0-9]+ (e.g. NU_1, C12_1) is
-        used per file; falls back to first sheet containing compound_col.
-        Pass None and supply experimental_names instead when an organism has no
-        measured data yet.
-    model_amm_xlsx : str
-        Path to model atom mapping xlsx. Sheet 'Atom Transition', column
-        metAbbreviation supplies all model metabolite IDs.
-    output_csv : str
-        Output path for the two-column CSV (experimental_id, model_id).
-    compound_col : str
-        Column name in experimental sheet containing metabolite names.
-    amm_sheet : str
-        Sheet name in model AMM xlsx.
-    met_col : str
-        Column name in AMM sheet containing model metabolite IDs.
-    compartments : tuple
-        Compartment suffixes to include in output (default: _c, _m, _e).
-    experimental_names : list[str] | None
-        Compound names to resolve, in place of reading them from xlsx files.
-    overrides : dict | None
-        Organism-specific aliases layered over MANUAL_OVERRIDES, for names whose
-        model ID differs from the one the shared table assumes.
-
-    Returns
-    -------
-    pd.DataFrame with columns [experimental_id, model_id].
-    Unmatched experimental names are printed as warnings.
+    Pass exactly one of experimental_xlsx or experimental_names. Compound names are
+    matched against model IDs by base name (compartment/stereoisomer stripped), falling
+    back to MANUAL_OVERRIDES merged with `overrides`; unmatched names are printed as
+    warnings.
     """
     if (experimental_xlsx is None) == (experimental_names is None):
         raise ValueError("pass exactly one of experimental_xlsx or experimental_names")

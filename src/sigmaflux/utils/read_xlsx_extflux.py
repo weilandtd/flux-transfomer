@@ -21,34 +21,10 @@ def read_xlsx_extflux(
     return_errors:    bool = False,
     growth_condition: int | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Read external flux measurements from clean ExtFlux xlsx into a DataFrame.
+    """Read external flux measurements from a clean ExtFlux xlsx's 'Constraints' sheet into df_Vm [Sample, Flux Name, Value], filtered to rows whose Condition starts with `condition` (e.g. 'C', 'N').
 
-    Parameters
-    ----------
-    xlsx_path : str
-        Path to clean ExtFlux xlsx.  Must contain a sheet named 'Constraints'
-        with columns: Condition, <reaction_id>, ...
-        Condition values are combined labels such as C1, N3, B1.
-        Error columns have an '_err' suffix (e.g. EX_glc__D_e_err).
-    condition : str
-        Nutrient-limitation prefix to filter (e.g. 'C', 'N', 'P', 'B').
-        Matches all rows whose Condition starts with this prefix.
-    flux_names : list[str] | None
-        Reaction IDs to read (without '_err' suffix).  If None, every
-        non-metadata non-error column is read.
-    return_errors : bool
-        If True, also return df_err with the same structure as df_Vm but
-        containing the measurement errors for each flux.
-    growth_condition : int | None
-        If given, only the row with the matching numeric suffix is returned
-        (e.g. condition='C', growth_condition=3 → row 'C3').
-
-    Returns
-    -------
-    df_Vm : pd.DataFrame with columns [Sample, Flux Name, Value].
-            Sample is the growth-condition number extracted from the label.
-    df_err : pd.DataFrame (only when return_errors=True).
+    growth_condition further restricts to one numeric-suffixed row (e.g. 'C3'). If
+    return_errors, also returns df_err built from the matching '_err'-suffixed columns.
     """
     xl = pd.ExcelFile(xlsx_path)
     if 'Constraints' not in xl.sheet_names:

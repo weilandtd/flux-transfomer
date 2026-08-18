@@ -3,20 +3,7 @@ from cobra.flux_analysis import flux_variability_analysis
 from sigmaflux.generate.utils import read_subnet
 
 def add_reactions_from_tasks(model, tasks, filepath, bound = 20, medium=None, prune_boundaries=True):
-    """
-    Build a model from a list of tasks and the location of all possibile subnets (filepath)
-    //TODO: Make a database for subnets - https://trello.com/c/QroF975Y/29-make-a-database-for-subnets
-
-    Args:
-        model ([cobra.Model]): COBRApy model
-        tasks (list): List of tasks names e.g. ['glucose_respiration', 'ketogenesis', "amino_acids/serine_0060", ....]
-        filepath (string): Path to the folder containing all subnets
-        medium (dict, optional): dict('rxn.id':(float,float)). Defaults to None.
-        prune_boundaries (bool, optional): Reomve reactions that cannot carry flux. Defaults to True.
-
-    Returns:
-        cobra.Model: COBRApy model with all the reactions required to perform the tasks
-    """
+    """Build a model from a list of named tasks by pulling in each task's subnet reactions (JSON files under filepath), applying medium bounds, and optionally pruning flux-dead reactions."""
     
     new = Model("model")
     
