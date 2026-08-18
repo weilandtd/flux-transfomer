@@ -65,6 +65,15 @@ _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
 def build_hierarchical(flat_json, gem_xlsx, amm_xlsx, out_json, fractions=None):
+    """Split a flat model's BIOMASS into per-macromolecule components and save it.
+
+    Args:
+        flat_json: path to the source flat ``*_annotated.json`` model.
+        gem_xlsx: GEM workbook, used to derive mass fractions when none are given.
+        amm_xlsx: AMM workbook, applied for Terminal-sheet annotations after the split.
+        out_json: path to write the resulting hierarchical model.
+        fractions: mass fraction per biomass component; derived from stoichiometry if None.
+    """
     flat_json = _REPO_ROOT / flat_json
     gem_xlsx  = _REPO_ROOT / gem_xlsx
     amm_xlsx  = _REPO_ROOT / amm_xlsx

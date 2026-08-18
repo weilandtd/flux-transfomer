@@ -143,7 +143,13 @@ SUPPLIED = {
 def atom_map_rows(rxn_id, met, n_atoms):
     """AMM rows describing a depletion exchange `met -->`. Without a mapping the EMU
     expansion cannot follow the tracer out of the boundary metabolite and prunes the
-    whole network."""
+    whole network.
+
+    Args:
+        rxn_id: exchange reaction id to attach the mapping to.
+        met: metabolite abbreviation being depleted.
+        n_atoms: carbon count, used to number the atom map 1..n_atoms.
+    """
     return [{'rxnAbbreviation': rxn_id, 'metAbbreviation': met,
              'ReactantProductFlag': 'reactant',
              'maps': ','.join(str(i) for i in range(1, n_atoms + 1)),
@@ -157,6 +163,11 @@ def canonicalise_boundaries(name, reactions, metabolites):
     model with no exchanges at all pins itself at zero flux. Exchanges are written
     in the depletion direction (`met_e -->`), matching SigmaFlux's secretion-positive
     convention.
+
+    Args:
+        name: organism key, used to look up the per-model config tables.
+        reactions: Reactions sheet as a DataFrame.
+        metabolites: Metabolites sheet as a DataFrame.
     """
     reactions = reactions.copy()
     sources = SOURCES_AS_EXCHANGE[name]
@@ -225,6 +236,13 @@ def to_canonical(text):
 
 
 def curate(name, gem, amm):
+    """Normalise one organism's GEM/AMM workbook pair to the Maranas layout in place.
+
+    Args:
+        name: organism key, used to look up the per-model config tables.
+        gem: GEM workbook path, relative to the repository root.
+        amm: AMM workbook path, relative to the repository root.
+    """
     gem_path, amm_path = REPO_ROOT / gem, REPO_ROOT / amm
     print(f"\n=== {name} ===")
 

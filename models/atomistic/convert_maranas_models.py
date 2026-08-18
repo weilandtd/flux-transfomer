@@ -17,6 +17,12 @@ _MODELS = pathlib.Path(__file__).parent
 
 
 def _print_model_summary(label: str, model) -> None:
+    """Print reaction/metabolite counts and BIOMASS presence for a converted model.
+
+    Args:
+        label: organism name to print as the summary heading.
+        model: the converted COBRA model.
+    """
     rxn_ids = {r.id for r in model.reactions}
     annotated = [r for r in model.reactions if 'atom_mapping' in r.annotation]
     print(f"\n{label}")
@@ -28,6 +34,14 @@ def _print_model_summary(label: str, model) -> None:
 
 
 def convert(gem, amm, out, **kwargs):
+    """Convert one organism's GEM/AMM workbook pair to the flat annotated JSON model.
+
+    Args:
+        gem: GEM workbook path, relative to this file's directory.
+        amm: AMM workbook path, relative to this file's directory.
+        out: output JSON path, relative to this file's directory.
+        kwargs: forwarded to convert_mfa_maranas (e.g. drop_subsystems, biomass_id).
+    """
     return convert_mfa_maranas(str(_MODELS / gem), str(_MODELS / amm),
                                str(_MODELS / out), **kwargs)
 
