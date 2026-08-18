@@ -4174,12 +4174,18 @@
 {
 "id":"sink_4hba_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"sink_hmfurn_c",
 "name":"nan",
-"compartment":""
+"compartment":"",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"skm_c",
@@ -7003,7 +7009,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2dmmql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX) + amet_c (YZ0123456789\u00c0\u00c1\u00c2) + amet_c (\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) -> mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX2) + ahcys_c (YZ013456789\u00c0\u00c1\u00c2) + mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\u00d1) + ahcys_c (\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0) + h_c"
+"atom_mapping":"2dmmql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX) + amet_c (YZ0123456789\u00c0\u00c1\u00c2) -> mql8_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\u00c2) + ahcys_c (YZ0123456789\u00c0\u00c1) + h_c"
 }
 },
 {
@@ -7324,7 +7330,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"2omhmbl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV) + amet_c (WXYZ0123456789\u00c0) + amet_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf) -> q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV0) + ahcys_c (WXYZ123456789\u00c0) + q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV\u00cf) + ahcys_c (\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce) + h_c"
+"atom_mapping":"2omhmbl_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV) + amet_c (WXYZ0123456789\u00c0) -> q8h2_c (abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV\u00c0) + ahcys_c (WXYZ0123456789) + h_c"
 }
 },
 {
@@ -8784,7 +8790,10 @@
 },
 "lower_bound":0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"terminal":true
+}
 },
 {
 "id":"EX_12ppd-R_e",

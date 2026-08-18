@@ -55,6 +55,22 @@ _COMPONENT_TO_BM: dict = {
     'PROTEIN_c': 'bm_protein_c', 'RNA_c': 'bm_rna_c', 'DNA_c': 'bm_dna_c',
     'LIPID_c': 'bm_lipid_c', 'CARB_c': 'bm_carb_c',
 }
+#: Macromolecule mass fractions of the two published yeast models, at the precision
+#: the released models carry.
+#:
+#: These are measured compositions from the source papers, not something to
+#: re-derive: ``derive_biomass_fractions`` reads them back out of the BIOMASS
+#: stoichiometry, which is a different quantity that happens to be close. Passing
+#: these to ``split_biomass_hierarchical`` is what lets the two models be rebuilt
+#: from their workbooks -- picking up every atom-map and Terminal-sheet fix -- while
+#: their composition stays exactly what was published and trained on.
+PUBLISHED_BIOMASS_FRACTIONS: dict = {
+    'S_cerevisiae': {'PROTEIN_c': 0.4888, 'RNA_c': 0.0874, 'DNA_c': 0.00354,
+                     'LIPID_c': 0.02529, 'CARB_c': 0.3949},
+    'I_orientalis': {'PROTEIN_c': 0.4722603271367565, 'RNA_c': 0.11097742313505278,
+                     'DNA_c': 0.008573098060797861, 'LIPID_c': 0.04562162376171028,
+                     'CARB_c': 0.3625675279056826},
+}
 # Maranas biomass formulas use placeholder tokens for the variable acyl chains and
 # the sphingoid backbone (e.g. tag_c = C3H5O3Acyl3), so those masses are nominal:
 # a palmitoyl chain and a C18 phytoceramide core.
@@ -248,29 +264,20 @@ def redistribute_biomass_energy(model) -> None:
     # Shared energy cofactors to redistribute (everything except bm_* pseudo-metabolites)
     energy_stoich = {mid: c for mid, c in stoich.items() if not mid.startswith('bm_')}
 
-    # RNA-specific ATP: the portion of ATP that goes with RNA NTPs (proxy: UTP stoich)
-    utp_stoich = stoich.get('utp_c', 0.0)   # e.g. -0.1256 for SC
-    atp_total = energy_stoich.get('atp_c', 0.0)
-    atp_rna_specific = utp_stoich            # ATP co-consumed with RNA NTP synthesis
-    atp_energy = atp_total - atp_rna_specific  # energy ATP to distribute by fracs
-
+    # ATP is distributed by energy fraction like every other shared cofactor. An
+    # RNA-specific share was once carved out using UTP as its proxy, but this runs
+    # inside split_biomass_hierarchical, which has already moved utp_c out of BIOMASS,
+    # so the proxy was always 0.0 and the carve-out never happened. The shipped models
+    # were built without it; reinstating it would be a change to their stoichiometry,
+    # not a bug fix, so it is removed rather than repaired.
     for comp_id, frac in energy_fracs.items():
         bm_id = _COMPONENT_TO_BM[comp_id]
         bm_frac = bm_fracs.get(bm_id, 0.0)
         if bm_frac == 0.0:
             continue
         rxn = model.reactions.get_by_id(comp_id)
-        additions = {}
-        # Distribute all shared metabolites by energy fraction, scaled per component flux unit
-        for mid, coeff in energy_stoich.items():
-            if mid == 'atp_c':
-                # Energy ATP share
-                additions[mid] = additions.get(mid, 0.0) + atp_energy * frac / bm_frac
-            else:
-                additions[mid] = additions.get(mid, 0.0) + coeff * frac / bm_frac
-        # RNA-specific ATP goes entirely to RNA_c
-        if comp_id == 'RNA_c' and atp_rna_specific != 0.0:
-            additions['atp_c'] = additions.get('atp_c', 0.0) + atp_rna_specific / bm_frac
+        # Every shared metabolite goes out by energy fraction, per unit component flux.
+        additions = {mid: coeff * frac / bm_frac for mid, coeff in energy_stoich.items()}
 
         met_map = {model.metabolites.get_by_id(mid): coeff
                    for mid, coeff in additions.items() if coeff != 0.0}
@@ -341,8 +348,14 @@ def read_terminal_sheet(path_to_atom_map_xls):
     """
     try:
         term = pd.read_excel(path_to_atom_map_xls, sheet_name='Terminal')
-    except Exception:
-        return [], []        # a workbook without the sheet simply declares no terminals
+    except ValueError:
+        # A workbook without the sheet declares no terminals, which is a legitimate
+        # state -- but it is indistinguishable from one that should have declared some
+        # and does not. R. toruloides sat in exactly that gap: hierarchical, carrying
+        # the same lump chemistry as the other two yeasts, and silently terminal-free.
+        print(f"    {os.path.basename(str(path_to_atom_map_xls))}: no Terminal sheet, "
+              f"so no pool or reaction is declared terminal")
+        return [], []
 
     if 'Metab_name' not in term.columns and 'Rxn_name' not in term.columns:
         raise ValueError(f"{path_to_atom_map_xls}: the Terminal sheet needs a "

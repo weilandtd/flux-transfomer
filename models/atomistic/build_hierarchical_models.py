@@ -8,11 +8,18 @@ Energy is redistributed out of BIOMASS into the components afterwards. This is w
 the organism configs point `model_file` at, because the component fluxes are
 separately measurable while the aggregate is not.
 
-Only R. toruloides and the M. musculus T cell are regenerated here. The S. cerevisiae
-and I. orientalis hierarchical models back the two released .sfx ensembles and must not
-be rewritten; their published mass fractions are recorded in PUBLISHED_FRACTIONS for
-reference, and tests/test_biomass_split.py pins the split against the S. cerevisiae
-artifact.
+All four hierarchical models are regenerated here. S. cerevisiae and I. orientalis
+used to be exempt -- only their annotations were resynced, because their stoichiometry
+backed the released v1.0.0 .sfx ensembles -- but the freeze was hiding a defect rather
+than protecting anything: in both models the sterol/lipid branch is pruned by x3cflux
+as unreachable, which takes bm_lipid_c with it, and LIPID_c is a measured flux in both
+configs. So `sigmaflux-benchmark-mfa --backend x3cflux` could not run on either.
+
+Their published mass fractions are passed in explicitly from
+`PUBLISHED_BIOMASS_FRACTIONS` rather than derived, so rebuilding picks up every
+workbook fix while the composition stays exactly what was published and trained on.
+tests/test_biomass_split.py pins the result against tests/data/biomass_split_v1.json,
+captured from the shipped artifacts before this rebuild.
 
 Not every model carries all five macromolecules — the T-cell biomass has no
 carbohydrate, so CARB_c is skipped and the energy fractions are renormalised over the
@@ -21,10 +28,8 @@ four components that do exist.
 Usage:
     python models/atomistic/build_hierarchical_models.py
 """
-import json
 import pathlib
 import sys
-import warnings
 
 import pandas as pd
 from cobra.io import load_json_model, save_json_model
@@ -32,19 +37,28 @@ from cobra.io import load_json_model, save_json_model
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / 'src'))
 
 from sigmaflux.core.utils import (  # noqa: E402
-    BIOMASS_COMPONENT_IDS, apply_terminal_annotations, derive_biomass_fractions,
-    read_terminal_sheet, split_biomass_hierarchical,
+    BIOMASS_COMPONENT_IDS, PUBLISHED_BIOMASS_FRACTIONS, apply_terminal_annotations,
+    derive_biomass_fractions, split_biomass_hierarchical,
 )
 
-# Mass fractions of the two shipped hierarchical models, for reference only.
-PUBLISHED_FRACTIONS = {
-    'S_cerevisiae': dict(PROTEIN_c=0.4888, RNA_c=0.0874, DNA_c=0.00354,
-                         LIPID_c=0.02529, CARB_c=0.3949),
-    'I_orientalis': dict(PROTEIN_c=0.47226, RNA_c=0.11098, DNA_c=0.00857,
-                         LIPID_c=0.04562, CARB_c=0.36257),
-}
-
 CONFIGS = [
+    # The two published yeasts. `fractions` is passed rather than derived so the
+    # composition stays bit-for-bit what the v1.0.0 ensembles were trained on; see
+    # PUBLISHED_BIOMASS_FRACTIONS.
+    dict(
+        flat_json='models/atomistic/S_cerevisiae/sc_annotated.json',
+        gem_xlsx='models/atomistic/S_cerevisiae/scGEM.xlsx',
+        amm_xlsx='models/atomistic/S_cerevisiae/scAMM.xlsx',
+        out_json='models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
+        fractions=PUBLISHED_BIOMASS_FRACTIONS['S_cerevisiae'],
+    ),
+    dict(
+        flat_json='models/atomistic/I_orientalis/imIsor_annotated.json',
+        gem_xlsx='models/atomistic/I_orientalis/imIsor_GEM.xlsx',
+        amm_xlsx='models/atomistic/I_orientalis/imIsor_AMM.xlsx',
+        out_json='models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
+        fractions=PUBLISHED_BIOMASS_FRACTIONS['I_orientalis'],
+    ),
     dict(
         flat_json='models/atomistic/R_toruloides/imRt_annotated.json',
         gem_xlsx='models/atomistic/R_toruloides/imRt_GEM.xlsx',
@@ -63,26 +77,6 @@ CONFIGS = [
         fractions=None,
     ),
 ]
-
-# The two shipped models are not rebuilt, but curation still has to reach them: what the
-# biomass split freezes is their stoichiometry, not the atom maps and terminal
-# declarations the workbook owns. Both are annotations, so re-applying them leaves every
-# stoichiometry byte untouched while the curation lands on the model the configs actually
-# point `model_file` at. Without this, a recovered atom map (d9d7492) or a Terminal row
-# reaches the flat model and silently stops there.
-ANNOTATE_ONLY = [
-    dict(hierarchical_json='models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json',
-         flat_json='models/atomistic/S_cerevisiae/sc_annotated.json',
-         amm_xlsx='models/atomistic/S_cerevisiae/scAMM.xlsx'),
-    dict(hierarchical_json='models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json',
-         flat_json='models/atomistic/I_orientalis/imIsor_annotated.json',
-         amm_xlsx='models/atomistic/I_orientalis/imIsor_AMM.xlsx'),
-]
-
-# Annotations the flat model owns; everything else in a shipped model stays as shipped.
-_SYNCED = (('reactions', 'atom_mapping'),
-           ('metabolites', 'atom_pattern'),
-           ('metabolites', 'symmetries'))
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
@@ -115,54 +109,7 @@ def build_hierarchical(flat_json, gem_xlsx, amm_xlsx, out_json, fractions=None):
     print(f"  BIOMASS consumes: {sorted(m.id for m in biomass.metabolites)}")
 
 
-def resync_annotations(hierarchical_json, flat_json, amm_xlsx):
-    """Refresh a shipped model's annotations from the workbook, changing nothing else.
-
-    Patches the JSON directly rather than round-tripping through cobra: these two files
-    were written out-of-band, each with its own serializer settings, so
-    `save_json_model` would reformat all ~10k lines and bury the handful that actually
-    change. The layout is read off the file itself and written back unchanged.
-    """
-    path = _REPO_ROOT / hierarchical_json
-    raw = path.read_text()
-    doc = json.loads(raw)
-
-    opening = raw.split('\n', 2)[1]
-    indent = len(opening) - len(opening.lstrip(' '))
-    separators = (',', ': ' if '": ' in opening else ':')
-
-    # The five biomass component reactions exist only in the hierarchical model, so a
-    # missing id means the split created it, not that the annotation was lost.
-    flat = json.loads((_REPO_ROOT / flat_json).read_text())
-    for section, key in _SYNCED:
-        source = {e['id']: e.get('annotation', {}).get(key) for e in flat[section]}
-        for entry in doc[section]:
-            fresh = source.get(entry['id'])
-            stale = entry.get('annotation', {}).get(key)
-            if entry['id'] not in source or fresh == stale:
-                continue
-            entry.setdefault('annotation', {})[key] = fresh
-            print(f"    {section[:-1]} {entry['id']}: {key} refreshed from the workbook")
-
-    pool_ids, rxn_ids = read_terminal_sheet(_REPO_ROOT / amm_xlsx)
-    for idents, section, what in ((pool_ids, 'metabolites', 'pool'),
-                                  (rxn_ids, 'reactions', 'reaction')):
-        by_id = {entry['id']: entry for entry in doc[section]}
-        for ident in idents:
-            if ident not in by_id:
-                warnings.warn(f"Terminal sheet names {what} {ident}, which is not in "
-                              f"{path.name}", RuntimeWarning)
-                continue
-            by_id[ident].setdefault('annotation', {})['terminal'] = True
-
-    path.write_text(json.dumps(doc, indent=indent, separators=separators))
-    print(f"  {path.name}: terminal pools {pool_ids}, reactions {rxn_ids}")
-
-
 if __name__ == '__main__':
     for cfg in CONFIGS:
         print(cfg['out_json'])
         build_hierarchical(**cfg)
-    for cfg in ANNOTATE_ONLY:
-        print(cfg['hierarchical_json'])
-        resync_annotations(**cfg)

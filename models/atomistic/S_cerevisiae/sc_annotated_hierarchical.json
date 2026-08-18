@@ -1639,14 +1639,6 @@
 }
 },
 {
-"id":"ipcbiom_c",
-"name":"Mass of inositol-P-ceramide in biomass",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abcdefgh"
-}
-},
-{
 "id":"ipdp_c",
 "name":"isopentenyl diphosphate",
 "compartment":"",
@@ -2671,8 +2663,24 @@
 }
 },
 {
+"id":"ipcbiom24_c",
+"name":"Mass of inositol-P-ceramide (C24 acyl) in biomass",
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
+}
+},
+{
+"id":"ipcbiom26_c",
+"name":"Mass of inositol-P-ceramide (C26 acyl) in biomass",
+"compartment":"",
+"annotation":{
+"atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"
+}
+},
+{
 "id":"bm_protein_c",
-"name":"bm_protein_c",
+"name":"PROTEIN_c biomass precursor",
 "compartment":"c",
 "annotation":{
 "terminal":true
@@ -2680,7 +2688,7 @@
 },
 {
 "id":"bm_rna_c",
-"name":"bm_rna_c",
+"name":"RNA_c biomass precursor",
 "compartment":"c",
 "annotation":{
 "terminal":true
@@ -2688,15 +2696,7 @@
 },
 {
 "id":"bm_dna_c",
-"name":"bm_dna_c",
-"compartment":"c",
-"annotation":{
-"terminal":true
-}
-},
-{
-"id":"bm_carb_c",
-"name":"bm_carb_c",
+"name":"DNA_c biomass precursor",
 "compartment":"c",
 "annotation":{
 "terminal":true
@@ -2704,7 +2704,15 @@
 },
 {
 "id":"bm_lipid_c",
-"name":"bm_lipid_c",
+"name":"LIPID_c biomass precursor",
+"compartment":"c",
+"annotation":{
+"terminal":true
+}
+},
+{
+"id":"bm_carb_c",
+"name":"CARB_c biomass precursor",
 "compartment":"c",
 "annotation":{
 "terminal":true
@@ -8058,7 +8066,8 @@
 "h2o_c":2.0,
 "h_c":2.0,
 "hxccoa_c":-2.0,
-"ipcbiom_c":4.0,
+"ipcbiom24_c":2.0,
+"ipcbiom26_c":2.0,
 "nadp_c":6.0,
 "nadph_c":-6.0,
 "o2_c":-2.0,
@@ -8071,8 +8080,7 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"ser__L_c (abc) + ser__L_c (def) + ser__L_c (ghi) + ser__L_c (jkl) + pail_c (mnopqrstu) + pail_c (vwxyzABCD) + pail_c (EFGHIJKLM) + pail_c (NOPQRSTUV) + hxccoa_c + nadph_c + o2_c + pmtcoa_c + ttccoa_c -> dag_c (mno) + dag_c (vwx) + dag_c (EFG) + dag_c (NOP) + co2_c (a) + co2_c (d) + co2_c (g) + co2_c (j) + ipcbiom_c (bcpqrstu) + ipcbiom_c (efyzABCD) + ipcbiom_c (hiHIJKLM) + ipcbiom_c (klQRSTUV) + coa_c + h2o_c + h_c + nadp_c",
-"terminal":true
+"atom_mapping":"ser__L_c (abc) + ser__L_c (def) + ser__L_c (ghi) + ser__L_c (jkl) + pail_c (mnopqrstu) + pail_c (vwxyzABCD) + pail_c (EFGHIJKLM) + pail_c (NOPQRSTUV) + pmtcoa_c (WXYZ0123456789\u00c0\u00c1) + pmtcoa_c (\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1) + pmtcoa_c (\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2) + pmtcoa_c (\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2) + ttccoa_c (\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b) + ttccoa_c (\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123) + hxccoa_c (\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) + hxccoa_c (\u013e\u013f\u0140\u0141\u0142\u0143\u0144\u0145\u0146\u0147\u0148\u0149\u014a\u014b\u014c\u014d\u014e\u014f\u0150\u0151\u0152\u0153\u0154\u0155\u0156\u0157) + nadph_c + o2_c -> co2_c (a) + co2_c (d) + co2_c (g) + co2_c (j) + dag_c (mno) + dag_c (vwx) + dag_c (EFG) + dag_c (NOP) + ipcbiom24_c (bcpqrstuWXYZ0123456789\u00c0\u00c1\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b) + ipcbiom24_c (efyzABCD\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123) + ipcbiom26_c (hiHIJKLM\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133\u0134\u0135\u0136\u0137\u0138\u0139\u013a\u013b\u013c\u013d) + ipcbiom26_c (klQRSTUV\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u013e\u013f\u0140\u0141\u0142\u0143\u0144\u0145\u0146\u0147\u0148\u0149\u014a\u014b\u014c\u014d\u014e\u014f\u0150\u0151\u0152\u0153\u0154\u0155\u0156\u0157) + coa_c + h2o_c + h_c + nadp_c"
 }
 },
 {
@@ -8303,7 +8311,10 @@
 },
 "lower_bound":0.0,
 "upper_bound":1000.0,
-"gene_reaction_rule":""
+"gene_reaction_rule":"",
+"annotation":{
+"atom_mapping":"fum_m (abcd) + fadh2_m + h_m -> succ_m (abcd) + fad_m"
+}
 },
 {
 "id":"G3PT_c",
@@ -9021,7 +9032,7 @@
 },
 {
 "id":"PROTEIN_c",
-"name":"PROTEIN_c",
+"name":"",
 "metabolites":{
 "adp_c":100.4345887888707,
 "ala__L_c":-0.9421358428805237,
@@ -9066,7 +9077,7 @@
 },
 {
 "id":"RNA_c",
-"name":"RNA_c",
+"name":"",
 "metabolites":{
 "adp_c":134.8075798627002,
 "amp_c":6.457484210526315,
@@ -9094,7 +9105,7 @@
 },
 {
 "id":"DNA_c",
-"name":"DNA_c",
+"name":"",
 "metabolites":{
 "adp_c":832.075033898305,
 "amp_c":39.85763559322033,
@@ -9122,8 +9133,43 @@
 "gene_reaction_rule":""
 },
 {
+"id":"LIPID_c",
+"name":"",
+"metabolites":{
+"adp_c":582.3538196915777,
+"amp_c":27.895616844602607,
+"atp_c":-610.8216132858837,
+"bm_lipid_c":1.0,
+"ca2_c":-0.007627520759193357,
+"cu2_c":-0.0006761565836298932,
+"ergst_c":-1.046856465005931,
+"ergstest_c":-0.2680110715697904,
+"fe2_c":-0.003938315539739027,
+"ffabiom_c":-0.0582839066824832,
+"h2o_c":-554.458202846975,
+"h_c":582.3538196915777,
+"ipcbiom24_c":-0.07572162910241202,
+"ipcbiom26_c":-0.07572162910241202,
+"k_c":-3.580367734282325,
+"mg2_c":-0.3772657176749703,
+"mn2_c":-0.0005575326215895611,
+"pail_c":-0.27212336892052197,
+"pc_c":-1.0153420324238829,
+"pe_c":-0.2728746540134441,
+"pi_c":581.7271589561091,
+"ppi_c":30.419584816132854,
+"ps_c":-0.2343614076710162,
+"so4_c":-0.18518979833926452,
+"tag_c":-0.2700276789244761,
+"zn2_c":-0.009347568208778172
+},
+"lower_bound":0.0,
+"upper_bound":1000.0,
+"gene_reaction_rule":""
+},
+{
 "id":"CARB_c",
-"name":"CARB_c",
+"name":"",
 "metabolites":{
 "13BDglucan_c":-1.5098556596606738,
 "16BDglucan_c":-0.3973309698657888,
@@ -9147,40 +9193,6 @@
 "so4_c":-0.01581311724487212,
 "tre_c":-0.036487718409723986,
 "zn2_c":-0.0007981767536085085
-},
-"lower_bound":0.0,
-"upper_bound":1000.0,
-"gene_reaction_rule":""
-},
-{
-"id":"LIPID_c",
-"name":"LIPID_c",
-"metabolites":{
-"adp_c":582.3538196915777,
-"amp_c":27.895616844602607,
-"atp_c":-610.8216132858837,
-"bm_lipid_c":1.0,
-"ca2_c":-0.007627520759193357,
-"cu2_c":-0.0006761565836298932,
-"ergst_c":-1.046856465005931,
-"ergstest_c":-0.2680110715697904,
-"fe2_c":-0.003938315539739027,
-"ffabiom_c":-0.0582839066824832,
-"h2o_c":-554.458202846975,
-"h_c":582.3538196915777,
-"ipcbiom_c":-0.15144325820482404,
-"k_c":-3.580367734282325,
-"mg2_c":-0.3772657176749703,
-"mn2_c":-0.0005575326215895611,
-"pail_c":-0.27212336892052197,
-"pc_c":-1.0153420324238829,
-"pe_c":-0.2728746540134441,
-"pi_c":581.7271589561091,
-"ppi_c":30.419584816132854,
-"ps_c":-0.2343614076710162,
-"so4_c":-0.18518979833926452,
-"tag_c":-0.2700276789244761,
-"zn2_c":-0.009347568208778172
 },
 "lower_bound":0.0,
 "upper_bound":1000.0,

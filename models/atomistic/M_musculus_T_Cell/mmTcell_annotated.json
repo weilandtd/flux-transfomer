@@ -4481,7 +4481,8 @@
 "upper_bound":1000.0,
 "gene_reaction_rule":"",
 "annotation":{
-"atom_mapping":"accoa_c (ab) + hco3_c (c) + atp_c (defghijklm) + nadph_c + h_c -> co2_c (c) + adp_c (defghijklm) + coa_c + pi_c + nadp_c"
+"atom_mapping":"accoa_c (ab) + hco3_c (c) + atp_c (defghijklm) + nadph_c + h_c -> co2_c (c) + adp_c (defghijklm) + coa_c + pi_c + nadp_c",
+"terminal":true
 }
 },
 {
