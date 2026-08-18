@@ -116,10 +116,8 @@ _NULL_SPACE_INT = ("free_idx", "fixed_idx", "rev_variable_idx")
 # ── Source discovery ──────────────────────────────────────────────────────────
 
 def _discover_members(source):
-    """Resolve *source* to an ordered list of member checkpoint paths.
-
-    Accepts an ``ensemble/`` directory, a run directory containing one, a single
-    ``.pt``, or an explicit sequence of ``.pt`` paths.
+    """Resolve *source* to an ordered list of member checkpoint paths: an ``ensemble/`` directory,
+    a run directory containing one, a single ``.pt``, or an explicit sequence of ``.pt`` paths.
     """
     if isinstance(source, (str, os.PathLike)):
         source = [source]
@@ -149,10 +147,9 @@ def _discover_members(source):
 def _check_members_agree(checkpoints, paths):
     """Refuse to package members that were not trained as one ensemble.
 
-    Returns ``True`` when every member shares one null-space basis. A seed-varied
-    ICA basis (``null_space_type: targeted_ica``) legitimately differs per member
-    — the decoded fluxes are physical either way — so that case is reported
-    rather than rejected, and the basis is then stored per member.
+    Returns ``True`` when every member shares one null-space basis; a seed-varied
+    ICA basis legitimately differs per member, so that case is reported (not rejected)
+    and the basis is then stored per member.
     """
     first = checkpoints[0]
     for ckpt, path in zip(checkpoints[1:], paths[1:]):
@@ -252,13 +249,9 @@ def _member_blob(state_dict, layout):
 # ── Prepared network ──────────────────────────────────────────────────────────
 
 def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=None):
-    """Locate the prepared COBRA network for a checkpoint.
-
-    The run directory's ``model_prepared_for_mfa.json`` is preferred over the
-    checkpoint's ``model_json``: training builds its stoichiometry from the
-    prepared model, whose reaction order matches ``flux_names``, while the
-    annotated source model has neither the same order nor the same reactions
-    (FVA pruning and skipped constraints drop some).
+    """Locate the prepared COBRA network for a checkpoint. The run directory's
+    ``model_prepared_for_mfa.json`` is preferred over the checkpoint's ``model_json``, since
+    only the prepared model's reaction order and set match ``flux_names``.
     """
     candidates = [model_json]
     run_dir = data_dir or ckpt.get("data_dir")
@@ -277,12 +270,9 @@ def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=N
 
 
 def _read_network(path, flux_names):
-    """Read a COBRA JSON and describe how it lines up with the model's outputs.
-
-    Returns ``(payload, block)`` where *payload* is the raw file bytes and
-    *block* is the manifest entry. ``covers_flux_names`` is the property that
-    decides whether the network is usable: without every predicted reaction
-    present, a consumer cannot build ``S`` for the prediction vector at all.
+    """Read a COBRA JSON; returns ``(payload, block)`` where *payload* is the raw file bytes and
+    *block* is the manifest entry. ``block["covers_flux_names"]`` decides usability: without
+    every predicted reaction present, a consumer cannot build ``S`` for the prediction vector.
     """
     with open(path, "rb") as fh:
         payload = fh.read()
@@ -305,15 +295,9 @@ def _read_network(path, flux_names):
 # ── Validation payload ────────────────────────────────────────────────────────
 
 def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
-    """The validation split's MID inputs and targets, in training token order.
-
-    This is the only step that touches the training HDF5. Reading the flux
-    targets here rather than lifting them out of ``val_correlations`` means the
-    export does not depend on training diagnostics it otherwise drops, and works
-    for checkpoints that never recorded them.
-
-    Returns ``(fractions, flux_actuals, rev_actuals)``, or ``(None, None, None)``
-    when the training data is unreachable.
+    """The validation split's MID inputs and targets, in training token order — the only step
+    that touches the training HDF5. Returns ``(fractions, flux_actuals, rev_actuals)``, or
+    ``(None, None, None)`` when the training data is unreachable.
     """
     from .data import load_data
     resolved = data_dir or ckpt.get("data_dir")
@@ -350,7 +334,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
                  with_validation=True, with_val_inputs="auto", with_network="auto",
                  data_dir=None, model_json=None, max_members=None, max_val_samples=None,
                  metrics=True, overwrite=False, verbose=True):
-    """Package trained checkpoints into a single ``.sfx`` model.
+    """Package trained checkpoints into a single ``.sfx`` model; returns the written path.
 
     Parameters
     ----------
@@ -370,20 +354,11 @@ def export_model(source, out_path=None, *, name=None, model_version,
         inference batch size; without it tracer names fall back to internal ids.
     with_validation, with_val_inputs :
         Store the validation split, and (``"auto"``/True/False) the MID inputs
-        needed to recompute R² from the export alone. Reading the inputs is the
-        only step that touches the training HDF5.
+        needed to recompute R² from the export alone.
     with_network : {"auto", True, False}
-        Store the prepared COBRA network (default ``"auto"``: embed it when it
-        is found and covers every predicted reaction, otherwise warn and carry
-        on). ``True`` makes a missing or mismatched network an error; ``False``
-        skips it. The search order is *model_json*, then
-        ``<data_dir>/model_prepared_for_mfa.json``, then the checkpoint's
-        ``model_json``, then the config's ``model_file``.
-
-    Returns
-    -------
-    pathlib.Path
-        The written file.
+        Store the prepared COBRA network (default ``"auto"``: embed it when found
+        and covering every predicted reaction, else warn and carry on). ``True``
+        makes a missing/mismatched network an error; ``False`` skips it.
     """
     if precision not in ("fp16", "fp32"):
         raise ValueError(f"precision must be 'fp16' or 'fp32', got {precision!r}")
@@ -623,11 +598,9 @@ def export_model(source, out_path=None, *, name=None, model_version,
 
 
 def load_model(path, *, device=None):
-    """Load a packaged ``.sfx`` model.
-
-    Always returns an :class:`~sigmaflux.ai.inference.EnsembleSigmaFlux`, even for
-    a one-member export, so callers have a single shape to handle. Needs no
-    config YAML, run directory or COBRA JSON.
+    """Load a packaged ``.sfx`` model. Always returns an
+    :class:`~sigmaflux.ai.inference.EnsembleSigmaFlux`, even for a one-member export, so callers
+    have a single shape to handle. Needs no config YAML, run directory, or COBRA JSON.
     """
     with SfxReader(path) as r:
         m = r.manifest
@@ -710,11 +683,8 @@ def inspect_model(path):
 
 
 def read_cobra_model(path):
-    """The prepared COBRA network stored in *path*, as a :class:`cobra.Model`.
-
-    Needs no run directory: the network travels inside the export. Raises
-    :class:`SfxFormatError` for a model exported without one (``with_network=False``,
-    or any release predating the entry) — check
+    """The prepared COBRA network stored in *path*, as a :class:`cobra.Model`; needs no run
+    directory. Raises :class:`SfxFormatError` if the model was exported without one — check
     ``inspect_model(path)["network"]["included"]`` first to branch without catching.
     """
     from cobra.io.json import from_json
@@ -728,11 +698,8 @@ def read_cobra_model(path):
 
 
 def read_stoichiometry(path):
-    """``(S, metabolite_ids, cobra_model)`` with ``S`` columns in ``flux_names`` order.
-
-    The prepared network usually already lists its reactions in that order, but
-    reindexing here means a consumer can multiply straight into a prediction —
-    ``S @ predicted_fluxes ≈ 0`` — without knowing whether it does.
+    """``(S, metabolite_ids, cobra_model)`` with ``S`` columns reindexed to ``flux_names`` order,
+    so a consumer can multiply straight into a prediction (``S @ predicted_fluxes ≈ 0``).
     """
     from cobra.util.array import create_stoichiometric_matrix
 
@@ -754,9 +721,7 @@ def read_stoichiometry(path):
 
 
 def validate_model(path, *, device=None, per_member=False):
-    """Recompute validation R² from the export alone.
-
-    Requires an export written with the validation inputs (``with_val_inputs``);
+    """Recompute validation R² from the export alone (requires ``with_val_inputs`` at export time);
     reproduces the number training reported, in training token order.
     """
     import pandas as pd

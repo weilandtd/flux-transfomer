@@ -44,22 +44,9 @@ def compute_token_scores(L_c, method='pca', n_components=50, y_c=None, y_std_c=N
 def load_fisher_token_scores(
     features_csv: str, labeling_df
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Load pre-computed Fisher scores and inclusion mask aligned to labeling_df row order.
-
-    Reads features.csv produced by extract_informative_features.py and returns:
-      - (n_tokens,) tensor of marginal_nats scores
-      - (n_tokens,) bool tensor marking the tokens included for training
-
-    Tokens absent from the CSV receive score 0.0 and included=False.
-
-    Args:
-        features_csv: path to features.csv
-        labeling_df:  DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer)
-
-    Returns:
-        scores:        (n_tokens,) float tensor of marginal_nats scores
-        included_mask: (n_tokens,) bool tensor — True for tokens passed to training
-    """
+    """Load pre-computed Fisher scores and inclusion mask (from features.csv,
+    produced by extract_informative_features.py) aligned to labeling_df row order.
+    Tokens absent from the CSV get score 0.0 and included=False."""
     feat = pd.read_csv(features_csv)
     score_map: dict = {}
     included_set: set = set()
@@ -89,12 +76,9 @@ def load_fisher_token_scores(
 
 
 def _varimax_rotate(Z: np.ndarray, max_iter: int = 1000, tol: float = 1e-6) -> np.ndarray:
-    """Varimax (Kaiser 1958) orthogonal rotation applied in-place to columns of Z.
-
-    Maximises sum of per-column variances of squared loadings via pairwise Jacobi
-    sweeps.  Input columns must already have unit norm; the rotation preserves norms
-    and the span of the columns.
-    """
+    """Varimax (Kaiser 1958) orthogonal rotation applied in-place to columns of Z,
+    maximising the sum of per-column variances of squared loadings via pairwise
+    Jacobi sweeps. Input columns must already have unit norm."""
     n_rxn, k = Z.shape
     if k <= 1:
         return Z
@@ -128,59 +112,10 @@ def compute_sparse_nullspace(
     max_iter: int = 1000,
     tol: float = 1e-6,
 ) -> np.ndarray:
-    """
-    Compute a sparse null-space basis of stoichiometric matrix S via
-    SVD followed by Varimax (Kaiser 1958) orthogonal rotation.
-
-    Background
-    ----------
-    The null space of S contains all steady-state flux distributions v
-    satisfying S @ v = 0. scipy.linalg.null_space returns an orthonormal
-    basis Z via SVD, but each basis vector typically has non-zero weight
-    on most reactions, making the basis hard to interpret biologically.
-
-    Varimax rotation finds an orthogonal matrix R such that the columns
-    of Z @ R span the same null space but are *sparser*: each rotated
-    basis vector concentrates its weight on a smaller subset of reactions.
-    Sparsity is achieved by maximising the sum of per-column variances of
-    squared loadings — the Kaiser criterion:
-
-        obj = Σ_j [ n * Σ_i z_{ij}^4  −  (Σ_i z_{ij}^2)^2 ]
-
-    where the sum is over basis vectors j and reactions i, and n is the
-    number of reactions.  This objective is maximised iteratively via
-    pairwise Jacobi sweeps: at each step the optimal 2D rotation angle
-    for a column pair (p, q) is solved in closed form.
-
-    Because every Jacobi update is an orthogonal 2×2 rotation, column
-    norms are preserved exactly at every step and the overall rotation
-    R = Π R_{pq} remains orthogonal (R^T R = I).  The result is an
-    orthonormal basis — no re-orthogonalisation is needed post-rotation.
-
-    Convergence
-    -----------
-    A full sweep rotates every distinct column pair (p, q) once.
-    Iteration stops when the absolute change in the Varimax objective
-    between successive sweeps falls below `tol`, or after `max_iter`
-    sweeps.
-
-    Parameters
-    ----------
-    S : np.ndarray, shape (m, n)
-        Stoichiometric matrix with m metabolites and n reactions.
-    max_iter : int
-        Maximum number of Jacobi sweeps. Each sweep performs k*(k-1)/2
-        pairwise rotations, where k = dim(null space of S).
-    tol : float
-        Convergence threshold on the absolute change in the Varimax
-        objective between consecutive sweeps.
-
-    Returns
-    -------
-    Z_rotated : np.ndarray, shape (n, k)
-        Orthonormal null-space basis after Varimax rotation. Columns
-        span null(S) and are sparser than the raw SVD basis.
-    """
+    """Compute a sparse null-space basis of stoichiometric matrix S via SVD followed
+    by Varimax (Kaiser 1958) rotation, which finds an orthogonal rotation of the raw
+    SVD basis that concentrates each basis vector's weight on fewer reactions while
+    preserving orthonormality and the span of null(S)."""
     Z = scipy.linalg.null_space(S)   # (n_rxn, k) — unit-norm columns from SVD
     return _varimax_rotate(Z, max_iter=max_iter, tol=tol)
 
@@ -194,10 +129,11 @@ def compute_targeted_nullspace(
 ):
     """Build a structured null-space basis that gives each target reaction its own DOF.
 
-    For each target reaction t, the returned Z satisfies Z[t, j_t] = 1 and
-    Z[t, j≠j_t] = 0 (identity block on targets), so the corresponding basis
-    coefficient y[j_t] directly represents that reaction's flux with no
-    cross-reaction amplification.
+    For each target reaction t, Z[t, j_t] = 1 and Z[t, j≠j_t] = 0, so basis coefficient
+    y[j_t] directly represents that reaction's flux. Redundant targets (exact linear
+    combinations of others) are dropped rather than failing the whole construction; when
+    choosing which of a redundant group keeps the DOF, the most-connected reaction
+    (touching the most metabolites) wins, ties breaking on the caller's order.
 
     Parameters
     ----------
@@ -212,33 +148,16 @@ def compute_targeted_nullspace(
     warn_cond_threshold : float
         Log a warning when cond(S_D) exceeds this value.
 
-    Redundant targets are dropped rather than failing the whole construction. When the
-    target rows do not span a full-rank subspace of null(S), some targets are exact
-    linear combinations of others -- 22 measured fluxes on the T cell span only rank 15,
-    because the amino-acid exchanges are pinned to protein synthesis. Giving up there
-    costs every target its dedicated DOF, including the ones that were independent, so
-    instead a maximal independent subset is kept.
-
-    Which ones survive is decided by how many metabolites a reaction touches, most
-    first. A reaction that couples many metabolites constrains more of the network
-    downstream, so it is the more useful thing to hold a coordinate: on the T cell that
-    keeps PROTEIN_c (24 metabolites) and drops the seven single-metabolite amino-acid
-    exchanges that are collinear with it. Ties break on the caller's order, so the
-    selection is deterministic.
-
     Returns
     -------
     Z : np.ndarray, shape (n, n-r), or None if no basis could be built at all
-    status : dict with keys
-        separable       bool   — True when a targeted basis was built, possibly on a
-                                 subset; False only when none could be
-        fallback_reason str    — set when separable=False
-        targets_kept    list   — targets that received their own DOF
-        targets_dropped list   — redundant targets, each an exact combination of the kept
-        cond_SD         float  — condition number of the dependent block (0 when failed)
-        target_indices  list   — column indices of the KEPT target reactions in S
-        dep_cols        list   — column indices chosen as the dependent block
-        free_cols       list   — column indices of free DOFs (targets first)
+    status : dict
+        separable       — True if a targeted basis was built (possibly on a subset)
+        fallback_reason — set when separable is False
+        targets_kept    — targets that received their own DOF
+        targets_dropped — redundant targets, each an exact combination of the kept
+        cond_SD         — condition number of the dependent block (0 if failed)
+        target_indices, dep_cols, free_cols — column indices into S
     """
     m, n = S.shape
 
@@ -373,14 +292,10 @@ def compute_ica_nullspace(
 ) -> tuple[np.ndarray, dict]:
     """Build a null-space basis informed by ICA on steady-state flux samples.
 
-    The leading k columns are statistically independent flux modes found by a single
-    FastICA run on the variance-active null-space subspace; the remaining d-k columns
-    complete the basis. The result always satisfies S @ Z = 0 and rank(Z) = d.
-
-    The effective sampling rank (n_active) is estimated from the sample covariance
-    eigenspectrum using a machine-epsilon threshold — no user tuning required.
-    FastICA's internal PCA whitening then operates on the n_active-dimensional
-    well-conditioned subspace.
+    The leading k columns are statistically independent flux modes from a single
+    FastICA run on the variance-active null-space subspace (effective rank estimated
+    from the sample covariance eigenspectrum via a machine-epsilon threshold); the
+    remaining d-k columns complete the basis. Always satisfies S @ Z = 0, rank(Z) = d.
 
     Parameters
     ----------
@@ -394,13 +309,11 @@ def compute_ica_nullspace(
     Returns
     -------
     Z : np.ndarray, shape (n, d)
-        Null-space basis. Leading k columns are ICA modes; remaining d-k complete
-        the basis. Columns are orthonormal (Gram ≈ I).
-    status : dict with keys
-        n_ica_components  int   — number of ICA modes (k)
-        n_complement      int   — number of complement columns (d - k)
-        n_active          int   — effective sampling rank fed to ICA
-        fallback          bool  — True if FastICA failed (Varimax used instead)
+        Null-space basis; leading k columns are ICA modes, remaining d-k complete
+        the basis. Columns orthonormal (Gram ≈ I).
+    status : dict
+        n_ica_components, n_complement, n_active (effective sampling rank), and
+        fallback (True if FastICA failed and Varimax was used instead).
     """
     from sklearn.decomposition import FastICA  # local import — optional dependency
 
@@ -491,30 +404,22 @@ def detect_parallel_reaction_groups(
 ) -> list[list[str]]:
     """Find groups of reactions with stoichiometrically equivalent carbon backbones.
 
-    Two reactions are considered parallel if their stoichiometric columns are nearly
-    proportional (cosine similarity ≥ cos_threshold) after zeroing out cofactor rows.
-    Within each group the reactions carry the same carbon flux pattern and cannot be
-    individually resolved from ¹³C labeling data — only the sum direction (net flux)
-    is observable.
+    Two reactions are parallel if their stoichiometric columns are nearly proportional
+    (cosine similarity >= cos_threshold) after zeroing out cofactor rows; such
+    reactions carry the same carbon flux pattern and cannot be individually resolved
+    from ¹³C labeling data — only their sum (net flux) is observable.
 
     Parameters
     ----------
-    S : np.ndarray, shape (m, n)
-        Stoichiometric matrix (metabolites × reactions).
-    reaction_names : list[str], length n
-        Ordered reaction identifiers matching S columns.
     cofactor_metabolites : list[str] | None
-        Metabolite IDs (row labels of S) to mask before computing similarities.
-        When None, all rows are used and the threshold will primarily catch
-        reactions identical up to stoichiometric coefficient scaling.
-    cos_threshold : float
-        Minimum absolute cosine similarity to declare reactions parallel.
+        Metabolite IDs (row labels of S) to mask before computing similarities;
+        when None, all rows are used.
 
     Returns
     -------
     groups : list[list[str]]
-        Each inner list contains ≥ 2 reaction names that are stoichiometrically
-        parallel.  Reactions with no parallel partner are omitted.
+        Each inner list has >= 2 stoichiometrically parallel reaction names;
+        reactions with no partner are omitted.
     """
     n = S.shape[1]
     S_masked = S.copy().astype(float)
@@ -573,15 +478,15 @@ def compute_targeted_ica_nullspace(
     *,
     seed: int = 42,
 ) -> tuple[np.ndarray, dict]:
-    """Build a null-space basis combining identity DOFs for measured reactions with ICA free modes.
+    """Build a null-space basis combining identity DOFs for measured reactions with
+    ICA free modes: the first k columns give each target reaction its own DOF
+    (identity block), and the remaining d-k columns are ICA-ordered statistically
+    independent directions within the free subspace, sorted by descending
+    variance-based observability score (ICA modes before the SVD complement).
 
-    The first k columns give each target reaction its own independent DOF (identity block).
-    The remaining d-k columns are ICA-ordered statistically independent directions within
-    the free subspace, sorted by descending variance-based observability score so that
-    directions well-sampled by the flux prior come before the SVD complement.
-
-    Falls back to `compute_ica_nullspace` if target reactions are stoichiometrically
-    coupled (not separable).  Falls back to the Varimax targeted basis if FastICA fails.
+    Raises RuntimeError if the target reactions are not separable (stoichiometrically
+    coupled) — see :func:`compute_targeted_nullspace`. Falls back to the Varimax
+    targeted basis (unrotated free columns) if FastICA itself fails.
 
     Parameters
     ----------
@@ -599,18 +504,12 @@ def compute_targeted_ica_nullspace(
     Returns
     -------
     Z : np.ndarray, shape (n, d)
-        Null-space basis.  First k columns have identity block on target rows.
+        Null-space basis. First k columns have identity block on target rows.
         Columns k: are sorted by descending variance-obs score (ICA modes first,
         SVD complement last).
-    status : dict with keys
-        separable          bool      — False means fell back to ica_informed
-        cond_SD            float     — condition number of dependent block (0 if fallback)
-        target_indices     list      — column indices of target reactions in S
-        n_ica_free         int       — number of ICA modes in the free subspace
-        n_complement_free  int       — number of SVD complement columns
-        n_active_free      int       — effective sampling rank of the free subspace
-        fallback           bool      — True if FastICA failed (Varimax free cols kept)
-        obs_scores_free    np.ndarray | None  — variance-based obs scores for free cols
+    status : dict
+        separable, cond_SD, target_indices, n_ica_free, n_complement_free,
+        n_active_free, and fallback (True if FastICA failed, Varimax free cols kept).
     """
     from sklearn.decomposition import FastICA
 

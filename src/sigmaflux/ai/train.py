@@ -15,13 +15,10 @@ from tqdm import tqdm
 
 
 def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
-    """
-    Merge tokens that differ only by compartment suffix (_c, _m, …) by mixing
-    their labeling fractions with per-sample Dirichlet weights.
-
-    For all compartment variants: a ~ U(0,1) mixture for two compartments;
-    Dirichlet(1,…,1) for more. Returns a DataFrame with the same columns but fewer rows.
-    """
+    """Merge tokens differing only by compartment suffix (_c, _m, …), mixing their
+    labeling fractions with per-sample Dirichlet weights (U(0,1) for two
+    compartments, Dirichlet(1,…,1) for more). Returns a DataFrame with the same
+    columns but fewer rows."""
     rng = np.random.default_rng(seed)
 
     tracers     = labeling_df.index.get_level_values('Tracer')
@@ -71,16 +68,9 @@ def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.Da
 
 
 class FluxNorm:
-    """
-    Per-reaction standardization of raw flux scalars.
-
-    Computed once from the complete flux data (all reactions × all samples)
-    and applied to measured_fluxes before they enter FluxDecoder as flux tokens.
-
-    Usage:
-        norm = FluxNorm(flux_df.values)           # (n_reactions, n_samples)
-        v_norm = norm(flux_val, flux_idx)          # (B, n_idx) → standardized
-    """
+    """Per-reaction standardization of raw flux scalars, computed once from the
+    complete flux data and applied to measured_fluxes before they enter
+    FluxDecoder as flux tokens."""
 
     def __init__(self, flux_data):
         data = torch.tensor(np.asarray(flux_data), dtype=torch.float32)  # (n_reactions, n_samples)
@@ -88,13 +78,7 @@ class FluxNorm:
         self.std  = data.std(dim=1).clamp_min(1e-6)
 
     def __call__(self, flux_val, flux_idx):
-        """
-        Args:
-            flux_val:  (B, n_idx) tensor of raw flux values
-            flux_idx:  (n_idx,) int tensor/list of reaction indices
-        Returns:
-            (B, n_idx) standardized values
-        """
+        """Standardize flux_val (B, n_idx) using the per-reaction stats at flux_idx."""
         device = flux_val.device
         mean = self.mean[flux_idx].to(device)
         std  = self.std[flux_idx].to(device)
@@ -106,21 +90,10 @@ class FluxNorm:
 
 
 class BasisSpaceLoss:
-    """
-    Loss wrapper that operates in null-space basis (y) space.
-
-    Projects both flux predictions and targets through Z_full before computing
-    the loss, compressing the 388-dim flux space down to 38-dim basis space.
-    This avoids the gradient amplification caused by Z_full.T having rows with
-    uneven norms (some reactions load heavily across many basis vectors).
-
-    Drop-in replacement for any flux loss function — same (predictions, targets)
-    call signature, no changes to the training loop required.
-
-    Args:
-        base_loss_fn: any callable (predictions, targets) -> scalar
-        Z_full:       (n_fluxes, n_free) null-space basis matrix
-    """
+    """Loss wrapper that projects flux predictions and targets through Z_full into
+    null-space basis coordinates before computing the loss, avoiding the gradient
+    amplification caused by Z_full.T's uneven row norms. Drop-in replacement —
+    same (predictions, targets) call signature as any flux loss function."""
 
     def __init__(self, base_loss_fn, Z_full):
         self.base_loss_fn = base_loss_fn
@@ -160,19 +133,9 @@ def r2_score(predictions, targets):
 
 
 def per_reaction_r2(predictions, targets, eps=1e-9):
-    """Per-column R², NaN where the target column is constant.
-
-    The numpy counterpart to :func:`r2_score`, with a deliberately different
-    contract: ``r2_score`` drops constant columns, so its output no longer lines
-    up with ``flux_names``. This keeps one entry per column and marks the
-    undefined ones NaN, so the result indexes alongside the reaction list.
-
-    Parameters
-    ----------
-    predictions, targets : array-like, shape (n_samples, n_reactions)
-    eps : float
-        Columns whose total sum of squares falls at or below this are NaN.
-    """
+    """Per-column R², NaN where the target column's total sum of squares is <= eps
+    (i.e. constant). Unlike :func:`r2_score` (which drops constant columns), this
+    keeps one entry per column so the result stays indexed alongside flux_names."""
     predictions = np.asarray(predictions)
     targets     = np.asarray(targets)
     ss_res = ((predictions - targets) ** 2).sum(0)
@@ -234,19 +197,9 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
 
 
 def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
-    """
-    Apply Gaussian noise to isotopologue labeling fractions while maintaining sum=1 constraint.
-    Fully vectorized using segmented operations (no loops).
-
-    Args:
-        fractions: (batch_size, num_tokens, 1) tensor of stored fractions (M+1..M+n)
-        compound_ids: (num_tokens,) or (batch_size, num_tokens) tensor mapping tokens to metabolites
-        tracer_ids: (num_tokens,) or (batch_size, num_tokens) tensor mapping tokens to tracers
-        noise_std: scalar noise standard deviation
-
-    Returns:
-        noisy_fractions: (batch_size, num_tokens, 1) tensor with added noise, renormalized
-    """
+    """Apply Gaussian noise to isotopologue labeling fractions while preserving the
+    sum=1 constraint (renormalizes after noise). Fully vectorized via segmented
+    operations."""
     if noise_std <= 0:
         return fractions
 
@@ -446,27 +399,15 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 labeling_token_dropout=0.0, token_information=None,
                 loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0,
                 early_stopping_patience=None):
-    """
-    Train a FluxDecoder model.
+    """Train a FluxDecoder model.
 
     Args:
-        model:              FluxDecoder model
-        train_loader:       DataLoader for training data
-        val_loader:         Optional DataLoader for validation data
-        num_epochs:         Number of training epochs
-        learning_rate:      Initial learning rate (Adam)
-        device:             'cuda' or 'cpu'
-        gradient_clip:      Max gradient norm (0 = disabled)
-        use_scheduler:      ReduceLROnPlateau after warmup
-        verbose:            Print progress
-        warmup_epochs:      Linear LR warmup epochs (0 = disabled)
         flux_token_dropout:      Per-batch probability each flux token is excluded
         labeling_token_dropout:  Per-batch probability each labeling token's fraction is zeroed
         token_information:       (n_tokens,) tensor of scores (used for reporting only)
-        labeling_noise_std: Gaussian noise std for isotopologue fractions (0 = disabled)
-        loss_function:      callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
+        loss_function:           callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
         early_stopping_patience: Stop after this many consecutive epochs without
-                            val_loss improvement (None = disabled; requires val_loader)
+                                  val_loss improvement (None = disabled; requires val_loader)
 
     Returns:
         log: dict with 'train_loss', 'val_loss', 'grad_norm' lists

@@ -10,14 +10,8 @@ import torch.nn.functional as F
 
 
 class ScalarFeatureEncoder(nn.Module):
-	"""
-	Encodes a scalar value as a d_model-dimensional embedding via learned projection.
-
-	Maps: z = W · φ(x)
-	  where φ(x) = [x, log(|x|+ε), x², sign(x)] (4-dim featurization)
-	        W ∈ ℝ^(d_model × 4) learned projection
-    
-	"""
+	"""Encodes a scalar as a d_model embedding: z = W · φ(x), where
+	φ(x) = [x, log(|x|+1), x², sign(x)] and W is a learned projection."""
 
 	def __init__(self, d_model):
 		super().__init__()
@@ -27,15 +21,7 @@ class ScalarFeatureEncoder(nn.Module):
 		nn.init.xavier_uniform_(self.projection.weight)
 
 	def _featurize(self, x):
-		"""
-		Featurize scalar values with non-linear transformations.
-
-		Args:
-		  x: (...) tensor of scalar values
-
-		Returns:
-		  features: (..., 4) with [x, log(|x|+1), x², sign(x)]
-		"""
+		"""Featurize x into [x, log(|x|+1), x², sign(x)], shape (..., 4)."""
 		log_feat = torch.log(torch.abs(x) + 1)
 		abs_feat = torch.abs(x)
 		sign_feat = torch.sign(x)
@@ -43,13 +29,7 @@ class ScalarFeatureEncoder(nn.Module):
 		return torch.stack([x, log_feat, abs_feat, sign_feat], dim=-1)
 
 	def forward(self, x):
-		"""
-		Args:
-		  x: (B, N) or (B, N, 1) scalar values
-
-		Returns:
-		  (B, N, d_model) projected embedding
-		"""
+		"""Accepts x as (B, N) or (B, N, 1); returns (B, N, d_model)."""
 		if x.dim() == 3 and x.shape[-1] == 1:
 			x = x.squeeze(-1)  # (B, N, 1) → (B, N)
 
@@ -88,14 +68,10 @@ class FluxDecoderConfig:
 
 
 class CrossAttention(nn.Module):
-    """
-    Cross-attention with pre-norm applied to Q and K/V separately.
+    """Cross-attention with pre-norm applied to Q and K/V separately.
 
-    forward(q, kv, key_padding_mask=None, attn_bias=None)
-      q:               (B, R, d)
-      kv:              (B, N, d)
-      key_padding_mask:(B, N) bool — True = padded/hidden
-      attn_bias:       (B*n_heads, R, N) float — additive bias
+    forward(q, kv): q is (B, R, d), kv is (B, N, d); key_padding_mask is
+    (B, N) bool (True = hidden); attn_bias is (B*n_heads, R, N) additive.
     """
 
     def __init__(self, d_model, n_heads, dropout):
@@ -123,26 +99,12 @@ class CrossAttention(nn.Module):
 
 
 class FluxDecoder(nn.Module):
-    """
-    Perceiver-IO–style cross-attention decoder for metabolic flux prediction.
+    """Perceiver-IO–style cross-attention decoder for metabolic flux prediction.
 
-    Architecture:
-      1. Build a unified token sequence from two token types, both sharing the same
-         d_in feature vector and single input_proj + input_norm:
-
-           Labeling token: [comp_emb | label_emb | tracer_emb | type_emb[0] | fraction]
-           Flux token:     [reaction_emb | zeros(pad) | type_emb[1] | norm_flux]
-
-         type_emb is a frozen 2-vocabulary radial embedding (vocab_size=2, H=h_type).
-         Reaction embeddings are zero-padded to d_entity_lab = d_comp+d_label+d_tracer.
-
-      2. TransformerEncoder — self-attention over the combined token sequence
-      3. CrossAttention — R queries attend over encoded tokens
-      4. Linear(d_model → 1) → basis coefficients x_l and reversibilities
-      5. Flux reconstruction: fluxes = x_l @ Z_full.T  (satisfies Sv=0)
-
-    d_in = d_comp + d_label + d_tracer + d_type + 1
-    R    = n_free + n_rev
+    Builds a unified token sequence from labeling and flux tokens (sharing one
+    input_proj/input_norm), self-attends via a TransformerEncoder, cross-attends
+    R = n_free + n_rev flux/reversibility queries over it, and reconstructs
+    fluxes as ``x_l @ Z_full.T`` (satisfying S v = 0).
     """
 
     def __init__(
@@ -297,12 +259,9 @@ class FluxDecoder(nn.Module):
         attn_bias=None,           # (B*n_heads, n_queries, N) float additive bias
         return_attn=False,
     ):
-        """
-        Returns:
-            fluxes:          (B, n_fluxes) satisfying Sv=0
-            reversibilities: (B, n_rev) non-negative
-            attn_weights:    (B, n_queries, N_total) — only when return_attn=True
-        """
+        """Returns (fluxes, reversibilities), plus attn_weights (B, n_queries, N_total)
+        when return_attn=True. fluxes is (B, n_fluxes) satisfying Sv=0;
+        reversibilities is (B, n_rev) non-negative."""
         B      = compound_ids.shape[0]
         device = compound_ids.device
 

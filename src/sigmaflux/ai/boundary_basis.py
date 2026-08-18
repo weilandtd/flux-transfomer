@@ -258,10 +258,9 @@ def select_throughput_coordinates(
     tol: float = 1e-8,
 ) -> tuple[list[np.ndarray], list[dict]]:
     """Choose p independent exchange-coordinate targets by rank-revealing QR on A = E N.
-
-    Secretion externals (exchange reaction where running forward removes metabolite
-    from the system, i.e. column sum < 0) are ordered before uptake externals so
-    that product-conversion modes become the primary coordinates.
+    Secretion externals (column sum < 0, i.e. running forward removes metabolite from
+    the system) are ordered before uptake externals so product-conversion modes become
+    the primary coordinates.
 
     Returns
     -------
@@ -567,12 +566,9 @@ def _unaugment_block(
     split_map: dict,
     orig_to_aug: dict,
 ) -> np.ndarray:
-    """Map a block of augmented columns back to the original n_orig reactions.
-
-    For each split reversible external j_orig:
-        Z[j_orig, :] = Z_aug[j_fwd, :] - Z_aug[j_rev, :]
-    Split-external pure-cycle modes become all-zero columns (caller drops them).
-    """
+    """Map a block of augmented columns back to the original n_orig reactions: for
+    each split reversible external j_orig, Z[j_orig] = Z_aug[j_fwd] - Z_aug[j_rev].
+    Split-external pure-cycle modes become all-zero columns (caller drops them)."""
     k = Z_aug.shape[1]
     Z = np.zeros((n_orig, k))
     for j in range(n_orig):

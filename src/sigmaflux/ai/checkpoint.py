@@ -79,12 +79,9 @@ def flux_decoder_config(model_config):
 
 
 def promote_norm_buffers(null_space_data, state_dict):
-    """Fill in normalization stats that older checkpoints left out of ``null_space_data``.
-
-    Those checkpoints omit ``y_mean``/``y_std``/``rev_log_mean``/``rev_log_std``
-    even though the trained weights carry them. ``load_state_dict`` cannot promote
-    a ``None`` buffer to a tensor, so the constructor has to be seeded with the
-    right values up front. Returns a new dict; the input is not mutated.
+    """Fill in ``y_mean``/``y_std``/``rev_log_mean``/``rev_log_std`` from *state_dict* when
+    ``null_space_data`` omits them, since ``load_state_dict`` cannot promote a ``None`` buffer
+    to a tensor. Returns a new dict; the input is not mutated.
     """
     nsd = dict(null_space_data)
     if nsd.get("y_mean") is None and state_dict.get("y_norm_mean") is not None:
@@ -118,10 +115,8 @@ def _as_checkpoint(checkpoint, map_location="cpu"):
 
 @dataclass
 class EvalContext:
-    """Everything needed to score a trained checkpoint, loaded once.
-
-    Built by :func:`load_eval_context`. An ensemble reuses a single instance
-    across all its members — see :func:`build_flux_decoder`.
+    """Everything needed to score a trained checkpoint, loaded once. Built by
+    :func:`load_eval_context`; an ensemble reuses one instance across all its members.
     """
 
     ckpt: dict
@@ -156,10 +151,8 @@ class EvalContext:
         )
 
     def full_batch(self, device=None):
-        """The whole dataset as one batch: ``((cids, lids, tids, fracs), targets)``.
-
-        Moved to *device* if given. The CPU batch is materialised once and cached,
-        so repeated calls (e.g. one per ensemble member) do not re-tokenize.
+        """The whole dataset as one batch: ``((cids, lids, tids, fracs), targets)``, moved to
+        *device* if given. The CPU batch is cached, so repeated calls do not re-tokenize.
         """
         if "cpu" not in self._batch_cache:
             self._batch_cache["cpu"] = next(iter(self.loader()))
@@ -185,38 +178,27 @@ def load_eval_context(
     build_dataset=True,
     map_location="cpu",
 ):
-    """Load a checkpoint together with the data view it was scored on.
+    """Load a checkpoint together with the data view it was scored on; returns an :class:`EvalContext`.
 
     Parameters
     ----------
     checkpoint : str or dict
         Path to a ``.pt`` file, or an already-loaded checkpoint dict.
     samples : {VAL, ALL} or array-like
-        Which sample columns to build the dataset from. :data:`VAL` (default) uses
-        the checkpoint's own ``val_indices`` — the split training reported R² on.
-        :data:`ALL` uses every column. Pass an explicit index array to sub-select;
-        callers keep their own subsetting logic (caps, random draws) rather than
-        this function growing knobs for each.
+        Which sample columns to build the dataset from: :data:`VAL` (default) uses
+        the checkpoint's own ``val_indices``, :data:`ALL` uses every column, or
+        pass an explicit index array.
     max_samples : int, optional
-        Forwarded to :func:`~sigmaflux.ai.data.load_data` to limit how much of the
-        HDF5 is read. Note this caps the *load*, so explicit ``samples`` indices
-        must fall inside it.
+        Forwarded to :func:`~sigmaflux.ai.data.load_data`; caps the HDF5 *load*, so
+        explicit ``samples`` indices must fall inside it.
     data : tuple, optional
-        ``(labeling_df, flux_df, reversibility_df)`` to use instead of reading the
-        HDF5 — for callers that already loaded it, or to re-scope ``samples``
-        without a second read.
+        ``(labeling_df, flux_df, reversibility_df)`` to use instead of reading the HDF5.
     data_dir, model_json : str, optional
         Override the paths recorded in the checkpoint.
     measured_fluxes : list, optional
         Defaults to the checkpoint's ``measured_fluxes`` (the bypass tokens).
-    normalize, normalize_mids : bool
-        Forwarded to :func:`~sigmaflux.ai.data.prepare_id_dataset`.
     build_dataset : bool
         Set ``False`` to skip dataset construction when only the model is wanted.
-
-    Returns
-    -------
-    EvalContext
     """
     ckpt = _as_checkpoint(checkpoint, map_location=map_location)
     cfg_dict = ckpt["model_config"]
@@ -306,15 +288,9 @@ def load_eval_context(
 
 
 def build_flux_decoder(ctx, checkpoint=None, *, device=None, strict=True):
-    """Reconstruct one :class:`FluxDecoder` against *ctx*'s shared data and basis.
-
-    Everything shared — architecture config, vocabularies, tracer table,
-    null-space basis — comes from *ctx*. The weights and the per-member fields
-    (``h_reaction``, ``h_type``, ``flux_norm_stats``) come from *checkpoint*,
-    which may be a path, a loaded dict, or ``None`` to mean ``ctx.ckpt``. That
-    split is what lets an ensemble load N sets of weights against one context.
-
-    The returned model is in ``eval()`` mode and moved to *device*.
+    """Reconstruct one :class:`FluxDecoder`, in ``eval()`` mode on *device*, against *ctx*'s
+    shared config/vocabularies/basis and *checkpoint*'s weights (path, dict, or ``None`` for
+    ``ctx.ckpt``) — letting an ensemble load N weight sets against one shared context.
     """
     ckpt = ctx.ckpt if checkpoint is None else _as_checkpoint(checkpoint)
     state_dict = ckpt["model_state_dict"]

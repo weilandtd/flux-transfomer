@@ -11,17 +11,9 @@ from collections import defaultdict
 
 
 def analyze_labeling_coverage(labeling_df, flux_names, compound_to_reaction):
-    """
-    For each reaction, count how many distinct labeling patterns appear in the training data.
-
-    Args:
-        labeling_df: (n_meas, n_samples) labeling matrix, index = (Tracer, Metabolite, Isotopomer)
-        flux_names: list of reaction names (str)
-        compound_to_reaction: dict mapping metabolite name → list of reactions it participates in
-
-    Returns:
-        dict: reaction_name → count of distinct labeling patterns observed for that reaction's metabolites
-    """
+    """For each reaction, count distinct labeling patterns for its metabolites.
+    Placeholder: currently returns the same total training-metabolite count for
+    every reaction (TODO: extract per-reaction metabolites)."""
     labeling_patterns = []
 
     # Get metabolites involved in training data
@@ -41,15 +33,12 @@ def analyze_labeling_coverage(labeling_df, flux_names, compound_to_reaction):
 
 
 def extract_attention_weights(model, val_loader, device, return_per_query=True):
-    """
-    Run validation with return_attn=True and collect attention weights.
+    """Run validation with return_attn=True and collect attention weights.
 
     Returns:
-        attn_dict: {
-            'all_weights': (n_total_queries, n_total_tokens) aggregated attention,
-            'per_query': [(query_idx, (n_tokens,)) attention for each reaction query],
-            'query_info': list of (reaction_name, mean_flux_value)
-        }
+        dict with 'attn_weights' ((n_val_samples, n_queries, N_total) array, batches
+        concatenated) and 'query_metadata' (list of one {'flux_targets': array} dict
+        per sample).
     """
     model.eval()
     all_attn_weights = []
@@ -92,18 +81,9 @@ def extract_attention_weights(model, val_loader, device, return_per_query=True):
 
 
 def analyze_attention_patterns(attn_weights, flux_names, flux_r2, n_labeling_tokens):
-    """
-    Analyze which tokens each reaction query attends to.
-
-    Args:
-        attn_weights: (B, n_queries, N_total)
-        flux_names: list of n_queries reaction names
-        flux_r2: (n_reactions,) R² scores
-        n_labeling_tokens: int, number of labeling tokens in the sequence
-
-    Returns:
-        DataFrame with per-reaction attention statistics
-    """
+    """Compute per-reaction attention statistics (attention to labeling vs. flux
+    tokens, entropy, dead zones) from batch-averaged attention weights. Returns a
+    DataFrame with one row per reaction query."""
     # Average attention across batch dimension
     mean_attn = attn_weights.mean(axis=0)  # (n_queries, N_total)
 

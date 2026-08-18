@@ -40,16 +40,9 @@ from .model import FluxDecoder
 
 @dataclass
 class ModelSpec:
-    """Everything a predictor needs that is *not* the trained weights.
-
-    This is the config-free, COBRA-free, HDF5-free closure of
-    :class:`SigmaFlux`'s constructor: given one of these plus a state dict you
-    can predict without a YAML, a run directory or a training checkpoint. An
-    ensemble shares exactly one spec across all of its members.
-
-    Treat instances as immutable — ``_cache`` is an internal memo for the
-    embedding tables and is excluded from equality.
-    """
+    """Everything a predictor needs except the trained weights — config-free,
+    COBRA-free, HDF5-free. Treat instances as immutable; ``_cache`` is an
+    internal memo for the embedding tables, excluded from equality."""
 
     model_config:         dict
     vocabs:               dict          # compound/label/tracer vocab + h_* + token_dim
@@ -81,11 +74,8 @@ class ModelSpec:
     @classmethod
     def from_checkpoint(cls, ckpt, *, config=None, model_json=None, data_dir=None):
         """Build a spec from a training checkpoint, optionally with its config YAML.
-
-        This is the only place that reads a checkpoint *and* a YAML. ``config``
-        supplies the human-readable tracer names and the inference batch size;
-        without it, tracer names fall back to the internal ids.
-        """
+        ``config`` supplies human-readable tracer names and the batch size;
+        without it, tracer names fall back to the internal ids."""
         cfg = {}
         if config is not None:
             with open(config) as fh:
@@ -174,12 +164,9 @@ class ModelSpec:
         return self._cache['vocabs']
 
     def tracer_combo_emb_table(self):
-        """Embedding table over ``tracer_combo_vocab`` (memoized).
-
-        Combined tracers are sums of base embeddings, not a radial table, so this
-        mirrors what :func:`~sigmaflux.ai.data.prepare_dataset` builds at training
-        time. Falls back to the base table when no combo vocab was recorded.
-        """
+        """Embedding table over ``tracer_combo_vocab`` (memoized); combined tracers
+        are summed base embeddings, mirroring :func:`~sigmaflux.ai.data.prepare_dataset`
+        at training time. Falls back to the base table when no combo vocab was recorded."""
         if 'tracer_combo' not in self._cache:
             base = self.emb_tables()['tracer_emb_table']
             combo = (build_tracer_combo_emb_table(
@@ -194,13 +181,10 @@ class ModelSpec:
         return {**internal, **self.tracer_display_names}
 
     def build_decoder(self, state_dict, *, device=None, strict=True):
-        """Rebuild a :class:`FluxDecoder` and load *state_dict* into it.
-
-        The frozen embedding tables are regenerated from the vocabularies and
-        harmonics rather than read from the weights — the same regeneration
-        :func:`sigmaflux.ai.checkpoint.build_flux_decoder` performs, and the
-        reason an exported model can omit them entirely.
-        """
+        """Rebuild a :class:`FluxDecoder` and load *state_dict* into it. Frozen
+        embedding tables are regenerated from the vocabularies and harmonics
+        rather than read from the weights, which is why an exported model can
+        omit them entirely."""
         tables = self.emb_tables()
         n_reactions = len(self.flux_names) or self.model_config.get('n_fluxes')
         model = FluxDecoder(
@@ -221,24 +205,9 @@ class ModelSpec:
 
 
 class SigmaFlux:
-    """
-    Inference wrapper for a trained FluxDecoder model.
+    """Inference wrapper for a trained FluxDecoder model.
 
-    Usage
-    -----
-    sf = SigmaFlux('paper/configs/i_orientalis.yaml',
-                   'I_orientalis_20260508/model/imisor_transformer.pt')
-
-    predictions = sf.predict(df_L, df_Vm)
-
-    Parameters
-    ----------
-    config : str
-        Path to the training config YAML (e.g. i_orientalis.yaml).
-    checkpoint : str
-        Path to the trained .pt model file.
-    device : str or None
-        'cuda', 'cpu', or None (auto-detect).
+    Usage: ``SigmaFlux(config_yaml, checkpoint_pt).predict(df_L, df_Vm)``
     """
 
     def __init__(self, config, checkpoint, device=None, data_dir=None):
@@ -251,11 +220,9 @@ class SigmaFlux:
 
     @classmethod
     def from_spec(cls, spec, state_dict, *, device=None, strict=True):
-        """Build a predictor from a :class:`ModelSpec` and one member's weights.
-
-        No config YAML, run directory or COBRA JSON involved — this is the path
-        an exported model takes.
-        """
+        """Build a predictor from a :class:`ModelSpec` and one member's weights —
+        no config YAML, run directory, or COBRA JSON needed; this is the path an
+        exported model takes."""
         self = cls.__new__(cls)
         self.cfg = None
         self.ckpt = None
@@ -297,36 +264,23 @@ class SigmaFlux:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def predict(self, df_L, df_Vm=None):
-        """
-        Predict fluxes from labeling data and measured exchange fluxes.
+        """Predict fluxes from labeling data and measured exchange fluxes.
 
         Parameters
         ----------
         df_L : pd.DataFrame
-            Labeling measurements.  Required columns:
-              'Tracer Name', 'Metabolite ID', 'Isotopomer', 'Fraction'
-
-            One row = one isotopomer measurement.
-            For multiple samples: add a 'Sample' column (integer 0, 1, ...).
-            If absent, all rows are treated as a single sample (Sample=0).
-
-            Metabolite IDs must match the COBRA model exactly (with compartment
-            suffix, e.g. 'pyr_c', 'akg_c' — run sf.expected_metabolites() to
-            see the full list).
-
+            Columns 'Tracer Name', 'Metabolite ID', 'Isotopomer', 'Fraction' (one row
+            per isotopomer measurement); optional 'Sample' column for multiple samples
+            (default: all rows treated as Sample=0). Metabolite IDs must match the
+            COBRA model exactly, with compartment suffix — see expected_metabolites().
         df_Vm : pd.DataFrame or None
-            Measured exchange fluxes (optional, but use when available).
-            Required columns: 'Flux Name', 'Value'
-            For multiple samples: add a 'Sample' column matching df_L.
-
-            Flux names must match measured_fluxes in the config YAML.
-            Run sf.expected_measured_fluxes() to see the expected list.
+            Measured exchange fluxes, columns 'Flux Name', 'Value' (optional 'Sample'
+            matching df_L); names must match expected_measured_fluxes().
 
         Returns
         -------
-        pd.DataFrame
-            Columns: 'Flux Name', 'Value'
-            (plus 'Sample' if multiple samples were provided).
+        pd.DataFrame with columns 'Flux Name', 'Value' (plus 'Sample' if multiple
+        samples were provided).
         """
         # Handle single-sample case
         if 'Sample' not in df_L.columns:
@@ -522,20 +476,10 @@ class SigmaFlux:
 class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
-    Loads every ``model_*.pt`` in ``ensemble_dir`` as a SigmaFlux member and
-    exposes the same ``predict`` interface, returning the per-reaction **median**
-    over members (schema-identical to ``SigmaFlux.predict``). This is the point
-    prediction used by both the benchmark and the experimental-inference pipeline,
-    so the two report the same quantity.
-
-    The median rather than the mean: a member that lands on a wild value for an
-    unidentifiable flux shifts a mean but not a median, and the members disagree
-    most exactly on those reactions. Per-reaction spread is deliberately not
-    returned here — it is produced by the dedicated ensemble scripts.
-
-    The median is then projected back onto the null-space basis, because it is a
-    non-linear combination and so does not inherit the ``S v = 0`` that every
-    member satisfies by construction. See :meth:`_project_flux_blocks`.
+    Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
+    interface, returning the per-reaction median over members, re-projected onto
+    the null-space basis since the median (unlike any single member) does not
+    satisfy ``S v = 0`` — see :meth:`_project_flux_blocks`.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -594,11 +538,8 @@ class EnsembleSigmaFlux:
 
     def _null_space_projector(self):
         """``Z (Z^T Z)^-1 Z^T`` for the members' shared basis, or None if absent.
-
-        Z is orthonormal for the Varimax basis, so the Gram is the identity and the
-        projector collapses to ``Z Z^T``; a column-normalised ``targeted_ica`` basis
-        is not orthogonal, hence the Gram solve rather than a bare transpose.
-        """
+        Varimax bases are orthonormal (Gram = I, so this collapses to ``Z Z^T``),
+        but a column-normalised ``targeted_ica`` basis is not, hence the Gram solve."""
         if self._projector is not None:
             return self._projector
         inner = getattr(self.members[0], '_model', None)
@@ -614,20 +555,10 @@ class EnsembleSigmaFlux:
         return self._projector
 
     def _project_flux_blocks(self, values):
-        """Return ``values`` with every sample's flux block back in the null space.
-
-        Each member reconstructs fluxes as ``x_l @ Z_full.T``, so a member's
-        prediction satisfies ``S v = 0`` to float32. The per-reaction median does
-        not: a median is non-linear, so combining members leaves the null space and
-        the point prediction stops being a feasible flux distribution. Measured on
-        the T-cell ensemble, ``|S v|max`` was 4.6e+01 for the median against 4.2e-05
-        for any single member.
-
-        Re-projecting keeps the reason the median was chosen — a member that lands
-        on a wild value for an unidentifiable flux still does not drag the estimate
-        — and then returns the nearest point that actually satisfies the network.
-        Only the flux block moves; reversibilities are not null-space coordinates.
-        """
+        """Return ``values`` with every sample's flux block re-projected onto the null
+        space: each member's prediction satisfies ``S v = 0`` by construction, but a
+        per-reaction median across members is a non-linear combination and does not.
+        Only the flux block moves; reversibilities are not null-space coordinates."""
         P = self._null_space_projector()
         n_flux = len(self.flux_names or [])
         if P is None or not n_flux:
@@ -647,18 +578,11 @@ class EnsembleSigmaFlux:
 def load_predictor(config, checkpoint, data_dir=None, device=None):
     """Build a predictor, preferring an ensemble when one is available.
 
-    An ensemble directory is discovered, in priority order, as: ``checkpoint``
-    itself if it is a directory; ``<dir(checkpoint)>/ensemble``; or
-    ``<data_dir>/ensemble``. If such a directory holds ``model_*.pt`` an
-    :class:`EnsembleSigmaFlux` is returned (median over members); otherwise a
-    single-model :class:`SigmaFlux` loaded from ``checkpoint``.
-
-    Note that ``checkpoint`` is only a *hint*: whenever a sibling ``ensemble/``
-    directory exists it wins, so passing a single ``.pt`` path does not force
-    single-model inference.
-
-    A packaged ``.sfx`` model is detected by suffix and loaded directly; it is
-    self-contained, so ``config`` is unused (and may be ``None``) in that case.
+    Looks for an ensemble directory in priority order: ``checkpoint`` itself if
+    it's a directory, ``<dir(checkpoint)>/ensemble``, or ``<data_dir>/ensemble``;
+    if found and non-empty it wins even when ``checkpoint`` names a single ``.pt``
+    file. A ``.sfx`` path is detected by suffix and loaded directly (``config`` is
+    unused in that case).
     """
     from ._sfx import SFX_SUFFIX
     if checkpoint and str(checkpoint).endswith(SFX_SUFFIX) and os.path.isfile(checkpoint):

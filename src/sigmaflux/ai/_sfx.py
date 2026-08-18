@@ -98,12 +98,9 @@ def sha256_bytes(data):
 
 def check_schema(manifest, *, source="<bytes>"):
     """Validate the format marker and schema version, upgrading in place if needed.
-
-    Forward compatibility is by convention: readers ignore unknown keys and
-    tolerate missing optional ones, so adding an entry or a field does not need
-    a version bump. Bump only when an entry is renamed or removed, or a field
-    changes meaning — and register an upgrader so older files keep loading.
-    """
+    Bump the schema version only when an entry is renamed/removed or a field's
+    meaning changes — adding new keys does not require one, since readers ignore
+    unknown keys."""
     if manifest.get("format") != FORMAT:
         raise SfxFormatError(
             f"{source} is not a SigmaFlux model: expected format {FORMAT!r}, "
@@ -133,11 +130,8 @@ def check_schema(manifest, *, source="<bytes>"):
 
 
 def read_manifest(path):
-    """Return the manifest of *path*, reading nothing else.
-
-    Cheap by construction: the manifest is the first entry and is STORED, so this
-    inflates nothing and touches no weights.
-    """
+    """Return the manifest of *path*, reading nothing else — cheap since the
+    manifest is the first entry and is STORED, so nothing is inflated."""
     with zipfile.ZipFile(path) as zf:
         try:
             raw = zf.read(MANIFEST)
@@ -195,12 +189,9 @@ class SfxWriter:
 
 
 def _replace_manifest(path, payload):
-    """Rewrite the archive with the real manifest first and STORED.
-
-    ``zipfile`` cannot update an entry in place, so the archive is rebuilt once.
-    Everything except the manifest is copied compressed-as-is, so this costs a
-    copy but no recompression.
-    """
+    """Rewrite the archive with the real manifest first and STORED. ``zipfile``
+    cannot update an entry in place, so the whole archive is rebuilt once;
+    everything else is copied compressed-as-is (no recompression)."""
     import os
     import shutil
     import tempfile
@@ -282,11 +273,9 @@ class SfxReader:
         return np.load(io.BytesIO(self.read_bytes(name)), allow_pickle=False)
 
     def member_arrays(self, index):
-        """Every trained tensor of member *index*, as ``{name: ndarray}``.
-
-        One read plus ``frombuffer`` slices; the per-tensor layout is shared, so
-        it is described once in the manifest rather than per member.
-        """
+        """Every trained tensor of member *index*, as ``{name: ndarray}`` — one read
+        plus ``frombuffer`` slices, using the per-tensor layout shared across
+        members in the manifest."""
         blob = self.read_bytes(MEMBER_FMT.format(index))
         expected = self.manifest.get("member_nbytes")
         if expected is not None and len(blob) != expected:
