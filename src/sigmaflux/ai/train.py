@@ -18,7 +18,12 @@ def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.Da
     """Merge tokens differing only by compartment suffix (_c, _m, …), mixing their
     labeling fractions with per-sample Dirichlet weights (U(0,1) for two
     compartments, Dirichlet(1,…,1) for more). Returns a DataFrame with the same
-    columns but fewer rows."""
+    columns but fewer rows.
+
+    Args:
+        labeling_df: labeling fractions indexed by (Tracer, Metabolite, Isotopomer).
+        seed: RNG seed for the Dirichlet mixing weights.
+    """
     rng = np.random.default_rng(seed)
 
     tracers     = labeling_df.index.get_level_values('Tracer')
@@ -78,7 +83,12 @@ class FluxNorm:
         self.std  = data.std(dim=1).clamp_min(1e-6)
 
     def __call__(self, flux_val, flux_idx):
-        """Standardize flux_val (B, n_idx) using the per-reaction stats at flux_idx."""
+        """Standardize flux_val (B, n_idx) using the per-reaction stats at flux_idx.
+
+        Args:
+            flux_val: raw flux values to standardize.
+            flux_idx: reaction indices selecting rows of mean/std.
+        """
         device = flux_val.device
         mean = self.mean[flux_idx].to(device)
         std  = self.std[flux_idx].to(device)
@@ -96,12 +106,20 @@ class BasisSpaceLoss:
     same (predictions, targets) call signature as any flux loss function."""
 
     def __init__(self, base_loss_fn, Z_full):
+        """Args:
+            base_loss_fn: loss called on the projected (predictions, targets).
+            Z_full: null-space basis, shape (n_fluxes, n_free).
+        """
         self.base_loss_fn = base_loss_fn
         if not isinstance(Z_full, torch.Tensor):
             Z_full = torch.tensor(Z_full, dtype=torch.float32)
         self.Z_full = Z_full
 
     def __call__(self, flux_preds, targets_flux):
+        """Args:
+            flux_preds: predicted fluxes, shape (B, n_fluxes).
+            targets_flux: target fluxes, shape (B, n_fluxes).
+        """
         Z     = self.Z_full.to(device=flux_preds.device, dtype=flux_preds.dtype)
         y_hat  = flux_preds   @ Z      # (B, n_free)
         y_true = targets_flux @ Z      # (B, n_free)
@@ -109,7 +127,14 @@ class BasisSpaceLoss:
 
 
 def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10):
-    """MSE per reaction divided by its precomputed training variance (≈1 - R²)."""
+    """MSE per reaction divided by its precomputed training variance (≈1 - R²).
+
+    Args:
+        predictions: predicted values, shape (B, n_features).
+        targets: target values, shape (B, n_features).
+        precomputed_variance: per-feature training variance, shape (n_features,).
+        epsilon: added to the denominator to avoid division by zero.
+    """
     precomputed_variance = precomputed_variance.to(
         device=predictions.device, dtype=predictions.dtype
     )
@@ -118,6 +143,15 @@ def var_norm_mse_loss(predictions, targets, precomputed_variance, epsilon=1e-10)
 
 
 def r2_score(predictions, targets):
+    """Per-column R², dropping columns where targets are constant.
+
+    Args:
+        predictions: predicted values, shape (B, n_features).
+        targets: target values, shape (B, n_features).
+
+    Returns:
+        (r2, n_variable): per-column R² over the variable columns, and their count.
+    """
     predictions = predictions.detach().cpu()
     targets     = targets.detach().cpu()
     variable    = targets.std(dim=0) > 1e-8
@@ -135,7 +169,13 @@ def r2_score(predictions, targets):
 def per_reaction_r2(predictions, targets, eps=1e-9):
     """Per-column R², NaN where the target column's total sum of squares is <= eps
     (i.e. constant). Unlike :func:`r2_score` (which drops constant columns), this
-    keeps one entry per column so the result stays indexed alongside flux_names."""
+    keeps one entry per column so the result stays indexed alongside flux_names.
+
+    Args:
+        predictions: predicted values, shape (B, n_features).
+        targets: target values, shape (B, n_features).
+        eps: total-sum-of-squares threshold below which a column is constant.
+    """
     predictions = np.asarray(predictions)
     targets     = np.asarray(targets)
     ss_res = ((predictions - targets) ** 2).sum(0)
@@ -147,6 +187,16 @@ def per_reaction_r2(predictions, targets, eps=1e-9):
 
 
 def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=None):
+    """Run the model over val_loader and compute per-reaction R² for flux and
+    reversibility outputs.
+
+    Args:
+        model: trained FluxDecoder.
+        val_loader: validation batches.
+        device: torch device to run inference on.
+        flux_dim: number of flux outputs; splits targets into flux/reversibility.
+        flux_names: reaction names, used to label the per-reaction R² breakdown.
+    """
     model.eval()
     flux_preds, flux_tgts, rev_preds, rev_tgts = [], [], [], []
 
@@ -199,7 +249,14 @@ def evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_n
 def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
     """Apply Gaussian noise to isotopologue labeling fractions while preserving the
     sum=1 constraint (renormalizes after noise). Fully vectorized via segmented
-    operations."""
+    operations.
+
+    Args:
+        fractions: labeling fractions, shape (B, num_tokens, 1).
+        compound_ids: token compound ids, used to group tokens into isotopologue sets.
+        tracer_ids: token tracer ids, used to group tokens into isotopologue sets.
+        noise_std: Gaussian noise standard deviation; <=0 is a no-op.
+    """
     if noise_std <= 0:
         return fractions
 
@@ -282,7 +339,21 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
                  flux_token_dropout=0.0, labeling_token_dropout=0.0,
                  flux_loss_fn=None, rev_loss_fn=None,
                  measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
-    """Run one training epoch. Returns (avg_loss, avg_grad_norm)."""
+    """Run one training epoch. Returns (avg_loss, avg_grad_norm).
+
+    Args:
+        model: FluxDecoder being trained.
+        loader: training batches.
+        optimizer: optimizer stepped after each batch.
+        device: torch device to train on.
+        gradient_clip: max gradient norm; <=0 disables clipping (norm still reported).
+        flux_token_dropout: per-batch probability each flux token is excluded.
+        labeling_token_dropout: per-batch probability each labeling token's fraction is zeroed.
+        flux_loss_fn: loss on flux outputs (None = MSELoss).
+        rev_loss_fn: loss on reversibility outputs (None = MSELoss).
+        measured_flux_loss_weight: extra MSE weight on the measured-flux subset of predictions.
+        labeling_noise_std: Gaussian noise std applied to fractions (0 disables).
+    """
     model.train()
     if flux_loss_fn is None:
         flux_loss_fn = nn.MSELoss()
@@ -359,7 +430,15 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
 
 
 def _val_epoch(model, loader, device, flux_loss_fn=None, rev_loss_fn=None):
-    """Run one validation epoch. Returns avg_loss."""
+    """Run one validation epoch. Returns avg_loss.
+
+    Args:
+        model: FluxDecoder being evaluated.
+        loader: validation batches.
+        device: torch device to run inference on.
+        flux_loss_fn: loss on flux outputs (None = MSELoss).
+        rev_loss_fn: loss on reversibility outputs (None = MSELoss).
+    """
     model.eval()
     if flux_loss_fn is None:
         flux_loss_fn = nn.MSELoss()
@@ -402,10 +481,23 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
     """Train a FluxDecoder model.
 
     Args:
+        model:                   FluxDecoder to train, in place.
+        train_loader:            training batches.
+        val_loader:              validation batches; enables best-model restore
+                                  and early stopping (None = disabled).
+        num_epochs:               number of epochs to train for.
+        learning_rate:            Adam learning rate.
+        device:                   torch device to train on.
+        gradient_clip:            max gradient norm; <=0 disables clipping.
+        use_scheduler:            enable ReduceLROnPlateau on the training/val loss.
+        verbose:                  print a tqdm progress bar and per-epoch summary.
+        warmup_epochs:            linear LR warmup epochs before the plateau scheduler engages.
         flux_token_dropout:      Per-batch probability each flux token is excluded
         labeling_token_dropout:  Per-batch probability each labeling token's fraction is zeroed
         token_information:       (n_tokens,) tensor of scores (used for reporting only)
         loss_function:           callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
+        measured_flux_loss_weight: extra MSE weight on the measured-flux subset of predictions.
+        labeling_noise_std:       Gaussian noise std applied to fractions (0 disables).
         early_stopping_patience: Stop after this many consecutive epochs without
                                   val_loss improvement (None = disabled; requires val_loader)
 

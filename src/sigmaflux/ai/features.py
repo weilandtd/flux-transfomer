@@ -23,6 +23,15 @@ def build_theta_and_token_states(
 ):
     """Project fluxes onto the null-space basis and build per-token MID arrays.
 
+    Args:
+        labeling_df: labeling DataFrame (rows are tokens, columns are samples).
+        flux_df: flux DataFrame (rows are reactions, columns are samples).
+        model_json: path to the COBRA model JSON, for the null-space basis.
+        n_samples: number of samples to use (capped by the DataFrame sizes).
+        reversibility_df: optional reversibility DataFrame; appended to theta if given.
+        subsample_n: further random subsample size, if smaller than n_samples.
+        seed: subsampling random seed.
+
     When *reversibility_df* is given, variable reversibilities are log1p-z-scored and appended
     to theta so Fisher selection also captures tokens informative about reversibility.
     Returns ``(theta, token_states, d)`` — free-flux (+ reversibility) coordinates, a dict
@@ -65,6 +74,10 @@ def build_theta_and_token_states(
 def apply_mapping_filter(token_states: dict, mapping_csv_path: str) -> dict:
     """Restrict token candidates to metabolites listed in *mapping_csv_path* (columns
     experimental_id, model_id); returns the filtered ``token_states``.
+
+    Args:
+        token_states: dict of token id -> MID array, to filter.
+        mapping_csv_path: CSV path with experimental_id/model_id columns.
     """
     mapping = pd.read_csv(mapping_csv_path)
     allowed = set(mapping["model_id"].unique())
@@ -88,10 +101,20 @@ def select_informative_tokens(
 ):
     """Rank and select tokens by Fisher/D-optimal information about free fluxes.
 
-    *token_filter* ('significant' or 'selected') picks which tokens the returned DataFrame
-    marks ``included`` — the training gate. Returns ``(df, summary)``; *df* has columns
-    metabolite_id, isotopomer, included, significant, rank, standalone_nats, marginal_nats
-    (plus MI columns if *run_mi_audit*).
+    Args:
+        theta: free-flux (+ reversibility) coordinates, (n_samples, d).
+        token_states: dict of token id -> per-sample MID array.
+        noise_std: assumed labeling measurement noise std.
+        gain_threshold: absolute information-gain floor for greedy selection.
+        rel_gain_threshold: relative (to the first pick) information-gain floor.
+        n_permutations: permutations used for the significance-floor calibration.
+        budget: maximum number of tokens to select.
+        token_filter: which column ('significant' or 'selected') the returned
+            ``included`` column is copied from — the training gate.
+        run_mi_audit: also compute the mutual-information nonlinearity audit.
+
+    Returns ``(df, summary)``; *df* has columns metabolite_id, isotopomer, included,
+    significant, rank, standalone_nats, marginal_nats (plus MI columns if *run_mi_audit*).
     """
     df, summary = fisher_selection.rank_from_samples(
         theta, token_states,
@@ -125,6 +148,13 @@ def select_informative_tokens(
 def _token_standalone_nats(L, pinv, Sigma, inv_sig2, Ik):
     """Det-lemma standalone information (nats) of one token's labeling matrix ``L``.
 
+    Args:
+        L: token's labeling matrix, (n_samples, n_dims).
+        pinv: pseudo-inverse of the centered free-flux coordinates.
+        Sigma: prior covariance of the free-flux coordinates.
+        inv_sig2: inverse measurement-noise variance.
+        Ik: identity matrix sized to L's second dimension.
+
     ``logdet(I_k + inv_sig2 * B Sigma B^T)`` with ``B = (pinv @ centered(L)).T`` (k×D);
     returns 0.0 when the determinant is non-positive.
     """
@@ -139,8 +169,17 @@ def select_significant_tokens_fast(theta, token_states, noise_std=0.01,
     whole-body models where :func:`select_informative_tokens`'s dense d×d Fisher grams and
     per-candidate d³ log-determinant are intractable. Each token's standalone information is a
     k×k determinant (never forms a d×d gram); significance is a permutation test, and there is
-    no greedy redundancy step, so ``included == significant``. Returns ``(df, summary)``
-    matching :func:`select_informative_tokens`'s schema.
+    no greedy redundancy step, so ``included == significant``.
+
+    Args:
+        theta: free-flux (+ reversibility) coordinates, (n_samples, d).
+        token_states: dict of token id -> per-sample MID array.
+        noise_std: assumed labeling measurement noise std.
+        n_permutations: permutations used for the significance-floor calibration.
+        seed: permutation random seed.
+        ridge: ridge regularization added to the prior covariance.
+
+    Returns ``(df, summary)`` matching :func:`select_informative_tokens`'s schema.
     """
     keys = list(token_states)
     tc = np.asarray(theta, np.float64)

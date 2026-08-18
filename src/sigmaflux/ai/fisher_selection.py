@@ -79,7 +79,11 @@ def free_flux_basis(model) -> np.ndarray:
 # Helpers to drive the simulator
 # ----------------------------------------------------------------------------
 def _set_net_fluxes(model, v: np.ndarray) -> None:
-    """Overwrite the model's net fluxes (keeping reversibility) for forward()."""
+    """Overwrite the model's net fluxes (keeping reversibility) for forward().
+
+    :param model: EMU/MFA simulator model to mutate.
+    :param v: net flux vector to install.
+    """
     sd = model.state_dict()
     sd["_fluxes"] = torch.as_tensor(v, dtype=model.dtype, device=model.device).clone()
     model.load_state_dict(sd)
@@ -92,7 +96,11 @@ def _set_reversibility(model, r: np.ndarray) -> None:
 
 
 def _labeling(model, exp_ixs) -> np.ndarray:
-    """Run the forward simulator -> ``(n_exp, max_mid, n_met)`` numpy array."""
+    """Run the forward simulator -> ``(n_exp, max_mid, n_met)`` numpy array.
+
+    :param model: EMU/MFA simulator model, already at the flux state to evaluate.
+    :param exp_ixs: experiment indices to run.
+    """
     with torch.no_grad():
         L = model(exp_ix=list(exp_ixs))
     L = L.detach().to("cpu").to(torch.float64).numpy()
@@ -122,7 +130,11 @@ def candidate_measurements(model):
 
 
 def _measurement_columns(model, measurements):
-    """Resolve ``[(met_id, n_atoms)]`` to ``[(met_id, col, n_atoms)]``."""
+    """Resolve ``[(met_id, n_atoms)]`` to ``[(met_id, col, n_atoms)]``.
+
+    :param model: EMU/MFA simulator model, for the metabolite column lookup and max MID size.
+    :param measurements: candidate ``(metabolite_id, n_atoms)`` pairs.
+    """
     out = []
     for met_id, n_atoms in measurements:
         if met_id not in model._metabolite_hash:
@@ -139,6 +151,9 @@ def _extract_tokens(L, columns):
     """
     From labeling ``(n_exp, max_mid, n_met)`` pull each metabolite's MID across
     all experiments.  Returns dict ``met_id -> (n_exp, n_atoms+1)``.
+
+    :param L: labeling array from :func:`_labeling`, ``(n_exp, max_mid, n_met)``.
+    :param columns: ``(met_id, col, n_atoms)`` triples from :func:`_measurement_columns`.
     """
     tok = {}
     for met_id, col, n_atoms in columns:
@@ -165,8 +180,17 @@ def compute_fisher_grams(
     free-flux coordinates, from central finite-difference Jacobians of the simulator along
     the null-space directions. Returns the noise-free Gram (``F_m = G_m / sigma^2`` downstream).
 
+    :param model: EMU/MFA simulator model to differentiate.
+    :param Z: null-space basis, (n_reactions, d).
+    :param flux_df: sampled flux states to average the Fisher information over.
+    :param measurements: candidate ``(metabolite_id, n_atoms)`` pairs.
+    :param exp_ixs: experiment indices to run; defaults to all of ``model.experiments``.
     :param reversibility_df: optional per-sample reversibilities; if absent, the model's
         current/sampled reversibility is used and held fixed during differentiation.
+    :param n_states: number of flux states to sample and average the Jacobian over.
+    :param eps: relative finite-difference step size in theta units.
+    :param seed: flux-state sampling random seed.
+    :param jacobian: compute the Fisher Grams; if False, only ``token_states`` is populated.
     :return: dict with ``grams`` (met_id -> (d,d)), ``theta_states`` ((n_used, d)),
         ``token_states`` (met_id -> (n_used, n_exp*(n_atoms+1))), ``n_states``, ``d``.
     """
@@ -264,6 +288,11 @@ def empirical_sensitivity_grams(theta: np.ndarray, token_states: dict,
     metabolite independent of the fluxes still shows a spurious gradient); cross-fitting cancels
     that bias in expectation and the result is projected to the nearest PSD matrix.
 
+    :param theta: free-flux (+ reversibility) coordinates, (n_samples, d).
+    :param token_states: dict of met_id -> per-sample MID array.
+    :param cross_fit: use the bias-cancelling two-fold estimate; else a single plain fit.
+    :param n_splits: number of random folds to average the cross-fit estimate over.
+    :param seed: fold-splitting random seed.
     :return: dict ``met_id -> G_m (d, d)``
     """
     theta = np.asarray(theta, dtype=np.float64)
@@ -316,7 +345,12 @@ def empirical_sensitivity_grams(theta: np.ndarray, token_states: dict,
 # Prior precision and greedy D-optimal subset selection
 # ----------------------------------------------------------------------------
 def _prior_precision(theta_prior: np.ndarray, d: int, ridge: float = 1e-6):
-    """Precision matrix of the flux prior over theta (with ridge)."""
+    """Precision matrix of the flux prior over theta (with ridge).
+
+    :param theta_prior: sampled free-flux coordinates defining the prior; identity if None/scalar.
+    :param d: free-flux dimension, used when *theta_prior* is absent.
+    :param ridge: relative ridge added to the covariance diagonal before inverting.
+    """
     if theta_prior is None or len(theta_prior) <= 1:
         return np.eye(d)
     cov = np.cov(np.asarray(theta_prior, dtype=np.float64).T)
@@ -347,6 +381,13 @@ def greedy_d_optimal(
     since once resolvable flux directions are covered an absolute nats threshold would
     over-select. Set ``rel_gain_threshold=0`` to disable.
 
+    :param grams: dict of met_id -> Fisher Gram matrix (d, d).
+    :param theta_prior: sampled free-flux coordinates defining the prior precision F0.
+    :param noise_std: assumed labeling measurement noise std.
+    :param budget: maximum number of metabolites to select.
+    :param gain_threshold: absolute information-gain floor to stop at.
+    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
+    :param ridge: relative ridge added to the prior covariance diagonal.
     :return: dict with ``order``, ``marginal_gain``, ``cumulative_information``,
         ``standalone_gain`` (met_id -> gain if it were the only measurement), and ``F0``.
     """
@@ -398,6 +439,12 @@ def observable_spectrum(grams: dict, theta_prior, noise_std: float = 0.02,
     eigenvalues of ``(F0 + total_information, F0)``, each the factor by which measuring *all*
     candidate metabolites sharpens the posterior along one flux direction. ``n_resolved`` counts
     directions whose precision improves by at least ``resolve_ratio``.
+
+    :param grams: dict of met_id -> Fisher Gram matrix (d, d).
+    :param theta_prior: sampled free-flux coordinates defining the prior precision F0.
+    :param noise_std: assumed labeling measurement noise std.
+    :param ridge: relative ridge added to the prior covariance diagonal.
+    :param resolve_ratio: posterior/prior precision ratio counted as "resolved".
     """
     if not grams:
         return {"eigenvalues": np.array([]), "n_resolved": 0,
@@ -445,6 +492,9 @@ def copula_mutual_information(theta: np.ndarray, L: np.ndarray) -> float:
     Ledoit-Wolf shrinkage of the joint covariance: ``I = 0.5 * (logdet C_tt + logdet C_LL -
     logdet C)``. Captures rank-correlation dependence but, like any second-order method, misses
     genuinely non-monotone dependence (see :func:`ksg_nonlinearity_gap`).
+
+    :param theta: free-flux (+ reversibility) coordinates, or a 1-D projection.
+    :param L: labeling/MID data, or a 1-D projection.
     """
     from sklearn.covariance import LedoitWolf
 
@@ -471,6 +521,9 @@ def ksg_nonlinearity_gap(theta: np.ndarray, L: np.ndarray, n_neighbors: int = 5)
     projections. A positive ``gap = ksg - copula`` flags non-Gaussian dependence — treat a large
     gap as "inspect this metabolite", not proof of nonlinearity.
 
+    :param theta: free-flux (+ reversibility) coordinates, (n_samples, d).
+    :param L: one metabolite's labeling/MID data, (n_samples, n_dims).
+    :param n_neighbors: neighbor count for the KSG mutual-information estimate.
     :return: dict with ``ksg``, ``copula_1d`` and ``gap`` (all nats), or zeros if scikit-learn is
         unavailable or the sample is too small.
     """
@@ -527,9 +580,22 @@ def rank_informative_metabolites(
 ):
     """End-to-end ranking + minimal-subset selection of informative metabolites.
 
+    :param model: EMU/MFA simulator model.
+    :param flux_df: sampled flux states to average the Fisher information over.
+    :param measurements: candidate ``(metabolite_id, n_atoms)`` pairs; defaults to
+        :func:`candidate_measurements`.
+    :param Z: null-space basis; defaults to :func:`free_flux_basis`.
+    :param exp_ixs: experiment indices to run; defaults to all of ``model.experiments``.
+    :param reversibility_df: optional per-sample reversibilities; see :func:`compute_fisher_grams`.
+    :param noise_std: assumed labeling measurement noise std.
+    :param n_states: number of flux states to sample and average the Jacobian over.
+    :param eps: relative finite-difference step size in theta units.
     :param sensitivity: ``"jacobian"`` (finite-difference simulator Jacobian, rigorous) or
         ``"empirical"`` (global-linear from generated samples, fast, no re-run)
+    :param budget: maximum number of metabolites to select.
+    :param gain_threshold: absolute information-gain floor for greedy selection.
     :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit
+    :param seed: flux-state sampling random seed.
     :return: ``(results_df, summary)`` — one row per candidate metabolite sorted by selection,
         and a summary dict (observable spectrum, resolved directions, etc.)
     """
@@ -580,6 +646,16 @@ def rank_from_samples(
     significance floor from the null standalone gains; only metabolites exceeding it are
     selected, flagged by the ``significant`` column.
 
+    :param theta: free-flux (+ reversibility) coordinates, (n_samples, d).
+    :param token_states: dict of met_id -> per-sample MID array.
+    :param noise_std: assumed labeling measurement noise std.
+    :param budget: maximum number of metabolites to select.
+    :param gain_threshold: absolute information-gain floor for greedy selection.
+    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
+    :param n_permutations: permutations used to build the null significance floor.
+    :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit.
+    :param calibrate_null: build the permutation-null significance floor.
+    :param null_seed: permutation random seed.
     :return: ``(results_df, summary)`` as in :func:`rank_informative_metabolites`
     """
     theta = np.asarray(theta, dtype=np.float64)
@@ -613,7 +689,22 @@ def rank_from_samples(
 def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,
                budget, gain_threshold, run_mi_audit, sensitivity, n_states,
                null_floor=0.0, rel_gain_threshold=0.01):
-    """Assemble the results DataFrame + summary from per-metabolite Grams."""
+    """Assemble the results DataFrame + summary from per-metabolite Grams.
+
+    :param grams: dict of met_id -> Fisher Gram matrix (d, d).
+    :param theta_states: free-flux coordinates the Grams/tokens were computed on.
+    :param token_states: dict of met_id -> per-sample MID array, for the MI audit.
+    :param theta_prior: sampled free-flux coordinates defining the prior precision F0.
+    :param d: free-flux dimension.
+    :param noise_std: assumed labeling measurement noise std.
+    :param budget: maximum number of metabolites to select.
+    :param gain_threshold: absolute information-gain floor for greedy selection.
+    :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit.
+    :param sensitivity: label recorded in the summary for how the Grams were computed.
+    :param n_states: number of flux states the Grams were averaged over, for the summary.
+    :param null_floor: permutation-null significance floor on standalone gain.
+    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
+    """
     import pandas as pd
 
     # per-metabolite standalone information, and the significance flag

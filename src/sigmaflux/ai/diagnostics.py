@@ -13,7 +13,13 @@ from collections import defaultdict
 def analyze_labeling_coverage(labeling_df, flux_names, compound_to_reaction):
     """For each reaction, count distinct labeling patterns for its metabolites.
     Placeholder: currently returns the same total training-metabolite count for
-    every reaction (TODO: extract per-reaction metabolites)."""
+    every reaction (TODO: extract per-reaction metabolites).
+
+    Args:
+        labeling_df: labeling fractions indexed by (Tracer, Metabolite, Isotopomer).
+        flux_names: reaction names to report coverage for.
+        compound_to_reaction: unused placeholder for a future per-reaction mapping.
+    """
     labeling_patterns = []
 
     # Get metabolites involved in training data
@@ -34,6 +40,12 @@ def analyze_labeling_coverage(labeling_df, flux_names, compound_to_reaction):
 
 def extract_attention_weights(model, val_loader, device, return_per_query=True):
     """Run validation with return_attn=True and collect attention weights.
+
+    Args:
+        model: trained FluxDecoder.
+        val_loader: validation batches.
+        device: torch device to run inference on.
+        return_per_query: unused; per-query metadata is always collected.
 
     Returns:
         dict with 'attn_weights' ((n_val_samples, n_queries, N_total) array, batches
@@ -83,7 +95,14 @@ def extract_attention_weights(model, val_loader, device, return_per_query=True):
 def analyze_attention_patterns(attn_weights, flux_names, flux_r2, n_labeling_tokens):
     """Compute per-reaction attention statistics (attention to labeling vs. flux
     tokens, entropy, dead zones) from batch-averaged attention weights. Returns a
-    DataFrame with one row per reaction query."""
+    DataFrame with one row per reaction query.
+
+    Args:
+        attn_weights: cross-attention weights, shape (B, n_queries, N_total).
+        flux_names: reaction names, one per query.
+        flux_r2: per-reaction R², one per query.
+        n_labeling_tokens: number of labeling tokens in N_total; the rest are flux tokens.
+    """
     # Average attention across batch dimension
     mean_attn = attn_weights.mean(axis=0)  # (n_queries, N_total)
 
@@ -114,6 +133,14 @@ def analyze_attention_patterns(attn_weights, flux_names, flux_r2, n_labeling_tok
 def diagnose_signal_bottleneck(model, val_loader, device, flux_names, flux_r2, labeling_df):
     """
     Main diagnostic: correlate attention patterns with learning success.
+
+    Args:
+        model: trained FluxDecoder.
+        val_loader: validation batches.
+        device: torch device to run inference on.
+        flux_names: reaction names, one per query.
+        flux_r2: per-reaction R², one per query.
+        labeling_df: labeling fractions, used only for its token count.
     """
     print("\n=== Labeling Signal & Attention Diagnostics ===")
 

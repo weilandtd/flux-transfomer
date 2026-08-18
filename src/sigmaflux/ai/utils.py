@@ -46,7 +46,21 @@ def load_fisher_token_scores(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Load pre-computed Fisher scores and inclusion mask (from features.csv,
     produced by extract_informative_features.py) aligned to labeling_df row order.
-    Tokens absent from the CSV get score 0.0 and included=False."""
+    Tokens absent from the CSV get score 0.0 and included=False.
+
+    Parameters
+    ----------
+    features_csv
+        Path to the features.csv produced by extract_informative_features.py.
+    labeling_df
+        Labeling DataFrame whose (Metabolite, Isotopomer) row order the output
+        is aligned to.
+
+    Returns
+    -------
+    scores, included_mask : per-token Fisher score and inclusion flag, in
+        labeling_df row order.
+    """
     feat = pd.read_csv(features_csv)
     score_map: dict = {}
     included_set: set = set()
@@ -78,7 +92,17 @@ def load_fisher_token_scores(
 def _varimax_rotate(Z: np.ndarray, max_iter: int = 1000, tol: float = 1e-6) -> np.ndarray:
     """Varimax (Kaiser 1958) orthogonal rotation applied in-place to columns of Z,
     maximising the sum of per-column variances of squared loadings via pairwise
-    Jacobi sweeps. Input columns must already have unit norm."""
+    Jacobi sweeps. Input columns must already have unit norm.
+
+    Parameters
+    ----------
+    Z
+        Matrix whose unit-norm columns are rotated in place.
+    max_iter
+        Maximum number of full sweeps over column pairs.
+    tol
+        Convergence tolerance on the rotation objective.
+    """
     n_rxn, k = Z.shape
     if k <= 1:
         return Z
@@ -115,7 +139,22 @@ def compute_sparse_nullspace(
     """Compute a sparse null-space basis of stoichiometric matrix S via SVD followed
     by Varimax (Kaiser 1958) rotation, which finds an orthogonal rotation of the raw
     SVD basis that concentrates each basis vector's weight on fewer reactions while
-    preserving orthonormality and the span of null(S)."""
+    preserving orthonormality and the span of null(S).
+
+    Parameters
+    ----------
+    S
+        Stoichiometric matrix (metabolites x reactions).
+    max_iter
+        Maximum Varimax sweeps; passed to :func:`_varimax_rotate`.
+    tol
+        Varimax convergence tolerance; passed to :func:`_varimax_rotate`.
+
+    Returns
+    -------
+    Z : np.ndarray, shape (n, k)
+        Orthonormal null-space basis with Varimax-rotated (sparsified) columns.
+    """
     Z = scipy.linalg.null_space(S)   # (n_rxn, k) — unit-norm columns from SVD
     return _varimax_rotate(Z, max_iter=max_iter, tol=tol)
 
@@ -411,9 +450,15 @@ def detect_parallel_reaction_groups(
 
     Parameters
     ----------
+    S : np.ndarray
+        Stoichiometric matrix (metabolites x reactions).
+    reaction_names : list[str]
+        Ordered reaction identifiers matching S columns.
     cofactor_metabolites : list[str] | None
         Metabolite IDs (row labels of S) to mask before computing similarities;
         when None, all rows are used.
+    cos_threshold : float
+        Minimum |cosine similarity| for two reactions to be grouped as parallel.
 
     Returns
     -------

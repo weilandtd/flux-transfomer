@@ -118,6 +118,12 @@ _NULL_SPACE_INT = ("free_idx", "fixed_idx", "rev_variable_idx")
 def _discover_members(source):
     """Resolve *source* to an ordered list of member checkpoint paths: an ``ensemble/`` directory,
     a run directory containing one, a single ``.pt``, or an explicit sequence of ``.pt`` paths.
+
+    Parameters
+    ----------
+    source : path or sequence of paths
+        An ``ensemble/`` directory, a run directory containing one, a single ``.pt``,
+        or an explicit sequence of ``.pt`` paths.
     """
     if isinstance(source, (str, os.PathLike)):
         source = [source]
@@ -146,6 +152,13 @@ def _discover_members(source):
 
 def _check_members_agree(checkpoints, paths):
     """Refuse to package members that were not trained as one ensemble.
+
+    Parameters
+    ----------
+    checkpoints : list of dict
+        Loaded checkpoint dicts for every member.
+    paths : list of str
+        Matching checkpoint file paths, for error messages.
 
     Returns ``True`` when every member shares one null-space basis; a seed-varied
     ICA basis legitimately differs per member, so that case is reported (not rejected)
@@ -213,7 +226,15 @@ def _sha256_file(path):
 # ── Weight layout ─────────────────────────────────────────────────────────────
 
 def _tensor_layout(state_dict, precision):
-    """Describe the trained tensors and their byte offsets within a member blob."""
+    """Describe the trained tensors and their byte offsets within a member blob.
+
+    Parameters
+    ----------
+    state_dict : dict
+        Model state dict to lay out.
+    precision : {"fp16", "fp32"}
+        Storage precision; finite fp32 tensors within range are downcast to fp16.
+    """
     layout, offset = [], 0
     for name, tensor in state_dict.items():
         if name in _REGENERATED:
@@ -238,7 +259,15 @@ def _tensor_layout(state_dict, precision):
 
 
 def _member_blob(state_dict, layout):
-    """Concatenate a member's trained tensors into one little-endian buffer."""
+    """Concatenate a member's trained tensors into one little-endian buffer.
+
+    Parameters
+    ----------
+    state_dict : dict
+        Model state dict holding the tensors.
+    layout : list of dict
+        Tensor layout from :func:`_tensor_layout`.
+    """
     chunks = []
     for spec in layout:
         arr = state_dict[spec["name"]].detach().cpu().numpy()
@@ -252,6 +281,19 @@ def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=N
     """Locate the prepared COBRA network for a checkpoint. The run directory's
     ``model_prepared_for_mfa.json`` is preferred over the checkpoint's ``model_json``, since
     only the prepared model's reaction order and set match ``flux_names``.
+
+    Parameters
+    ----------
+    ckpt : dict
+        Loaded checkpoint dict.
+    model_json : str, optional
+        Explicit network path, tried first.
+    data_dir : str, optional
+        Run directory to look for the prepared network in.
+    config : path, optional
+        Training YAML, to resolve ``model_file`` as a last resort.
+    root : path, optional
+        Root for resolving *config*'s relative paths.
     """
     candidates = [model_json]
     run_dir = data_dir or ckpt.get("data_dir")
@@ -273,6 +315,13 @@ def _read_network(path, flux_names):
     """Read a COBRA JSON; returns ``(payload, block)`` where *payload* is the raw file bytes and
     *block* is the manifest entry. ``block["covers_flux_names"]`` decides usability: without
     every predicted reaction present, a consumer cannot build ``S`` for the prediction vector.
+
+    Parameters
+    ----------
+    path : str
+        Path to the COBRA network JSON.
+    flux_names : list of str
+        Predicted reaction ids, checked for coverage against the network.
     """
     with open(path, "rb") as fh:
         payload = fh.read()
@@ -298,6 +347,19 @@ def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
     """The validation split's MID inputs and targets, in training token order — the only step
     that touches the training HDF5. Returns ``(fractions, flux_actuals, rev_actuals)``, or
     ``(None, None, None)`` when the training data is unreachable.
+
+    Parameters
+    ----------
+    ckpt : dict
+        Loaded checkpoint dict.
+    spec : ModelSpec
+        Model spec, for the token index and output names.
+    val_indices : array-like
+        Sample columns making up the validation split.
+    data_dir : str, optional
+        Override the training data directory recorded in *ckpt*.
+    max_samples : int, optional
+        Cap the number of validation samples read.
     """
     from .data import load_data
     resolved = data_dir or ckpt.get("data_dir")
@@ -352,6 +414,10 @@ def export_model(source, out_path=None, *, name=None, model_version,
     config : path, optional
         Training YAML. Supplies the human-readable tracer names and the
         inference batch size; without it tracer names fall back to internal ids.
+    root : path, optional
+        Root for resolving *config*'s relative paths.
+    description : str, optional
+        Free-text description recorded in the manifest.
     with_validation, with_val_inputs :
         Store the validation split, and (``"auto"``/True/False) the MID inputs
         needed to recompute R² from the export alone.
@@ -359,6 +425,18 @@ def export_model(source, out_path=None, *, name=None, model_version,
         Store the prepared COBRA network (default ``"auto"``: embed it when found
         and covering every predicted reaction, else warn and carry on). ``True``
         makes a missing/mismatched network an error; ``False`` skips it.
+    data_dir, model_json : path, optional
+        Override the network/training-data paths recorded in the checkpoint.
+    max_members : int, optional
+        Cap the number of ensemble members packaged.
+    max_val_samples : int, optional
+        Cap the number of validation samples stored.
+    metrics : bool
+        Record each member's reported validation R² in the manifest.
+    overwrite : bool
+        Allow replacing an existing file at *out_path*.
+    verbose : bool
+        Print progress and the final artifact size.
     """
     if precision not in ("fp16", "fp32"):
         raise ValueError(f"precision must be 'fp16' or 'fp32', got {precision!r}")
@@ -601,6 +679,13 @@ def load_model(path, *, device=None):
     """Load a packaged ``.sfx`` model. Always returns an
     :class:`~sigmaflux.ai.inference.EnsembleSigmaFlux`, even for a one-member export, so callers
     have a single shape to handle. Needs no config YAML, run directory, or COBRA JSON.
+
+    Parameters
+    ----------
+    path : str
+        Path to the ``.sfx`` file.
+    device : optional
+        Device to load member weights onto.
     """
     with SfxReader(path) as r:
         m = r.manifest
@@ -723,6 +808,15 @@ def read_stoichiometry(path):
 def validate_model(path, *, device=None, per_member=False):
     """Recompute validation R² from the export alone (requires ``with_val_inputs`` at export time);
     reproduces the number training reported, in training token order.
+
+    Parameters
+    ----------
+    path : str
+        Path to the ``.sfx`` file.
+    device : optional
+        Device to run inference on.
+    per_member : bool
+        Also return each ensemble member's per-reaction R² as extra columns.
     """
     import pandas as pd
 

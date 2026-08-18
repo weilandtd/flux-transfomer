@@ -166,6 +166,17 @@ def normalize_externals(
 
     Irreversible reactions (external or internal) are passed through unchanged.
 
+    Parameters
+    ----------
+    S:
+        Stoichiometric matrix (metabolites x reactions).
+    reversibility:
+        Per-reaction reversibility flags matching S columns.
+    ext_mask:
+        Per-reaction external/exchange flags matching S columns.
+    rxn_ids:
+        Reaction identifiers matching S columns.
+
     Returns
     -------
     S_aug        : (m, n_aug)
@@ -225,6 +236,15 @@ def compute_cycle_block(
 ) -> tuple[np.ndarray, int]:
     """Orthonormal basis of {v ∈ null(S_aug) : v_external = 0}.
 
+    Parameters
+    ----------
+    S_aug:
+        Augmented stoichiometric matrix (reversible externals split into legs).
+    ext_mask_aug:
+        Per-column external/exchange flags matching S_aug.
+    tol:
+        Numerical tolerance for null-space rank decisions.
+
     Returns (C, q) where C is (n_aug, q).
     """
     N = scipy.linalg.null_space(S_aug, rcond=tol)     # (n_aug, k0)
@@ -261,6 +281,17 @@ def select_throughput_coordinates(
     Secretion externals (column sum < 0, i.e. running forward removes metabolite from
     the system) are ordered before uptake externals so product-conversion modes become
     the primary coordinates.
+
+    Parameters
+    ----------
+    S_aug:
+        Augmented stoichiometric matrix (reversible externals split into legs).
+    ext_mask_aug:
+        Per-column external/exchange flags matching S_aug.
+    ext_ids_aug:
+        Reaction identifiers matching S_aug columns.
+    tol:
+        Numerical tolerance for rank decisions.
 
     Returns
     -------
@@ -327,7 +358,15 @@ def select_throughput_coordinates(
 
 
 def _repair_negative_legs(b: np.ndarray, ids: list[str]) -> tuple[np.ndarray, bool]:
-    """If a split-external leg has b < 0, transfer it to the mirror leg (fwd↔rev)."""
+    """If a split-external leg has b < 0, transfer it to the mirror leg (fwd↔rev).
+
+    Parameters
+    ----------
+    b:
+        Target exchange bundle over the augmented external columns.
+    ids:
+        Reaction identifiers matching b, used to find each leg's mirror.
+    """
     b = b.copy()
     repaired = False
     for i, (val, rid) in enumerate(zip(b, ids)):
@@ -358,6 +397,29 @@ def solve_sparse_column(
     time_limit: float = 120.0,
 ) -> tuple[np.ndarray, bool, list[float]]:
     """Find the sparsest null-space flux realising exchange target b_i.
+
+    Parameters
+    ----------
+    S_aug:
+        Augmented stoichiometric matrix (reversible externals split into legs).
+    b_i:
+        Target exchange bundle to realise, over the augmented external columns.
+    reversibility_aug:
+        Per-column reversibility flags matching S_aug.
+    ext_mask_aug:
+        Per-column external/exchange flags matching S_aug.
+    ext_ids_aug:
+        Reaction identifiers matching S_aug columns.
+    solver_iface:
+        optlang-style solver interface (Model/Variable/Constraint/Objective).
+    solver_name:
+        Name of the backing solver ('glpk' | 'cplex' | 'gurobi').
+    big_m:
+        Big-M bound for the indicator/support constraints.
+    tol:
+        Numerical tolerance for feasibility and freezing constraints.
+    time_limit:
+        Per-stage MILP time limit in seconds (best-effort).
 
     Returns (v, forward_feasible, level_penalties).
     Level penalties: [stage1_directionality, stage2_cardinality, stage3_weighted_flux].
@@ -480,6 +542,21 @@ def solve_sparse_column(
 
 
 def _optimize_and_freeze(lp, iface, obj_expr, freeze_name: str, tol: float) -> float:
+    """Minimize obj_expr, then freeze it at its optimum as a named constraint.
+
+    Parameters
+    ----------
+    lp:
+        Solver model being optimized.
+    iface:
+        optlang-style solver interface, used to build the freeze constraint.
+    obj_expr:
+        Expression to minimize.
+    freeze_name:
+        Name for the constraint that freezes obj_expr at its optimum.
+    tol:
+        Slack added to the frozen upper bound.
+    """
     lp.objective = iface.Objective(obj_expr, direction="min")
     lp.optimize()
     val = lp.objective.value if lp.objective.value is not None else 0.0
@@ -498,6 +575,17 @@ def assemble_and_validate(
     tol: float = 1e-8,
 ) -> tuple[np.ndarray, dict]:
     """Stack columns, orthogonalise cycle block against throughput, validate.
+
+    Parameters
+    ----------
+    throughput_vecs:
+        Per-coordinate sparse flux vectors from solve_sparse_column.
+    cycle_basis:
+        Orthonormal cycle-block basis from compute_cycle_block.
+    S_aug:
+        Augmented stoichiometric matrix (reversible externals split into legs).
+    tol:
+        Numerical tolerance for orthogonalisation and validation checks.
 
     Returns (Z_aug, validation_report).
     """
@@ -568,7 +656,19 @@ def _unaugment_block(
 ) -> np.ndarray:
     """Map a block of augmented columns back to the original n_orig reactions: for
     each split reversible external j_orig, Z[j_orig] = Z_aug[j_fwd] - Z_aug[j_rev].
-    Split-external pure-cycle modes become all-zero columns (caller drops them)."""
+    Split-external pure-cycle modes become all-zero columns (caller drops them).
+
+    Parameters
+    ----------
+    Z_aug:
+        Basis block in augmented-column space.
+    n_orig:
+        Number of original (pre-augmentation) reactions.
+    split_map:
+        {orig_idx -> (aug_fwd_idx, aug_rev_idx)} for split reversible externals.
+    orig_to_aug:
+        {orig_idx -> aug_idx} for non-split reactions.
+    """
     k = Z_aug.shape[1]
     Z = np.zeros((n_orig, k))
     for j in range(n_orig):
@@ -585,7 +685,15 @@ def _unaugment_block(
 # ---------------------------------------------------------------------------
 
 def _parse_input(model_or_S, solver):
-    """Return (S, rev, ext_mask, rxn_ids, solver_name)."""
+    """Return (S, rev, ext_mask, rxn_ids, solver_name).
+
+    Parameters
+    ----------
+    model_or_S:
+        Either a COBRApy Model or a (S, reversibility, external_ids) tuple.
+    solver:
+        Solver name or interface override; None infers from the model.
+    """
     if _COBRA_AVAILABLE and isinstance(model_or_S, cobra.Model):
         model = model_or_S
         S = create_stoichiometric_matrix(model, array_type="dense").astype(float)
@@ -654,6 +762,15 @@ def _per_conversion_bigm(S_aug: np.ndarray, b_i: np.ndarray) -> float:
 
 
 def _set_time_limit(model, time_limit: float):
+    """Best-effort application of a solver time limit across optlang backends.
+
+    Parameters
+    ----------
+    model:
+        Solver model to configure.
+    time_limit:
+        Time limit in seconds.
+    """
     for attr in ("timeout", "time_limit", "configuration"):
         try:
             obj = getattr(model, attr)

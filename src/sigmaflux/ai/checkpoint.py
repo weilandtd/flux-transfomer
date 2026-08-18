@@ -82,6 +82,13 @@ def promote_norm_buffers(null_space_data, state_dict):
     """Fill in ``y_mean``/``y_std``/``rev_log_mean``/``rev_log_std`` from *state_dict* when
     ``null_space_data`` omits them, since ``load_state_dict`` cannot promote a ``None`` buffer
     to a tensor. Returns a new dict; the input is not mutated.
+
+    Parameters
+    ----------
+    null_space_data : dict
+        Null-space basis and normalization stats to fill in.
+    state_dict : dict
+        Model state dict to promote the missing buffers from.
     """
     nsd = dict(null_space_data)
     if nsd.get("y_mean") is None and state_dict.get("y_norm_mean") is not None:
@@ -94,7 +101,15 @@ def promote_norm_buffers(null_space_data, state_dict):
 
 
 def _flux_norm_stats(checkpoint, state_dict):
-    """Per-reaction flux normalization, from the checkpoint or else the weights."""
+    """Per-reaction flux normalization, from the checkpoint or else the weights.
+
+    Parameters
+    ----------
+    checkpoint : dict
+        Loaded checkpoint dict, checked first for ``flux_norm_stats``.
+    state_dict : dict
+        Model state dict, checked as a fallback.
+    """
     stats = checkpoint.get("flux_norm_stats")
     if stats is not None:
         return stats
@@ -107,7 +122,15 @@ def _flux_norm_stats(checkpoint, state_dict):
 
 
 def _as_checkpoint(checkpoint, map_location="cpu"):
-    """Accept an already-loaded checkpoint dict or a path to one."""
+    """Accept an already-loaded checkpoint dict or a path to one.
+
+    Parameters
+    ----------
+    checkpoint : str or dict
+        Path to a ``.pt`` file, or an already-loaded checkpoint dict.
+    map_location : str
+        Passed to :func:`torch.load` when *checkpoint* is a path.
+    """
     if isinstance(checkpoint, dict):
         return checkpoint
     return torch.load(checkpoint, map_location=map_location, weights_only=False)
@@ -141,7 +164,15 @@ class EvalContext:
     _batch_cache: dict = field(default_factory=dict, repr=False, compare=False)
 
     def loader(self, batch_size=None, shuffle=False):
-        """DataLoader over :attr:`dataset`; ``batch_size=None`` yields one full batch."""
+        """DataLoader over :attr:`dataset`; ``batch_size=None`` yields one full batch.
+
+        Parameters
+        ----------
+        batch_size : int, optional
+            Batch size; ``None`` yields the whole dataset as one batch.
+        shuffle : bool
+            Shuffle sample order.
+        """
         if self.dataset is None:
             raise ValueError("EvalContext was built with build_dataset=False")
         return DataLoader(
@@ -197,8 +228,14 @@ def load_eval_context(
         Override the paths recorded in the checkpoint.
     measured_fluxes : list, optional
         Defaults to the checkpoint's ``measured_fluxes`` (the bypass tokens).
+    normalize : bool
+        Z-score the flux/reversibility targets.
+    normalize_mids : bool
+        Z-score the labeling (MID) fractions per token.
     build_dataset : bool
         Set ``False`` to skip dataset construction when only the model is wanted.
+    map_location : str
+        Passed to :func:`torch.load` when *checkpoint* is a path.
     """
     ckpt = _as_checkpoint(checkpoint, map_location=map_location)
     cfg_dict = ckpt["model_config"]
@@ -291,6 +328,17 @@ def build_flux_decoder(ctx, checkpoint=None, *, device=None, strict=True):
     """Reconstruct one :class:`FluxDecoder`, in ``eval()`` mode on *device*, against *ctx*'s
     shared config/vocabularies/basis and *checkpoint*'s weights (path, dict, or ``None`` for
     ``ctx.ckpt``) — letting an ensemble load N weight sets against one shared context.
+
+    Parameters
+    ----------
+    ctx : EvalContext
+        Shared config/vocabularies/null-space basis to build the model against.
+    checkpoint : str, dict, or None
+        Member weights: a path, a loaded checkpoint dict, or ``None`` for ``ctx.ckpt``.
+    device : optional
+        Device to move the model to.
+    strict : bool
+        Passed to ``load_state_dict``.
     """
     ckpt = ctx.ckpt if checkpoint is None else _as_checkpoint(checkpoint)
     state_dict = ckpt["model_state_dict"]

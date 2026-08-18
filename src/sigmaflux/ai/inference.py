@@ -75,7 +75,20 @@ class ModelSpec:
     def from_checkpoint(cls, ckpt, *, config=None, model_json=None, data_dir=None):
         """Build a spec from a training checkpoint, optionally with its config YAML.
         ``config`` supplies human-readable tracer names and the batch size;
-        without it, tracer names fall back to the internal ids."""
+        without it, tracer names fall back to the internal ids.
+
+        Parameters
+        ----------
+        ckpt
+            Loaded training checkpoint (``torch.load`` output).
+        config
+            Path to the run's config YAML.
+        model_json
+            Path to the COBRA JSON; used only for pre-``vocabs`` checkpoints.
+        data_dir
+            Training data directory, used to derive ``token_index`` when the
+            checkpoint predates it.
+        """
         cfg = {}
         if config is not None:
             with open(config) as fh:
@@ -184,7 +197,17 @@ class ModelSpec:
         """Rebuild a :class:`FluxDecoder` and load *state_dict* into it. Frozen
         embedding tables are regenerated from the vocabularies and harmonics
         rather than read from the weights, which is why an exported model can
-        omit them entirely."""
+        omit them entirely.
+
+        Parameters
+        ----------
+        state_dict
+            Trained weights for one ensemble member.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        strict
+            Passed through to ``load_state_dict``.
+        """
         tables = self.emb_tables()
         n_reactions = len(self.flux_names) or self.model_config.get('n_fluxes')
         model = FluxDecoder(
@@ -211,6 +234,20 @@ class SigmaFlux:
     """
 
     def __init__(self, config, checkpoint, device=None, data_dir=None):
+        """Load a predictor from a config YAML and a training checkpoint.
+
+        Parameters
+        ----------
+        config
+            Path to the run's config YAML.
+        checkpoint
+            Path to a ``.pt`` training checkpoint.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        data_dir
+            Training data directory, used only for legacy checkpoints without
+            a stored ``token_index``.
+        """
         with open(config) as f:
             self.cfg = yaml.safe_load(f)
         self.ckpt = torch.load(checkpoint, map_location='cpu', weights_only=False)
@@ -222,7 +259,19 @@ class SigmaFlux:
     def from_spec(cls, spec, state_dict, *, device=None, strict=True):
         """Build a predictor from a :class:`ModelSpec` and one member's weights —
         no config YAML, run directory, or COBRA JSON needed; this is the path an
-        exported model takes."""
+        exported model takes.
+
+        Parameters
+        ----------
+        spec
+            Model architecture and vocabularies.
+        state_dict
+            Trained weights for this member.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        strict
+            Passed through to ``load_state_dict``.
+        """
         self = cls.__new__(cls)
         self.cfg = None
         self.ckpt = None
@@ -230,6 +279,19 @@ class SigmaFlux:
         return self
 
     def _init_from_spec(self, spec, state_dict, *, device=None, strict=True):
+        """Shared setup core for :meth:`__init__` and :meth:`from_spec`.
+
+        Parameters
+        ----------
+        spec
+            Model architecture and vocabularies.
+        state_dict
+            Trained weights to load into the rebuilt decoder.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        strict
+            Passed through to ``load_state_dict``.
+        """
         self.spec = spec
         self.device = resolve_device(device)
 
@@ -430,6 +492,17 @@ class SigmaFlux:
     # ── Private helpers ───────────────────────────────────────────────────────
 
     def _build_flux_dfs(self, df_Vm, n_samples, samples):
+        """Build zero-filled flux/reversibility frames and fill in measured values.
+
+        Parameters
+        ----------
+        df_Vm
+            Measured exchange fluxes, or None.
+        n_samples
+            Number of sample columns to build.
+        samples
+            Sample ids, in column order.
+        """
         flux_df = pd.DataFrame(
             np.zeros((len(self.flux_names), n_samples), dtype=np.float32),
             index   = self.flux_names,
@@ -450,6 +523,17 @@ class SigmaFlux:
         return flux_df, rev_df
 
     def _format_output(self, flux_arr, rev_arr, samples):
+        """Assemble the long-format 'Sample'/'Flux Name'/'Value' output DataFrame.
+
+        Parameters
+        ----------
+        flux_arr
+            Predicted fluxes, shape (n_samples, n_fluxes).
+        rev_arr
+            Predicted reversibilities, shape (n_samples, n_rev).
+        samples
+            Sample ids, in row order.
+        """
         flux_names = self.flux_names or [f'flux_{i}' for i in range(flux_arr.shape[1])]
         rev_names  = self.reversibility_names or [f'rev_{i}' for i in range(rev_arr.shape[1])]
         # zip() would silently truncate a mismatch and mislabel every row.
@@ -483,6 +567,20 @@ class EnsembleSigmaFlux:
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
+        """Load every ``model_*.pt`` member found in *ensemble_dir*.
+
+        Parameters
+        ----------
+        config
+            Path to the run's config YAML, shared by every member.
+        ensemble_dir
+            Directory containing ``model_*.pt`` checkpoint files.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        data_dir
+            Training data directory, used only for legacy checkpoints without
+            a stored ``token_index``.
+        """
         self.member_paths = sorted(glob.glob(os.path.join(ensemble_dir, 'model_*.pt')))
         if not self.member_paths:
             raise FileNotFoundError(f"No model_*.pt in ensemble dir: {ensemble_dir}")
@@ -493,7 +591,21 @@ class EnsembleSigmaFlux:
 
     @classmethod
     def from_spec(cls, spec, state_dicts, *, device=None, member_ids=None, strict=True):
-        """Build an ensemble from one shared :class:`ModelSpec` and N weight sets."""
+        """Build an ensemble from one shared :class:`ModelSpec` and N weight sets.
+
+        Parameters
+        ----------
+        spec
+            Model architecture and vocabularies, shared by every member.
+        state_dicts
+            One trained weight set per member.
+        device
+            Target device; resolved via :func:`resolve_device`.
+        member_ids
+            Labels for ``self.member_paths``; defaults to ``range(len(state_dicts))``.
+        strict
+            Passed through to ``load_state_dict``.
+        """
         self = cls.__new__(cls)
         self.member_paths = list(member_ids or range(len(state_dicts)))
         members = [SigmaFlux.from_spec(spec, sd, device=device, strict=strict)
@@ -508,7 +620,15 @@ class EnsembleSigmaFlux:
         return load_model(path, device=device)
 
     def _adopt(self, members, *, split_source):
-        """Re-expose the attributes the pipeline entry points read off a predictor."""
+        """Re-expose the attributes the pipeline entry points read off a predictor.
+
+        Parameters
+        ----------
+        members
+            Loaded :class:`SigmaFlux` members, sharing one architecture.
+        split_source
+            Path the shared train/val split was read from, or None.
+        """
         self.members = members
         m0 = members[0]
         self.spec                = m0.spec
@@ -529,7 +649,15 @@ class EnsembleSigmaFlux:
 
     def predict(self, df_L, df_Vm=None):
         """Ensemble-median prediction. Members share inputs, so per-member outputs
-        have identical row order and are combined positionally."""
+        have identical row order and are combined positionally.
+
+        Parameters
+        ----------
+        df_L
+            Labeling data; see :meth:`SigmaFlux.predict`.
+        df_Vm
+            Measured exchange fluxes, or None.
+        """
         preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
@@ -583,6 +711,18 @@ def load_predictor(config, checkpoint, data_dir=None, device=None):
     if found and non-empty it wins even when ``checkpoint`` names a single ``.pt``
     file. A ``.sfx`` path is detected by suffix and loaded directly (``config`` is
     unused in that case).
+
+    Parameters
+    ----------
+    config
+        Path to the run's config YAML.
+    checkpoint
+        Path to a ``.pt``/``.sfx`` file, or an ensemble directory.
+    data_dir
+        Training data directory, used only for legacy checkpoints without a
+        stored ``token_index``.
+    device
+        Target device; resolved via :func:`resolve_device`.
     """
     from ._sfx import SFX_SUFFIX
     if checkpoint and str(checkpoint).endswith(SFX_SUFFIX) and os.path.isfile(checkpoint):

@@ -75,6 +75,11 @@ class CrossAttention(nn.Module):
     """
 
     def __init__(self, d_model, n_heads, dropout):
+        """Args:
+            d_model: token embedding dimension.
+            n_heads: number of attention heads.
+            dropout: attention dropout probability.
+        """
         super().__init__()
         self.n_heads = n_heads
         self.q_norm  = nn.LayerNorm(d_model)
@@ -84,6 +89,13 @@ class CrossAttention(nn.Module):
         )
 
     def forward(self, q, kv, key_padding_mask=None, attn_bias=None, return_weights=False):
+        """Args:
+            q: query tokens, shape (B, R, d).
+            kv: key/value tokens, shape (B, N, d).
+            key_padding_mask: bool mask, shape (B, N); True hides that key.
+            attn_bias: additive attention bias, shape (B*n_heads, R, N).
+            return_weights: also return the attention weights.
+        """
         q  = self.q_norm(q)
         kv = self.kv_norm(kv)
         out, weights = self.attn(
@@ -119,6 +131,17 @@ class FluxDecoder(nn.Module):
         type_emb_table=None,        # (2, d_type) frozen table; required when d_type > 0
         flux_norm_stats=None,       # dict with 'mean' and 'std' (n_fluxes,) arrays
     ):
+        """Args:
+            config: architecture hyperparameters.
+            token_experiment_ids: per-token source-experiment index, -1 for bypass tokens.
+            compound_emb_table: frozen (n_compounds, d_comp) embedding table.
+            label_emb_table: frozen (n_labels, d_label) embedding table.
+            tracer_emb_table: frozen (n_tracers, d_tracer) embedding table.
+            null_space_data: dict with Z_free, fixed_idx, and optional y_*/rev_log_* norm stats.
+            reaction_emb_table: frozen (n_fluxes, d_reaction) table; required when d_reaction > 0.
+            type_emb_table: frozen (2, d_type) table; required when d_type > 0.
+            flux_norm_stats: dict with 'mean' and 'std' (n_fluxes,) arrays.
+        """
         super().__init__()
         cfg = config
         self.cfg = cfg
@@ -259,9 +282,23 @@ class FluxDecoder(nn.Module):
         attn_bias=None,           # (B*n_heads, n_queries, N) float additive bias
         return_attn=False,
     ):
-        """Returns (fluxes, reversibilities), plus attn_weights (B, n_queries, N_total)
-        when return_attn=True. fluxes is (B, n_fluxes) satisfying Sv=0;
-        reversibilities is (B, n_rev) non-negative."""
+        """Args:
+            compound_ids: labeling-token compound ids, shape (B, N_lab).
+            label_ids: labeling-token isotopomer-label ids, shape (B, N_lab).
+            tracer_ids: labeling-token tracer ids, shape (B, N_lab).
+            fractions: labeling-token fractions, shape (B, N_lab, 1).
+            labeling_mask: True hides that labeling token, shape (B, N_lab).
+            flux_mask: True hides that flux token, shape (B, n_fx); requires measured_fluxes.
+            measured_fluxes: raw flux values for flux tokens, shape (B, n_fx).
+            measured_flux_ids: reaction indices for measured_fluxes; defaults to self.fixed_idx_t.
+            attn_bias: additive attention bias, shape (B*n_heads, n_queries, N).
+            return_attn: also return the cross-attention weights.
+
+        Returns:
+            (fluxes, reversibilities), plus attn_weights (B, n_queries, N_total)
+            when return_attn=True. fluxes is (B, n_fluxes) satisfying Sv=0;
+            reversibilities is (B, n_rev) non-negative.
+        """
         B      = compound_ids.shape[0]
         device = compound_ids.device
 
