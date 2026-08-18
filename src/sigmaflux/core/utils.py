@@ -96,6 +96,13 @@ def _biomass_component(met_id: str) -> str | None:
         return 'DNA_c'
     if met_id in _CARB_IDS:
         return 'CARB_c'
+    # Everything unrecognised is called lipid. The id sets above are BiGG-spelled and
+    # organism-agnostic, so a metabolite this model spells differently lands here on a
+    # technicality rather than on its chemistry -- which is also why the T cell appears
+    # to have no carbohydrate. Worth saying out loud, since the assignment decides both
+    # the mass fractions and which component reaction carries the block.
+    warnings.warn(f"{met_id} matches no component id set; assigned to LIPID_c",
+                  RuntimeWarning, stacklevel=3)
     return 'LIPID_c'
 
 
@@ -300,13 +307,23 @@ def annotate_atom_patterns(model):
     for MFA. The pattern is just a distinct label per tracked atom.
     """
     for met in model.metabolites:
-        max_n = 0
+        counts = {}
         for rxn in met.reactions:
             amm_str = rxn.annotation.get("atom_mapping", "")
             for match in re.findall(atom_pattern_regex(met.id), amm_str):
-                max_n = max(max_n, len(match))
-        if max_n > 0:
-            met.annotation["atom_pattern"] = ATOM_LABELS[:max_n]
+                counts.setdefault(len(match), []).append(rxn.id)
+        if not counts:
+            continue
+        # The largest wins, but two reactions disagreeing on a metabolite's carbon
+        # count is a defect in one of them: whichever loses is left with an atom map
+        # shorter than the pool it feeds, and the surplus carbon goes to a void pool.
+        if len(counts) > 1:
+            detail = ", ".join(f"{n} in {sorted(set(rxns))[:3]}"
+                               for n, rxns in sorted(counts.items()))
+            warnings.warn(f"{met.id}: reactions disagree on its carbon count "
+                          f"({detail}); taking the largest",
+                          RuntimeWarning, stacklevel=2)
+        met.annotation["atom_pattern"] = ATOM_LABELS[:max(counts)]
     return model
 
 
@@ -341,12 +358,13 @@ def read_terminal_sheet(path_to_atom_map_xls):
                  for col in ('Metab_name', 'Rxn_name'))
 
 
-def apply_terminal_annotations(model, path_to_atom_map_xls):
+def apply_terminal_annotations(model, path_to_atom_map_xls, created_later=frozenset()):
     """Mark the pools and reactions the AMM's Terminal sheet declares terminal.
 
     Applied twice: once by :func:`convert_mfa_maranas` on the flat model, and again after
     :func:`split_biomass_hierarchical`, because the ``bm_*`` pools a Terminal sheet names
-    do not exist until that split creates them.
+    do not exist until that split creates them. *created_later* names those pools, so the
+    first pass stays quiet about them and the second still reports a genuine typo.
     """
     pool_ids, rxn_ids = read_terminal_sheet(path_to_atom_map_xls)
     for idents, lookup, what in ((pool_ids, model.metabolites, 'pool'),
@@ -355,6 +373,8 @@ def apply_terminal_annotations(model, path_to_atom_map_xls):
             try:
                 lookup.get_by_id(ident).annotation['terminal'] = True
             except KeyError:
+                if ident in created_later:
+                    continue
                 # Naming something the model does not contain means the declaration
                 # silently does nothing, the failure this sheet exists to avoid.
                 warnings.warn(f"Terminal sheet names {what} {ident}, which is not "
@@ -454,6 +474,24 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
                 (reactants if row['ReactantProductFlag'] == 'reactant' else products).append(entry)
 
             amm_mets = set(grp['metAbbreviation'])
+            # A metabolite the AMM names but the reaction does not contain is dropped
+            # by both mapping parsers, which iterate over cobra's stoichiometry -- so
+            # its carbon vanishes with nothing said. That is a workbook error.
+            stray = amm_mets - {m.id for m in rxn.metabolites}
+            if stray:
+                warnings.warn(f"{rxn_id}: the AMM maps {sorted(stray)}, which the "
+                              f"reaction does not contain; that carbon is dropped",
+                              RuntimeWarning, stacklevel=2)
+
+            # A metabolite the AMM does not map is named once, unlabelled, however
+            # many copies the stoichiometry asks for. That is how an unmapped educt at
+            # coefficient 4 contributes one copy's worth of letters and strands the
+            # rest, so say when the two disagree.
+            for m, coef in rxn.metabolites.items():
+                if m.id not in amm_mets and abs(coef) > 1 and m.annotation.get('atom_pattern'):
+                    warnings.warn(f"{rxn_id}: {m.id} is unmapped at coefficient "
+                                  f"{coef:g} but can only be named once",
+                                  RuntimeWarning, stacklevel=2)
             reactants += [m.id for m in rxn.reactants if m.id not in amm_mets]
             products  += [m.id for m in rxn.products  if m.id not in amm_mets]
 
@@ -467,35 +505,85 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
             warnings.warn(f"could not build the atom mapping for {rxn_id}: "
                           f"{type(exc).__name__}: {exc}", RuntimeWarning, stacklevel=2)
 
-    # Symmetries
+    # Symmetries. A dropped one is invisible in the finished model -- the pool simply
+    # never gets a 'symmetries' annotation -- yet it changes every MID downstream of it,
+    # so each failure is reported rather than swallowed. ATOM_LABELS rather than
+    # ascii_lowercase because a symmetric pool may carry more than 26 atoms.
     try:
         sym = pd.read_excel(path_to_atom_map_xls, sheet_name='Symmetry')
+    except ValueError:
+        sym = None               # a workbook without the sheet declares no symmetries
+    if sym is not None:
         for _, row in sym.iterrows():
+            name = str(row['Metab_name']).strip()
             try:
-                met = model.metabolites.get_by_id(str(row['Metab_name']).strip())
+                met = model.metabolites.get_by_id(name)
                 default = [int(x) for x in str(row['default mapping']).split()]
                 sym_pos = [int(x) for x in str(row['symmetry mapping']).split()]
-                p2l = {p: string.ascii_lowercase[i] for i, p in enumerate(default)}
+                p2l = {p: ATOM_LABELS[i] for i, p in enumerate(default)}
                 entry = ''.join(p2l[p] for p in default) + '.' + ''.join(p2l[p] for p in sym_pos)
-                met.annotation.setdefault('symmetries', []).append(entry)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as exc:
+                warnings.warn(f"Symmetry sheet: dropped {name}: "
+                              f"{type(exc).__name__}: {exc}",
+                              RuntimeWarning, stacklevel=2)
+                continue
+            met.annotation.setdefault('symmetries', []).append(entry)
 
     # The bm_* pools this may name do not exist yet -- split_biomass_hierarchical creates
-    # them -- so build_hierarchical_models.py applies the sheet a second time afterwards.
-    apply_terminal_annotations(model, path_to_atom_map_xls)
+    # them -- so build_hierarchical_models.py applies the sheet a second time afterwards,
+    # and that second pass is where a mistyped bm_* name gets reported. Warning about
+    # them here too would bury the genuine misses under five expected ones per model.
+    apply_terminal_annotations(model, path_to_atom_map_xls,
+                               created_later=frozenset(_COMPONENT_TO_BM.values()))
 
     annotate_atom_patterns(model)
 
     _remove_out_metabolites(model)
     _standardize_exchange_directions(model)
+    audit_carbon_balance(model)
 
     if path_to_output is not None:
         cobra.io.save_json_model(model, str(path_to_output))
 
     return model
+
+
+def audit_carbon_balance(model):
+    """Report every mapped internal reaction whose atom map loses or invents carbon.
+
+    An atom map has to be a bijection. Where it is not, x3cflux sweeps the unmatched
+    educt atoms into a void pool and the network quietly stops conserving mass, while
+    our own expansion just stops following the label -- the two forward models then
+    disagree for a reason nothing downstream names. `lumpIPC_c` sat like that in all
+    three yeast models, mapping 48 of its 212 carbons, and was found only by tracing
+    an x3cflux crash back through a pinned biomass component.
+
+    Boundaries are exempt: carbon *should* leave at an exchange or a demand, and a pool
+    the AMM declares terminal is one the model has decided to stop tracking.
+    """
+    def carbon(met):
+        if met.annotation.get('terminal'):
+            return 0
+        return len(met.annotation.get('atom_pattern', ''))
+
+    unbalanced = []
+    for rxn in model.reactions:
+        if not rxn.annotation.get('atom_mapping') or rxn.annotation.get('terminal'):
+            continue
+        if rxn.boundary or rxn.id.startswith(('EX_', 'DM_', 'SK_')):
+            continue
+        gap = sum(carbon(m) * -c for m, c in rxn.metabolites.items() if c < 0) \
+            - sum(carbon(m) * c for m, c in rxn.metabolites.items() if c > 0)
+        if abs(gap) > 0.5:
+            unbalanced.append((rxn.id, gap))
+
+    if unbalanced:
+        detail = ', '.join(f"{rid} ({gap:+.0f} C)" for rid, gap in unbalanced[:10])
+        warnings.warn(f"{len(unbalanced)} mapped reaction(s) do not conserve carbon: "
+                      f"{detail}", RuntimeWarning, stacklevel=2)
+    else:
+        print("    carbon balance: every mapped internal reaction conserves carbon")
+    return unbalanced
 
 
 def _remove_metabolites_orphaned_by(model, dropped_formulas):
