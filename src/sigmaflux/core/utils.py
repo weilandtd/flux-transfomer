@@ -938,10 +938,16 @@ def media_dilution_targets(model, media_cfg):
         for met in exchange.metabolites:
             if not met.annotation.get("atom_pattern") or met.id in targets:
                 continue
+            # Both directions, matching can_make_met: a reversible transporter like
+            # ALAt_c_e (ala__L_e <=> ala__L_c) only ever has ala__L_e as a reactant,
+            # so it produces ala__L_e exclusively via its *reverse* bound -- the
+            # forward-only check below missed this class of internal producer
+            # entirely, leaving reversible-transporter media components undiluted.
             produced_internally = any(
                 rxn is not exchange
                 and "atom_mapping" in rxn.annotation
-                and rxn.metabolites[met] > 0 and rxn.upper_bound > 0
+                and ((rxn.metabolites[met] > 0 and rxn.upper_bound > 0)
+                     or (rxn.metabolites[met] < 0 and rxn.lower_bound < 0))
                 for rxn in met.reactions)
             if produced_internally:
                 targets.append(met.id)

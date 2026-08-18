@@ -28,9 +28,9 @@ match our EMU forward model rather than to satisfy x3cflux:
     while our AtomMapping keys off ``lower_bound < 0`` and builds reverse ones.
     Flipping records scale = -1.
   * **Symmetric pools** (fum_c, fum_m, succ_m) have no native x3cflux flag. Our
-    expansion adds both the natural and the reversed origin set with
-    ``symmetry_weight = 1/(1+len(symmetries))`` = 1/2 each, so every reaction
-    producing such a pool is split into two half-flux copies, one per orientation.
+    expansion adds both the natural and the reversed origin set, each weighted
+    ``1/(1+len(symmetries))`` = 1/2, so every reaction producing such a pool is
+    split into two half-flux copies, one per orientation.
 """
 
 import json
@@ -235,35 +235,83 @@ def input_source_pools(facts):
     """EMU input metabolite -> upstream source pool that carries its labeling.
 
     A pool declared as a ConstantSubstrate must be a pure input: x3cflux drops it
-    from the balance and stops tracing there. Our 17 input pools are not pure
-    inputs -- each is produced by its EX_ uptake, which after flipping is a
-    from-nothing influx. Declaring the pool as a substrate *and* leaving a producer
-    attached makes ``create_simulator_from_data`` walk off the end and SIGSEGV
-    (minimal repro: EX_glc__D_e + GLCt_c_e + HEX1_c, measuring g6p_c).
+    from the balance and stops tracing there. Our input pools are not pure inputs
+    -- each is produced by its EX_ uptake, which after flipping is a from-nothing
+    influx. Declaring the pool as a substrate *and* leaving a producer attached
+    makes ``create_simulator_from_data`` walk off the end and SIGSEGV (minimal
+    repro: EX_glc__D_e + GLCt_c_e + HEX1_c, measuring g6p_c).
 
     So the substrate is moved one step upstream: ``glc__D_e__src -> glc__D_e`` via
     the existing EX_ reaction, with ``glc__D_e__src`` carrying the tracer profile.
     ``glc__D_e`` is then an ordinary balanced pool, EX_glc__D_e keeps its identity
-    and flux variable (it is one of the 22 measured fluxes), and the cobra balance
-    row is preserved. The source pool adds no balance row of its own, so the
-    nullspace dimension is unchanged.
+    and flux variable, and the cobra balance row is preserved. The source pool
+    adds no balance row of its own, so the nullspace dimension is unchanged.
+
+    Found structurally: a carbon-carrying pool with exactly one reaction touching
+    it, unidirectionally producing it and nothing else -- ``coef > 0`` under an
+    open upper bound, or ``coef < 0`` under an open lower bound after the sign
+    convention. Zero reactant metabolites in a reaction's own cobra stoichiometry
+    is a fact about the reaction, set at model-definition time in the GEM
+    workbook; it cannot be an artefact of a broken atom map; those show up as
+    stranded educt letters instead, a completely different code path
+    (``build_permutation``'s orphan-product check). So this is a safe, total
+    definition of "network input" -- one that does not depend on which pools the
+    in-house EMU expansion happened to visit. That independence matters now that
+    the expansion can be targeted at a restricted metabolite set
+    (``build_targets(restrict_to=...)``): a dilution-feed pool for a medium
+    component the cell also secretes (see ``media_dilution_targets``) is a
+    legitimate source whether or not anything downstream of it is observable, and
+    the old membership test in ``facts["input_metabolites"]`` -- the *expansion's*
+    boundary nodes -- would otherwise call it a modelling error.
+
+    "Exactly one reaction touching it" means exactly that -- checked across every
+    reaction, not just other single-participant ones. A metabolite like ala__L_e
+    (EX_ala__L_e, bare and bidirectional) that also has a reversible transporter
+    such as ALAt_c_e is *not* a pure input: ALAt_c_e produces it too, on its
+    reverse bound (met a reactant, lb < 0), the same structural test the in-house
+    EMU expansion runs (``can_make_met``) applied over *all* of the metabolite's
+    reactions rather than the one bare candidate. Declaring it a ConstantSubstrate
+    anyway silently discards that internal route and pins the pool to a fixed,
+    usually wrong profile instead of the one the network would actually compute
+    (found via m_musculus_t_cell: ala__L_e labeling disagreed by 0.95 mass
+    fraction between the two forward models before this check was added).
 
     This is independent of the input-pool MID fix (``c4f7012``) and stays whatever
     that fix does: it is an x3cflux structural requirement, and the single biggest
     crash source.
     """
+    mets_by_id = {m["id"]: m for m in facts["metabolites"]}
+
+    def produces(coef, r):
+        return (coef > 0 and r["upper_bound"] > 0) or (coef < 0 and r["lower_bound"] < 0)
+
+    # atom_mapping required: an unmapped reaction carries no labeling information,
+    # so it cannot supply a metabolite's MID even if it structurally balances mass
+    # -- the same gate EMU._is_boundary uses in-house. Skipping it wrongly
+    # disqualified 1-10 metabolites per organism (found across every cached
+    # model) from a legitimate source classification via a reaction that could
+    # never have traced their label anyway.
+    producers = {}
+    for r in facts["reactions"]:
+        if not r.get("atom_mapping"):
+            continue
+        for met, coef in r["stoichiometry"].items():
+            if produces(coef, r):
+                producers.setdefault(met, []).append(r["id"])
+
     sources = {}
-    for m in facts["input_metabolites"]:
-        for r in facts["reactions"]:
-            coef = r["stoichiometry"].get(m, 0)
-            if not coef:
-                continue
-            produces = (coef > 0 and r["upper_bound"] > 0) or \
-                       (coef < 0 and r["lower_bound"] < 0)
-            others = [k for k in r["stoichiometry"] if k != m]
-            if produces and not others:
-                sources[m] = m + SRC_SUFFIX
-                break
+    for r in facts["reactions"]:
+        stoich = r["stoichiometry"]
+        if len(stoich) != 1:
+            continue
+        (met, coef), = stoich.items()
+        if not mets_by_id.get(met, {}).get("atom_pattern"):
+            continue
+        if not produces(coef, r):
+            continue
+        if producers.get(met) != [r["id"]]:
+            continue  # some other reaction also produces it -- not a pure input
+        sources[met] = met + SRC_SUFFIX
     return sources
 
 
