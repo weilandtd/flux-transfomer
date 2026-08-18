@@ -45,6 +45,10 @@ def flux_bounds(facts, conv):
     Without them Ipopt can walk into a branch-point configuration and segfault.
     This is a genuine asymmetry with the L-BFGS-B fit, which takes no cobra bounds
     at all, so a smaller search space flatters x3cflux wherever the two are compared.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
     """
     bounds = {}
     for r in facts["reactions"]:
@@ -64,6 +68,9 @@ def _gauss_newton_problem(x):
     ``compute_linearized_hessian``, which returns ``J^T W J`` while the loss's
     Hessian is ``2 J^T W J``; ``lagrange`` is ignored because every constraint here
     is linear.
+
+    Args:
+        x: the imported ``x3cflux`` module, supplying the base problem class.
     """
 
     class GaussNewtonProblem(x.IpoptOptimizationProblem):
@@ -80,7 +87,16 @@ def _gauss_newton_problem(x):
 
 def optimize(simulator, start, max_iter=5000, bounds=None, gauss_newton=True,
              **kwargs):
-    """Ipopt from one start, keeping the status cyipopt reports."""
+    """Ipopt from one start, keeping the status cyipopt reports.
+
+    Args:
+        simulator: x3cflux simulator built from the model's configurations.
+        start: initial free parameter vector.
+        max_iter: Ipopt iteration cap.
+        bounds: extra ``{parameter: (lo, hi)}`` inequality bounds, if any.
+        gauss_newton: supply an exact Gauss-Newton Hessian instead of L-BFGS.
+        **kwargs: extra Ipopt options, overriding :data:`IPOPT_DEFAULTS`.
+    """
     import cyipopt
     import x3cflux as x
     import x3cflux.utilities  # noqa: F401  -- provides x.utilities
@@ -124,6 +140,17 @@ class X3CFluxBackend:
 
     def __init__(self, facts, labeling_index, measured_flux_ids, noise_std,
                  symmetry=True, use_flux_bounds=True, verbose=True):
+        """Convert the model once, up front, for reuse across samples.
+
+        Args:
+            facts: ``model_facts.json`` dict.
+            labeling_index: ``(tracer, metabolite, 'M+k')`` keys, fixed row order.
+            measured_flux_ids: cobra reaction ids with a flux measurement.
+            noise_std: MID measurement sigma, applied to every isotopomer.
+            symmetry: emulate symmetric pools with half-flux orientation pairs.
+            use_flux_bounds: constrain Ipopt with cobra FVA bounds.
+            verbose: print the network conversion/check summary.
+        """
         self.facts = facts
         self.labeling_index = [tuple(k) for k in labeling_index]
         self.measured_flux_ids = list(measured_flux_ids)
@@ -144,6 +171,11 @@ class X3CFluxBackend:
         The simulator is x3cflux's own object, read directly rather than proxied;
         only :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` is ours, since cobra
         reaction identities are the one thing x3cflux cannot know.
+
+        Args:
+            noisy_labeling: measured MID values, aligned to ``self.labeling_index``.
+            noisy_flux: measured flux values, aligned to ``self.measured_flux_ids``.
+            flux_sigma: measurement sigma per entry of ``self.measured_flux_ids``.
         """
         import x3cflux as x
 
@@ -161,6 +193,15 @@ class X3CFluxBackend:
         caller recomputes that through our forward model. With *isolate* the solve
         runs in a forked child and returns ``(None, None, {'crashed': reason})`` if
         it dies.
+
+        Args:
+            simulator: x3cflux simulator from :meth:`simulator_for`.
+            fluxmap: :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` from :meth:`simulator_for`.
+            v_init: initial cobra net fluxes.
+            r_init: initial cobra reversibilities.
+            max_iter: Ipopt iteration cap.
+            gauss_newton: supply an exact Gauss-Newton Hessian instead of L-BFGS.
+            isolate: run the solve in a forked child, so a crash costs one start.
         """
         def solve():
             result = optimize(simulator, fluxmap.to_x3c(v_init, r_init),
@@ -185,6 +226,10 @@ def run_isolated(call, timeout=7200):
     Ipopt can SIGSEGV from some starting points; isolating each start in a fork
     means a crash costs one start instead of the whole sample, and the child
     inherits the built simulator via copy-on-write so nothing has to be serialised.
+
+    Args:
+        call: zero-argument callable to run in the child.
+        timeout: seconds to wait for the child before giving up on it.
     """
     import multiprocessing
 

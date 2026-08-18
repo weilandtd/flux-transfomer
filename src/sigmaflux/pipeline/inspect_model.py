@@ -32,6 +32,12 @@ def build_parser():
 
 
 def _summary(m, path):
+    """Print a human-readable summary of a model manifest.
+
+    Args:
+        m: parsed manifest dict.
+        path: path to the .sfx file (used only to report its size).
+    """
     prov, model, val = m.get("provenance", {}), m.get("model", {}), m.get("validation", {})
     import os
     print(f"{m['name']}  v{m['model_version']}   ({os.path.getsize(path)/1e6:.1f} MB)")

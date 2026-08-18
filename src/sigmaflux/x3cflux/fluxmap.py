@@ -31,6 +31,13 @@ import numpy as np
 
 class FluxMap:
     def __init__(self, facts, conv, parameter_space):
+        """Precompute the reaction/parameter index maps used by both directions.
+
+        Args:
+            facts: ``model_facts.json`` dict.
+            conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
+            parameter_space: x3cflux simulator's ``parameter_space``.
+        """
         self.facts = facts
         self.conv = conv
         self.ps = parameter_space
@@ -73,7 +80,12 @@ class FluxMap:
     # ── cobra -> x3cflux ──────────────────────────────────────────────────────
 
     def full_vector(self, v, r):
-        """Complete x3cflux parameter vector (``parameter_names`` order)."""
+        """Complete x3cflux parameter vector (``parameter_names`` order).
+
+        Args:
+            v: cobra net fluxes.
+            r: cobra reversibilities.
+        """
         v = np.asarray(v, float)
         r = np.asarray(r, float)
         net, xch = {}, {}
@@ -124,13 +136,23 @@ class FluxMap:
             f"{' ...' if len(orphans) > 20 else ''}")
 
     def to_x3c(self, v, r):
-        """Free parameter vector for cobra fluxes ``v`` and reversibilities ``r``."""
+        """Free parameter vector for cobra fluxes ``v`` and reversibilities ``r``.
+
+        Args:
+            v: cobra net fluxes.
+            r: cobra reversibilities.
+        """
         return self.full_vector(v, r)[self._free_slots]
 
     # ── x3cflux -> cobra ──────────────────────────────────────────────────────
 
     def from_x3c(self, theta_free, check_tol=1e-6):
-        """(v, r) for a free parameter vector, verifying split consistency."""
+        """(v, r) for a free parameter vector, verifying split consistency.
+
+        Args:
+            theta_free: x3cflux free parameter vector.
+            check_tol: relative spread tolerated across a split reaction's sub-fluxes.
+        """
         theta_free = np.asarray(theta_free, float)
         if theta_free.size != self.ps.num_free_parameters:
             raise ValueError(f"expected {self.ps.num_free_parameters} free parameters, "

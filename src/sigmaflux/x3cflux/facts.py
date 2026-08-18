@@ -15,7 +15,14 @@ import json
 
 
 def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
-    """Reaction/metabolite facts plus the EMU network's input set, as a dict."""
+    """Reaction/metabolite facts plus the EMU network's input set, as a dict.
+
+    Args:
+        cobra_model: the prepared cobra model.
+        mfa_model: the built :class:`~sigmaflux.core.model.MFAModel`.
+        mapped_met_ids: metabolite ids with a measurement mapping.
+        cfg: run config, for labeling tracers and measured fluxes.
+    """
     reactions = [{
         "id": r.id,
         "lower_bound": r.lower_bound,
@@ -73,7 +80,16 @@ def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
 
 
 def dump_model_facts(cobra_model, mfa_model, mapped_met_ids, cfg, path, verbose=True):
-    """Write :func:`model_facts` to *path* and return it."""
+    """Write :func:`model_facts` to *path* and return it.
+
+    Args:
+        cobra_model: the prepared cobra model.
+        mfa_model: the built :class:`~sigmaflux.core.model.MFAModel`.
+        mapped_met_ids: metabolite ids with a measurement mapping.
+        cfg: run config, for labeling tracers and measured fluxes.
+        path: output file path.
+        verbose: print a summary of what was written.
+    """
     facts = model_facts(cobra_model, mfa_model, mapped_met_ids, cfg)
     with open(path, "w") as fh:
         json.dump(facts, fh, indent=1)

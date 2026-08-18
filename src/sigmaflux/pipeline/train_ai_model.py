@@ -52,7 +52,11 @@ def share_basis(Z_full, basis_file):
 
     Writes *Z_full* to *basis_file* the first time and loads it thereafter (ICA bases
     aren't bit-reproducible across BLAS thread counts, so members must share one).
-    ``basis_file=None`` disables sharing and returns *Z_full* unchanged.
+
+    Args:
+        Z_full: null-space basis computed by this run.
+        basis_file: path to share the basis across ensemble members; None disables
+            sharing and returns Z_full unchanged.
     """
     if not basis_file:
         return Z_full
@@ -73,6 +77,13 @@ def share_basis(Z_full, basis_file):
 
 
 def split_indices(n_samples, val_fraction, seed):
+    """Return (train_indices, val_indices) from a shuffled split.
+
+    Args:
+        n_samples: total number of samples to split.
+        val_fraction: fraction of samples held out for validation.
+        seed: RNG seed for the shuffle.
+    """
     indices = np.arange(n_samples)
     rng = np.random.default_rng(seed)
     rng.shuffle(indices)
@@ -84,7 +95,11 @@ class MixedFluxLoss:
     """Combines basis-space and flux-space losses."""
 
     def __init__(self, basis_loss_fn, flux_loss_fn, flux_weight):
-        """flux_weight is in [0, 1]; basis_weight = 1 - flux_weight."""
+        """Args:
+            basis_loss_fn: loss computed in null-space basis coordinates.
+            flux_loss_fn: loss computed in reconstructed flux space.
+            flux_weight: weight on flux_loss_fn, in [0, 1]; basis weight is 1 - flux_weight.
+        """
         self.basis_loss_fn = basis_loss_fn
         self.flux_loss_fn = flux_loss_fn
         self.flux_weight = flux_weight
@@ -101,8 +116,15 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
                         variance_min_cutoff=0.1):
     """Build flux and reversibility loss functions.
 
-    flux_loss_space selects 'flux' (reconstructed), 'basis' (null-space), or 'mixed'
-    (combination); Z_full is required when flux_loss_space is 'basis' or 'mixed'.
+    Args:
+        train_dataset: training dataset holding the target tensors.
+        flux_dim: number of flux outputs (targets beyond this are reversibilities).
+        loss_name: 'mse' or 'variance'-normalized MSE.
+        flux_loss_space: 'flux' (reconstructed), 'basis' (null-space), or 'mixed'.
+        Z_full: null-space basis; required when flux_loss_space is 'basis' or 'mixed'.
+        y_train: basis-space training targets, used for variance normalization.
+        mixed_flux_weight: flux-space weight when flux_loss_space is 'mixed'.
+        variance_min_cutoff: floor on per-output variance used for normalization.
     """
     targets = train_dataset.targets
 
@@ -141,7 +163,16 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
 
 def _print_token_selection(token_information, labeling_df, fixed_idx, method,
                            features_csv=None, n_original=None):
-    """Print a summary of the token scoring method and pool size."""
+    """Print a summary of the token scoring method and pool size.
+
+    Args:
+        token_information: per-token scores, or None if no scoring was run.
+        labeling_df: labeling (MID) token table, used for the pool size.
+        fixed_idx: indices of the fixed (measured) flux tokens.
+        method: token selection method name.
+        features_csv: pre-computed Fisher/D-optimal features file, if used.
+        n_original: token count before any filtering, for reporting.
+    """
     n_fx  = len(fixed_idx) if fixed_idx else 0
     n_all = labeling_df.shape[0]
 

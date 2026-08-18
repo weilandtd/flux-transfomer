@@ -51,6 +51,11 @@ def pin_threads():
 def load_benchmark_inputs(data_dir, cfg=None, root=None):
     """Load the run directory's model, observable metabolites and training data.
 
+    Args:
+        data_dir: run directory holding the prepared model and training HDF5 files.
+        cfg: organism config; supplies ``mapping_csv`` when given.
+        root: project root for resolving config-relative paths.
+
     Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
     ``mapped_met_ids`` comes from the config's ``mapping_csv`` when given, else
     every metabolite id in the run's ``features.csv``.
@@ -79,6 +84,14 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
 def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
     """Sample columns for this task, as an offset window into *split*.
 
+    Args:
+        split: which split to draw from ("val", "train", or "all").
+        split_source: checkpoint (or ``None``) whose stored indices define the split.
+        n_total: total number of samples in the training data.
+        cfg: organism config, for the val_fraction/seed fallback when recomputing the split.
+        start_ix: offset of the first sample within the split.
+        n_benchmarks: number of samples to select from that offset.
+
     ``start_ix``/``n_benchmarks`` index the sorted split, not raw HDF5 columns, so a
     SLURM array tiles it deterministically. Returns ``(sel, tag)``; ``sel`` is empty
     when the offset window falls past the end of the split.
@@ -96,7 +109,13 @@ def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
 
 
 def resolve_split_source(checkpoint, data_dir, split):
-    """Checkpoint whose stored indices define the split, or ``None`` to recompute it."""
+    """Checkpoint whose stored indices define the split, or ``None`` to recompute it.
+
+    Args:
+        checkpoint: explicit checkpoint path, used as-is when given.
+        data_dir: run directory to search for an auto-detected checkpoint.
+        split: split name; "all" always recomputes rather than using a checkpoint.
+    """
     if checkpoint is not None or split == "all":
         return checkpoint
     try:
@@ -109,10 +128,15 @@ def build_mfa_context(cobra_model, tracer_cfg, initial_flux, name, with_backward
                       restrict_targets_to=None):
     """Build the prepared MFAModel and the index that flattens its output.
 
-    ``with_backward`` enables gradients (needed for fitting, not forward-only
-    inference). ``restrict_targets_to``, if given, limits which metabolites the
-    expansion targets. Returns ``(mfa_model, reaction_ids, experiments,
-    labeling_to, labeling_index)``.
+    Args:
+        cobra_model: the COBRA model to wrap.
+        tracer_cfg: tracer definitions, as in the organism config's ``labeling.tracers``.
+        initial_flux: flux vector the model is initialized at before preparation.
+        name: name given to the constructed MFAModel.
+        with_backward: enables gradients, needed for fitting but not forward-only inference.
+        restrict_targets_to: optional metabolite ids the expansion targets are limited to.
+
+    Returns ``(mfa_model, reaction_ids, experiments, labeling_to, labeling_index)``.
     """
     mfa_model = MFAModel(cobra_model, name, initial_flux_distribution=initial_flux)
     targets, measured_metabolites, atom_patterns = build_targets(
@@ -132,8 +156,13 @@ def build_mfa_context(cobra_model, tracer_cfg, initial_flux, name, with_backward
 def forward_labeling(mfa_model, fluxes, reversibility, labeling_to):
     """Simulated labeling vector for a flux state, in training-HDF5 row order.
 
-    *fluxes* and *reversibility* are arrays already aligned to
-    ``mfa_model.reactions``. The model is left holding that state.
+    Args:
+        mfa_model: model the flux state is written into and simulated with.
+        fluxes: flux values, aligned to ``mfa_model.reactions``.
+        reversibility: reversibility values, aligned to ``mfa_model.reactions``.
+        labeling_to: index tensor gathering the flattened output into HDF5 row order.
+
+    The model is left holding that state.
     """
     dtype, device = mfa_model.dtype, mfa_model.device
     with torch.no_grad():
@@ -154,7 +183,12 @@ def forward_labeling(mfa_model, fluxes, reversibility, labeling_to):
 
 
 def benchmark_rng(seed, sample_ix):
-    """Per-sample RNG, so a sample's noise stream doesn't depend on run order or neighbours."""
+    """Per-sample RNG, so a sample's noise stream doesn't depend on run order or neighbours.
+
+    Args:
+        seed: base seed for the benchmark run.
+        sample_ix: absolute HDF5 sample index the RNG stream belongs to.
+    """
     return np.random.default_rng([int(seed), int(sample_ix)])
 
 
@@ -163,10 +197,15 @@ def add_labeling_noise(gt_labeling, noise_std, rng):
 
     Reconstructs the implicit M+0, perturbs it and the stored fractions with Gaussian
     noise, then renormalises by the group total so the result stays a valid MID.
-    *gt_labeling* is indexed ``(Tracer, Metabolite, Isotopomer)`` and holds M+1..M+n
-    only. Negatives are clamped before dividing, not after (unlike
+    Negatives are clamped before dividing, not after (unlike
     :func:`sigmaflux.ai.train.apply_labeling_noise`), so a true M+0 near zero can't
     push the group sum above one.
+
+    Args:
+        gt_labeling: ground-truth MIDs, indexed ``(Tracer, Metabolite, Isotopomer)``,
+            holding M+1..M+n only.
+        noise_std: Gaussian noise std applied to the fractions.
+        rng: random generator to draw the noise from.
     """
     if noise_std <= 0:
         return gt_labeling.copy()
@@ -194,7 +233,15 @@ def labeling_chi2_scale(measured, noise_std, rng, n_draws=16):
     shrinks the residual below ``noise_std``, so a χ² test using σ at face value
     would accept nearly every fit; this measures the deflation empirically by
     re-noising the *measured* MIDs (M+0 excluded, since its variance scales with
-    group size). Returns the variance scale ``s`` such that ``SSR/s`` follows χ²(dof).
+    group size).
+
+    Args:
+        measured: noisy MIDs the deflation is measured against.
+        noise_std: Gaussian noise std used to re-noise the measured MIDs.
+        rng: random generator to draw the re-noising from.
+        n_draws: number of re-noising draws averaged over.
+
+    Returns the variance scale ``s`` such that ``SSR/s`` follows χ²(dof).
     """
     if noise_std <= 0:
         return 1.0
@@ -211,6 +258,11 @@ def add_flux_noise(true_values, flux_noise_std, rng):
 
     Unclipped on purpose: the AI is trained against this, so bounding the error here
     would test it on a gentler distribution than it learned.
+
+    Args:
+        true_values: ground-truth flux values to perturb.
+        flux_noise_std: relative Gaussian noise std.
+        rng: random generator to draw the noise from.
     """
     values = np.asarray(true_values, dtype=np.float64)
     if flux_noise_std <= 0:
@@ -220,6 +272,14 @@ def add_flux_noise(true_values, flux_noise_std, rng):
 
 def noisy_measurements(gt_labeling, gt_fluxes, noise_std, flux_noise_std, seed, sample_ix):
     """Both measurement blocks for one sample, drawn in a fixed order.
+
+    Args:
+        gt_labeling: ground-truth MIDs to add labeling noise to.
+        gt_fluxes: ground-truth measured flux values to add flux noise to.
+        noise_std: Gaussian noise std for the labeling block.
+        flux_noise_std: relative Gaussian noise std for the flux block.
+        seed: base seed for the RNG stream.
+        sample_ix: absolute HDF5 sample index the RNG stream belongs to.
 
     Order matters: it fixes the RNG stream so the AI and MFA benchmarks see the
     identical noise realisation for a given ``(seed, sample_ix)``.
@@ -232,6 +292,14 @@ def noisy_measurements(gt_labeling, gt_fluxes, noise_std, flux_noise_std, seed, 
 def write_predictions(base, labeling_data, labeling_index, flux_data, reaction_ids,
                       sample_indices):
     """Write the predicted labeling and flux HDF5 pair.
+
+    Args:
+        base: output path prefix; writes ``{base}_labeling.h5`` and ``{base}_flux.h5``.
+        labeling_data: rows of predicted MID vectors, one per sample.
+        labeling_index: column MultiIndex for the labeling HDF5.
+        flux_data: rows of predicted flux vectors, one per sample.
+        reaction_ids: column labels for the flux HDF5.
+        sample_indices: absolute HDF5 sample indices, used as row labels.
 
     Columns are absolute HDF5 sample indices; rewritten after each sample so a
     killed job keeps whatever it finished.

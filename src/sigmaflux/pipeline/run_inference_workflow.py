@@ -83,6 +83,14 @@ def _expand_samples(
 
     Synthetic sample ID = (R - 1) * n_samples + S for bio-rep R, sample S (0..n_samples-1);
     the perturbed flux is drawn uniformly from [value - error, value + error].
+
+    Args:
+        df_L: labeling (MID) data, one row per bio-rep.
+        df_Vm: measured-flux data, one row per bio-rep.
+        flux_to_sample: reaction name whose flux is perturbed.
+        df_err: per-flux error bounds used for the perturbation, or None.
+        n_samples: number of synthetic draws per bio-replicate.
+        rng: random generator used for the perturbation.
     """
     bio_reps = sorted(df_L['Sample'].unique())
     L_parts, V_parts = [], []

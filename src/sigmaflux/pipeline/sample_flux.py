@@ -55,7 +55,12 @@ _HOPSY_PROPOSALS = {
 
 
 def resolve_path(path, root=None):
-    """Resolve a config path against the config's project root."""
+    """Resolve a config path against the config's project root.
+
+    Args:
+        path: path from the config, absolute or root-relative.
+        root: project root; ``path`` is returned unchanged if omitted.
+    """
     if os.path.isabs(path) or root is None:
         return path
     return _resolve_path(path, root)
@@ -78,6 +83,11 @@ def apply_media(model, media_cfg, close_unlisted=True):
     only those named in *media_cfg* are reopened -- correct for a defined medium, but
     wrong for a whole-body/multi-tissue model where ``EX_`` is internal physiology;
     set ``close_unlisted: false`` there so unlisted exchanges keep their model bounds.
+
+    Args:
+        model: model whose exchange reactions are constrained.
+        media_cfg: mapping of reaction id to ``{lb, ub}`` bounds.
+        close_unlisted: close every ``EX_`` reaction not named in ``media_cfg``.
     """
     if close_unlisted:
         for reaction in model.reactions:
@@ -104,6 +114,10 @@ def apply_reaction_bounds(model, bounds_cfg):
     ``media`` only reaches ``EX_`` reactions, but a GEM's internal reaction
     directions (e.g. transporter directionality) can be wrong for the organism
     being modelled.
+
+    Args:
+        model: model whose reactions are overridden.
+        bounds_cfg: mapping of reaction id to ``{lb, ub}`` bounds; skipped if falsy.
     """
     if not bounds_cfg:
         return
@@ -124,6 +138,10 @@ def can_consume(reaction, metabolite):
 
     Determined by the reaction's bounds, not which side the metabolite sits on: a
     reversible reaction listing it as a product still consumes it running backwards.
+
+    Args:
+        reaction: reaction to check.
+        metabolite: metabolite the reaction may or may not be able to consume.
     """
     coef = reaction.metabolites[metabolite]
     return (coef < 0 and reaction.upper_bound > 0) or (coef > 0 and reaction.lower_bound < 0)
@@ -138,6 +156,10 @@ def drop_skip_constraints(model, skip_constraints):
     reversible reaction can consume a listed product on reverse flux) and given an
     explicit demand reaction rather than being deleted, which keeps mass balance and
     the atom mapping usable instead of leaving an invisible unbounded sink.
+
+    Args:
+        model: model the listed reactions are removed from.
+        skip_constraints: reaction ids to remove.
     """
     to_remove = [model.reactions.get_by_id(r) for r in skip_constraints if r in model.reactions]
     model.remove_reactions(to_remove, remove_orphans=True)
@@ -225,6 +247,13 @@ def diagnose_pool_coverage(samples, fva, reactions, n_bins, label="Pool"):
     """
     Per-reaction bin occupancy diagnostic. Reports observed FVA coverage,
     bin fill rate, and boundary bin counts (first/last bin) for each reaction.
+
+    Args:
+        samples: sampled flux points, columns are reactions.
+        fva: per-reaction FVA min/max, used as the coverage range.
+        reactions: reaction ids to report on.
+        n_bins: number of bins per reaction.
+        label: label prefixing the printed report.
     """
     present = [r for r in reactions if r in samples.columns and r in fva.index]
     if not present:
@@ -253,6 +282,11 @@ def _ipf_weights(bin_asgn, n_bins, n_iter=30):
     """
     Iterative Proportional Fitting: weights w_i such that for every reaction f
     and bin b the weighted fraction equals 1/n_bins (uniform marginal).
+
+    Args:
+        bin_asgn: per-sample, per-reaction bin index array.
+        n_bins: number of bins per reaction.
+        n_iter: number of IPF sweeps.
     """
     n = len(bin_asgn)
     w = np.ones(n, dtype=np.float64) / n
@@ -272,6 +306,13 @@ def draw_quasi_uniform(samples, fva, n_final, n_bins, reactions):
     IPF-weighted draw from `samples` targeting uniform marginals for each reaction.
     Returns a DataFrame of n_final rows drawn without replacement (with replacement
     only if the pool is smaller than n_final).
+
+    Args:
+        samples: pool of sampled flux points to draw from.
+        fva: per-reaction FVA min/max, used as the binning range.
+        n_final: number of rows to draw.
+        n_bins: number of bins per reaction.
+        reactions: reaction ids the marginals are targeted on.
     """
     present = [r for r in reactions if r in samples.columns and r in fva.index]
     if not present:
@@ -343,6 +384,15 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
     """
     For each variable measured reaction, run one constrained MCMC chain per bin.
     Returns a DataFrame containing all strata concatenated.
+
+    Args:
+        model: model to sample from.
+        s: sampling config (method, thinning, processes, ...).
+        fva: per-reaction FVA min/max, used to define the bin bounds.
+        reactions: reaction ids to stratify on.
+        n_bins: number of bins per reaction.
+        n_subsamples: samples drawn per stratum.
+        seed: base seed; offset per bin.
     """
     all_strata = []
     for rxn_id in reactions:

@@ -61,6 +61,10 @@ def parse_atom_mapping(map_str, stoich):
     metabolite listed twice in the map yields two mappings; names absent from the
     stoichiometry are ignored, and stoichiometry entries with no parenthesised group
     get no atoms.
+
+    Args:
+        map_str: the reaction's ``atom_mapping`` annotation string.
+        stoich: cobra stoichiometry dict for the reaction.
     """
     if not map_str.startswith(" "):
         map_str = " " + map_str
@@ -94,6 +98,11 @@ def build_permutation(educts, products, rxn_id):
     matching product letter; since x3cflux needs a bijection, these are absorbed
     into a per-reaction void pool drained by a dedicated efflux, adding one row and
     one column to S so the nullspace dimension is unchanged.
+
+    Args:
+        educts: (metabolite, pattern) entries on the educt side.
+        products: (metabolite, pattern) entries on the product side.
+        rxn_id: reaction id, used only in error messages.
     """
     e_pos, n_e = _bit_positions(educts)
     p_pos, n_p = _bit_positions(products)
@@ -119,6 +128,10 @@ def apply_symmetry(products, sym_map):
 
     ``sym_map`` maps metabolite id -> (orig, image); permutes each product's pattern
     the same way ``compute_origin_emu_set`` does: ``index_map[i] = image.index(orig[i])``.
+
+    Args:
+        products: (metabolite, pattern) entries to rewrite.
+        sym_map: metabolite id -> (orig, image) symmetry pair.
     """
     out = []
     for met, pat in products:
@@ -136,7 +149,12 @@ def apply_symmetry(products, sym_map):
 # ── stoichiometry helpers ─────────────────────────────────────────────────────
 
 def expand_names(stoich, sign):
-    """Metabolite names repeated |coef| times, for integer coefficients."""
+    """Metabolite names repeated |coef| times, for integer coefficients.
+
+    Args:
+        stoich: cobra stoichiometry dict for the reaction.
+        sign: +1 for products, -1 for educts.
+    """
     names = []
     for met, coef in stoich.items():
         if coef * sign <= 0:
@@ -176,6 +194,33 @@ class Converted:
 
     def __init__(self, network_data, scale, parents, reversible, x3c_reactions,
                  void_pools, symmetric, sources, atom_free_reverse, extra_sources):
+        """Store the conversion outputs; see the class docstring for the mapping.
+
+        Parameters
+        ----------
+        network_data : x3cflux.NetworkData
+            the built network.
+        scale : dict[str, float]
+            cobra reaction -> x3cflux flux scale factor.
+        parents : OrderedDict[str, list[tuple[str, float]]]
+            cobra reaction -> [(sub-reaction, coefficient)].
+        reversible : dict[str, bool]
+            cobra reaction -> whether its exchange parameter should stay free.
+        x3c_reactions : list[str]
+            every x3cflux reaction name, including split/symmetry sub-reactions.
+        void_pools : list[str]
+            names of void pools created to absorb unmatched educt atoms.
+        symmetric : list[str]
+            metabolite ids with a declared symmetry.
+        sources : dict[str, str]
+            EMU input metabolite -> its upstream source pool (see
+            :func:`input_source_pools`).
+        atom_free_reverse : list[str]
+            reactions forced unidirectional because their reverse direction carries
+            no atoms.
+        extra_sources : dict[str, int]
+            unlabeled source pool -> atom count, for from-nothing influxes.
+        """
         self.network_data = network_data
         self.scale = scale
         self.parents = parents
@@ -249,6 +294,11 @@ def convert(facts, symmetry=True, allow_void=None):
     :class:`VoidPoolError` unless the reaction is named in *allow_void* (empty by
     default); deliberate label boundaries belong in the workbook's Terminal sheet
     instead.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        symmetry: emulate symmetric pools with half-flux orientation pairs.
+        allow_void: reaction ids allowed to strand carbon in a void pool.
     """
     allow_void = set() if allow_void is None else set(allow_void)
     mets_by_id = {m["id"]: m for m in facts["metabolites"]}
@@ -524,6 +574,13 @@ def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, drop_unpaired=False):
     Returns ``{"skip": set of metabolites handled here, "emit": list of specs}``,
     where a spec is ``("pair", educt, product, n_atoms, share)`` or ``("half", met,
     n_atoms, share, consumed)`` for whatever coefficient the pairing leaves over.
+
+    Args:
+        stoich: cobra stoichiometry dict for the reaction.
+        mets_by_id: metabolite id -> its ``model_facts.json`` entry.
+        sgn: -1 if the reaction is flipped, else +1.
+        rxn_id: reaction id, used in warnings and errors.
+        drop_unpaired: drop an unpairable product instead of erroring (terminal reactions).
     """
     def n_of(met):
         return len(mets_by_id[met]["atom_pattern"])
@@ -595,6 +652,12 @@ def assign_patterns(names, parsed, atoms, spare=None):
     pairing the k-th uncovered product atom with the k-th uncovered educt atom.
     Educt atoms with no product partner fall through to the void pool; the reverse
     is rejected.
+
+    Args:
+        names: metabolite names in storage order (educt or product side).
+        parsed: (metabolite, pattern) entries already covered by the atom map.
+        atoms: metabolite id -> atom count.
+        spare: uncovered educt-side letters to draw from; None mints new ones.
     """
     pool = {}
     for met, pat in parsed:
@@ -627,6 +690,11 @@ def _cap_to_stoichiometry(entries, stoich, rxn_id=None):
 
     If this actually drops a copy, the atom-mapping spreadsheet disagrees with the
     stoichiometry, so it warns rather than silently truncating.
+
+    Args:
+        entries: (metabolite, pattern) entries to filter.
+        stoich: cobra stoichiometry dict for the reaction.
+        rxn_id: reaction id, used only in the warning message.
     """
     seen, out, dropped = {}, [], []
     for met, pat in entries:
@@ -645,7 +713,12 @@ def _cap_to_stoichiometry(entries, stoich, rxn_id=None):
 
 
 def _remainder(all_names, used):
-    """Names in *all_names* left over after removing one copy of each in *used*."""
+    """Names in *all_names* left over after removing one copy of each in *used*.
+
+    Args:
+        all_names: full name list to filter.
+        used: names to remove one copy of each.
+    """
     rest = list(all_names)
     for u in used:
         if u in rest:

@@ -32,6 +32,11 @@ def tracer_profile(labeling, n_atoms, enrichment):
 
     Profiles are not normalised by x3cflux, so the complete distribution must be
     given; the bitset string's leftmost character is atom C1 (FluxML ``cfg=`` convention).
+
+    Args:
+        labeling: per-atom booleans, labeled positions first.
+        n_atoms: atom count of the labeled metabolite.
+        enrichment: fraction of the tracer that carries this labeling pattern.
     """
     pattern = "".join("1" if b else "0" for b in labeling)
     if len(pattern) != n_atoms:
@@ -48,6 +53,11 @@ def build_substrates(facts, conv, tracer):
     itself (see :func:`convert.input_source_pools`); iterates ``conv.sources`` rather
     than ``facts["input_metabolites"]`` to match exactly the pools ``convert`` relies
     on already existing.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
+        tracer: one entry of ``facts["tracers"]``.
     """
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     subs = []
@@ -70,6 +80,10 @@ def build_constraints(facts, conv):
 
     Returns ParameterConstraints objects; the parameter names inside carry no
     ``.n``/``.x`` suffix because the two collections are already type-scoped.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
     """
     net_eq, xch_eq, xch_def = [], [], []
 
@@ -116,6 +130,18 @@ def build_measurements(facts, conv, labeling_index, measured_flux_ids, noisy_lab
 
     Only M+1..M+n are included (M+0 is never scored); ``flux_sigma_scale`` inflates
     the flux sigmas so x3cflux's raw SSR stays proportional to our reduced objective.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
+        labeling_index: ``(tracer, metabolite, 'M+k')`` keys, row order of *noisy_labeling*.
+        measured_flux_ids: cobra reaction ids with a flux measurement.
+        noisy_labeling: measured MID values, aligned to *labeling_index*.
+        noisy_flux: measured flux values, aligned to *measured_flux_ids*.
+        flux_sigma: measurement sigma per entry of *measured_flux_ids*.
+        tracer_key: the tracer this configuration is built for.
+        noise_std: MID measurement sigma, applied to every isotopomer.
+        flux_sigma_scale: multiplier applied to *flux_sigma* before it reaches x3cflux.
     """
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     rows = {}
@@ -148,6 +174,10 @@ def flux_expression(conv, rxn_id):
 
     Rewrites split, flipped, and symmetry-halved reactions back into their cobra
     terms, undoing what :mod:`convert` did, so the formula matches the measured flux.
+
+    Args:
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
+        rxn_id: cobra reaction id.
     """
     subs = conv.parents.get(rxn_id)
     scale = conv.scale[rxn_id]
@@ -177,6 +207,10 @@ def structural_configuration(facts, conv):
 
     ``create_simulator_from_data`` rejects an empty configuration list, so this
     supplies one configuration with no measurements instead.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
     """
     import x3cflux as x
 
@@ -189,7 +223,19 @@ def structural_configuration(facts, conv):
 
 def build_configurations(facts, conv, labeling_index, measured_flux_ids, noisy_labeling,
                          noisy_flux, flux_sigma, noise_std, flux_sigma_scale=1.0):
-    """One MeasurementConfiguration per tracer, sharing network and constraints."""
+    """One MeasurementConfiguration per tracer, sharing network and constraints.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
+        labeling_index: ``(tracer, metabolite, 'M+k')`` keys, row order of *noisy_labeling*.
+        measured_flux_ids: cobra reaction ids with a flux measurement.
+        noisy_labeling: measured MID values, aligned to *labeling_index*.
+        noisy_flux: measured flux values, aligned to *measured_flux_ids*.
+        flux_sigma: measurement sigma per entry of *measured_flux_ids*.
+        noise_std: MID measurement sigma, applied to every isotopomer.
+        flux_sigma_scale: multiplier applied to *flux_sigma* before it reaches x3cflux.
+    """
     net_c, xch_c = build_constraints(facts, conv)
     empty = x.ParameterConstraints([], [], [])
     configs = []

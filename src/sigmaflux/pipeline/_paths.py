@@ -37,7 +37,13 @@ def find_project_root(start):
 def load_config(config_path, root=None):
     """Load a YAML config and determine the root its relative paths hang off.
 
-    Returns ``(cfg, root)`` where *root* is an absolute :class:`str`.
+    Args:
+        config_path: path to the YAML config file.
+        root: explicit project root override; otherwise resolved from the config
+            or the config file's ancestor directories.
+
+    Returns:
+        (cfg, root) where root is an absolute :class:`str`.
     """
     config_path = Path(config_path).resolve()
     with open(config_path) as fh:
@@ -59,7 +65,12 @@ def load_config(config_path, root=None):
 
 
 def resolve_path(path, root):
-    """Resolve *path* against *root*, leaving absolute paths untouched."""
+    """Resolve *path* against *root*, leaving absolute paths untouched.
+
+    Args:
+        path: path to resolve, possibly relative; None passes through unchanged.
+        root: base directory relative paths are resolved against.
+    """
     if path is None:
         return None
     return path if os.path.isabs(path) else os.path.join(root, path)
@@ -77,7 +88,12 @@ def add_root_argument(parser):
 
 
 def default_output_dir(cfg, override=None):
-    """Run directory for a config: ``<name>_YYYYMMDD`` unless overridden."""
+    """Run directory for a config: ``<name>_YYYYMMDD`` unless overridden.
+
+    Args:
+        cfg: config dict, used for its 'name' when not overridden.
+        override: explicit output directory; takes precedence over the default.
+    """
     if override:
         return override
     import datetime

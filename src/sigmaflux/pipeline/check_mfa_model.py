@@ -60,6 +60,10 @@ def measurable_metabolites(cfg, root):
 
     Read from ``mapping_csv``'s ``model_id`` column. Returns ``None`` (meaning
     "target everything with an atom pattern") when the config declares no mapping.
+
+    Args:
+        cfg: organism config; supplies ``mapping_csv``.
+        root: project root for resolving the mapping CSV path.
     """
     from ._paths import resolve_path
 
@@ -82,6 +86,11 @@ def prepared_model(cfg, root, out_dir):
     Applies media, dilution inputs, reaction-bound overrides, the growth window, FVA
     tightening and skip-constraint drops in that order, matching the sampler's order
     so this validates the network training will actually see.
+
+    Args:
+        cfg: organism config, supplying sampling/media/growth settings.
+        root: project root for resolving the model file path.
+        out_dir: directory the prepared model JSON is written to.
     """
     import cobra
     from cobra.io.json import load_json_model
@@ -135,6 +144,11 @@ def interior_flux(model, n_samples=2, seed=None):
     x3cflux reports as "not numerically solvable" and can segfault on. Uses
     ``achr`` (single-process, suited to a handful of points) rather than the
     default ``auto``/``chrr``.
+
+    Args:
+        model: prepared COBRA model to sample.
+        n_samples: number of points to draw (only the first is used).
+        seed: sampler seed for reproducibility.
     """
     import numpy as np
     import pandas as pd
@@ -166,6 +180,15 @@ def check_build(facts, mfa_model, labeling_to, labeling_index, v, r, noise_std=0
     Everything here is construction, not simulation, including x3cflux's own
     simulator build -- the step that scales badly for larger networks -- so a long
     stall here is always attributable to construction, never to the comparison.
+
+    Args:
+        facts: model facts dict (from ``dump_model_facts``) driving the x3cflux conversion.
+        mfa_model: prepared in-house MFAModel used for the forward labeling prediction.
+        labeling_to: index tensor gathering the in-house model's output into labeling_index order.
+        labeling_index: ordered (tracer, metabolite, isotopomer) labeling slots.
+        v: interior flux vector.
+        r: interior reversibility vector.
+        noise_std: labeling noise std used to size the x3cflux measurement sigmas.
     """
     import x3cflux as x
 
@@ -210,6 +233,11 @@ def check_edge_weights(mfa_model, conv, tol=1e-9):
     carries no label, or label is invented from nothing, and our forward model is
     solving a different network than x3cflux. Structural check only: no flux,
     no simulation.
+
+    Args:
+        mfa_model: prepared in-house MFAModel whose EMU network is checked.
+        conv: x3cflux conversion result, for the symmetry-share comparison.
+        tol: maximum allowed deviation from a full-stoichiometry weight sum.
     """
     from collections import defaultdict
 
@@ -260,6 +288,16 @@ def check_labeling(facts, simulator, fluxmap, labeling_index, ours, v, r,
 
     Both simulators are already built (:func:`check_build`); this only runs x3cflux's
     forward pass and compares -- fast regardless of network size.
+
+    Args:
+        facts: model facts dict driving the comparison.
+        simulator: built x3cflux simulator.
+        fluxmap: FluxMap translating between in-house and x3cflux parameterizations.
+        labeling_index: ordered (tracer, metabolite, isotopomer) labeling slots.
+        ours: in-house model's predicted labeling vector.
+        v: interior flux vector.
+        r: interior reversibility vector.
+        tol: max absolute MID difference accepted.
     """
     from ..x3cflux.compare import compare_simulated
 
@@ -291,6 +329,16 @@ def check_fit_starts(facts, conv, simulator, fluxmap, v, r,
     ~0 before Ipopt steps -- this only checks the problem constructs and Ipopt
     accepts it. ``status == -1`` (``Maximum_Iterations_Exceeded``) is an accepted
     outcome at a small ``max_iter``.
+
+    Args:
+        facts: model facts dict driving the fit.
+        conv: x3cflux conversion result, for flux bounds.
+        simulator: built x3cflux simulator.
+        fluxmap: FluxMap translating the interior flux into x3cflux's starting point.
+        v: interior flux vector.
+        r: interior reversibility vector.
+        max_iter: Ipopt iteration cap.
+        isolate: run the fit in a forked child so a crash doesn't take the process down.
     """
     from ..x3cflux.fit import flux_bounds, optimize, run_isolated
 
@@ -325,6 +373,16 @@ def check_model(cfg, root, out_dir, tol=DEFAULT_LABELING_TOL,
                 seed=None):
     """Run the four checks in order, stopping at the first failure -- each depends on
     the last having passed.
+
+    Args:
+        cfg: organism config.
+        root: project root for resolving config-relative paths.
+        out_dir: directory model_facts.json and the prepared model are written to.
+        tol: max absolute MID difference the labeling check accepts.
+        max_iter: Ipopt iteration cap for the fit-starts check.
+        skip_fit: run only the build/edge_weights/labeling checks.
+        noise_std: labeling noise std; defaults to the config's ``features.noise_std``.
+        seed: seed for the interior flux sample.
 
     Returns ``(ok, results)``, ``results`` a ``{"build", "edge_weights", "labeling",
     "fit_starts"}`` dict with one entry per check actually reached.

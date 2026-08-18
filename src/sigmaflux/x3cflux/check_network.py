@@ -21,7 +21,12 @@ class NetworkCheckError(AssertionError):
 
 
 def check_network(nd, verbose=True):
-    """Return a list of problem strings; empty means the network is well-formed."""
+    """Return a list of problem strings; empty means the network is well-formed.
+
+    Args:
+        nd: x3cflux ``NetworkData`` to validate.
+        verbose: print a summary of the problems found.
+    """
     problems = []
     atoms = {m.name: m.num_atoms for m in nd.metabolites}
 
@@ -92,6 +97,10 @@ def assert_network(nd, verbose=True):
 
     Always call this before ``create_simulator_from_data``: the alternative to an
     exception here is not a worse error message, it is a killed process.
+
+    Args:
+        nd: x3cflux ``NetworkData`` to validate.
+        verbose: print a summary of the problems found.
     """
     problems = check_network(nd, verbose=verbose)
     if problems:

@@ -28,7 +28,12 @@ from .fluxmap import FluxMap
 
 
 def measurement_slots(simulator, facts):
-    """x3cflux measurement slot -> ``(tracer key, metabolite)``."""
+    """x3cflux measurement slot -> ``(tracer key, metabolite)``.
+
+    Args:
+        simulator: x3cflux simulator built from *facts*'s configurations.
+        facts: ``model_facts.json`` dict.
+    """
     names, _ = simulator.measurement_names
     multi, _ = simulator.measurement_multi_indices
     keys = [t["key"] for t in facts["tracers"]]
@@ -37,7 +42,15 @@ def measurement_slots(simulator, facts):
 
 
 def x3cflux_labeling(simulator, fluxmap, facts, v, r):
-    """``{(tracer, metabolite, 'M+k'): value}`` simulated by x3cflux at ``(v, r)``."""
+    """``{(tracer, metabolite, 'M+k'): value}`` simulated by x3cflux at ``(v, r)``.
+
+    Args:
+        simulator: x3cflux simulator built from *facts*'s configurations.
+        fluxmap: :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` for the model.
+        facts: ``model_facts.json`` dict.
+        v: cobra net fluxes.
+        r: cobra reversibilities.
+    """
     labeling, _ = simulator.compute_measurements(fluxmap.to_x3c(v, r))
     out = {}
     for (tracer, met), values in zip(measurement_slots(simulator, facts), labeling):
@@ -54,6 +67,15 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
     models' values and their absolute difference, one row per shared entry. Builds
     its own simulator -- call :func:`compare_simulated` instead if one already
     exists, since building it dominates the cost on a genome-scale network.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        labeling_index: ``(tracer, metabolite, 'M+k')`` keys, row order of *our_labeling*.
+        our_labeling: our EMU forward model's MID values, aligned to *labeling_index*.
+        v: cobra net fluxes.
+        r: cobra reversibilities.
+        noise_std: MID measurement sigma used to build the x3cflux configuration.
+        verbose: print the comparison report.
     """
     conv = convert(facts)
     assert_network(conv.network_data, verbose=False)
@@ -75,7 +97,18 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
 
 def compare_simulated(simulator, fluxmap, facts, labeling_index, our_labeling,
                       v, r, verbose=True):
-    """:func:`compare_mid` against an already-built simulator."""
+    """:func:`compare_mid` against an already-built simulator.
+
+    Args:
+        simulator: x3cflux simulator built from *facts*'s configurations.
+        fluxmap: :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` for the model.
+        facts: ``model_facts.json`` dict.
+        labeling_index: ``(tracer, metabolite, 'M+k')`` keys, row order of *our_labeling*.
+        our_labeling: our EMU forward model's MID values, aligned to *labeling_index*.
+        v: cobra net fluxes.
+        r: cobra reversibilities.
+        verbose: print the comparison report.
+    """
     labeling_index = [tuple(k) for k in labeling_index]
     theirs = x3cflux_labeling(simulator, fluxmap, facts, v, r)
     ours = dict(zip(labeling_index, np.asarray(our_labeling, float)))
@@ -104,7 +137,12 @@ def compare_simulated(simulator, fluxmap, facts, labeling_index, our_labeling,
 
 
 def report(frame, missing=()):
-    """Print the comparison, worst offenders first."""
+    """Print the comparison, worst offenders first.
+
+    Args:
+        frame: DataFrame from :func:`compare_simulated`.
+        missing: keys present in our labeling but absent from x3cflux's.
+    """
     if frame.empty:
         print("compare_mid: no overlapping entries")
         return

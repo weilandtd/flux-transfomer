@@ -77,7 +77,12 @@ def _p(rel):
 
 
 def _apply_media_bounds(cobra_model, media_cfg):
-    """Close all exchange reactions, then open only those defined in media_cfg."""
+    """Close all exchange reactions, then open only those defined in media_cfg.
+
+    Args:
+        cobra_model: model whose exchange reactions are constrained.
+        media_cfg: mapping of reaction id to ``{lb, ub}`` bounds to open.
+    """
     for rxn in cobra_model.reactions:
         if rxn.id.startswith("EX_"):
             rxn.lower_bound = 0.0
@@ -97,6 +102,10 @@ def _feasible_init(constrained, fallback):
     The measured-flux bounds (mean±2σ) are frequently over-determined and make the
     polytope infeasible, so for the *initial point* only this falls back to the
     feasible media-only model; measurements still apply as soft targets via FluxData.
+
+    Args:
+        constrained: model with measured-flux bounds applied, tried first.
+        fallback: media-only model, tried if the constrained model is infeasible.
     """
     from cobra.flux_analysis import pfba
     for mdl, label in ((constrained, "measured-bounds"), (fallback, "media-only")):
@@ -108,7 +117,17 @@ def _feasible_init(constrained, fallback):
 
 
 def run_condition(cobra_model, condition, gc, args, tracer_cfg, timestamp, output_dir):
-    """Fit MFA for one condition/replicate. cobra_model must already have media bounds applied."""
+    """Fit MFA for one condition/replicate. cobra_model must already have media bounds applied.
+
+    Args:
+        cobra_model: model with media bounds already applied.
+        condition: condition label (e.g. "C", "N", "P"), used to locate the MID/flux data.
+        gc: growth condition number.
+        args: parsed CLI arguments (paths, fit hyperparameters).
+        tracer_cfg: tracer definitions, as in the organism config's ``labeling.tracers``.
+        timestamp: run timestamp, used to tag output filenames.
+        output_dir: directory results and checkpoints are written to.
+    """
     print(f"\n{'='*60}")
     print(f"  Condition {condition}, GC {gc}")
     print(f"{'='*60}")

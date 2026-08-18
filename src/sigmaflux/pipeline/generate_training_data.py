@@ -56,6 +56,10 @@ from sigmaflux.pipeline._paths import (
 def validate_tracers(tracer_cfg, media_cfg):
     """Check that every tracer has an open ``EX_<met_id>`` exchange reaction in the media.
 
+    Args:
+        tracer_cfg: tracer definitions, as in the organism config's ``labeling.tracers``.
+        media_cfg: media exchange-reaction bounds, as in the config's ``sampling.media``.
+
     Raises ValueError listing every incompatible tracer.
     """
     errors = []
@@ -111,8 +115,10 @@ def build_experiments(mfa_model, tracer_cfg):
 def build_targets(mfa_model, restrict_to=None):
     """EMU targets, one whole-molecule EMU per atom-mapped metabolite.
 
-    :param restrict_to: optional set of metabolite ids; when given, only these
-        become targets, so the expansion never walks past them.
+    Args:
+        mfa_model: prepared MFAModel whose annotated metabolites become targets.
+        restrict_to: optional set of metabolite ids; when given, only these
+            become targets, so the expansion never walks past them.
     """
     targets = set()
     measured_metabolites = []

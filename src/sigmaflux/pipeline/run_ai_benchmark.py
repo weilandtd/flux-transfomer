@@ -79,6 +79,13 @@ def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
 
     Uses the shared per-sample RNG, so the MFA benchmark scoring the same sample sees
     the identical noise realisation.
+
+    Args:
+        labeling_df: training-HDF5 labeling table, columns are samples.
+        cols: HDF5 column indices of the selected samples.
+        noise_std: Gaussian noise std added to the MID fractions.
+        seed: base seed for the per-sample RNG stream.
+        inv_tracer: maps internal tracer token to the predictor's tracer name.
     """
     noisy_cols = {}
     for run_ix, col in enumerate(cols):
@@ -102,6 +109,15 @@ def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_
 
     Draws (and discards) the labeling noise first to keep the shared RNG's draw
     order in sync with the MFA benchmark, so both land on the identical flux noise.
+
+    Args:
+        training_flux_df: training-HDF5 flux table, columns are samples.
+        measured_rxn_ids: reaction ids treated as measured fluxes.
+        cols: HDF5 column indices of the selected samples.
+        noise_std: Gaussian noise std for the (discarded) labeling draw.
+        flux_noise_std: relative Gaussian noise std added to the flux values.
+        labeling_df: training-HDF5 labeling table, for the shared RNG draw order.
+        seed: base seed for the per-sample RNG stream.
     """
     present = [r for r in measured_rxn_ids if r in training_flux_df.index]
     if not present:

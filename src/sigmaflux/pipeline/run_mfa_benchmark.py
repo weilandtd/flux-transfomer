@@ -166,7 +166,12 @@ def build_parser():
 
 
 def measured_flux_ids(measured_rxn_ids, gt_flux_series):
-    """The measured reactions this sample actually has ground truth for, in order."""
+    """The measured reactions this sample actually has ground truth for, in order.
+
+    Args:
+        measured_rxn_ids: reaction ids configured as measured fluxes.
+        gt_flux_series: this sample's ground-truth flux values, indexed by reaction id.
+    """
     return [r for r in measured_rxn_ids if r in gt_flux_series.index]
 
 
@@ -175,6 +180,13 @@ def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, 
 
     The χ² variance is ``(flux_noise_std·|true|)²``, since fluxes are real
     magnitudes.
+
+    Args:
+        mfa_model: model the FluxData observations are built against.
+        rxn_ids: reaction ids of the measured fluxes, in the order of ``noisy_values``.
+        gt_flux_series: ground-truth flux values, used to scale the observation std.
+        flux_noise_std: relative Gaussian noise std used to size each std.
+        noisy_values: already-noised measured flux values.
     """
     rows = [{"reaction": rxn_id, "mean": float(meas),
              "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
@@ -189,9 +201,18 @@ def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, 
     answer to start near, so seeding close to it would measure how well the
     optimiser polishes a handed solution rather than whether it can find one. Every
     training sample is a feasible point of the same polytope, so picking one
-    guarantees S·v = 0 and in-bounds. *gt_flux* is used only to report how far the
-    start landed from the answer. Returns ``(v_init, r_init, info)`` with
-    ``info = {j, dev}``.
+    guarantees S·v = 0 and in-bounds.
+
+    Args:
+        all_flux_df: full training-HDF5 flux table to draw the init sample from.
+        all_rev_df: full training-HDF5 reversibility table, aligned to ``all_flux_df``.
+        gt_flux: this sample's ground truth, used only to report how far the
+            start landed from the answer.
+        sample_ix: this sample's own column, excluded from the draw.
+        reaction_ids: reaction order to align the drawn columns to.
+        rng: random generator the draw is made from.
+
+    Returns ``(v_init, r_init, info)`` with ``info = {j, dev}``.
     """
     n_samples = all_flux_df.shape[1]
     j = int(rng.integers(0, n_samples))
@@ -226,11 +247,17 @@ def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
     The standard ¹³C-MFA goodness-of-fit test (Antoniewicz, Kelleher & Stephanopoulos
     2006): at a global optimum with known measurement σ, the weighted SSR follows
     χ² on ``dof = n_measurements - n_params``; a fit is accepted when its SSR falls
-    below ``χ²_{1-α}(dof)``. *scale_labeling* is the labeling block's standardised
-    residual variance under the actual noise model (see
-    :func:`~sigmaflux.pipeline._benchmark.labeling_chi2_scale`); the flux block needs
-    no correction, so the two blocks are blended by size and the returned bound
-    carries that scale factor.
+    below ``χ²_{1-α}(dof)``. The flux block needs no correction, so the two blocks
+    are blended by size and the returned bound carries that scale factor.
+
+    Args:
+        n_L: number of labeling measurements.
+        n_F: number of flux measurements.
+        n_params: number of free parameters spent by the fit.
+        scale_labeling: labeling block's standardised residual variance under the
+            actual noise model (see
+            :func:`~sigmaflux.pipeline._benchmark.labeling_chi2_scale`).
+        alpha: significance level of the goodness-of-fit test.
     """
     dof = max(n_L + n_F - n_params, 1)
     scale = (scale_labeling * n_L + 1.0 * n_F) / max(n_L + n_F, 1)
@@ -242,6 +269,11 @@ def acceptance_threshold(n_L, n_F, z=1.645):
 
     Legacy statistic: rejects above ``1 + z·sqrt(2/h_eff)`` where ``h_eff`` is M's
     moment-matched effective degrees of freedom.
+
+    Args:
+        n_L: number of labeling measurements.
+        n_F: number of flux measurements.
+        z: z-score for the acceptance bound.
     """
     if n_F > 0:
         h_eff = 4.0 * n_L * n_F / (n_L + n_F)
@@ -253,8 +285,14 @@ def acceptance_threshold(n_L, n_F, z=1.645):
 def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flux_data):
     """Build one Experiment per tracer from an already-noised labeling series.
 
-    *noisy_series* must already be restricted to the observable metabolites, so the
-    sum-to-one renormalisation was applied over exactly the entries used here.
+    Args:
+        experiments: template experiments, one per tracer, supplying the tracer objects.
+        noisy_series: already-noised MIDs, restricted to the observable metabolites
+            so the sum-to-one renormalisation was applied over exactly the entries
+            used here.
+        noise_std: labeling noise std recorded on each measurement row.
+        mfa_model: model the resulting MassIsotopomerData is built against.
+        flux_data: measured-flux soft constraints attached to each Experiment.
     """
     noisy_exps = []
     for experiment in experiments:
@@ -315,6 +353,11 @@ def native_shaped_result(mfa_model, n_iter, converged):
     this driver unchanged: the fitted flux is written into the model and the
     objective re-derived here, so acceptance is always decided by *our* forward
     model against *our* noise, never the optimiser's own report.
+
+    Args:
+        mfa_model: model already holding the external backend's fitted flux state.
+        n_iter: iteration count reported by the external backend.
+        converged: convergence flag reported by the external backend.
     """
     lab_chi2, flux_chi2 = _chi2_split(mfa_model)
     n_L, n_F = _block_counts(mfa_model)
@@ -332,7 +375,12 @@ def _r2(pred, true):
 
 
 def _agreement(pred, true):
-    """(R², Pearson r, RMSE) of pred vs true."""
+    """(R², Pearson r, RMSE) of pred vs true.
+
+    Args:
+        pred: predicted values.
+        true: ground-truth values, aligned to ``pred``.
+    """
     rmse = float(np.sqrt(np.mean((pred - true) ** 2)))
     corr = float(np.corrcoef(pred, true)[0, 1])
     return _r2(pred, true), corr, rmse
@@ -341,6 +389,11 @@ def _agreement(pred, true):
 def _labeling_agreement(pred, gt, extra_mask=None):
     """Labeling (R², r, RMSE) scored only where GT != 0, since unpopulated M+n
     isotopomers carry no information and would inflate R²/RMSE.
+
+    Args:
+        pred: predicted labeling vector.
+        gt: ground-truth labeling vector, aligned to ``pred``.
+        extra_mask: additional boolean mask ANDed with the GT-nonzero mask.
     """
     mask = gt > 1e-12
     if extra_mask is not None:
@@ -352,7 +405,17 @@ def _labeling_agreement(pred, gt, extra_mask=None):
 
 def _report_init(mfa_model, init_info, gt_flux, gt_flux_arr, gt_labeling_vec,
                  labeling_to, flux_data_obs):
-    """Pre-fit diagnostics: is the init feasible, and where does the objective sit?"""
+    """Pre-fit diagnostics: is the init feasible, and where does the objective sit?
+
+    Args:
+        mfa_model: model already reset to the init flux/reversibility state.
+        init_info: ``{j, dev}`` from :func:`make_init_fluxes`, for the printed report.
+        gt_flux: ground-truth flux values, for the measured-constraint table.
+        gt_flux_arr: ground-truth flux values as an array aligned to ``reaction_ids``.
+        gt_labeling_vec: ground-truth labeling vector to compare the init against.
+        labeling_to: index tensor gathering the model's output into labeling order.
+        flux_data_obs: measured-flux soft constraints, or ``None``.
+    """
     if flux_data_obs is not None:
         frows = [{"reaction": f.reaction.id, "true": float(gt_flux[f.reaction.id]),
                   "mean": f._mean, "std": f._std,
@@ -389,7 +452,22 @@ def _report_init(mfa_model, init_info, gt_flux, gt_flux_arr, gt_labeling_vec,
 
 def _report_fit(mfa_model, res, gt_flux, gt_labeling_vec, labeling_to, labeling_index,
                 reaction_ids, measured_rxn_ids, mapped_met_ids, flux_data_obs, accept_z):
-    """Post-fit diagnostics: convergence, flux/labeling recovery, mass balance."""
+    """Post-fit diagnostics: convergence, flux/labeling recovery, mass balance.
+
+    Args:
+        mfa_model: model holding the fitted flux/reversibility state.
+        res: fit result dict, as returned by :func:`native_shaped_result` or
+            ``fit_mfa_model``.
+        gt_flux: ground-truth flux values to compare the fit against.
+        gt_labeling_vec: ground-truth labeling vector to compare the fit against.
+        labeling_to: index tensor gathering the model's output into labeling order.
+        labeling_index: ordered (tracer, metabolite, isotopomer) labeling slots.
+        reaction_ids: reaction order the flux vectors are aligned to.
+        measured_rxn_ids: reaction ids configured as measured fluxes.
+        mapped_met_ids: metabolite ids the measurement platform can see.
+        flux_data_obs: measured-flux soft constraints, or ``None``.
+        accept_z: z-score for the legacy reduced-χ² bound, for the printed report.
+    """
     pred_flux = mfa_model.fluxes.detach().cpu().numpy()
     gt_vals = gt_flux.reindex(reaction_ids).values
 
