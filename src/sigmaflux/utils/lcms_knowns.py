@@ -47,8 +47,13 @@ def match_lcms_knowns(gem_xlsx, knowns_path, model_metabolite_ids=None,
                       gem_sheet='Metabolites', id_col='metid', name_col='metname'):
     """Map LC/MS compound names onto model metabolite IDs by normalized name, returning a DataFrame [experimental_id, model_id] with one row per matching compartment.
 
-    `model_metabolite_ids`, when given, restricts to metabolites that survived
-    conversion into the COBRA model.
+    Args:
+        gem_xlsx: GEM xlsx to read model metabolites from.
+        knowns_path: path to the LC/MS knowns table.
+        model_metabolite_ids: restrict matches to these ids, e.g. ones surviving conversion into the COBRA model.
+        gem_sheet: sheet in gem_xlsx holding the metabolites.
+        id_col: column in gem_sheet holding metabolite ids.
+        name_col: column in gem_sheet holding metabolite names.
     """
     knowns = read_lcms_knowns(knowns_path)
     by_name = {}

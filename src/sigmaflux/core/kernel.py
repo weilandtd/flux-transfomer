@@ -20,7 +20,14 @@ def right_kernel_stoich_matrix_qr(S):
     return kernel
 
 def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
-    """Find a sparse right nullspace of S via an elementary-flux-mode MILP formulation. Requires cplex or gurobi."""
+    """Find a sparse right nullspace of S via an elementary-flux-mode MILP formulation. Requires cplex or gurobi.
+
+    Args:
+        S: stoichiometric matrix to find the right nullspace of.
+        eps: minimum magnitude enforced on nonzero kernel entries.
+        M: big-M bound used in the indicator/binary formulation.
+        solver: MILP solver interface to use ('cplex' or 'gurobi').
+    """
     if solver not in ["cplex", "gurobi"]:
         raise NotImplementedError("Only cplex and gurbi interfaces support the indicator constraint!")
 
@@ -169,7 +176,12 @@ def right_kernel_stoich_matrix_milp(S, eps=0.1, M = 1000, solver='cplex'):
 
 # Legacy formulation 
 def right_kernel_stoich_matrix_legacy(S, eps=1e-3):
-    """Legacy MILP-based right kernel of S; superseded by right_kernel_stoich_matrix_milp."""
+    """Legacy MILP-based right kernel of S; superseded by right_kernel_stoich_matrix_milp.
+
+    Args:
+        S: stoichiometric matrix to find the right nullspace of.
+        eps: minimum magnitude enforced on nonzero kernel entries.
+    """
 
     rank_S = np.linalg.matrix_rank(S)
     # kernel = np.zeros((S.shape[1], S.shape[1] - rank_S))

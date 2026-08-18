@@ -8,7 +8,12 @@ from sigmaflux.expansion.utils import can_make_met
 
 
 def _produces_from_nothing(rxn, metabolite):
-    """Whether rxn produces metabolite "from nothing" (no educt on the producing side), marking it as a network input (boundary)."""
+    """Whether rxn produces metabolite "from nothing" (no educt on the producing side), marking it as a network input (boundary).
+
+    Args:
+        rxn: reaction to check.
+        metabolite: metabolite to check for boundary production of.
+    """
     # forward production: metabolite is a product, educts are the reactants
     if rxn.upper_bound > 0 and metabolite in rxn.products and len(rxn.reactants) == 0:
         return True
@@ -23,7 +28,10 @@ class EMU(object):
 
     def __init__(self, metabolite, mid):
 
-        """mid is the 1-based carbon positions this EMU covers, e.g. [1,2,3,4]."""
+        """Args:
+            metabolite: cobra.Metabolite this EMU covers part of.
+            mid: 1-based carbon positions this EMU covers, e.g. [1,2,3,4].
+        """
         if not isinstance(metabolite, cobra.Metabolite):
             raise TypeError(f'Input {metabolite} is of type {type(metabolite)} must be cobra.Metabolite')
 
@@ -81,6 +89,9 @@ class EMU(object):
 
 class OriginSet(object):
     def __init__(self, value):
+        """Args:
+            value: a single EMU, or an iterable of EMUs, to wrap as one origin set.
+        """
         self.current = -1
 
         if isinstance(value, EMU):

@@ -23,8 +23,12 @@ def read_xlsx_extflux(
 ) -> pd.DataFrame | tuple[pd.DataFrame, pd.DataFrame]:
     """Read external flux measurements from a clean ExtFlux xlsx's 'Constraints' sheet into df_Vm [Sample, Flux Name, Value], filtered to rows whose Condition starts with `condition` (e.g. 'C', 'N').
 
-    growth_condition further restricts to one numeric-suffixed row (e.g. 'C3'). If
-    return_errors, also returns df_err built from the matching '_err'-suffixed columns.
+    Args:
+        xlsx_path: path to the clean ExtFlux xlsx.
+        condition: Condition prefix to filter rows to (e.g. 'C', 'N').
+        flux_names: flux columns to keep; defaults to every non-error flux column.
+        return_errors: also return df_err built from the matching '_err'-suffixed columns.
+        growth_condition: further restricts to one numeric-suffixed row (e.g. 'C3').
     """
     xl = pd.ExcelFile(xlsx_path)
     if 'Constraints' not in xl.sheet_names:

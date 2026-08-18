@@ -9,7 +9,12 @@ def mid_df_to_mass_isotopomer_table(
     df_L: pd.DataFrame,
     tracer_name: str | None = None,
 ) -> pd.DataFrame:
-    """Convert df_L from read_xlsx_mid_data to a MassIsotopomerData-ready table [id, mid, mean, std], aggregating Fraction across bio-replicates. tracer_name, if given, filters to that Tracer Name."""
+    """Convert df_L from read_xlsx_mid_data to a MassIsotopomerData-ready table [id, mid, mean, std], aggregating Fraction across bio-replicates.
+
+    Args:
+        df_L: long-format MID table from read_xlsx_mid_data.
+        tracer_name: if given, filters to that Tracer Name.
+    """
     df = df_L if tracer_name is None else df_L[df_L['Tracer Name'] == tracer_name]
     df = df.copy()
     df['mid'] = df['Isotopomer'].str.removeprefix('M+').astype(int)
@@ -26,7 +31,13 @@ def extflux_df_to_flux_table(
     df_Vm: pd.DataFrame,
     df_err: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Convert df_Vm (and optional df_err) from read_xlsx_extflux to a FluxData-ready table [reaction, mean, std]. If df_err is given, its Value column supplies std instead of the sample std."""
+    """Convert df_Vm (and optional df_err) from read_xlsx_extflux to a FluxData-ready table [reaction, mean, std].
+
+    Args:
+        df_Vm: flux value table from read_xlsx_extflux.
+        df_err: flux error table from read_xlsx_extflux; if given, its Value column
+            supplies std instead of the sample std.
+    """
     if df_err is not None:
         merged = df_Vm.merge(
             df_err[['Sample', 'Flux Name', 'Value']],

@@ -7,7 +7,13 @@ import numpy as np
 # Function to generate a MassIsotopomerData plot as a bar plot with error bars
 
 def plot_mass_isotopomer_data(experiment: Experiment, metabolite_id: str, show: bool = True) -> plt.Axes:
-    """Bar plot with error bars of the measured MID for one metabolite in an experiment."""
+    """Bar plot with error bars of the measured MID for one metabolite in an experiment.
+
+    Args:
+        experiment: Experiment holding the measured MID data.
+        metabolite_id: id of the metabolite to plot.
+        show: call plt.show() before returning.
+    """
     # Get the MassIsotopomerData for the metabolite
     mid_data = {m.metabolite.id: m for m in experiment.mid_data}
     data = mid_data[metabolite_id]
@@ -26,7 +32,12 @@ def plot_mass_isotopomer_data(experiment: Experiment, metabolite_id: str, show: 
 
 # Plot each MassIsotopomerData for each metabolite in a grid plot
 def plot_mass_isotopomer_data_grid(experiment: Experiment, show: bool = True) -> plt.Axes:
-    """Grid of bar plots with error bars of the measured MID for every metabolite in an experiment."""
+    """Grid of bar plots with error bars of the measured MID for every metabolite in an experiment.
+
+    Args:
+        experiment: Experiment holding the measured MID data.
+        show: call plt.show() before returning.
+    """
     # Use tracer enrichments to inform ylim
     tracer_enrichment = max([t.serum_enrichment for t in experiment.tracers])
     
@@ -58,7 +69,16 @@ def plot_mass_isotopomer_data_grid(experiment: Experiment, show: bool = True) ->
         plt.show()
     return axs
 
-def plot_met_labeling(mfa_model, metabolite, labeling, default_num_mid=7, show = True): 
+def plot_met_labeling(mfa_model, metabolite, labeling, default_num_mid=7, show = True):
+    """Per-experiment bar plots comparing measured vs. simulated MID for one metabolite.
+
+    Args:
+        mfa_model: MFAModel whose experiments and metabolite hash are used.
+        metabolite: id of the metabolite to plot.
+        labeling: simulated labeling tensor, indexed [experiment, mass, metabolite].
+        default_num_mid: MID length used when an experiment has no measurement for the metabolite.
+        show: call plt.show() before returning.
+    """
     # Determine the number of experiments to create subplots
     len(mfa_model.experiments)
 
@@ -112,6 +132,17 @@ def plot_met_labeling(mfa_model, metabolite, labeling, default_num_mid=7, show =
     return axs
 
 def plot_exp_labeling(mfa_model, exp_num, labeling, default_num_mid=7, show = True, filename = "exp_labeling.png", figsize = (15,15)):
+    """Grid of bar plots comparing measured vs. simulated MID for every metabolite in one experiment.
+
+    Args:
+        mfa_model: MFAModel whose experiments and metabolite hash are used.
+        exp_num: index of the experiment to plot.
+        labeling: simulated labeling tensor, indexed [experiment, mass, metabolite].
+        default_num_mid: unused MID length default, kept for interface symmetry.
+        show: call plt.show() before returning.
+        filename: path the figure is saved to.
+        figsize: matplotlib figure size.
+    """
     experiment = mfa_model.experiments[exp_num]
     # Determine the number of experiments to create subplots
     mid_data = {m.metabolite.id: m for m in experiment.mid_data}

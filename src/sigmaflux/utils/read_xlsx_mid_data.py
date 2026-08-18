@@ -27,7 +27,10 @@ def read_xlsx_mid_data(
 ) -> pd.DataFrame:
     """Read MID fraction data from a clean per-condition xlsx (one tracer per sheet) into df_L [Tracer Name, Sample, Metabolite ID, Isotopomer, Fraction], mapping compound names to model IDs via mapping_csv.
 
-    growth_condition, if given, restricts to columns matching that GrowthCondition number.
+    Args:
+        xlsx_path: path to the clean per-condition xlsx.
+        mapping_csv: CSV mapping experimental compound names to model metabolite ids.
+        growth_condition: if given, restricts to columns matching that GrowthCondition number.
     """
     met_map = _load_mapping(mapping_csv)
     xl      = pd.ExcelFile(xlsx_path)

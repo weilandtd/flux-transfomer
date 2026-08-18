@@ -135,8 +135,12 @@ def _formula_mass(formula) -> float:
 def derive_biomass_fractions(model, formulas: dict) -> dict:
     """Macromolecule mass fractions implied by the aggregate BIOMASS stoichiometry, normalised to sum to 1.
 
-    `formulas` maps metabolite id -> chemical formula. Approximate (placeholder lipid
-    tokens, per-monomer polysaccharides); prefer measured values when available.
+    Approximate (placeholder lipid tokens, per-monomer polysaccharides); prefer
+    measured values when available.
+
+    Args:
+        model: cobra model with the aggregate BIOMASS reaction.
+        formulas: metabolite id -> chemical formula.
     """
     biomass = model.reactions.get_by_id('BIOMASS')
     masses = {cid: 0.0 for cid in BIOMASS_COMPONENT_IDS}
@@ -159,6 +163,10 @@ def split_biomass_hierarchical(model, fractions: dict) -> None:
     BIOMASS through one `bm_*_c` pseudo-metabolite, leaving BIOMASS's composition
     unchanged. Also calls `redistribute_biomass_energy`, without which the components
     would become energy-decoupled once BIOMASS is dropped during sampling.
+
+    Args:
+        model: cobra model whose BIOMASS reaction is split, modified in place.
+        fractions: macromolecule component id -> mass fraction.
     """
     import cobra
 
@@ -258,6 +266,14 @@ def redistribute_biomass_energy(model) -> None:
 
 
 def annotate_model(model, annotation_file,index='id',atom_mapping='atom_mapping'):
+    """Load atom_mapping annotations from a CSV and attach them to the model's reactions.
+
+    Args:
+        model: cobra model to annotate, modified in place.
+        annotation_file: path to a CSV with reaction ids and atom-mapping strings.
+        index: annotation_file column used to look up the reaction id.
+        atom_mapping: annotation_file column holding the atom-mapping string.
+    """
 
     atom_mapping_annotation = pd.read_csv(annotation_file)
     atom_mapping_annotation.index = atom_mapping_annotation[index]
@@ -329,6 +345,11 @@ def apply_terminal_annotations(model, path_to_atom_map_xls, created_later=frozen
     Applied both before and after :func:`split_biomass_hierarchical`, since the ``bm_*``
     pools it may name don't exist until that split creates them; *created_later* lists
     those pools so the first pass doesn't warn about them.
+
+    Args:
+        model: cobra model to annotate, modified in place.
+        path_to_atom_map_xls: AMM workbook containing the Terminal sheet.
+        created_later: pool/reaction ids not yet in the model, to skip silently.
     """
     pool_ids, rxn_ids = read_terminal_sheet(path_to_atom_map_xls)
     for idents, lookup, what in ((pool_ids, model.metabolites, 'pool'),
@@ -352,10 +373,16 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
 
     Converts the Maranas AMM format (one row per metabolite per reaction, atoms as
     integers) to SigmaFlux string format, e.g.
-    ``"accoa_c (ab) + accoa_c (cd) -> aacoa_c (abcd) + coa_c"``. `drop_subsystems`
-    excludes subsystems (their formulas are dropped before parsing, since some carry
-    zero-coefficient reactants COBRA would silently discard). `biomass_id` renames a
-    non-canonical biomass reaction to 'BIOMASS' on load.
+    ``"accoa_c (ab) + accoa_c (cd) -> aacoa_c (abcd) + coa_c"``.
+
+    Args:
+        path_to_cobra: Maranas-lab GEM xlsx.
+        path_to_atom_map_xls: Maranas-lab AMM xlsx.
+        path_to_output: path to save the annotated model as JSON, if given.
+        atom_type: AMM startNodeSymbol to filter atom transitions on.
+        drop_subsystems: subsystems to exclude (dropped before parsing, since some
+            carry zero-coefficient reactants COBRA would silently discard).
+        biomass_id: non-canonical biomass reaction id to rename to 'BIOMASS' on load.
     """
     import cobra
 
@@ -535,6 +562,10 @@ def _remove_metabolites_orphaned_by(model, dropped_formulas):
 
     Only metabolites mentioned in the dropped formulas are removed; metabolites that
     already carried no reaction are left alone.
+
+    Args:
+        model: cobra model to remove orphaned metabolites from, modified in place.
+        dropped_formulas: reaction formula strings removed by the subsystem filter.
     """
     if not dropped_formulas:
         return
@@ -619,6 +650,10 @@ def atommap_boundary(model, strict=True):
 
     If strict, raises when an exchanged metabolite appears in no mapped reaction;
     otherwise returns the ids of boundary reactions left unmapped.
+
+    Args:
+        model: cobra model whose boundary reactions are annotated, modified in place.
+        strict: raise instead of skipping an unmappable boundary reaction.
     """
     all_rxns = set(model.reactions)
     unmapped = []
@@ -653,6 +688,13 @@ def atommap_boundary(model, strict=True):
 
 
 def insert_mapping_into_reaction(reaction, compound_id, mapping):
+    """Insert an atom-mapping string after every occurrence of a compound id in a reaction string.
+
+    Args:
+        reaction: reaction formula string to modify.
+        compound_id: metabolite id to insert the mapping after.
+        mapping: atom-mapping string, e.g. '(abc)'.
+    """
     # Define a regular expression pattern to find the compound ID
     # and capture the surrounding context
     pattern = re.compile(rf'(\b{re.escape(compound_id)}\b)')
@@ -669,7 +711,13 @@ def insert_mapping_into_reaction(reaction, compound_id, mapping):
 
 
 def solve_for_theta(K,V):
-    c = np.ones(K.shape[1]) 
+    """Solve K @ theta = V for the minimum-sum-of-coefficients theta via linear programming.
+
+    Args:
+        K: constraint matrix.
+        V: target values, K @ theta = V.
+    """
+    c = np.ones(K.shape[1])
     res = linprog(c=c, A_eq = K, b_eq = V, bounds=(None,None))
     # TODO Chatch stupid erorrs 
     # TODO maybe also make this a tensor? 
@@ -680,7 +728,12 @@ def solve_for_theta(K,V):
 ### Sparse utils ### 
 
 def select_sparse_column(sparse_matrix, col_idx):
-    """Select a single column from a sparse matrix, setting all other columns to zero."""
+    """Select a single column from a sparse matrix, setting all other columns to zero.
+
+    Args:
+        sparse_matrix: sparse COO tensor to select from.
+        col_idx: column index to keep.
+    """
     rows, cols = sparse_matrix.shape
 
     # Extract indices and values from the original sparse matrix
@@ -715,7 +768,12 @@ def flatten_sparse_matrix(sparse_matrix):
     return flat_sparse_matrix
 
 def reshape_sparse_tensor_to_3D(sparse_tensor, new_shape):
-    """Reshape a 2D sparse tensor of shape (N, X*Y) to a 3D sparse tensor of shape new_shape = (N, X, Y)."""
+    """Reshape a 2D sparse tensor of shape (N, X*Y) to a 3D sparse tensor of shape new_shape = (N, X, Y).
+
+    Args:
+        sparse_tensor: 2D sparse COO tensor to reshape.
+        new_shape: target (N, X, Y) shape.
+    """
     if len(new_shape) != 3:
         raise ValueError("New shape must be a tuple of 3 dimensions (N, X, Y)")
 
@@ -740,7 +798,14 @@ def reshape_sparse_tensor_to_3D(sparse_tensor, new_shape):
     return new_sparse_tensor
 
 def multiply_3d_sparse_with_2d(sparse_3d, tensor_2d, transpose_2nd = False, flip_mult = False):
-    """Multiply each 2D slice of a 3D sparse tensor [N, C, B] (along dim 0) with a 2D dense tensor [B, P], giving [N, C, P]. transpose_2nd/flip_mult select which side and orientation."""
+    """Multiply each 2D slice of a 3D sparse tensor [N, C, B] (along dim 0) with a 2D dense tensor [B, P], giving [N, C, P].
+
+    Args:
+        sparse_3d: 3D sparse tensor [N, C, B] to multiply slice-wise.
+        tensor_2d: dense 2D tensor multiplied against each slice.
+        transpose_2nd: transpose each sparse slice before multiplying.
+        flip_mult: multiply tensor_2d @ slice instead of slice @ tensor_2d.
+    """
 
     # Fast path for the only combination the EMU backward pass uses: every slice
     # multiplied on the right by the same dense matrix.
@@ -808,6 +873,11 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
 
     Needed for pools like ``co2_e`` that are both an internal mixing node and an
     exchange whose uptake direction alone yields no EMU edge and thus no dilution.
+
+    Args:
+        model: cobra model to add dilution inputs to, modified in place.
+        metabolite_ids: ids of metabolites to give a dilution input.
+        suffix: suffix appended to build each new environmental pool's id.
     """
     added = []
     for met_id in metabolite_ids:
@@ -849,6 +919,10 @@ def media_dilution_targets(model, media_cfg):
     A medium component the cell cannot synthesise is already an EMU network input and
     dilutes by construction; one it also produces is a mixing node whose exchange
     uptake alone yields no EMU edge, so it needs an explicit dilution input instead.
+
+    Args:
+        model: cobra model to check for internal production.
+        media_cfg: exchange reaction ids that define the medium.
     """
     targets = []
     for exchange_id in media_cfg:

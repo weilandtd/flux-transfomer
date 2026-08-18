@@ -25,6 +25,10 @@ def rbf_kernel(x: np.ndarray, bandwidth: float | None = None) -> np.ndarray:
 
     A constant input (bandwidth < 1e-30) returns the all-ones matrix, correctly
     yielding HSIC = 0. Raises if n < 4 (the U-statistic denominator needs it).
+
+    Args:
+        x: samples, 1D or 2D (n_samples, n_features).
+        bandwidth: RBF bandwidth σ²; defaults to the median-heuristic value.
     """
     x = np.atleast_2d(x) if x.ndim > 1 else x.reshape(-1, 1)
     n = x.shape[0]
@@ -42,7 +46,12 @@ def rbf_kernel(x: np.ndarray, bandwidth: float | None = None) -> np.ndarray:
 
 
 def hsic_unbiased(K: np.ndarray, L: np.ndarray) -> float:
-    """Unbiased HSIC U-statistic between kernel matrices K and L (Gretton et al. 2012, Eq. 5); can be negative for small n or near-independent variables. Raises if n < 4."""
+    """Unbiased HSIC U-statistic between kernel matrices K and L (Gretton et al. 2012, Eq. 5); can be negative for small n or near-independent variables. Raises if n < 4.
+
+    Args:
+        K: kernel matrix of the first variable.
+        L: kernel matrix of the second variable.
+    """
     n = K.shape[0]
     if n < 4:
         raise ValueError(f"hsic_unbiased requires n >= 4, got n={n}")
@@ -67,7 +76,12 @@ def hsic_unbiased(K: np.ndarray, L: np.ndarray) -> float:
 # ── Private helpers ────────────────────────────────────────────────────────────
 
 def _compute_bandwidths(X: np.ndarray, max_pairs: int = 50_000) -> np.ndarray:
-    """Median-heuristic bandwidths for every column of X in one vectorised pass, sampling at most max_pairs lower-triangle pairs instead of p separate pdist calls. Zero entries signal constant columns."""
+    """Median-heuristic bandwidths for every column of X in one vectorised pass, sampling at most max_pairs lower-triangle pairs instead of p separate pdist calls. Zero entries signal constant columns.
+
+    Args:
+        X: samples, shape (n_samples, n_features).
+        max_pairs: maximum number of row pairs sampled to estimate each bandwidth.
+    """
     n, p = X.shape
     ii, jj = np.tril_indices(n, k=-1)
     n_pairs = ii.shape[0]
@@ -80,7 +94,12 @@ def _compute_bandwidths(X: np.ndarray, max_pairs: int = 50_000) -> np.ndarray:
 
 
 def _auto_chunk(n: int, mem_bytes: int = 1 << 30) -> int:
-    """Largest B such that a single (n, n, B) float32 buffer fits in mem_bytes."""
+    """Largest B such that a single (n, n, B) float32 buffer fits in mem_bytes.
+
+    Args:
+        n: sample count (the buffer's first two dimensions).
+        mem_bytes: memory budget in bytes for the buffer.
+    """
     return max(1, mem_bytes // (n * n * 4))
 
 
@@ -92,7 +111,16 @@ def _hsic_chunk(
     Lt_total: float,
     n: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorised HSIC(X_i, Y) and HSIC(X_i, X_i) for a batch of B scalar inputs, building one (n, n, B) float32 kernel tensor in-place to minimise peak memory."""
+    """Vectorised HSIC(X_i, Y) and HSIC(X_i, X_i) for a batch of B scalar inputs, building one (n, n, B) float32 kernel tensor in-place to minimise peak memory.
+
+    Args:
+        X_chunk: samples for this batch of input columns, shape (n, B).
+        bw_chunk: RBF bandwidth for each column in the batch.
+        Lt: zero-diagonal Y kernel matrix.
+        Lt_row_sums: row sums of Lt.
+        Lt_total: total sum of Lt.
+        n: sample count.
+    """
     constant = bw_chunk < 1e-30
 
     # Build K in-place: diff → sq_dist → -sq/(2σ²) → exp  (one n²B buffer)
@@ -146,11 +174,21 @@ def hsic_indices(
 ) -> pd.DataFrame:
     """De Veiga (2015) HSIC sensitivity indices for each column of X against the (possibly multivariate) output Y, via one joint RBF kernel over Y.
 
-    Returns a DataFrame with columns 'hsic' (raw dependence), 'eta' (Sobol-like
-    index, can exceed 1), and 'R' (kernel distance correlation in [-1, 1], NaN when
-    degenerate), indexed by input_names and sorted by eta descending. max_samples
-    subsamples rows for O(n^2) cost control; chunk_size/n_jobs control the
-    memory/parallelism of the per-column kernel computation.
+    Args:
+        X: input samples, shape (n_samples, n_inputs).
+        Y: output samples, shape (n_samples,) or (n_samples, n_outputs).
+        input_names: names for each column of X; defaults to 'X_0', 'X_1', ...
+        bandwidth_X: RBF bandwidth(s) for X columns; defaults to the median heuristic per column.
+        bandwidth_Y: RBF bandwidth for Y; defaults to the median heuristic.
+        chunk_size: number of X columns processed per batch; defaults to an auto-sized value.
+        max_samples: subsample rows to at most this many, for O(n^2) cost control.
+        seed: random seed used for row subsampling.
+        n_jobs: number of threads to compute column chunks with (-1 = all CPUs).
+
+    Returns:
+        DataFrame with columns 'hsic' (raw dependence), 'eta' (Sobol-like index,
+        can exceed 1), and 'R' (kernel distance correlation in [-1, 1], NaN when
+        degenerate), indexed by input_names and sorted by eta descending.
     """
     n, p = X.shape
     if Y.ndim == 1:

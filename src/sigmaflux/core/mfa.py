@@ -26,8 +26,19 @@ def fit_mfa_model(model,
     """Fit an MFA model by minimizing reduced chi-squared over labeling and flux data via L-BFGS-B.
 
     Net fluxes are parameterized as v_net = T @ p with T = null(S), so the mass-balance
-    constraint S·v = 0 holds automatically; gradients come from autograd. Returns a dict with
-    loss, converged, n_iter, ssr_labeling, ssr_fluxes, n_labeling, n_fluxes.
+    constraint S·v = 0 holds automatically; gradients come from autograd.
+
+    Args:
+        model: MFAModel to fit in place.
+        simultanous_experiments: number of experiments forward-simulated per batch.
+        max_iter: maximum L-BFGS-B iterations.
+        tol: gradient-norm convergence tolerance (gtol).
+        checkpoint_file: path to save model checkpoints to, if given.
+        labeling_checkpoint_file: path to save predicted labeling to, if given.
+        disp: print per-iteration progress when truthy.
+
+    Returns:
+        dict with loss, converged, n_iter, ssr_labeling, ssr_fluxes, n_labeling, n_fluxes.
     """
     n = model.num_reactions
     dtype, device = model.dtype, model.device
@@ -207,7 +218,27 @@ def fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
                             optimizer_checkpoint=None,
                             lr_scheduler=None, with_std=True,
                             early_stop_tol=None):
-    """Legacy penalized-Lagrangian MFA optimizer (soft mass-balance/positivity constraints, L1/L2 reg); use :func:`fit_mfa_model` instead."""
+    """Legacy penalized-Lagrangian MFA optimizer (soft mass-balance/positivity constraints, L1/L2 reg); use :func:`fit_mfa_model` instead.
+
+    Args:
+        model: MFAModel to fit in place.
+        loss_fn: loss function applied to simulated vs measured labeling.
+        flux_loss_fn: loss function applied to simulated vs measured fluxes.
+        optimizer: torch optimizer driving the parameter updates.
+        lam1: L1 regularization weight on reversible fluxes.
+        lam2: L2 regularization weight on reversible fluxes.
+        epochs: number of optimization epochs.
+        simultanous_experiments: number of experiments forward-simulated per batch.
+        labeling_scaler: per-experiment labeling scale factor(s); defaults to all ones.
+        flux_scaler: scale factor applied to the flux loss term.
+        checkpoint: epoch interval at which checkpoints are written.
+        checkpoint_file: path to save model checkpoints to, if given.
+        labeling_checkpoint_file: path to append predicted labeling to, if given.
+        optimizer_checkpoint: path to save optimizer state to, if given.
+        lr_scheduler: learning-rate scheduler stepped once per epoch.
+        with_std: whether measurement std devs are used (currently forced True).
+        early_stop_tol: stop early once the epoch-to-epoch loss change drops below this.
+    """
     from tqdm import trange
     from sigmaflux.core.scaling import Scaling
 
@@ -374,7 +405,15 @@ def filter_conv_inputs_with_indices(emu_inputs):
 # EMUExpansion._prune_orphaned_edges(); a KeyError here means the prune step
 # was skipped or a new code path bypasses it.
 def convolution(core_met_ix, emu_states, origin_set, device, dtype):
-    """Convolve the MIDs of an OriginSet's member EMUs pairwise into the joint MID distribution."""
+    """Convolve the MIDs of an OriginSet's member EMUs pairwise into the joint MID distribution.
+
+    Args:
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        emu_states: solved MID tensors, keyed by subnet size.
+        origin_set: OriginSet whose member EMUs are convolved together.
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
+    """
     emu_size = origin_set.size
 
     if len(origin_set) > 2:
@@ -435,6 +474,13 @@ def conv(x, y, emu_size, device, dtype):
     """Mass-isotopomer convolution ``result[n, a] = sum_b x[n, a-b] * y[b]``, via one matmul against the Toeplitz matrix of *y*.
 
     Accumulation order differs from a naive loop, so results can differ by ~1 ulp in float64.
+
+    Args:
+        x: batched MID tensor being convolved.
+        y: MID vector convolved against each row of x.
+        emu_size: number of carbon atoms in the EMU (result has emu_size + 1 mass isotopomers).
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
     """
     k = emu_size + 1
     y_flat = y.reshape(-1)[:k]
@@ -446,7 +492,16 @@ def conv(x, y, emu_size, device, dtype):
 
 # can this be done more efficiently? 
 def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_set, device, dtype):
-    """Derivative of convolution() with respect to fluxes, for a multi-element OriginSet, via the product rule."""
+    """Derivative of convolution() with respect to fluxes, for a multi-element OriginSet, via the product rule.
+
+    Args:
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size.
+        emu_states: solved MID tensors, keyed by subnet size.
+        origin_set: OriginSet whose member EMUs are convolved together.
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
+    """
     emu_size = origin_set.size
     if len(origin_set) > 2:
         emus = origin_set._values
@@ -526,12 +581,28 @@ def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_se
     return conv_derivative_1 + conv_derivative_2
 
 
-def update_derivative_states(derivative_states, dX, emu_size,core_met_ix): 
+def update_derivative_states(derivative_states, dX, emu_size,core_met_ix):
+    """Write a subnet's newly solved flux-derivative states back into derivative_states in place.
+
+    Args:
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size, updated in place.
+        dX: newly solved derivative values for this subnet.
+        emu_size: subnet size (number of carbon atoms) being updated.
+        core_met_ix: per-subnet mapping from EMU to row index in derivative_states.
+    """
     for i, met in enumerate(core_met_ix[emu_size]):
         derivative_states[emu_size][core_met_ix[emu_size][met]] = dX[:,i]
 
 
 def update_states(emu_states, X, emu_size, core_met_ix):
+    """Write a subnet's newly solved MID states back into emu_states in place.
+
+    Args:
+        emu_states: solved MID tensors, keyed by subnet size, updated in place.
+        X: newly solved MID values for this subnet.
+        emu_size: subnet size (number of carbon atoms) being updated.
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+    """
     for i, met in enumerate(core_met_ix[emu_size]):
         # set for each emu size and each metabolite, the labels for each MID 
         emu_states[emu_size][core_met_ix[emu_size][met]] = X[i]
@@ -543,6 +614,15 @@ def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, devic
 
     boundary_inputs are network inputs whose labeling is given rather than solved for, so they
     never appear in core_met_ix and must be written in separately.
+
+    Args:
+        metabolite_hash: mapping from metabolite id to column index in the output tensor.
+        emu_states: solved MID tensors, keyed by subnet size.
+        emu_met_filter: per-subnet list of EMUs representing each metabolite.
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        device: torch device for the output tensor.
+        dtype: torch dtype for the output tensor.
+        boundary_inputs: given (unsolved) MIDs for boundary EMUs, keyed by EMU/OriginSet.
     """
     labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device)
     for subnet in emu_met_filter:
@@ -565,7 +645,17 @@ def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, devic
     return labeling
 
 
-def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, core_met_ix,device, dtype): 
+def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, core_met_ix,device, dtype):
+    """Assemble per-metabolite flux-derivative tensors from solved core derivative states.
+
+    Args:
+        metabolite_hash: mapping from metabolite id to column index in the output tensor.
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size.
+        emu_met_filter: per-subnet list of EMUs representing each metabolite.
+        core_met_ix: per-subnet mapping from EMU to row index in derivative_states.
+        device: torch device for the output tensor.
+        dtype: torch dtype for the output tensor.
+    """
     derivative_labeling = torch.zeros((len(derivative_states)+1, len(metabolite_hash), derivative_states[1].shape[1]),device=device, dtype=dtype)
     for subnet in emu_met_filter:
         for met in emu_met_filter[subnet]:
@@ -577,7 +667,13 @@ def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, 
 
 
 def build_emu_met_filter(model, metabolites, device=None):
-    """Map each metabolite to the largest-subnet EMU that represents it, for indexing into the solved EMU states."""
+    """Map each metabolite to the largest-subnet EMU that represents it, for indexing into the solved EMU states.
+
+    Args:
+        model: MFAModel whose EMU expansion network is queried.
+        metabolites: metabolites to build the filter for.
+        device: torch device (currently unused, kept for interface symmetry).
+    """
     #emu_met_filter = [0.0 * torch.ones(model.max_mid_size, model.max_emu_mets, dtype=torch.float32, device=device)
     #                  for _ in range(model.max_emu_size)]
     emu_met_filter ={i+1: [] for i in range(model.max_emu_size)}

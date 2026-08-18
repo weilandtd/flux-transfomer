@@ -83,6 +83,11 @@ class AtomMapping(object):
             *accumulate* (not overwrite) since two copies can resolve to the same
             origin EMU. Symmetry orientations, in contrast, are alternative readings
             of one molecule and should merge, each carrying ``1/n`` of a copy.
+
+            Args:
+                target_side: (met_id, mapping_str) pairs the target EMU is drawn from.
+                origin_side: (met_id, mapping_str) pairs the origin EMUs are drawn from.
+                into: dict of {OriginSet: weight} accumulated into, in place.
             """
             n_orientations = 1 + len(target_emu.symmetries)
             for target_mapping in dict.fromkeys(
@@ -109,7 +114,12 @@ class AtomMapping(object):
 
 
 def parse_mapping_string(map_str, rxn):
-    """Parse an atom_mapping string like ``" met_a_c (abc) -> met_b_c (ab) + met_c_c (c)"`` into (educt_mappings, product_mappings) lists of (met_id, mapping_str)."""
+    """Parse an atom_mapping string like ``" met_a_c (abc) -> met_b_c (ab) + met_c_c (c)"`` into (educt_mappings, product_mappings) lists of (met_id, mapping_str).
+
+    Args:
+        map_str: atom_mapping annotation string to parse.
+        rxn: cobra.Reaction the string belongs to, for its reactant/product ids.
+    """
 
     # TODO make this more robust, needs space before reactant to work 
     if not map_str.startswith(' '):
@@ -139,9 +149,13 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
                            target_mapping=None):
     """Trace the target EMU's labeled atoms back through the mapping to find the OriginSet of educt EMUs that produce it.
 
-    sym selects a symmetry orientation to apply to the target mapping before tracing
-    (-1 = unpermuted). target_mapping picks which mapped copy of the target to use,
-    for products named more than once (defaults to the first).
+    Args:
+        target_emu: EMU whose origin is being traced.
+        product_mappings: (met_id, mapping_str) pairs on the side the target is drawn from.
+        educt_mappings: (met_id, mapping_str) pairs on the side the origin EMUs are drawn from.
+        reaction: cobra.Reaction the mappings belong to, for error messages and metabolite lookup.
+        sym: symmetry orientation to apply to the target mapping before tracing (-1 = unpermuted).
+        target_mapping: mapped copy of the target to use, for products named more than once; defaults to the first.
     """
     # Define the target emu
     if target_mapping is None:

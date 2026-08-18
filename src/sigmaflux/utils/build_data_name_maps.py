@@ -34,10 +34,22 @@ def build_data_name_maps(
 ) -> pd.DataFrame:
     """Generate metabolite_name_mapping.csv mapping experimental compound names to model metabolite IDs, and return it as a DataFrame.
 
-    Pass exactly one of experimental_xlsx or experimental_names. Compound names are
-    matched against model IDs by base name (compartment/stereoisomer stripped), falling
-    back to MANUAL_OVERRIDES merged with `overrides`; unmatched names are printed as
-    warnings.
+    Compound names are matched against model IDs by base name (compartment/stereoisomer
+    stripped), falling back to MANUAL_OVERRIDES merged with `overrides`; unmatched names
+    are printed as warnings.
+
+    Args:
+        experimental_xlsx: experimental data xlsx path(s) to pull compound names from.
+        model_amm_xlsx: model AMM xlsx providing the metabolite id vocabulary.
+        output_csv: path the mapping CSV is written to.
+        compound_col: column in experimental_xlsx holding compound names.
+        amm_sheet: sheet in model_amm_xlsx holding the atom transitions.
+        met_col: column in amm_sheet holding model metabolite ids.
+        compartments: model id suffixes accepted as a match.
+        experimental_names: compound names to match directly, instead of experimental_xlsx.
+        overrides: extra experimental-name -> model-id fallbacks, merged with MANUAL_OVERRIDES.
+
+    Pass exactly one of experimental_xlsx or experimental_names.
     """
     if (experimental_xlsx is None) == (experimental_names is None):
         raise ValueError("pass exactly one of experimental_xlsx or experimental_names")

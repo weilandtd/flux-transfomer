@@ -37,6 +37,12 @@ def _check_origin_size(origin_set, target_emu, reaction, direction):
     a non-empty set of the wrong size is always a defect in the atom map, and must
     raise rather than be silently skipped so the reaction doesn't vanish from the
     labeling network while still carrying flux.
+
+    Args:
+        origin_set: candidate OriginSet of educt/product EMUs.
+        target_emu: EMU the origin set must exactly supply.
+        reaction: reaction the mapping came from, for the error message.
+        direction: 'fwd' or 'rvs', for the error message.
     """
     if origin_set.size and origin_set.size != target_emu.size:
         raise OriginSizeError(
@@ -53,7 +59,12 @@ class OriginSizeError(ValueError):
 
 class EMUExpansion(object):
     def __init__(self, model, target_emus):
-        """Build atom mappings for every reaction in model, warning about any carbon-carrying reaction left unmapped."""
+        """Build atom mappings for every reaction in model, warning about any carbon-carrying reaction left unmapped.
+
+        Args:
+            model: atom-mapped cobra.Model to build the EMU expansion for.
+            target_emus: EMUs the network is expanded to trace back from.
+        """
 
         self.model = model
 

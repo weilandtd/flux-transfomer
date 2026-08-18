@@ -41,7 +41,22 @@ class MFAModel(TorchModule, Model):
                  dtype=torch.float64,
                  max_reversibility_ratio=10.0,
                  seed=None):
-        """Build a differentiable MFA model from an atom-mapped cobra.Model, sampling initial fluxes/reversibilities if not provided."""
+        """Build a differentiable MFA model from an atom-mapped cobra.Model, sampling initial fluxes/reversibilities if not provided.
+
+        Args:
+            model: atom-mapped cobra.Model to wrap.
+            name: name of the resulting MFAModel.
+            device: torch device to place tensors on.
+            min_flux: minimum reversible-flux value used for numerical stability.
+            mu0: initial Lagrange multiplier for the flux-positivity constraints.
+            lambda0: initial Lagrange multiplier for the mass-balance constraints.
+            n_processes: number of processes used when sampling initial fluxes.
+            n_samples: number of flux samples drawn to seed the initial flux distribution.
+            initial_flux_distribution: pandas Series of fluxes indexed by reaction id; sampled if not given.
+            dtype: torch dtype for model tensors.
+            max_reversibility_ratio: maximum r/|v| ratio used when sampling initial reversibilities.
+            seed: random seed for flux sampling.
+        """
 
         Model.__init__(self, model.copy(), name)
         TorchModule.__init__(self)
@@ -127,6 +142,11 @@ class MFAModel(TorchModule, Model):
         logger.info(f"Initalized MFA model with {self.num_reactions} reactions and {self.max_emu_mets} metabolites")
     
     def reset_initial_fluxes(self, initial_flux_distribution=None):
+        """Resample or reload the model's initial fluxes/reversibilities and reset its parameters.
+
+        Args:
+            initial_flux_distribution: pandas Series of fluxes indexed by reaction id; resampled if not given.
+        """
         if initial_flux_distribution is None:
             flux_sample = sample(self._model, self._n_samples)
             mean_flux_solution = flux_sample.mean()
@@ -195,6 +215,12 @@ class MFAModel(TorchModule, Model):
         return self.fluxes[self._flux_hash[reaction_id]]
 
     def save_checkpoint(self, file = "checkpoint.pt", meta_data = {}):
+        """Append the model's current state dict (plus optional metadata) to a checkpoint file.
+
+        Args:
+            file: path to the checkpoint file to append to.
+            meta_data: extra key/value pairs to store alongside the state dict.
+        """
     # Load the existing checkpoints if any
         try:
             checkpoints = torch.load(file)
@@ -212,6 +238,12 @@ class MFAModel(TorchModule, Model):
         torch.save(checkpoints, file)
 
     def load_checkpoint(self, file = "checkpoint.pt", index=-1):
+        """Load a saved state dict from a checkpoint file into the model.
+
+        Args:
+            file: path to the checkpoint file to read.
+            index: index of the checkpoint entry to load.
+        """
         # Load the checkpoints
         try:
             checkpoints = torch.load(file)
@@ -232,7 +264,12 @@ class MFAModel(TorchModule, Model):
     def prepare(self, experiments, dA=None, dB=None, with_backward=True, targets=None):
         """Build the EMU expansion network for these experiments and precompute forward/backward matrices.
 
-        targets defaults to the EMUs referenced by the experiments' MID data if not given.
+        Args:
+            experiments: Experiment objects to prepare the model for.
+            dA: path to a pickle of precomputed dA matrices, skipping recomputation.
+            dB: path to a pickle of precomputed dB matrices, skipping recomputation.
+            with_backward: whether to precompute the dA/dB backward-derivative matrices.
+            targets: EMUs to expand the network to; defaults to those referenced by the experiments' MID data.
         """
 
         self.experiments = experiments
@@ -350,6 +387,12 @@ class MFAModel(TorchModule, Model):
         return lb, ub
 
     def forward(self, exp_ix=None, reversible_fluxes=None):
+        """Simulate labeling for a subset of experiments given (or the model's own) reversible fluxes.
+
+        Args:
+            exp_ix: indices of experiments to simulate; defaults to all experiments.
+            reversible_fluxes: forward/backward flux vector to simulate with; defaults to the model's own.
+        """
         if not self.prepared:
             raise RuntimeError('Model is not prepared!')
         labeling = []

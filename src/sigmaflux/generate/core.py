@@ -3,7 +3,16 @@ from cobra.flux_analysis import flux_variability_analysis
 from sigmaflux.generate.utils import read_subnet
 
 def add_reactions_from_tasks(model, tasks, filepath, bound = 20, medium=None, prune_boundaries=True):
-    """Build a model from a list of named tasks by pulling in each task's subnet reactions (JSON files under filepath), applying medium bounds, and optionally pruning flux-dead reactions."""
+    """Build a model from a list of named tasks by pulling in each task's subnet reactions (JSON files under filepath), applying medium bounds, and optionally pruning flux-dead reactions.
+
+    Args:
+        model: source cobra model to pull task reactions from.
+        tasks: task names, each naming a `{filepath}/{task}.json` subnet file.
+        filepath: directory containing the task subnet JSON files.
+        bound: reversible/forward bound applied to reactions pulled into the new model.
+        medium: mapping of boundary reaction id to bounds; unlisted boundaries are closed.
+        prune_boundaries: remove reactions found flux-dead by FVA.
+    """
     
     new = Model("model")
     
