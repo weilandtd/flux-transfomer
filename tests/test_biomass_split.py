@@ -14,7 +14,10 @@ fails here instead of silently regenerating a file.
 
 The two organisms differ in a way worth knowing about: I. orientalis keeps an ATP
 hydrolysis term in ``BIOMASS`` (atp + h2o -> amp + h + ppi) and S. cerevisiae does
-not, which is why only the latter can assert "nothing but pseudo-metabolites".
+not, which is why only the latter can assert "nothing but pseudo-metabolites". S.
+cerevisiae has one stoichiometric difference of its own: its workbook now splits the
+lumped ``ipcbiom_c`` in ``LIPID_c`` into ``ipcbiom24_c``/``ipcbiom26_c`` acyl-chain
+variants -- see :func:`test_s_cerevisiae_splits_the_acyl_branch`.
 """
 import json
 import os
@@ -65,19 +68,46 @@ def rebuilt():
 
 
 def test_split_reproduces_the_published_model(reference, rebuilt):
-    """Rebuilding S. cerevisiae from its flat model reproduces what shipped, exactly.
+    """Rebuilding S. cerevisiae from its flat model reproduces what shipped, almost
+    exactly -- LIPID_c's acyl-chain split and I. orientalis are checked separately,
+    see :func:`test_s_cerevisiae_splits_the_acyl_branch` and
+    :func:`test_i_orientalis_drops_the_hand_added_atp`.
 
     This is the justification for lifting the freeze: the workbook fixes land
     without the biomass stoichiometry moving underneath the released ensemble.
-    I. orientalis is checked separately -- see
-    :func:`test_i_orientalis_drops_the_hand_added_atp`.
     """
     for rxn_id in ("BIOMASS", *BIOMASS_COMPONENT_IDS):
-        expected = reference["S_cerevisiae"][rxn_id]
-        built = rebuilt["S_cerevisiae"][rxn_id]
+        expected = dict(reference["S_cerevisiae"][rxn_id])
+        built = dict(rebuilt["S_cerevisiae"][rxn_id])
+        if rxn_id == "LIPID_c":
+            expected.pop("ipcbiom_c", None)
+            built.pop("ipcbiom24_c", None)
+            built.pop("ipcbiom26_c", None)
         assert built.keys() == expected.keys(), rxn_id
         for met_id, coeff in expected.items():
             assert built[met_id] == pytest.approx(coeff, abs=1e-9), f"{rxn_id}:{met_id}"
+
+
+def test_s_cerevisiae_splits_the_acyl_branch(reference, rebuilt):
+    """The shipped LIPID_c lumped ipcbiom_c; the rebuild splits it by chain length.
+
+    ``scAMM.xlsx`` now distinguishes the C24 and C26 acyl variants instead of a single
+    lumped ``ipcbiom_c``, so the flat model -- and everything rebuilt from it -- carries
+    ``ipcbiom24_c``/``ipcbiom26_c`` instead, each at exactly half the shipped
+    coefficient, so the mass entering LIPID_c is unchanged.
+
+    Pinned rather than papered over: this is the one stoichiometric difference between
+    the v1.0.0 S. cerevisiae model and its v2.0.0 rebuild, and a reader comparing
+    predictions across the two versions needs to know it is there.
+    """
+    shipped = reference["S_cerevisiae"]["LIPID_c"]
+    built = rebuilt["S_cerevisiae"]["LIPID_c"]
+
+    assert set(shipped) - set(built) == {"ipcbiom_c"}
+    assert set(built) - set(shipped) == {"ipcbiom24_c", "ipcbiom26_c"}
+    assert built["ipcbiom24_c"] == pytest.approx(built["ipcbiom26_c"])
+    assert built["ipcbiom24_c"] + built["ipcbiom26_c"] == pytest.approx(
+        shipped["ipcbiom_c"], abs=1e-9)
 
 
 @pytest.mark.parametrize("organism", ORGANISMS)
