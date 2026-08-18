@@ -112,7 +112,12 @@ def build_experiments(mfa_model, tracer_cfg):
     ]
 
 
-def build_targets(mfa_model):
+def build_targets(mfa_model, restrict_to=None):
+    """EMU targets, one whole-molecule EMU per atom-mapped metabolite.
+
+    :param restrict_to: optional set of metabolite ids; when given, only these
+        become targets, so the expansion never walks past them.
+    """
     targets = set()
     measured_metabolites = []
     metabolite_atom_patterns = {}
@@ -120,6 +125,8 @@ def build_targets(mfa_model):
     for metabolite in mfa_model.metabolites:
         atom_pattern = metabolite.annotation.get("atom_pattern", "")
         if not atom_pattern:
+            continue
+        if restrict_to is not None and metabolite.id not in restrict_to:
             continue
         metabolite_atom_patterns[metabolite.id] = atom_pattern
         targets.add(EMU(metabolite, list(range(1, len(atom_pattern) + 1))))

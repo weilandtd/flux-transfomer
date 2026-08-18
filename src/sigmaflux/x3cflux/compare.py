@@ -1,11 +1,11 @@
 """Compare the two forward models: our EMU simulation against x3cflux's.
 
-This is gate G2, and it is the check worth running before any fit. A fit only
-tells you an optimiser found a low residual for *some* model; if the two forward
-models disagree, the residual is being measured against a network that is not the
-one we meant, and every downstream number inherits that. Two independently written
-simulators agreeing to ~1e-6 from the same flux is much stronger evidence than
-either being self-consistent.
+This is the labeling agreement check, and it is worth running before any fit. A fit
+only tells you an optimiser found a low residual for *some* model; if the two
+forward models disagree, the residual is being measured against a network that is
+not the one we meant, and every downstream number inherits that. Two independently
+written simulators agreeing to ~1e-6 from the same flux is much stronger evidence
+than either being self-consistent.
 
 **What agreement does and does not prove.** It rules out a large class of
 translation errors -- a lost balance row, a scrambled permutation, a wrong
@@ -58,6 +58,11 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
     The measurement *values* handed to x3cflux are irrelevant here: a simulated MID
     depends on the flux and the network, not on the data it will later be compared
     against. Zeros are used so that no noise realisation has to be invented.
+
+    Builds its own simulator. A caller that already has one -- checking a model
+    builds it once and runs several checks off it -- should call
+    :func:`compare_simulated` instead; on a genome-scale network the build is the
+    dominant cost.
     """
     conv = convert(facts)
     assert_network(conv.network_data, verbose=False)
@@ -73,6 +78,14 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
     simulator = x.create_simulator_from_data(conv.network_data, configs)
     fluxmap = FluxMap(facts, conv, simulator.parameter_space)
 
+    return compare_simulated(simulator, fluxmap, facts, labeling_index,
+                             our_labeling, v, r, verbose=verbose)
+
+
+def compare_simulated(simulator, fluxmap, facts, labeling_index, our_labeling,
+                      v, r, verbose=True):
+    """:func:`compare_mid` against an already-built simulator."""
+    labeling_index = [tuple(k) for k in labeling_index]
     theirs = x3cflux_labeling(simulator, fluxmap, facts, v, r)
     ours = dict(zip(labeling_index, np.asarray(our_labeling, float)))
 
@@ -88,7 +101,12 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
                      "input_pool": met in inputs})
     frame = pd.DataFrame(rows)
 
+    # Keys x3cflux never built are dropped from the comparison rather than compared,
+    # so on their own they would make the agreement *look* better by shrinking what is
+    # scored. The caller has to be able to see them, which is why they travel with the
+    # frame instead of only being printed.
     missing = [k for k in labeling_index if k not in theirs]
+    frame.attrs["missing"] = missing
     if verbose:
         report(frame, missing)
     return frame

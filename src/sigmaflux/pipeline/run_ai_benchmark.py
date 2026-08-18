@@ -143,7 +143,8 @@ def main(args):
     print(f"  Flux outputs : {len(sf.flux_names)}")
     print(f"  Tracers      : {sf.tracer_names}")
 
-    cobra_model, _, training_labeling_df, training_flux_df, _ = load_benchmark_inputs(data_dir)
+    cobra_model, _, training_labeling_df, training_flux_df, _ = load_benchmark_inputs(
+        data_dir, cfg, root)
 
     # For an ensemble the shared val split lives in member 0's checkpoint, not the
     # (possibly stale) top-level .pt that `find_checkpoint` returned.

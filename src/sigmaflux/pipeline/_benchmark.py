@@ -56,13 +56,17 @@ def pin_threads():
     return n_threads
 
 
-def load_benchmark_inputs(data_dir):
+def load_benchmark_inputs(data_dir, cfg=None, root=None):
     """Load the run directory's model, observable metabolites and training data.
 
     Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
-    ``mapped_met_ids`` is every metabolite in ``features.csv`` — all of them, not
-    only those flagged ``included``, so the simulated MID covers what the mapping
-    CSV makes measurable.
+    ``mapped_met_ids`` is read straight from the organism's own ``mapping_csv``
+    (via :func:`~sigmaflux.pipeline.check_mfa_model.measurable_metabolites`) when
+    the config declares one -- the measurable set is a property of the organism,
+    not of any one training run, so this works even for a run directory that never
+    reached feature extraction. Falls back to every metabolite in the run's
+    ``features.csv`` (all of them, not only those flagged ``included``) only when
+    the config is unconstrained (no ``mapping_csv``) or wasn't passed in.
     """
     model_path = os.path.join(data_dir, "model_prepared_for_mfa.json")
     print(f"Loading model: {model_path}")
@@ -70,9 +74,16 @@ def load_benchmark_inputs(data_dir):
     print(f"  {len(cobra_model.reactions)} reactions, "
           f"{len(cobra_model.metabolites)} metabolites")
 
-    mapped_met_ids = set(pd.read_csv(os.path.join(data_dir, "features.csv"))
-                           ["metabolite_id"].dropna())
-    print(f"  {len(mapped_met_ids)} metabolite IDs from features.csv")
+    mapped_met_ids = None
+    if cfg is not None:
+        from .check_mfa_model import measurable_metabolites
+        mapped_met_ids = measurable_metabolites(cfg, root)
+    if mapped_met_ids is not None:
+        print(f"  {len(mapped_met_ids)} metabolite IDs from mapping_csv")
+    else:
+        mapped_met_ids = set(pd.read_csv(os.path.join(data_dir, "features.csv"))
+                               ["metabolite_id"].dropna())
+        print(f"  {len(mapped_met_ids)} metabolite IDs from features.csv")
 
     print(f"Loading training data from: {data_dir}")
     return (cobra_model, mapped_met_ids, *load_data(data_dir))
@@ -111,16 +122,21 @@ def resolve_split_source(checkpoint, data_dir, split):
         return None
 
 
-def build_mfa_context(cobra_model, tracer_cfg, initial_flux, name, with_backward):
+def build_mfa_context(cobra_model, tracer_cfg, initial_flux, name, with_backward,
+                      restrict_targets_to=None):
     """Build the prepared MFAModel and the index that flattens its output.
 
     ``with_backward`` is the expensive half of the EMU network: the MFA benchmark
     fits and needs gradients, the AI benchmark only runs forward passes.
 
+    ``restrict_targets_to``, when given, is the only set of metabolites the
+    expansion targets -- see :func:`build_targets`.
+
     Returns ``(mfa_model, reaction_ids, experiments, labeling_to, labeling_index)``.
     """
     mfa_model = MFAModel(cobra_model, name, initial_flux_distribution=initial_flux)
-    targets, measured_metabolites, atom_patterns = build_targets(mfa_model)
+    targets, measured_metabolites, atom_patterns = build_targets(
+        mfa_model, restrict_to=restrict_targets_to)
     experiments = build_experiments(mfa_model, tracer_cfg)
     print("Preparing EMU network (per-tracer experiments; may take several minutes) ...")
     mfa_model.prepare(experiments, targets=targets, with_backward=with_backward)

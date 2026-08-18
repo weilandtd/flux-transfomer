@@ -2,7 +2,7 @@
 
 Four transformations compose here and any one of them silently wrong invalidates
 the whole comparison, so this is deliberately one small module with a
-two-directional round-trip test (gate G0).
+two-directional round-trip test.
 
 1. **Reaction identity.** The x3cflux reaction list is not our 203: splits add
    sub-reactions, symmetry adds halves, void pools add drains.
@@ -12,9 +12,10 @@ two-directional round-trip test (gate G0).
    cobra ratio; going back, the parent is read from the reference sub-flux and the
    others are *checked*, not ignored.
 4. **Exchange convention.** Ours is ``vf = max(v,0) + r/2``; 13CFLUX's is
-   ``vf = max(v.n,0) + v.x``. Hence ``v.x = r/2`` -- derived, not documented, so G2
-   has to confirm it. A symmetry half carries a quarter: each half has net v/2 and
-   exchange r/4, and 0.5*(max(v,0) + r/2) = max(v/2,0) + r/4.
+   ``vf = max(v.n,0) + v.x``. Hence ``v.x = r/2`` -- derived, not documented, so the
+   labeling agreement check has to confirm it. A symmetry half carries a quarter:
+   each half has net v/2 and exchange r/4, and
+   0.5*(max(v,0) + r/2) = max(v/2,0) + r/4.
 
 Only reactions with scale == 1 ever carry exchange: the flipped EX_ uptakes have
 ub <= 0 so cobra's ``reversibility`` (lb < 0 < ub) is False, and the 2x-rescaled
@@ -90,12 +91,39 @@ class FluxMap:
             net[drain] = sum(c * net[src] for src, c in terms.items())
             xch[drain] = 0.0
 
+        self._check_present(net)
         full = np.zeros(len(self.param_names))
         for name, value in net.items():
             full[self._pindex[f"{name}.n"]] = value
         for name, value in xch.items():
             full[self._pindex[f"{name}.x"]] = value
         return full
+
+    def _check_present(self, net):
+        """Fail on reactions x3cflux pruned, naming all of them and the likely cause.
+
+        x3cflux deletes a reaction whose flux its constraints pin to zero, and then
+        every pool that leaves unreachable. Indexing ``_pindex`` for one of those
+        raises a bare ``KeyError`` on whichever reaction happens to come first in
+        facts order -- which is nearly always collateral, not the cause. The cause is
+        a pool with no producer: its balance row pins one sub-reaction to zero, and
+        for a split reaction the equality ties drag every other share down with it.
+        """
+        missing = [name for name in net if f"{name}.n" not in self._pindex]
+        if not missing:
+            return
+        orphans = sorted({m for r in self.conv.network_data.reactions
+                          for m in r.educt_names} -
+                         {m for r in self.conv.network_data.reactions
+                          for m in r.product_names})
+        raise KeyError(
+            f"x3cflux pruned {len(missing)} of {len(net)} reactions, so they have no "
+            f"flux parameter: {missing[:20]}"
+            f"{' ...' if len(missing) > 20 else ''}. This is a pinned flux, not a "
+            f"conversion error -- look for a pool with no producer, which pins its "
+            f"consumer to zero and, through the split ties, everything tied to it. "
+            f"Pools consumed but never produced: {orphans[:20]}"
+            f"{' ...' if len(orphans) > 20 else ''}")
 
     def to_x3c(self, v, r):
         """Free parameter vector for cobra fluxes ``v`` and reversibilities ``r``."""

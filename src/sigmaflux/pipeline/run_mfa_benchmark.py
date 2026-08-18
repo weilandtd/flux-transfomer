@@ -509,7 +509,8 @@ def main(args):
     if not args.diagnose:
         os.makedirs(output_dir, exist_ok=True)
 
-    cobra_model, mapped_met_ids, _, all_flux_df, all_rev_df = load_benchmark_inputs(data_dir)
+    cobra_model, mapped_met_ids, _, all_flux_df, all_rev_df = load_benchmark_inputs(
+        data_dir, cfg, root)
 
     split_source = resolve_split_source(_p(args.checkpoint), data_dir, args.split)
     sel, tag = select_samples(args.split, split_source, all_flux_df.shape[1], cfg,

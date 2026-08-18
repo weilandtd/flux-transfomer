@@ -12,9 +12,9 @@ Three groups of equality constraints repair the rest:
   * **exchange ties** keep the two halves of a symmetry-split reversible reaction
     carrying equal exchange flux.
 
-Together these must bring the net-flux nullity back to 25 (gate G1). If it comes
-out at 50 the non-carbon balances are missing; if it is 25 + k, k constraints did
-not land.
+Together these must bring the net-flux nullity back to 25, matching cobra's. If it
+comes out at 50 the non-carbon balances are missing; if it is 25 + k, k constraints
+did not land.
 
 ``LinearConstraint`` semantics are ``constant + sum(c_i * p_i) {=,<=} 0`` -- note
 this contradicts the class docstring, which puts the constant on the other side;
@@ -49,16 +49,24 @@ def build_substrates(facts, conv, tracer):
     The substrate is attached to the input's upstream *source* pool, not to the
     input pool itself -- see :func:`convert.input_source_pools` for why declaring a
     pool that still has a producer is a segfault.
+
+    Iterates ``conv.sources``, not ``facts["input_metabolites"]``: those are
+    exactly the pools :func:`convert.input_source_pools` found a bare producer
+    for, structurally, so a substrate exists for precisely the pools ``convert``
+    already relied on one existing for -- no more, no fewer. Using the narrower,
+    expansion-derived list here instead would leave a source pool declared with no
+    substrate and no producer, which is undefined for x3cflux rather than merely
+    wrong: the crash `convert` raises for the same gap is what stops that reaching
+    here at all.
     """
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     subs = []
-    for met in facts["input_metabolites"]:
+    for met, pool in conv.sources.items():
         n = atoms[met]
         if met == tracer["metabolite"]:
             profiles = tracer_profile(tracer["labeling"], n, tracer["enrichment"])
         else:
             profiles = {"0" * n: 1.0}          # unlabeled medium component
-        pool = conv.sources.get(met, met)
         subs.append(x.ConstantSubstrate(f"sub_{met}", pool, 0.0, profiles))
     # Unlabeled feeds for the biomass split's from-nothing influxes. They only
     # supply inert 1001-block carbon (amp_c), which is M+0 regardless.
@@ -186,9 +194,10 @@ def structural_configuration(facts, conv):
 
     ``create_simulator_from_data`` rejects an empty configuration list ("No
     configuration supplied"), but it accepts a configuration carrying no
-    measurements. That is what the structural gates want: the parameter space, the
-    constraints and the nullity depend only on the network, so building them should
-    not require inventing measurement values that would then have to be explained.
+    measurements. That is what a structural check on the network alone wants: the
+    parameter space, the constraints and the nullity depend only on the network,
+    so building them should not require inventing measurement values that would
+    then have to be explained.
     """
     import x3cflux as x
 

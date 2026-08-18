@@ -11,7 +11,7 @@ fitted cobra ``(v, r)``, and the benchmark driver pushes that through our own EM
 forward model to compute the residual, exactly as it does for the native fit. So
 both arms are scored by the same code against the same noise, and the comparison
 cannot drift; the price is that it is only meaningful while the two forward models
-agree, which is what gate G2 measures.
+agree, which is what the labeling agreement check measures.
 
 ``run_optimization`` throws away cyipopt's ``info``, so the handful of lines it
 wraps are reimplemented here to keep the status and iteration count.
