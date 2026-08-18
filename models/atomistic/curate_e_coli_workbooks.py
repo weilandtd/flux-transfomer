@@ -141,12 +141,9 @@ SUPPLIED = {
 
 
 def atom_map_rows(rxn_id, met, n_atoms):
-    """AMM rows describing a depletion exchange `met -->`.
-
-    An exchange needs an atom mapping like any other reaction. Without one the EMU
-    expansion cannot follow the tracer's carbon out of the boundary metabolite and
-    prunes the whole network — the labeling targets then come back empty.
-    """
+    """AMM rows describing a depletion exchange `met -->`. Without a mapping the EMU
+    expansion cannot follow the tracer out of the boundary metabolite and prunes the
+    whole network."""
     return [{'rxnAbbreviation': rxn_id, 'metAbbreviation': met,
              'ReactantProductFlag': 'reactant',
              'maps': ','.join(str(i) for i in range(1, n_atoms + 1)),
@@ -156,14 +153,10 @@ def atom_map_rows(rxn_id, met, n_atoms):
 def canonicalise_boundaries(name, reactions, metabolites):
     """Give every extracellular metabolite a proper `EX_<met>` exchange.
 
-    The two workbooks handle boundaries three different ways: iAF1260 names most of
-    them `EX_ac(e)` but calls acetate `ac_out`, feeds glucose from a bare source
-    `gluc_up -->  glc-D_e`, and the core model has no exchanges whatsoever. That last
-    case is not merely untidy — `Gluc_e` has no producer, so steady state pins the
-    whole model at zero flux.
-
-    Exchanges are written in the depletion direction (`met_e -->`), which is already
-    SigmaFlux's secretion-positive convention, so the converter leaves them alone.
+    Normalises the two workbooks' differing boundary conventions; without this, a
+    model with no exchanges at all pins itself at zero flux. Exchanges are written
+    in the depletion direction (`met_e -->`), matching SigmaFlux's secretion-positive
+    convention.
     """
     reactions = reactions.copy()
     sources = SOURCES_AS_EXCHANGE[name]
@@ -222,9 +215,9 @@ def canonicalise_boundaries(name, reactions, metabolites):
 def to_canonical(text):
     """Rewrite bracket compartments as suffixes: 'ala-L[c]' -> 'ala-L_c'.
 
-    Applied to whole reaction strings as well as bare ids, so it must leave
-    everything else — coefficients, arrows, '+' — untouched. The hyphenated stereo
-    tag is left alone: the fragment map in data/E_coli refers to these ids.
+    Applied to whole reaction strings, so it must leave coefficients, arrows and '+'
+    untouched; the hyphenated stereo tag is preserved since data/E_coli's fragment
+    map refers to it.
     """
     if not isinstance(text, str):
         return text

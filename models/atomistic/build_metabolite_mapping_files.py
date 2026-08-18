@@ -29,12 +29,8 @@ from sigmaflux.utils import build_data_name_maps, match_lcms_knowns
 
 
 def _compound_names_all_sheets(*mid_xlsx):
-    """Every compound measured across every tracer sheet of the given MID workbooks.
-
-    build_data_name_maps reads a single sheet per file, which would miss compounds
-    unique to one tracer — the T-cell 1,2-13C glucose sheet is the only one carrying
-    glucose and G6P.
-    """
+    """Every compound measured across every tracer sheet of the given MID workbooks
+    (a single sheet per file would miss compounds unique to one tracer)."""
     import pandas as pd
 
     names = set()
@@ -48,11 +44,8 @@ def _compound_names_all_sheets(*mid_xlsx):
 
 
 def _measured_compound_names(*mapping_csvs):
-    """Compound names measured for organisms that already have a mapping CSV.
-
-    R. toruloides has no MID data yet, so its measurable token space is taken from
-    the compounds the same LC/MS platform resolves for the other two yeasts.
-    """
+    """Compound names measured for organisms that already have a mapping CSV
+    (used for R. toruloides, which has no MID data of its own yet)."""
     names = set()
     for path in mapping_csvs:
         with open(os.path.join(os.path.dirname(__file__), '..', '..', path)) as f:

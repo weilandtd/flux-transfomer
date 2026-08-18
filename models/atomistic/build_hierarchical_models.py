@@ -1,29 +1,12 @@
 """
 Build *_annotated_hierarchical.json from the flat *_annotated.json models.
 
-The aggregate BIOMASS reaction is split into the five macromolecule component
-reactions (PROTEIN_c, RNA_c, DNA_c, LIPID_c, CARB_c), each producing a bm_*_c
-pseudo-metabolite that BIOMASS then consumes at the macromolecule mass fraction.
-Energy is redistributed out of BIOMASS into the components afterwards. This is what
-the organism configs point `model_file` at, because the component fluxes are
-separately measurable while the aggregate is not.
-
-All four hierarchical models are regenerated here. S. cerevisiae and I. orientalis
-used to be exempt -- only their annotations were resynced, because their stoichiometry
-backed the released v1.0.0 .sfx ensembles -- but the freeze was hiding a defect rather
-than protecting anything: in both models the sterol/lipid branch is pruned by x3cflux
-as unreachable, which takes bm_lipid_c with it, and LIPID_c is a measured flux in both
-configs. So `sigmaflux-benchmark-mfa --backend x3cflux` could not run on either.
-
-Their published mass fractions are passed in explicitly from
-`PUBLISHED_BIOMASS_FRACTIONS` rather than derived, so rebuilding picks up every
-workbook fix while the composition stays exactly what was published and trained on.
-tests/test_biomass_split.py pins the result against tests/data/biomass_split_v1.json,
-captured from the shipped artifacts before this rebuild.
-
-Not every model carries all five macromolecules — the T-cell biomass has no
-carbohydrate, so CARB_c is skipped and the energy fractions are renormalised over the
-four components that do exist.
+Splits the aggregate BIOMASS reaction into per-macromolecule components (PROTEIN_c,
+RNA_c, DNA_c, LIPID_c, CARB_c), each producing a bm_*_c pseudo-metabolite that BIOMASS
+consumes at its mass fraction, and redistributes energy into the components. S.
+cerevisiae and I. orientalis use published mass fractions rather than deriving them,
+so the composition matches what was trained on; not every model carries all five
+macromolecules (e.g. the T-cell model has no CARB_c).
 
 Usage:
     python models/atomistic/build_hierarchical_models.py

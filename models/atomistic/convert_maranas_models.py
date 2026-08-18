@@ -1,9 +1,7 @@
 """Build the flat ``*_annotated.json`` models from their GEM + AMM workbooks.
 
-Paths resolve against the repository root, not the working directory:
-``convert_mfa_maranas`` hands its arguments straight to ``pd.read_excel``, so the
-bare relative paths this used to pass only worked when it was run from
-``models/atomistic/`` -- unlike its siblings, which all resolve against ``__file__``.
+Paths resolve against the repository root, not the working directory, since
+``convert_mfa_maranas`` passes them straight to ``pd.read_excel``.
 
 Usage:
     python models/atomistic/convert_maranas_models.py
