@@ -448,6 +448,11 @@ def main(cfg, output_dir_override=None):
     model.solver.configuration.tolerances.feasibility = 1e-9
 
     apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+    # Before dilution-target detection: a reversible-transporter override (e.g.
+    # ALAt_c_e lb 0 -> -20) only makes its metabolite internally-producible once
+    # applied. Detecting on the pre-override bounds silently skipped dilution for
+    # any medium component whose only internal route was such an override.
+    apply_reaction_bounds(model, s.get("reaction_bounds"))
 
     # Medium components the cell also produces are mixing nodes whose exchange
     # carries no label, so they cannot be diluted by the medium. Give each one an
@@ -456,7 +461,6 @@ def main(cfg, output_dir_override=None):
     diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
     if diluted:
         print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
-    apply_reaction_bounds(model, s.get("reaction_bounds"))
     if s.get("growth"):
         constrain_growth(model, s["growth"])
 
