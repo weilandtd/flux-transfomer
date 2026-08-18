@@ -54,13 +54,9 @@ from sigmaflux.pipeline._paths import (
 
 
 def validate_tracers(tracer_cfg, media_cfg):
-    """Check that every tracer metabolite has an open exchange reaction in the media.
+    """Check that every tracer has an open ``EX_<met_id>`` exchange reaction in the media.
 
-    The exchange reaction for metabolite ``met_id`` is expected to be named
-    ``EX_<met_id>``.  A reaction is considered open when at least one of its
-    bounds is non-zero (i.e. flux can flow through it).
-
-    Raises ValueError listing all incompatible tracers.
+    Raises ValueError listing every incompatible tracer.
     """
     errors = []
     for t in tracer_cfg:

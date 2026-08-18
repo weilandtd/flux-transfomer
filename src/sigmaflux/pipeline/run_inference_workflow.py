@@ -79,13 +79,10 @@ def _expand_samples(
     n_samples:      int,
     rng:            np.random.Generator,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Replicate df_L and df_Vm n_samples times per bio-rep, perturbing flux_to_sample.
+    """Replicate df_L and df_Vm n_samples times per bio-rep, perturbing flux_to_sample.
 
-    For bio-rep R and flux sample S the synthetic sample ID is:
-        (R - 1) * n_samples + S          (S in 0 .. n_samples-1)
-
-    The perturbed flux is drawn uniformly from [value - error, value + error].
+    Synthetic sample ID = (R - 1) * n_samples + S for bio-rep R, sample S (0..n_samples-1);
+    the perturbed flux is drawn uniformly from [value - error, value + error].
     """
     bio_reps = sorted(df_L['Sample'].unique())
     L_parts, V_parts = [], []

@@ -48,10 +48,8 @@ def available():
 def preimport():
     """Load x3cflux and its Ipopt stack before torch can claim ``libstdc++``.
 
-    Call this at process entry, before importing anything that pulls in torch;
-    afterwards the order no longer matters. Returns True if x3cflux was loaded,
-    False if it is not installed -- absence is not an error here, since the caller
-    may not have asked for this backend at all.
+    Call at process entry before anything that imports torch. Returns True if
+    x3cflux was loaded, False if it is not installed.
     """
     if not available():
         return False

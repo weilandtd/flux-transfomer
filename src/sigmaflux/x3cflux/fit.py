@@ -42,16 +42,9 @@ IPOPT_DEFAULTS = {
 def flux_bounds(facts, conv):
     """cobra FVA bounds, expressed over the x3cflux reactions.
 
-    Ipopt otherwise walks into configurations that zero out a branch point, where
-    x3cflux reports "the current labeling system is not numerically solvable" and
-    then segfaults. Its own advice is to constrain the fluxes of branching
-    pathways, and the prepared model already carries FVA-tightened bounds (70
-    reactions have lb > 0), so those are the natural choice.
-
-    This is a genuine asymmetry with our L-BFGS-B fit, which imposes no cobra
-    bounds at all -- it optimises an unbounded null-space coordinate and cannot
-    take them, since L-BFGS-B has no general linear constraints. A smaller search
-    space flatters x3cflux, so it has to be stated wherever the two are compared.
+    Without them Ipopt can walk into a branch-point configuration and segfault.
+    This is a genuine asymmetry with the L-BFGS-B fit, which takes no cobra bounds
+    at all, so a smaller search space flatters x3cflux wherever the two are compared.
     """
     bounds = {}
     for r in facts["reactions"]:
@@ -66,24 +59,11 @@ def flux_bounds(facts, conv):
 def _gauss_newton_problem(x):
     """Build the Ipopt problem class supplying a Gauss-Newton Hessian.
 
-    Defined inside a function because it subclasses an x3cflux type, and this
-    module must stay importable while x3cflux is only optionally installed.
-
-    MFA is a weighted nonlinear least-squares problem and x3cflux already exposes
-    the machinery -- ``compute_linearized_hessian`` returns ``J^T W J`` -- so
-    approximating the Hessian with limited-memory BFGS throws away structure that
-    is there for free.
-
-    Two details:
-
-    * the loss is ``sum(r^2)``, whose Hessian is ``2 J^T W J``, while
-      ``compute_linearized_hessian`` returns ``J^T W J``. Verified by finite
-      differencing the analytic gradient: the returned matrix is exactly half the
-      true Hessian. Hence the factor 2.
-    * every constraint here is linear (the stoichiometry is eliminated into the
-      free parameters, and the bounds are linear inequalities), so the multipliers
-      contribute nothing to the Hessian of the Lagrangian and ``lagrange`` is
-      ignored.
+    Defined inside a function since it subclasses an x3cflux type and this module
+    must stay importable without x3cflux installed. The factor of 2 corrects
+    ``compute_linearized_hessian``, which returns ``J^T W J`` while the loss's
+    Hessian is ``2 J^T W J``; ``lagrange`` is ignored because every constraint here
+    is linear.
     """
 
     class GaussNewtonProblem(x.IpoptOptimizationProblem):
@@ -137,10 +117,9 @@ def optimize(simulator, start, max_iter=5000, bounds=None, gauss_newton=True,
 class X3CFluxBackend:
     """A converted x3cflux model, reusable across samples.
 
-    Build once per benchmark run -- conversion and the constraint set depend only
-    on the model -- then call :meth:`fit` per sample. ``labeling_index`` and
-    ``measured_flux_ids`` fix the row order of the measurement vectors handed to
-    :meth:`fit`, and must be the same objects the benchmark scores against.
+    Build once per benchmark run, then call :meth:`fit` per sample.
+    ``labeling_index`` and ``measured_flux_ids`` fix the row order of the
+    measurement vectors and must match what the benchmark scores against.
     """
 
     def __init__(self, facts, labeling_index, measured_flux_ids, noise_std,
@@ -162,11 +141,9 @@ class X3CFluxBackend:
     def simulator_for(self, noisy_labeling, noisy_flux, flux_sigma):
         """``(simulator, fluxmap)`` for one sample's measurements.
 
-        The simulator is x3cflux's own object and already carries the network, the
-        configuration and the simulation -- ``compute_measurements``,
-        ``compute_loss`` and ``parameter_space`` are read off it directly rather
-        than proxied. Only :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` is ours,
-        because the cobra reaction identities are the one thing x3cflux cannot know.
+        The simulator is x3cflux's own object, read directly rather than proxied;
+        only :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` is ours, since cobra
+        reaction identities are the one thing x3cflux cannot know.
         """
         import x3cflux as x
 
@@ -180,12 +157,10 @@ class X3CFluxBackend:
             gauss_newton=True, isolate=True):
         """Fit from one start; returns ``(v, r, info)`` in cobra coordinates.
 
-        ``info`` carries Ipopt's status, its own SSR and the wall time. The residual
-        that decides acceptance is computed by the caller through our forward model,
-        not from ``info['ssr']``.
-
-        With *isolate*, the solve runs in a forked child (see :func:`run_isolated`)
-        and returns ``(None, None, {'crashed': reason})`` if it dies.
+        ``info['ssr']`` is Ipopt's own residual, not what decides acceptance -- the
+        caller recomputes that through our forward model. With *isolate* the solve
+        runs in a forked child and returns ``(None, None, {'crashed': reason})`` if
+        it dies.
         """
         def solve():
             result = optimize(simulator, fluxmap.to_x3c(v_init, r_init),
@@ -207,16 +182,9 @@ class X3CFluxBackend:
 def run_isolated(call, timeout=7200):
     """Run *call* in a forked child; return its result, or None if the child died.
 
-    Ipopt segfaults from some starting points -- a real SIGSEGV inside x3cflux, not
-    an exception and not memory pressure (observed at 318 MB RSS). In one process
-    per sample that takes the whole sample down and it vanishes from the results,
-    which is precisely the selection bias this benchmark exists to measure: the
-    samples that crash are unlikely to be a random subset. So a crash costs one
-    start, and the caller records it.
-
-    Fork rather than a fresh interpreter: the child inherits the built simulator
-    through copy-on-write, so nothing has to be serialised or written to disk, and
-    only the small ``(v, r, info)`` result travels back through the pipe.
+    Ipopt can SIGSEGV from some starting points; isolating each start in a fork
+    means a crash costs one start instead of the whole sample, and the child
+    inherits the built simulator via copy-on-write so nothing has to be serialised.
     """
     import multiprocessing
 

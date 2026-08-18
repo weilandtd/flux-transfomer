@@ -94,12 +94,9 @@ def _apply_media_bounds(cobra_model, media_cfg):
 def _feasible_init(constrained, fallback):
     """Parsimonious feasible flux vector to initialize the MFA fit.
 
-    The measured-flux bounds (mean±2σ) are frequently over-determined and make
-    the polytope infeasible (e.g. measured glucose uptake can't supply all the
-    measured biomass-precursor demands under mass balance) — this is normal in
-    13C-MFA and is reconciled by the weighted least-squares fit, NOT by hard
-    bounds. So for the *initial point* only, fall back to the feasible
-    media-only model. Measurements are still applied as soft targets via FluxData.
+    The measured-flux bounds (mean±2σ) are frequently over-determined and make the
+    polytope infeasible, so for the *initial point* only this falls back to the
+    feasible media-only model; measurements still apply as soft targets via FluxData.
     """
     from cobra.flux_analysis import pfba
     for mdl, label in ((constrained, "measured-bounds"), (fallback, "media-only")):

@@ -50,19 +50,10 @@ def compare_mid(facts, labeling_index, our_labeling, v, r, noise_std=0.01,
                 verbose=True):
     """Per-isotopomer comparison of the two forward models at one flux state.
 
-    *our_labeling* is the vector our EMU model simulates, aligned to
-    *labeling_index* -- the ``(tracer, metabolite, 'M+k')`` triples the benchmark
-    scores. Returns a DataFrame with both values and their absolute difference,
-    one row per entry the two models have in common.
-
-    The measurement *values* handed to x3cflux are irrelevant here: a simulated MID
-    depends on the flux and the network, not on the data it will later be compared
-    against. Zeros are used so that no noise realisation has to be invented.
-
-    Builds its own simulator. A caller that already has one -- checking a model
-    builds it once and runs several checks off it -- should call
-    :func:`compare_simulated` instead; on a genome-scale network the build is the
-    dominant cost.
+    *our_labeling* is aligned to *labeling_index*; returns a DataFrame of both
+    models' values and their absolute difference, one row per shared entry. Builds
+    its own simulator -- call :func:`compare_simulated` instead if one already
+    exists, since building it dominates the cost on a genome-scale network.
     """
     conv = convert(facts)
     assert_network(conv.network_data, verbose=False)

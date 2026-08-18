@@ -173,9 +173,8 @@ def measured_flux_ids(measured_rxn_ids, gt_flux_series):
 def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, noisy_values):
     """Wrap already-noised flux observations as FluxData.
 
-    The noise is drawn by :func:`sigmaflux.pipeline._benchmark.noisy_measurements` so
-    that the AI benchmark sees the identical realisation; the χ² variance stays
-    (flux_noise_std·|true|)², since fluxes are real magnitudes.
+    The χ² variance is ``(flux_noise_std·|true|)²``, since fluxes are real
+    magnitudes.
     """
     rows = [{"reaction": rxn_id, "mean": float(meas),
              "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
@@ -186,18 +185,13 @@ def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, 
 def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, rng):
     """Feasible init: a different training sample, drawn at random.
 
-    Deliberately uses no knowledge of the ground truth. A real MFA fit has no answer to
-    start near, so seeding close to it measures the wrong thing — it reports how well
-    the optimiser polishes a solution it was handed rather than whether it can find one.
-    The difference is not small: on T-cell sample 2, a start 20% from the truth reached
-    the global optimum on the first try, while random starts missed it three times.
-
-    Every training sample is a feasible point of the same polytope, so picking one is
-    guaranteed to satisfy S·v = 0 and stay within bounds — unlike a null-space
-    projection of a perturbed flux, which can invert reactions and leave the polytope.
-
-    *gt_flux* is used only to report how far the start landed from the answer, never to
-    construct it. Returns (v_init, r_init, info) with info = {j, dev}.
+    Deliberately uses no knowledge of the ground truth -- a real MFA fit has no
+    answer to start near, so seeding close to it would measure how well the
+    optimiser polishes a handed solution rather than whether it can find one. Every
+    training sample is a feasible point of the same polytope, so picking one
+    guarantees S·v = 0 and in-bounds. *gt_flux* is used only to report how far the
+    start landed from the answer. Returns ``(v_init, r_init, info)`` with
+    ``info = {j, dev}``.
     """
     n_samples = all_flux_df.shape[1]
     j = int(rng.integers(0, n_samples))
@@ -217,9 +211,8 @@ def fitted_parameter_count(model):
     """Free parameters the fit spends: null-space net-flux coordinates + exchanges.
 
     ``fit_mfa_model`` optimises ``v_net = T·p`` with ``T = null(S)`` plus one
-    reversibility per reversible reaction, so this is the ``p`` that the χ² test
-    subtracts from the measurement count. The x3cflux arm eliminates the same
-    stoichiometry into the same free space, so the count applies to both backends.
+    reversibility per reversible reaction; this ``p`` is what the χ² test subtracts
+    from the measurement count, and applies to both the native and x3cflux backends.
     """
     from ..core.mfa import gen_SVD_kernel
 
@@ -231,22 +224,13 @@ def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
     """Upper bound on the raw SSR for a statistically acceptable fit.
 
     The standard ¹³C-MFA goodness-of-fit test (Antoniewicz, Kelleher & Stephanopoulos
-    2006, *Metab Eng* 8:324): at a global optimum of a correct model with known
-    measurement σ, the weighted SSR follows χ² on ``dof = n_measurements - n_params``.
-    A fit is accepted when its SSR falls below ``χ²_{1-α}(dof)``; anything above is
-    statistically distinguishable from the data and the optimiser is restarted.
-
-    This replaces comparing against the residual at the *true* flux, which needs
-    ground truth no real experiment has. It is also the stricter test: the truth
-    spends no parameters, so a converged fit beats it by ``(n-p)/n`` on average —
-    ``SSR < SSR_true`` is what a correct fit looks like, not evidence of one.
-
-    *scale_labeling* is the variance of the standardised residual in the labeling block
-    under the actual noise model (see
-    :func:`~sigmaflux.pipeline._benchmark.labeling_chi2_scale`). The flux block needs no
-    correction — its noise is unclipped and its σ is the same ``|v|·σ_rel`` used to
-    generate it — so the two blocks are blended by size. ``SSR/scale`` is what is
-    χ²-distributed, hence the bound on the raw SSR carries the factor.
+    2006): at a global optimum with known measurement σ, the weighted SSR follows
+    χ² on ``dof = n_measurements - n_params``; a fit is accepted when its SSR falls
+    below ``χ²_{1-α}(dof)``. *scale_labeling* is the labeling block's standardised
+    residual variance under the actual noise model (see
+    :func:`~sigmaflux.pipeline._benchmark.labeling_chi2_scale`); the flux block needs
+    no correction, so the two blocks are blended by size and the returned bound
+    carries that scale factor.
     """
     dof = max(n_L + n_F - n_params, 1)
     scale = (scale_labeling * n_L + 1.0 * n_F) / max(n_L + n_F, 1)
@@ -256,11 +240,8 @@ def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
 def acceptance_threshold(n_L, n_F, z=1.645):
     """Upper bound on M = ½·(χ²_L/n_L) + ½·(χ²_F/n_F), the equal-weight per-block reduced χ².
 
-    Each reduced χ² block has mean ≈1 and variance ≈2/n_b. Matching the first two moments
-    of M to a single scaled χ² gives an effective df h_eff = 1 / Σ_b w_b²/n_b; with equal
-    weights w_L=w_F=½ this is h_eff = 4·n_L·n_F/(n_L+n_F) (and h_eff = n_L when n_F == 0).
-    M then behaves like a reduced χ² on h_eff df, so we reject above
-    χ²_0.95(h_eff)/h_eff ≈ 1 + z·sqrt(2/h_eff).
+    Legacy statistic: rejects above ``1 + z·sqrt(2/h_eff)`` where ``h_eff`` is M's
+    moment-matched effective degrees of freedom.
     """
     if n_F > 0:
         h_eff = 4.0 * n_L * n_F / (n_L + n_F)
@@ -272,9 +253,8 @@ def acceptance_threshold(n_L, n_F, z=1.645):
 def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flux_data):
     """Build one Experiment per tracer from an already-noised labeling series.
 
-    *noisy_series* comes from :func:`sigmaflux.pipeline._benchmark.noisy_measurements`
-    and is already restricted to the observable metabolites, so the sum-to-one
-    renormalisation was applied over exactly the entries used here.
+    *noisy_series* must already be restricted to the observable metabolites, so the
+    sum-to-one renormalisation was applied over exactly the entries used here.
     """
     noisy_exps = []
     for experiment in experiments:
@@ -331,11 +311,10 @@ def _block_counts(model):
 def native_shaped_result(mfa_model, n_iter, converged):
     """``fit_mfa_model``'s return shape, read off the model's current state.
 
-    An external backend fits in its own coordinates, so the only way its result can
-    flow through the rest of this driver unchanged is to write the fitted flux into
-    the model and re-derive the objective here. That is also what makes the two arms
-    comparable: the residual that decides acceptance is computed by *our* forward
-    model against *our* noise in both cases, never reported by the optimiser itself.
+    Lets an external backend's fit (in its own coordinates) flow through the rest of
+    this driver unchanged: the fitted flux is written into the model and the
+    objective re-derived here, so acceptance is always decided by *our* forward
+    model against *our* noise, never the optimiser's own report.
     """
     lab_chi2, flux_chi2 = _chi2_split(mfa_model)
     n_L, n_F = _block_counts(mfa_model)
@@ -360,10 +339,8 @@ def _agreement(pred, true):
 
 
 def _labeling_agreement(pred, gt, extra_mask=None):
-    """Labeling (R², r, RMSE) over GT-nonzero components only.
-
-    The labeling vector is mostly exact zeros (unpopulated M+n isotopomers); those
-    carry no information and inflate R²/RMSE, so we score only where GT != 0.
+    """Labeling (R², r, RMSE) scored only where GT != 0, since unpopulated M+n
+    isotopomers carry no information and would inflate R²/RMSE.
     """
     mask = gt > 1e-12
     if extra_mask is not None:

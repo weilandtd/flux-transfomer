@@ -50,14 +50,8 @@ from sigmaflux.ai.utils import (
 def share_basis(Z_full, basis_file):
     """Return the null-space basis every ensemble member must use.
 
-    Writes *Z_full* to *basis_file* the first time and loads it thereafter, so a
-    whole ensemble shares one basis. This matters because an ICA basis is **not**
-    bit-reproducible: FastICA's fixed point depends on the sample covariance's
-    last bits, which change with the BLAS thread count, so members trained on
-    differently sized nodes otherwise land on different — equally valid —
-    rotations of the same subspace. Predicted fluxes are unaffected (they are
-    physical), but the members' basis coordinates are then incomparable.
-
+    Writes *Z_full* to *basis_file* the first time and loads it thereafter (ICA bases
+    aren't bit-reproducible across BLAS thread counts, so members must share one).
     ``basis_file=None`` disables sharing and returns *Z_full* unchanged.
     """
     if not basis_file:
@@ -90,12 +84,7 @@ class MixedFluxLoss:
     """Combines basis-space and flux-space losses."""
 
     def __init__(self, basis_loss_fn, flux_loss_fn, flux_weight):
-        """
-        Args:
-            basis_loss_fn: loss function in basis space
-            flux_loss_fn:  loss function in flux space
-            flux_weight:   weight for flux-space loss (0-1); basis weight = (1 - flux_weight)
-        """
+        """flux_weight is in [0, 1]; basis_weight = 1 - flux_weight."""
         self.basis_loss_fn = basis_loss_fn
         self.flux_loss_fn = flux_loss_fn
         self.flux_weight = flux_weight
@@ -110,19 +99,10 @@ class MixedFluxLoss:
 def build_loss_function(train_dataset, flux_dim, loss_name,
                         flux_loss_space='flux', Z_full=None, y_train=None, mixed_flux_weight=0.1,
                         variance_min_cutoff=0.1):
-    """
-    Build flux and reversibility loss functions.
+    """Build flux and reversibility loss functions.
 
-    Args:
-        train_dataset:   training dataset (used to compute per-feature variance)
-        flux_dim:        number of flux targets
-        loss_name:       'mse' or 'variance' (variance-normalized MSE)
-        flux_loss_space: 'flux', 'basis', or 'mixed' — train in reconstructed flux, null-space, or combination
-        Z_full:          (n_fluxes, n_free) null-space basis; required when flux_loss_space in ['basis', 'mixed']
-        y_train:         (n_train, n_free) pre-projected basis targets; used to compute
-                         y-space variance when loss_name='variance' and flux_loss_space='basis'
-        mixed_flux_weight: weight for flux-space loss when flux_loss_space='mixed'
-        variance_min_cutoff: min variance clamp (default 0.1); prevents division by zero and extreme weighting
+    flux_loss_space selects 'flux' (reconstructed), 'basis' (null-space), or 'mixed'
+    (combination); Z_full is required when flux_loss_space is 'basis' or 'mixed'.
     """
     targets = train_dataset.targets
 

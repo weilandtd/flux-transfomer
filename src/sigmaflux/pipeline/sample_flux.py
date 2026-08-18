@@ -74,20 +74,10 @@ def set_bounds(model, reaction_id, lower_bound, upper_bound):
 def apply_media(model, media_cfg, close_unlisted=True):
     """Constrain the model's boundary fluxes.
 
-    With ``close_unlisted`` (the default) every ``EX_`` reaction is closed first
-    and only those named in *media_cfg* are reopened. That is the right model for
-    an organism grown in a defined medium: anything not in the medium is simply
-    not available.
-
-    It is the wrong model for a whole-body or multi-tissue model, where the
-    ``EX_`` reactions are internal physiology — inter-tissue exchange — rather
-    than a medium the experimenter composed. There, *media_cfg* lists the fluxes
-    that were *measured* (respiration, protein synthesis, TG release, ...) and
-    everything else must keep the bounds the model was built with. Closing them
-    makes the model infeasible.
-
-    Set ``close_unlisted: false`` alongside ``media:`` in the sampling config for
-    that case.
+    With ``close_unlisted`` (the default) every ``EX_`` reaction is closed first and
+    only those named in *media_cfg* are reopened -- correct for a defined medium, but
+    wrong for a whole-body/multi-tissue model where ``EX_`` is internal physiology;
+    set ``close_unlisted: false`` there so unlisted exchanges keep their model bounds.
     """
     if close_unlisted:
         for reaction in model.reactions:
@@ -111,11 +101,9 @@ def apply_media(model, media_cfg, close_unlisted=True):
 def apply_reaction_bounds(model, bounds_cfg):
     """Override bounds on named non-exchange reactions, before FVA.
 
-    `media` only reaches EX_ reactions, but a GEM's internal directions can be wrong
-    for the organism being modelled.  Transport directionality is the usual case:
-    microbial models can mostly write a transporter one-way, while cultured mammalian
-    cells run amino acid and monocarboxylate carriers in whichever direction the
-    gradient dictates, so the same reaction reverses between conditions.
+    ``media`` only reaches ``EX_`` reactions, but a GEM's internal reaction
+    directions (e.g. transporter directionality) can be wrong for the organism
+    being modelled.
     """
     if not bounds_cfg:
         return
@@ -134,10 +122,8 @@ def constrain_growth(model, growth_cfg):
 def can_consume(reaction, metabolite):
     """Whether *reaction* can consume *metabolite* in some feasible direction.
 
-    Which side of a reaction a metabolite sits on is a labelling convention; what
-    decides whether it is consumed is the sign of the flux, and that is set by the
-    bounds. A reversible reaction listing the metabolite as a product consumes it
-    whenever it runs backwards.
+    Determined by the reaction's bounds, not which side the metabolite sits on: a
+    reversible reaction listing it as a product still consumes it running backwards.
     """
     coef = reaction.metabolites[metabolite]
     return (coef < 0 and reaction.upper_bound > 0) or (coef > 0 and reaction.lower_bound < 0)
@@ -146,25 +132,12 @@ def can_consume(reaction, metabolite):
 def drop_skip_constraints(model, skip_constraints):
     """Remove the listed reactions, draining any pool left with no consumer.
 
-    Removing e.g. BIOMASS strands the pseudo-metabolites it used to consume: they
-    can still be produced but nothing takes them away, so the steady-state balance
-    forces their producers to zero flux and sampling becomes infeasible.
-
-    Two things this deliberately does *not* do, both of which it used to:
-
-    * It does not decide "dead end" from the stoichiometric sign. Asking whether a
-      metabolite is a product everywhere ignores reversibility -- a reversible
-      reaction consumes its products on reverse flux -- and would strand pools
-      that are perfectly well balanced. ``can_consume`` asks about the bounds
-      instead. (The sign test also swept in orphans, since ``all()`` over no
-      reactions is vacuously true.)
-    * It does not delete the metabolite. ``remove_metabolites`` is non-destructive:
-      it strips the pool out of its reactions and leaves them in place, silently
-      unbalanced, which is an invisible and unbounded sink. On the T-cell model
-      that quietly cost ``MDH_c`` its entire carbon output and stripped citrate
-      C3-C6 from ``ACITL_c``. An explicit demand reaction keeps mass balance, keeps
-      the atom mapping usable, and shows up in the flux vector where it can be
-      inspected and bounded.
+    Removing a reaction (e.g. BIOMASS) can strand metabolites it used to consume,
+    forcing their producers to zero flux and making sampling infeasible. Stranded
+    pools are found via ``can_consume`` (bounds, not stoichiometric sign, since a
+    reversible reaction can consume a listed product on reverse flux) and given an
+    explicit demand reaction rather than being deleted, which keeps mass balance and
+    the atom mapping usable instead of leaving an invisible unbounded sink.
     """
     to_remove = [model.reactions.get_by_id(r) for r in skip_constraints if r in model.reactions]
     model.remove_reactions(to_remove, remove_orphans=True)

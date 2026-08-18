@@ -58,9 +58,8 @@ DEFAULT_FIT_ITERS = 3
 def measurable_metabolites(cfg, root):
     """Model ids of the metabolites the measurement platform can see.
 
-    Read from ``mapping_csv``'s ``model_id`` column. Falls back to None -- meaning
-    "target everything with an atom pattern" -- when the config declares no mapping,
-    which is how the toy model and any uncurated organism behave.
+    Read from ``mapping_csv``'s ``model_id`` column. Returns ``None`` (meaning
+    "target everything with an atom pattern") when the config declares no mapping.
     """
     from ._paths import resolve_path
 
@@ -80,10 +79,9 @@ def measurable_metabolites(cfg, root):
 def prepared_model(cfg, root, out_dir):
     """The MFA-ready cobra model, prepared exactly as ``sample_flux`` prepares it.
 
-    Media, dilution inputs, reaction-bound overrides, the growth window, the FVA
-    tightening and the skip-constraint drops -- in that order, because that is the
-    order the sampler uses and this has to validate the network training will
-    actually see, not a near neighbour of it.
+    Applies media, dilution inputs, reaction-bound overrides, the growth window, FVA
+    tightening and skip-constraint drops in that order, matching the sampler's order
+    so this validates the network training will actually see.
     """
     import cobra
     from cobra.io.json import load_json_model
@@ -132,17 +130,11 @@ def prepared_model(cfg, root, out_dir):
 def interior_flux(model, n_samples=2, seed=None):
     """A feasible interior flux, drawn by cobra's own flux sampler.
 
-    A sampled point is feasible (S.v = 0) by construction, and for any reaction
-    whose feasible range isn't a single point, lands away from zero -- exactly
-    what an FBA vertex does not do, since a vertex sits at a facet intersection
-    and puts every non-basic reaction at exact zero. A zeroed branch point is
-    what x3cflux reports as "not numerically solvable" and can segfault on
-    instead of raising, which is the failure this avoids.
-
-    ``achr`` rather than the default ``auto``/``chrr``: this repo already uses
-    it elsewhere for exactly this reason (:mod:`sample_flux`), and it is the
-    single-process method suited to drawing a handful of points rather than the
-    thousands a training run needs.
+    Unlike an FBA vertex, a sampled point lands away from zero on any reaction
+    whose feasible range isn't a single point -- avoiding the zeroed branch points
+    x3cflux reports as "not numerically solvable" and can segfault on. Uses
+    ``achr`` (single-process, suited to a handful of points) rather than the
+    default ``auto``/``chrr``.
     """
     import numpy as np
     import pandas as pd
@@ -171,13 +163,9 @@ def interior_flux(model, n_samples=2, seed=None):
 def check_build(facts, mfa_model, labeling_to, labeling_index, v, r, noise_std=0.01):
     """The model converts to x3cflux, and both simulators build.
 
-    Everything here is construction, not simulation: translating our network to
-    x3cflux's representation, validating it, running our own (fast) forward pass,
-    and building x3cflux's own simulator -- the step that scales badly for larger
-    networks (minutes to, for a genome-scale model, more than a day). Moved here
-    from :func:`check_labeling` so a long stall is always attributable to
-    construction, never to the comparison itself, which only ever has two
-    already-built forward passes left to run.
+    Everything here is construction, not simulation, including x3cflux's own
+    simulator build -- the step that scales badly for larger networks -- so a long
+    stall here is always attributable to construction, never to the comparison.
     """
     import x3cflux as x
 
@@ -216,23 +204,12 @@ def check_build(facts, mfa_model, labeling_to, labeling_index, v, r, noise_std=0
 def check_edge_weights(mfa_model, conv, tol=1e-9):
     """Every reaction delivers its whole flux to every EMU it produces.
 
-    The EMU network weights each edge by how many copies of the target that origin
-    set makes (:meth:`~sigmaflux.expansion.atom_mapping.AtomMapping.get_origin_emus`),
-    so per ``(EMU, reaction, direction)`` the weights must add up to the reaction's
-    stoichiometric coefficient for that metabolite. Anything less is flux that
-    carries no label and anything more is label invented from nothing, and either
-    way our forward model is solving a different network than x3cflux, whose
-    ``x.Reaction`` carries the repeated names verbatim.
-
-    This is the invariant a Python ``set`` used to break: two mapped copies drawing
-    from the same educt EMU -- ``CBPS_c``'s two adp, both from atp_c -- collapsed to
-    one edge, and the reaction delivered half its flux. Symmetry orientations are
-    the case that *should* merge, and they do, because each carries ``1/n`` of a
-    copy rather than a whole one.
-
-    Structural: no flux, no simulation, and it names the offending
-    ``(EMU, reaction, direction)`` instead of leaving the effect to surface
-    downstream as an unattributable MID difference.
+    Per ``(EMU, reaction, direction)`` the summed edge weights
+    (:meth:`~sigmaflux.expansion.atom_mapping.AtomMapping.get_origin_emus`) must equal
+    the reaction's stoichiometric coefficient for that metabolite -- otherwise flux
+    carries no label, or label is invented from nothing, and our forward model is
+    solving a different network than x3cflux. Structural check only: no flux,
+    no simulation.
     """
     from collections import defaultdict
 
@@ -281,9 +258,8 @@ def check_labeling(facts, simulator, fluxmap, labeling_index, ours, v, r,
                    tol=DEFAULT_LABELING_TOL):
     """Both forward models predict the same labeling at the same flux.
 
-    Both simulators are already built (:func:`check_build`); this only runs
-    x3cflux's forward pass and compares -- the fast part, regardless of network
-    size.
+    Both simulators are already built (:func:`check_build`); this only runs x3cflux's
+    forward pass and compares -- fast regardless of network size.
     """
     from ..x3cflux.compare import compare_simulated
 
@@ -311,16 +287,10 @@ def check_fit_starts(facts, conv, simulator, fluxmap, v, r,
                      max_iter=DEFAULT_FIT_ITERS, isolate=True):
     """Ipopt takes the converted problem and makes progress; convergence is not tested.
 
-    Starts from the same interior flux the labeling check used. The measurements
-    are our own simulated MIDs at that flux, so the start is already at (or very
-    near) the optimum -- SSR is ~0 before Ipopt takes a step. That is fine: this
-    check is only "does the problem construct and does Ipopt accept it", not "does
-    it take a real step", and a trivial convergence is still evidence the problem is
-    well-posed rather than evidence of nothing.
-
-    ``status == -1`` (``Maximum_Iterations_Exceeded``) is also an accepted outcome
-    at a small ``max_iter`` -- it means Ipopt took real steps and simply hasn't
-    converged yet, which this check does not require either way.
+    Starts from the same interior flux the labeling check used, so SSR is already
+    ~0 before Ipopt steps -- this only checks the problem constructs and Ipopt
+    accepts it. ``status == -1`` (``Maximum_Iterations_Exceeded``) is an accepted
+    outcome at a small ``max_iter``.
     """
     from ..x3cflux.fit import flux_bounds, optimize, run_isolated
 
@@ -353,15 +323,11 @@ def check_fit_starts(facts, conv, simulator, fluxmap, v, r,
 def check_model(cfg, root, out_dir, tol=DEFAULT_LABELING_TOL,
                 max_iter=DEFAULT_FIT_ITERS, skip_fit=False, noise_std=None,
                 seed=None):
-    """Run the four checks in order, stopping at the first failure.
+    """Run the four checks in order, stopping at the first failure -- each depends on
+    the last having passed.
 
-    They are a data dependency, not a ladder of severity: there is no simulator to
-    compare against if the model does not build, no point comparing MIDs over a
-    network whose flux weights already do not add up, and no point starting a fit
-    against a network the two forward models already disagree on.
-
-    Returns ``(ok, results)``, ``results`` a ``{"build", "edge_weights",
-    "labeling", "fit_starts"}`` dict with one entry per check actually reached.
+    Returns ``(ok, results)``, ``results`` a ``{"build", "edge_weights", "labeling",
+    "fit_starts"}`` dict with one entry per check actually reached.
     """
     from ..x3cflux.facts import dump_model_facts
     from ._benchmark import build_mfa_context

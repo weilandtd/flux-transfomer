@@ -30,10 +30,8 @@ CARBON = x.TracerElement.Carbon
 def tracer_profile(labeling, n_atoms, enrichment):
     """ConstantSubstrate profile dict for one tracer.
 
-    Profiles are NOT normalised by x3cflux and there is no natural-abundance
-    fill-in, so the complete distribution has to be given. A bitset is a string
-    whose leftmost character is bit n-1 = atom C1, matching the FluxML ``cfg=``
-    convention, so ``labeling`` maps to the string directly.
+    Profiles are not normalised by x3cflux, so the complete distribution must be
+    given; the bitset string's leftmost character is atom C1 (FluxML ``cfg=`` convention).
     """
     pattern = "".join("1" if b else "0" for b in labeling)
     if len(pattern) != n_atoms:
@@ -46,18 +44,10 @@ def tracer_profile(labeling, n_atoms, enrichment):
 def build_substrates(facts, conv, tracer):
     """One ConstantSubstrate per EMU network input, for a single tracer.
 
-    The substrate is attached to the input's upstream *source* pool, not to the
-    input pool itself -- see :func:`convert.input_source_pools` for why declaring a
-    pool that still has a producer is a segfault.
-
-    Iterates ``conv.sources``, not ``facts["input_metabolites"]``: those are
-    exactly the pools :func:`convert.input_source_pools` found a bare producer
-    for, structurally, so a substrate exists for precisely the pools ``convert``
-    already relied on one existing for -- no more, no fewer. Using the narrower,
-    expansion-derived list here instead would leave a source pool declared with no
-    substrate and no producer, which is undefined for x3cflux rather than merely
-    wrong: the crash `convert` raises for the same gap is what stops that reaching
-    here at all.
+    Attaches each substrate to the input's upstream *source* pool, not the input pool
+    itself (see :func:`convert.input_source_pools`); iterates ``conv.sources`` rather
+    than ``facts["input_metabolites"]`` to match exactly the pools ``convert`` relies
+    on already existing.
     """
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     subs = []
@@ -124,12 +114,8 @@ def build_measurements(facts, conv, labeling_index, measured_flux_ids, noisy_lab
                        flux_sigma_scale=1.0):
     """MSMeasurements for the observable metabolites + the flux measurements.
 
-    Only M+1..M+n are given: MSSpecification accepts a weight subset, and our fit
-    scores exactly those entries (``get_model_labeling_data`` skips mid == 0).
-    Including M+0 would add ~510 rows per tracer that our objective never sees.
-
-    ``flux_sigma_scale`` inflates the flux sigmas so that x3cflux's raw SSR is
-    proportional to our reduced objective.
+    Only M+1..M+n are included (M+0 is never scored); ``flux_sigma_scale`` inflates
+    the flux sigmas so x3cflux's raw SSR stays proportional to our reduced objective.
     """
     atoms = {m["id"]: len(m["atom_pattern"]) for m in facts["metabolites"]}
     rows = {}
@@ -160,11 +146,8 @@ def build_measurements(facts, conv, labeling_index, measured_flux_ids, noisy_lab
 def flux_expression(conv, rxn_id):
     """``(flux names, formula)`` giving the *cobra* net flux of ``rxn_id``.
 
-    A measured flux is not always an x3cflux reaction: PROTEIN_c, RNA_c, DNA_c and
-    LIPID_c were split per participant, the EX_ uptakes were flipped (scale -1), and
-    symmetry parents were halved. The measurement has to be written over the
-    reactions that do exist, undoing exactly what :mod:`convert` did, or the value
-    being compared to the data is not the flux the data refers to.
+    Rewrites split, flipped, and symmetry-halved reactions back into their cobra
+    terms, undoing what :mod:`convert` did, so the formula matches the measured flux.
     """
     subs = conv.parents.get(rxn_id)
     scale = conv.scale[rxn_id]
@@ -192,12 +175,8 @@ def _expr(s):
 def structural_configuration(facts, conv):
     """One measurement-free configuration, for inspecting the flux space alone.
 
-    ``create_simulator_from_data`` rejects an empty configuration list ("No
-    configuration supplied"), but it accepts a configuration carrying no
-    measurements. That is what a structural check on the network alone wants: the
-    parameter space, the constraints and the nullity depend only on the network,
-    so building them should not require inventing measurement values that would
-    then have to be explained.
+    ``create_simulator_from_data`` rejects an empty configuration list, so this
+    supplies one configuration with no measurements instead.
     """
     import x3cflux as x
 

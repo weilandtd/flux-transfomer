@@ -29,17 +29,9 @@ from .generate_training_data import build_experiments, build_labeling_index, bui
 def pin_threads():
     """Pin the torch thread pool to the cores SLURM actually granted.
 
-    Without this a benchmark task oversubscribes its allocation: torch defaults to
-    every core on the node, not the ``--cpus-per-task`` it may use.
-
-    The BLAS pools cannot be pinned from here. OpenMP and MKL read their environment
-    when the shared library is first loaded, which happens on ``import torch`` — long
-    before this function runs — so assigning to ``os.environ`` now has no effect on
-    them. They must be exported by the submitting shell. Left unset, MKL takes one
-    thread per core (192 on della) inside a 6-core allocation; on a contended node the
-    resulting thrash cost ~10x, with one 30-iteration MFA fit measured at 25 s on one
-    node and 258 s on another of the same type. That is silent and easily mistaken for
-    a slow algorithm, so warn rather than let it pass.
+    BLAS pools (OpenMP, MKL) cannot be pinned from here — they read their thread
+    env when first loaded on ``import torch``, before this function runs — so
+    those vars must be exported by the submitting shell; warn if they aren't.
     """
     n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))
     unpinned = [v for v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")
@@ -60,13 +52,8 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
     """Load the run directory's model, observable metabolites and training data.
 
     Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
-    ``mapped_met_ids`` is read straight from the organism's own ``mapping_csv``
-    (via :func:`~sigmaflux.pipeline.check_mfa_model.measurable_metabolites`) when
-    the config declares one -- the measurable set is a property of the organism,
-    not of any one training run, so this works even for a run directory that never
-    reached feature extraction. Falls back to every metabolite in the run's
-    ``features.csv`` (all of them, not only those flagged ``included``) only when
-    the config is unconstrained (no ``mapping_csv``) or wasn't passed in.
+    ``mapped_met_ids`` comes from the config's ``mapping_csv`` when given, else
+    every metabolite id in the run's ``features.csv``.
     """
     model_path = os.path.join(data_dir, "model_prepared_for_mfa.json")
     print(f"Loading model: {model_path}")
@@ -92,13 +79,9 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
 def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
     """Sample columns for this task, as an offset window into *split*.
 
-    Restricting the benchmark to the AI model's split (default: the withheld
-    validation set) is what makes MFA and AI comparable — both are scored on
-    samples the AI never trained on. ``start_ix``/``n_benchmarks`` index the sorted
-    split, not raw HDF5 columns, so a SLURM array tiles it deterministically.
-
-    Returns ``(sel, tag)``; ``sel`` is empty when the offset window falls past the
-    end of the split, and ``tag`` names the output files.
+    ``start_ix``/``n_benchmarks`` index the sorted split, not raw HDF5 columns, so a
+    SLURM array tiles it deterministically. Returns ``(sel, tag)``; ``sel`` is empty
+    when the offset window falls past the end of the split.
     """
     split_cols = split_sample_indices(
         split, split_source, n_total,
@@ -126,13 +109,10 @@ def build_mfa_context(cobra_model, tracer_cfg, initial_flux, name, with_backward
                       restrict_targets_to=None):
     """Build the prepared MFAModel and the index that flattens its output.
 
-    ``with_backward`` is the expensive half of the EMU network: the MFA benchmark
-    fits and needs gradients, the AI benchmark only runs forward passes.
-
-    ``restrict_targets_to``, when given, is the only set of metabolites the
-    expansion targets -- see :func:`build_targets`.
-
-    Returns ``(mfa_model, reaction_ids, experiments, labeling_to, labeling_index)``.
+    ``with_backward`` enables gradients (needed for fitting, not forward-only
+    inference). ``restrict_targets_to``, if given, limits which metabolites the
+    expansion targets. Returns ``(mfa_model, reaction_ids, experiments,
+    labeling_to, labeling_index)``.
     """
     mfa_model = MFAModel(cobra_model, name, initial_flux_distribution=initial_flux)
     targets, measured_metabolites, atom_patterns = build_targets(
@@ -174,36 +154,19 @@ def forward_labeling(mfa_model, fluxes, reversibility, labeling_to):
 
 
 def benchmark_rng(seed, sample_ix):
-    """Per-sample generator, so a sample's noise never depends on its neighbours.
-
-    Seeding per task instead would make the stream position depend on how many
-    multi-start restarts earlier samples consumed, which is optimiser- and
-    BLAS-thread-dependent — that is, not reproducible even by re-running.
-    """
+    """Per-sample RNG, so a sample's noise stream doesn't depend on run order or neighbours."""
     return np.random.default_rng([int(seed), int(sample_ix)])
 
 
 def add_labeling_noise(gt_labeling, noise_std, rng):
     """Noisy MIDs that still sum to one, per (tracer, metabolite) group.
 
-    Mirrors :func:`sigmaflux.ai.train.apply_labeling_noise`: reconstruct the implicit
-    M+0, perturb the stored fractions *and* M+0 with unclipped Gaussian noise, then
-    renormalise by the group total.
-
-    The renormalisation is the point. An EMU simulation always returns MIDs summing
-    to one, so a measurement vector that does not is unreachable by every feasible
-    flux — an irreducible residual that inflates chi-square and reads as an optimiser
-    failing to converge when the data was simply not fittable. *gt_labeling* is
-    indexed ``(Tracer, Metabolite, Isotopomer)`` and holds M+1..M+n only; M+0 stays
-    implicit, exactly as the stored training data does.
-
-    One deliberate departure from the training implementation: negatives are clamped
-    *before* the division, not after. Training clamps the normalised fractions and
-    never clamps M+0, so wherever the true M+0 sits near zero its noise can drive it
-    negative and the stored fractions then sum above one. Measured on real T-cell
-    data that leaves ~77 of 456 groups unfittable and ~400 of chi-square permanently
-    unreachable; clamping first drives both to zero. Training arguably wants the same
-    fix, but changing it would retrain every model, so it is not touched here.
+    Reconstructs the implicit M+0, perturbs it and the stored fractions with Gaussian
+    noise, then renormalises by the group total so the result stays a valid MID.
+    *gt_labeling* is indexed ``(Tracer, Metabolite, Isotopomer)`` and holds M+1..M+n
+    only. Negatives are clamped before dividing, not after (unlike
+    :func:`sigmaflux.ai.train.apply_labeling_noise`), so a true M+0 near zero can't
+    push the group sum above one.
     """
     if noise_std <= 0:
         return gt_labeling.copy()
@@ -225,33 +188,13 @@ def add_labeling_noise(gt_labeling, noise_std, rng):
 
 
 def labeling_chi2_scale(measured, noise_std, rng, n_draws=16):
-    """E[χ²]/n for the labeling block, in units of the *declared* σ.
+    """E[χ²]/n for the labeling block, in units of the declared σ.
 
-    The χ² goodness-of-fit test assumes the residual sd equals the σ the objective
-    divides by. Here it does not: :func:`add_labeling_noise` renormalises each group
-    to sum to one, which correlates the perturbations and shrinks the residual well
-    below ``noise_std``. Taking σ at face value therefore makes the test accept
-    essentially every fit, which is why an earlier reduced-χ² bound was abandoned as
-    uninformative.
-
-    This measures the deflation instead of assuming it away, by re-noising the
-    *measured* MIDs and reading off the mean squared standardised residual. It needs
-    no ground truth: the shrinkage is a property of the MID values and the group
-    structure, not of whether those values are the true ones — the same thing a lab
-    does when it characterises its instrument rather than trusting the spec sheet.
-
-    Only the stored fractions are scored, matching the objective. M+0 is deliberately
-    excluded: its residual is a sum of the whole group's perturbations, so its variance
-    grows with group size and averaging it in here would report ~1.05 for a block whose
-    stored elements sit near 0.75.
-
-    Returns the variance scale ``s``, so ``SSR/s`` is the statistic that follows
-    χ²(dof) and ``s·χ²_{1-α}(dof)`` is the bound to compare a raw SSR against.
-
-    Each draw already averages over every MID element, so a handful of draws pins ``s``
-    to well under a percent and the estimate costs no simulation at all. Re-noising an
-    already-noisy vector biases ``s`` up a few percent — the base is clipped at zero and
-    most MIDs sit near it — which loosens the bound slightly rather than tightening it.
+    :func:`add_labeling_noise`'s renormalisation correlates the perturbations and
+    shrinks the residual below ``noise_std``, so a χ² test using σ at face value
+    would accept nearly every fit; this measures the deflation empirically by
+    re-noising the *measured* MIDs (M+0 excluded, since its variance scales with
+    group size). Returns the variance scale ``s`` such that ``SSR/s`` follows χ²(dof).
     """
     if noise_std <= 0:
         return 1.0
@@ -278,9 +221,8 @@ def add_flux_noise(true_values, flux_noise_std, rng):
 def noisy_measurements(gt_labeling, gt_fluxes, noise_std, flux_noise_std, seed, sample_ix):
     """Both measurement blocks for one sample, drawn in a fixed order.
 
-    Callers must not draw these separately: the order fixes the stream, and it is
-    what makes the AI and MFA benchmarks see the identical realisation for a given
-    ``(seed, sample_ix)``.
+    Order matters: it fixes the RNG stream so the AI and MFA benchmarks see the
+    identical noise realisation for a given ``(seed, sample_ix)``.
     """
     rng = benchmark_rng(seed, sample_ix)
     return (add_labeling_noise(gt_labeling, noise_std, rng),
@@ -291,9 +233,8 @@ def write_predictions(base, labeling_data, labeling_index, flux_data, reaction_i
                       sample_indices):
     """Write the predicted labeling and flux HDF5 pair.
 
-    Columns are absolute HDF5 sample indices so every task's output pairs with
-    ground truth independently; rewriting after each sample makes a killed job
-    keep everything it had finished.
+    Columns are absolute HDF5 sample indices; rewritten after each sample so a
+    killed job keeps whatever it finished.
     """
     (pd.DataFrame(labeling_data, index=sample_indices, columns=labeling_index)
        .T.to_hdf(f"{base}_labeling.h5", key="labeling", mode="w"))

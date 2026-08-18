@@ -75,10 +75,10 @@ def build_parser():
 
 
 def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
-    """Convert the selected columns of the training labeling to df_L for ``predict()``.
+    """Convert the selected training-labeling columns to df_L for ``predict()``.
 
-    Noise comes from the shared per-sample generator, so the MFA benchmark scoring the
-    same sample sees the identical realisation rather than an independent draw.
+    Uses the shared per-sample RNG, so the MFA benchmark scoring the same sample sees
+    the identical noise realisation.
     """
     noisy_cols = {}
     for run_ix, col in enumerate(cols):
@@ -100,9 +100,8 @@ def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_
                 labeling_df, seed):
     """Build df_Vm with noisy measured flux values for the selected columns.
 
-    The labeling block is drawn first and discarded here purely to advance the shared
-    generator in the same order the MFA benchmark uses, so both land on the identical
-    flux realisation for a given sample.
+    Draws (and discards) the labeling noise first to keep the shared RNG's draw
+    order in sync with the MFA benchmark, so both land on the identical flux noise.
     """
     present = [r for r in measured_rxn_ids if r in training_flux_df.index]
     if not present:

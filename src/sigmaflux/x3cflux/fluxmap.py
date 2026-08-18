@@ -102,12 +102,10 @@ class FluxMap:
     def _check_present(self, net):
         """Fail on reactions x3cflux pruned, naming all of them and the likely cause.
 
-        x3cflux deletes a reaction whose flux its constraints pin to zero, and then
-        every pool that leaves unreachable. Indexing ``_pindex`` for one of those
-        raises a bare ``KeyError`` on whichever reaction happens to come first in
-        facts order -- which is nearly always collateral, not the cause. The cause is
-        a pool with no producer: its balance row pins one sub-reaction to zero, and
-        for a split reaction the equality ties drag every other share down with it.
+        x3cflux silently deletes a reaction whose flux its constraints pin to zero,
+        and everything downstream of it; the pool actually at fault is usually not
+        the one that happens to be indexed first, so this reports all of them
+        rather than a bare KeyError.
         """
         missing = [name for name in net if f"{name}.n" not in self._pindex]
         if not missing:
