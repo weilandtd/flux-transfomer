@@ -39,8 +39,17 @@ def cli(argv=None):
         if not preimport():
             require()          # not installed: raise with the install instructions
     elif _wants_backend(argv, "native-ipopt"):
-        from ..core.mfa_ipopt import require
-        require()
+        # Not `from ..core.mfa_ipopt import require`: mfa_ipopt.py imports torch
+        # at module level, so that import statement would load torch before this
+        # point, the same failure this branch exists to avoid.
+        try:
+            import cyipopt  # noqa: F401
+        except ImportError as exc:
+            raise ImportError(
+                "the native-ipopt backend needs the optional cyipopt dependency, "
+                "which pip cannot build (it needs Ipopt headers at build time): "
+                "conda env create -f environment.yml"
+            ) from exc
     from .run_mfa_benchmark import cli as run_cli
     return run_cli(argv)
 
