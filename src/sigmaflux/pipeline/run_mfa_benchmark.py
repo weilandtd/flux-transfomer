@@ -292,10 +292,11 @@ def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flu
             used here.
         noise_std: labeling noise std recorded on each measurement row.
         mfa_model: model the resulting MassIsotopomerData is built against.
-        flux_data: measured-flux soft constraints attached to each Experiment.
+        flux_data: measured-flux soft constraints, attached to the first Experiment
+            only (see the loop below).
     """
     noisy_exps = []
-    for experiment in experiments:
+    for i, experiment in enumerate(experiments):
         tracer = experiment.tracers[0]
         tracer_str = "|".join(str(t) for t in experiment.tracers)
         tracer_data = noisy_series.loc[tracer_str]  # (Metabolite, Isotopomer) Series
@@ -312,7 +313,13 @@ def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flu
         m0_rows = [{"id": m, "mid": 0, "mean": max(0.0, 1.0 - s), "std": noise_std}
                    for m, s in met_frac_sum.items()]
         noisy_mid = MassIsotopomerData(model=mfa_model, table=pd.DataFrame(m0_rows + rows))
-        noisy_exps.append(Experiment(noisy_mid, [tracer], fluxes=flux_data))
+        # A measured flux is a property of the culture, not of any one tracer, so it
+        # only goes on the first Experiment. Attaching the same FluxData to every
+        # tracer (as this used to) makes it contribute to the objective once per
+        # tracer instead of once — get_model_flux_data's own dedup guard only
+        # catches that within a single fit_mfa_model batch, not across batches, so
+        # the fix belongs here at construction, not there at query time.
+        noisy_exps.append(Experiment(noisy_mid, [tracer], fluxes=flux_data if i == 0 else None))
     return noisy_exps
 
 
