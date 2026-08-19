@@ -8,10 +8,21 @@ scored identically downstream.
 Each benchmark run:
   1. Draws a ground-truth flux / labeling pair from the training HDF5.
   2. Adds Gaussian noise to the simulated MID and the measured fluxes.
-  3. Runs ``SigmaFlux.predict()`` to obtain predicted fluxes and reversibilities.
+  3. Runs ``<member>.predict()`` to obtain predicted fluxes and reversibilities.
   4. Runs the EMU forward pass on the prediction to obtain its labeling vector,
      in the same per-tracer layout as the training HDF5.
   5. Writes predicted labeling + flux to HDF5.
+
+When the checkpoint is an ensemble, one job predicts with every member and writes
+each member's own *raw* prediction into the same ``pred_{tag}_{labeling,flux}.h5``
+pair MFA and a single checkpoint also write — columns become a ``(sample, member)``
+MultiIndex instead of one column per sample. No ensemble-median combination and no
+null-space re-projection happens here: each member's own output already satisfies
+``S v = 0`` by construction, and only a median across members breaks that. Combining
+members (and re-projecting if a plain median is wanted) is left to the evaluation
+side (``plot_test_performance.load_benchmark``), which medians per (sample, reaction)
+across whatever members a file holds — so a different aggregation can be tried
+without rerunning inference.
 
 Usage (I. orientalis):
     sigmaflux-benchmark \\
@@ -40,9 +51,12 @@ from ._benchmark import (
 )
 from ._paths import add_root_argument, load_config, resolve_path
 
-#: Samples between HDF5 checkpoints. Prediction is a single batched call, so the
-#: per-sample work here is only the forward pass — write far less often than MFA.
-CHECKPOINT_EVERY = 500
+#: Rows (samples × members) between HDF5 checkpoints. Each checkpoint rewrites every
+#: row accumulated so far, so this trades write overhead against how much of an
+#: ensemble a killed job loses; 2000 keeps a checkpoint to roughly once per member
+#: at the usual 2000-sample benchmark size without rewriting tens of thousands of
+#: rows dozens of times over.
+CHECKPOINT_EVERY = 2000
 
 
 def build_parser():
@@ -158,69 +172,88 @@ def main(args):
     print(f"  Flux outputs : {len(sf.flux_names)}")
     print(f"  Tracers      : {sf.tracer_names}")
 
+    # An ensemble scores each member on its own — no combined predict() call, no
+    # projection (see module docstring). A single checkpoint predicts once, unchanged.
+    ensemble_members = getattr(sf, "members", None)
+    members = list(enumerate(ensemble_members)) if ensemble_members is not None else [(None, sf)]
+    # The shared val split lives in member 0's checkpoint for an ensemble (see
+    # EnsembleSigmaFlux._adopt), not the (possibly stale) top-level .pt that
+    # find_checkpoint returned — sf.split_source already resolved that.
+    split_source = getattr(sf, "split_source", checkpoint)
+    print(f"  Members      : {len(members)}")
+
     cobra_model, _, training_labeling_df, training_flux_df, _ = load_benchmark_inputs(
         data_dir, cfg, root)
 
-    # For an ensemble the shared val split lives in member 0's checkpoint, not the
-    # (possibly stale) top-level .pt that `find_checkpoint` returned.
-    sel, tag = select_samples(args.split, getattr(sf, "split_source", checkpoint),
-                              training_flux_df.shape[1], cfg, args.start_ix,
-                              args.n_benchmarks)
+    sel, tag = select_samples(args.split, split_source, training_flux_df.shape[1],
+                              cfg, args.start_ix, args.n_benchmarks)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
         return 0
 
+    # Built once and reused for every member: it depends only on the model/tracers,
+    # not on which member is predicting, and EMU network prep is the expensive part.
     mfa_model, reaction_ids, _, labeling_to, labeling_index = build_mfa_context(
         cobra_model, tracer_cfg, training_flux_df.iloc[:, int(sel[0])],
         "AI_benchmark", with_backward=False,
     )
 
-    # ── Run AI predictions for the full chunk at once ─────────────────────────
     print(f"\nBuilding input tensors for {n_runs} samples ...")
     df_L = build_df_L(training_labeling_df, sel, args.noise_std, args.seed, inv_tracer)
     df_Vm = build_df_Vm(training_flux_df, measured_rxn_ids, sel, args.noise_std,
                         args.flux_noise_std, training_labeling_df, args.seed)
 
-    print(f"Running SigmaFlux.predict() on {n_runs} samples ...")
-    result = sf.predict(df_L, df_Vm=df_Vm)
-
-    # predict() stacks fluxes then reversibilities per sample; split them by position.
-    result["_pos"] = result.groupby("Sample", sort=False).cumcount()
-    flux_result = result[result["_pos"] < len(sf.flux_names)].drop(columns="_pos")
-    rev_result = result[result["_pos"] >= len(sf.flux_names)].drop(columns="_pos")
-
-    flux_pivoted = (flux_result.pivot(index="Sample", columns="Flux Name", values="Value")
-                               .reindex(columns=reaction_ids))
-    rev_pivoted = (rev_result.pivot(index="Sample", columns="Flux Name", values="Value")
-                             .reindex(columns=reaction_ids))
-    print(f"  Flux predictions : {flux_pivoted.shape}")
-    print(f"  Rev  predictions : {rev_pivoted.shape}")
-
-    # ── Per-sample: EMU labeling forward pass, accumulate in memory ──────────
-    pred_lab_data, pred_flux_data, sample_indices = [], [], []
+    # Every member's rows accumulate into these same three lists, so one checkpoint
+    # write and one final file cover the whole ensemble — the row key is a plain
+    # sample index for a single checkpoint, or a (sample, member) pair for an
+    # ensemble, which write_predictions turns into a (sample, member) column
+    # MultiIndex instead of one column per sample.
     pred_base = os.path.join(output_dir, f"pred_{tag}")
+    pred_lab_data, pred_flux_data, row_keys = [], [], []
+    total_rows = n_runs * len(members)
+    done = 0
 
-    for run_ix in range(n_runs):
-        pred_flux_arr = np.nan_to_num(flux_pivoted.loc[run_ix].values, nan=0.0)
-        pred_rev_arr = np.nan_to_num(rev_pivoted.loc[run_ix].values, nan=1.0)
+    for midx, member in members:
+        who = f"member {midx}" if midx is not None else "single model"
+        print(f"\nRunning {who}.predict() on {n_runs} samples ...")
+        result = member.predict(df_L, df_Vm=df_Vm)
 
-        pred_lab_data.append(
-            forward_labeling(mfa_model, pred_flux_arr, pred_rev_arr, labeling_to)
-        )
-        pred_flux_data.append(pred_flux_arr)
-        sample_indices.append(int(sel[run_ix]))   # real HDF5 column index
+        # predict() stacks fluxes then reversibilities per sample; split by position.
+        result["_pos"] = result.groupby("Sample", sort=False).cumcount()
+        flux_result = result[result["_pos"] < len(sf.flux_names)].drop(columns="_pos")
+        rev_result = result[result["_pos"] >= len(sf.flux_names)].drop(columns="_pos")
 
-        if (run_ix + 1) % 100 == 0:
-            print(f"  {run_ix + 1}/{n_runs} samples processed")
+        flux_pivoted = (flux_result.pivot(index="Sample", columns="Flux Name", values="Value")
+                                   .reindex(columns=reaction_ids))
+        rev_pivoted = (rev_result.pivot(index="Sample", columns="Flux Name", values="Value")
+                                 .reindex(columns=reaction_ids))
+        print(f"  Flux predictions : {flux_pivoted.shape}")
+        print(f"  Rev  predictions : {rev_pivoted.shape}")
 
-        if run_ix == 0 or (run_ix + 1) % CHECKPOINT_EVERY == 0 or run_ix == n_runs - 1:
-            write_predictions(pred_base, pred_lab_data, labeling_index, pred_flux_data,
-                              reaction_ids, sample_indices)
-            print(f"  Checkpoint saved ({run_ix + 1}/{n_runs})")
+        # ── Per-sample: EMU labeling forward pass, accumulate in memory ──────
+        for run_ix in range(n_runs):
+            pred_flux_arr = np.nan_to_num(flux_pivoted.loc[run_ix].values, nan=0.0)
+            pred_rev_arr = np.nan_to_num(rev_pivoted.loc[run_ix].values, nan=1.0)
+
+            pred_lab_data.append(
+                forward_labeling(mfa_model, pred_flux_arr, pred_rev_arr, labeling_to)
+            )
+            pred_flux_data.append(pred_flux_arr)
+            sample_ix = int(sel[run_ix])   # real HDF5 column index
+            row_keys.append((sample_ix, midx) if midx is not None else sample_ix)
+            done += 1
+
+            if done % 100 == 0:
+                print(f"  {done}/{total_rows} rows processed")
+
+            if done == 1 or done % CHECKPOINT_EVERY == 0 or done == total_rows:
+                write_predictions(pred_base, pred_lab_data, labeling_index, pred_flux_data,
+                                  reaction_ids, row_keys)
+                print(f"  Checkpoint saved ({done}/{total_rows})")
 
     print(f"\nBenchmark complete ({n_runs} runs, samples {args.start_ix}–"
-          f"{args.start_ix + n_runs - 1}).")
+          f"{args.start_ix + n_runs - 1}, {len(members)} member(s)).")
     print(f"  → {pred_base}_labeling.h5")
     print(f"  → {pred_base}_flux.h5")
     return 0

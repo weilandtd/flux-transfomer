@@ -295,16 +295,23 @@ def write_predictions(base, labeling_data, labeling_index, flux_data, reaction_i
 
     Args:
         base: output path prefix; writes ``{base}_labeling.h5`` and ``{base}_flux.h5``.
-        labeling_data: rows of predicted MID vectors, one per sample.
+        labeling_data: rows of predicted MID vectors, one per (sample[, member]).
         labeling_index: column MultiIndex for the labeling HDF5.
-        flux_data: rows of predicted flux vectors, one per sample.
+        flux_data: rows of predicted flux vectors, one per (sample[, member]).
         reaction_ids: column labels for the flux HDF5.
-        sample_indices: absolute HDF5 sample indices, used as row labels.
+        sample_indices: row labels, one per row of *_data. Either plain absolute
+            HDF5 sample indices (one prediction per sample — MFA, or a single
+            checkpoint), or ``(sample_ix, member_ix)`` pairs (every ensemble
+            member's own raw prediction for that sample, kept separate rather than
+            combined here — see :mod:`run_ai_benchmark`), in which case the written
+            columns are a ``(sample, member)`` MultiIndex.
 
-    Columns are absolute HDF5 sample indices; rewritten after each sample so a
-    killed job keeps whatever it finished.
+    Rewritten after each checkpoint so a killed job keeps whatever it finished.
     """
-    (pd.DataFrame(labeling_data, index=sample_indices, columns=labeling_index)
+    index = (pd.MultiIndex.from_tuples(sample_indices, names=["sample", "member"])
+             if sample_indices and isinstance(sample_indices[0], tuple)
+             else pd.Index(sample_indices))
+    (pd.DataFrame(labeling_data, index=index, columns=labeling_index)
        .T.to_hdf(f"{base}_labeling.h5", key="labeling", mode="w"))
-    (pd.DataFrame(flux_data, index=sample_indices, columns=reaction_ids)
+    (pd.DataFrame(flux_data, index=index, columns=reaction_ids)
        .T.to_hdf(f"{base}_flux.h5", key="fluxes", mode="w"))
