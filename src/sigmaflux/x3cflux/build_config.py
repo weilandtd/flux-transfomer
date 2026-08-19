@@ -128,8 +128,11 @@ def build_measurements(facts, conv, labeling_index, measured_flux_ids, noisy_lab
                        flux_sigma_scale=1.0):
     """MSMeasurements for the observable metabolites + the flux measurements.
 
-    Only M+1..M+n are included (M+0 is never scored); ``flux_sigma_scale`` inflates
-    the flux sigmas so x3cflux's raw SSR stays proportional to our reduced objective.
+    Only M+1..M+n are included (M+0 is never scored). ``measured_flux_ids`` is empty
+    for every tracer but the first (see :func:`build_configurations`), so this simply
+    adds no FluxMeasurements when called for the rest. ``flux_sigma_scale`` is a
+    general weighting knob on the flux block relative to the labeling block, not tied
+    to that — it no longer needs to compensate for a duplicated flux term.
 
     Args:
         facts: ``model_facts.json`` dict.
@@ -225,6 +228,13 @@ def build_configurations(facts, conv, labeling_index, measured_flux_ids, noisy_l
                          noisy_flux, flux_sigma, noise_std, flux_sigma_scale=1.0):
     """One MeasurementConfiguration per tracer, sharing network and constraints.
 
+    A measured flux is a property of the culture, not of any one tracer, so the flux
+    measurements go on the first tracer's configuration only — every other tracer
+    gets an empty flux list. Repeating the same FluxMeasurement in every
+    configuration (as this used to) makes it contribute to x3cflux's SSR once per
+    tracer instead of once; matching that to the native fitter's own objective is
+    what makes the two backends' acceptance thresholds comparable at all.
+
     Args:
         facts: ``model_facts.json`` dict.
         conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
@@ -239,10 +249,12 @@ def build_configurations(facts, conv, labeling_index, measured_flux_ids, noisy_l
     net_c, xch_c = build_constraints(facts, conv)
     empty = x.ParameterConstraints([], [], [])
     configs = []
-    for tracer in facts["tracers"]:
+    for i, tracer in enumerate(facts["tracers"]):
         meas = build_measurements(
-            facts, conv, labeling_index, measured_flux_ids, noisy_labeling,
-            noisy_flux, flux_sigma, tracer["key"], noise_std, flux_sigma_scale)
+            facts, conv, labeling_index,
+            measured_flux_ids if i == 0 else [], noisy_labeling,
+            noisy_flux if i == 0 else [], flux_sigma if i == 0 else [],
+            tracer["key"], noise_std, flux_sigma_scale)
         configs.append(x.MeasurementConfiguration(
             tracer["key"], "", True, build_substrates(facts, conv, tracer), meas,
             net_c, xch_c, empty, []))
