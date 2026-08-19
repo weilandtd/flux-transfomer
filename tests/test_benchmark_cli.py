@@ -15,7 +15,12 @@ import pandas as pd
 import pytest
 
 from sigmaflux.pipeline import run_ai_benchmark, run_mfa_benchmark
-from sigmaflux.pipeline.run_mfa_benchmark import acceptance_threshold, make_init_fluxes
+from sigmaflux.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, noisy_measurements
+from sigmaflux.pipeline._paths import load_config
+from sigmaflux.pipeline.run_mfa_benchmark import (
+    acceptance_threshold, build_noisy_experiments, make_init_fluxes,
+    make_measured_flux_data, measured_flux_ids,
+)
 
 from conftest import TOY_CONFIG_YAML as _TOY_CONFIG_YAML
 
@@ -75,6 +80,35 @@ def test_mfa_benchmark_cli(toy_run, tmp_path, monkeypatch):
     # polluting the benchmark with a bad solution — never partially NaN.
     for col in (flux[0], labeling[labeling.columns[0]]):
         assert col.isna().all() or col.notna().all()
+
+
+def test_build_noisy_experiments_attaches_flux_once(toy_run):
+    """A measured flux is a culture-level constraint, not a per-tracer one: it must
+    land on exactly one Experiment. Attaching it to every tracer's Experiment (the
+    old behaviour) makes fit_mfa_model's batched objective score it once per tracer
+    instead of once, whenever a fit spans more than one batch."""
+    cfg, root = load_config(toy_run["config"])
+    cobra_model, _, _, flux_df, _ = load_benchmark_inputs(toy_run["dir"], cfg, root)
+    mfa_model, _, experiments, _, labeling_index = build_mfa_context(
+        cobra_model, cfg["labeling"]["tracers"], flux_df.iloc[:, 0], "test", with_backward=False)
+
+    gt_flux = flux_df.iloc[:, 0]
+    flux_ids = measured_flux_ids(toy_run["measured_fluxes"], gt_flux)
+    gt_series = pd.Series(np.random.default_rng(0).uniform(0, 1, len(labeling_index)),
+                          index=labeling_index)
+    noisy_series, noisy_flux = noisy_measurements(
+        gt_series, gt_flux.reindex(flux_ids).to_numpy(float), 0.01, 0.05, 42, 0)
+    flux_data = make_measured_flux_data(mfa_model, flux_ids, gt_flux, 0.05, noisy_flux)
+
+    # toy_run's config has one real tracer; duplicate the template Experiment to
+    # stand in for a second one -- build_noisy_experiments only cares how many
+    # Experiments it is given, not whether their tracers are physically distinct.
+    noisy_exps = build_noisy_experiments(
+        experiments + experiments, noisy_series, 0.01, mfa_model, flux_data)
+
+    assert len(noisy_exps) == 2 * len(experiments)
+    assert noisy_exps[0].fluxes is flux_data
+    assert not noisy_exps[1].fluxes   # empty/None, not the same FluxData repeated
 
 
 def test_mfa_benchmark_diagnose_writes_nothing(toy_run, tmp_path, monkeypatch, capsys):
