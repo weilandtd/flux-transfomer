@@ -92,11 +92,14 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
-    p.add_argument("--backend", choices=["native", "x3cflux"], default="native",
+    p.add_argument("--backend", choices=["native", "native-ipopt", "x3cflux"], default="native",
                    help="Which optimiser fits the flux. 'native' is the in-house "
-                        "L-BFGS-B; 'x3cflux' runs 13CFLUX/Ipopt on the same "
-                        "measurements and is scored by the same code, so the two are "
-                        "directly comparable. x3cflux is an optional dependency.")
+                        "null-space L-BFGS-B (S·v=0 satisfied by construction, no "
+                        "flux bounds). 'native-ipopt' is the same in-house EMU "
+                        "forward model fit in full flux space via Ipopt, with "
+                        "S·v=0 and FVA bounds passed as hard constraints. 'x3cflux' "
+                        "runs 13CFLUX/Ipopt on its own simulator. native-ipopt and "
+                        "x3cflux are optional dependencies.")
     p.add_argument("--x3cflux-no-isolate", action="store_true",
                    help="Run x3cflux fits in-process. Faster, but Ipopt segfaults from "
                         "some starts and would take the whole task down; by default "
@@ -105,9 +108,9 @@ def build_parser():
     p.add_argument("--x3cflux-no-bounds", action="store_true",
                    help="Drop the cobra FVA bounds from the x3cflux fit. They are on "
                         "by default because Ipopt otherwise zeroes a branch point and "
-                        "x3cflux segfaults — but the native arm cannot take them "
-                        "(L-BFGS-B has no linear constraints), so they are the one "
-                        "real asymmetry between the arms.")
+                        "x3cflux segfaults. This flag affects only the x3cflux backend; "
+                        "'native' takes no flux bounds at all, and 'native-ipopt' "
+                        "always applies them.")
     p.add_argument("--max-iter", type=int, default=5000,
                    help="L-BFGS-B max iterations. A converged T-cell fit needs ~2200, "
                         "so the previous default of 500 silently returned unconverged "
@@ -314,11 +317,9 @@ def build_noisy_experiments(experiments, noisy_series, noise_std, mfa_model, flu
                    for m, s in met_frac_sum.items()]
         noisy_mid = MassIsotopomerData(model=mfa_model, table=pd.DataFrame(m0_rows + rows))
         # A measured flux is a property of the culture, not of any one tracer, so it
-        # only goes on the first Experiment. Attaching the same FluxData to every
-        # tracer (as this used to) makes it contribute to the objective once per
-        # tracer instead of once — get_model_flux_data's own dedup guard only
-        # catches that within a single fit_mfa_model batch, not across batches, so
-        # the fix belongs here at construction, not there at query time.
+        # only goes on the first Experiment — get_model_flux_data's own dedup guard
+        # only catches a flux repeated within a single fit_mfa_model batch, not
+        # across batches, so the single attachment point has to be here.
         noisy_exps.append(Experiment(noisy_mid, [tracer], fluxes=flux_data if i == 0 else None))
     return noisy_exps
 
@@ -592,10 +593,10 @@ def main(args):
     print(f"  Flux noise std (rel): {flux_noise_std}")
 
     # x3cflux does not use our backward EMU network -- the expensive half, and the
-    # one that drops dAs.pkl/dBs.pkl into the working directory.
+    # one that drops dAs.pkl/dBs.pkl into the working directory. native-ipopt does.
     mfa_model, reaction_ids, experiments, labeling_to, labeling_index = build_mfa_context(
         cobra_model, tracer_cfg, flux_df.iloc[:, 0], "MFA_benchmark",
-        with_backward=(args.backend == "native"),
+        with_backward=(args.backend != "x3cflux"),
     )
     backend = None      # built on the first sample, once the fitted index is known
     chi2_bound = chi2_dof = chi2_scale = None   # built on the first sample too
@@ -737,8 +738,13 @@ def main(args):
                 print(f"\nFitting (max_iter={args.max_iter}, tol={args.tol}) ...")
 
             if backend is None:
-                res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
-                                    disp=1 if (args.diagnose or args.verbose) else 0)
+                if args.backend == "native-ipopt":
+                    from ..core.mfa_ipopt import fit_mfa_model_ipopt
+                    res = fit_mfa_model_ipopt(mfa_model, max_iter=args.max_iter, tol=args.tol,
+                                              disp=1 if (args.diagnose or args.verbose) else 0)
+                else:
+                    res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
+                                        disp=1 if (args.diagnose or args.verbose) else 0)
             else:
                 v_fit, r_fit, info = backend.fit(
                     simulator, fluxmap, v_init, rev_init, max_iter=args.max_iter,
