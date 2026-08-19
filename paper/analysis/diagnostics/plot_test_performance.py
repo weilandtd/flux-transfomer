@@ -11,12 +11,13 @@ Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
 **All R² are plain and unfiltered — do not add an outlier cut here.** The benchmark
-already drops every sample whose fit did not reach the global optimum (`ssr_ratio > 1`,
-see `converged_samples`), so what reaches this script is the set of solutions each
-method actually found. The spread that remains is genuine flux non-identifiability, and
-filtering it measures how a method does on the samples it happened to get right — which
-is exactly the selection bias the benchmark exists to expose. Two such filters have been
-tried and removed: an NMAD cut, and a Q-Q tail extrapolation.
+already drops every sample whose fit is not statistically acceptable (fails the standard
+¹³C-MFA χ² goodness-of-fit test, Antoniewicz et al. 2006 — see `converged_samples`), so
+what reaches this script is the set of solutions each method actually stands behind. The
+spread that remains is genuine flux non-identifiability, and filtering it measures how a
+method does on the samples it happened to get right — which is exactly the selection bias
+the benchmark exists to expose. Two such filters have been tried and removed: an NMAD cut,
+and a Q-Q tail extrapolation.
 
 Usage:
     python paper/analysis/plot_test_performance.py paper/.results/i_orientalis_20260614
@@ -71,58 +72,89 @@ def parse_args():
 
 
 def converged_samples(bench_dir: pathlib.Path) -> set | None:
-    """Samples whose fit reached the global optimum, from the benchmark's own record.
+    """Samples whose fit is statistically acceptable, from the benchmark's own record.
 
-    ``sigmaflux-benchmark-mfa`` writes ``*_convergence.csv`` holding, per sample, the SSR
-    its best fit reached and the SSR the TRUE flux achieves against that same noise. The
-    truth is a feasible point of the same optimisation, so a fit scoring worse than it did
-    not find the minimum — ``ssr_ratio > 1`` is a failed optimisation, not a bad method.
+    ``sigmaflux-benchmark-mfa`` writes ``*_convergence.csv`` holding, per sample, whether
+    the best fit found passed the standard ¹³C-MFA goodness-of-fit test (Antoniewicz,
+    Kelleher & Stephanopoulos 2006): SSR at or under the χ²(dof) bound at the run's
+    ``--chi2-alpha`` (``reached_optimum``, see ``chi2_acceptance`` in
+    ``run_mfa_benchmark.py``). This is the criterion MFA practice itself uses to call a
+    fit good — not a benchmark-only heuristic — so scoring R² over these samples is what a
+    working MFA pipeline would report.
 
-    Scoring R² over those fits measures the optimiser's stopping point rather than MFA's
-    accuracy. Returns None when no record exists (the AI arm, or an older MFA run), and
-    the caller then scores everything.
+    Returns None when no record exists (the AI arm, or an older MFA run), and the caller
+    then scores everything.
     """
     records = sorted(bench_dir.glob("pred_*_convergence.csv"))
     if not records:
         return None
     df = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
-    return set(df.loc[df["ssr_ratio"] <= 1.0, "sample"].astype(int))
+    return set(df.loc[df["reached_optimum"], "sample"].astype(int))
+
+
+def _sample_columns(pred_df):
+    """Yield ``(sample_ix, prediction)`` for every column of a predictions frame.
+
+    An ensemble AI benchmark's columns are a ``(sample, member)`` MultiIndex — every
+    member's own raw prediction for a sample is a separate column. MFA and a
+    single-checkpoint AI benchmark write one column per sample instead. Either way,
+    this yields one ``(sample_ix, prediction)`` pair per column.
+    """
+    if isinstance(pred_df.columns, pd.MultiIndex):
+        for col, ix in zip(pred_df.columns, pred_df.columns.get_level_values("sample")):
+            yield int(ix), pred_df[col]
+    else:
+        for ix in pred_df.columns:
+            yield int(ix), pred_df[ix]
 
 
 def load_benchmark(bench_dir: pathlib.Path,
                    flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
+    An ensemble AI benchmark's predictions are *raw* (unprojected): every member's
+    own column for a sample (see :func:`_sample_columns`) is combined here by the
+    per-reaction *median across whatever columns that sample has*, so aggregation
+    happens at evaluation time and can be changed without rerunning inference. MFA
+    and a single-checkpoint AI benchmark give each sample exactly one column, so this
+    degenerates to "median of one", i.e. themselves.
+
     Returns the paired long frame and the number of samples the method failed to
-    solve. A sample counts as failed when its fit did not reach the global optimum
-    (``ssr_ratio > 1``, see :func:`converged_samples`) or the optimiser returned nothing
-    usable at all. Either way it is excluded from R² and reported alongside it, so a
-    method is never credited for samples it did not actually solve.
+    solve. A sample counts as failed when its fit did not pass the goodness-of-fit test
+    (``reached_optimum`` is False, see :func:`converged_samples`) or every column's
+    value for it was unusable. Either way it is excluded from R² and reported
+    alongside it, so a method is never credited for samples it did not actually solve.
     """
     bench_dir = pathlib.Path(bench_dir)
     converged = converged_samples(bench_dir)
-    frames, n_failed = [], 0
+
+    by_sample = {}
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
-        pred_df = _read_hdf(h5_path, "fluxes")  # rows=reaction_ids, cols=absolute sample_ix
-        for ix in pred_df.columns:
-            ix = int(ix)
+        pred_df = _read_hdf(h5_path, "fluxes")  # rows=reaction_ids
+        for ix, pred in _sample_columns(pred_df):
             if ix >= flux_df.shape[1]:
                 continue
-            if converged is not None and ix not in converged:
-                n_failed += 1
-                continue
-            gt   = flux_df[ix]
-            pred = pred_df[ix].reindex(gt.index)
-            chunk = pd.DataFrame({
-                "sample":   ix,
-                "reaction": gt.index,
-                "gt":       gt.values,
-                "pred":     pred.values,
-            }).dropna()
-            if chunk.empty:
-                n_failed += 1
-            else:
-                frames.append(chunk)
+            by_sample.setdefault(ix, []).append(pred)
+
+    frames, n_failed = [], 0
+    for ix, preds in sorted(by_sample.items()):
+        if converged is not None and ix not in converged:
+            n_failed += 1
+            continue
+        gt   = flux_df[ix]
+        # median(axis=1) skips NaN per row, so one member's failed sample does not
+        # drop the whole reaction for that sample as long as another member has it.
+        pred = pd.concat(preds, axis=1).reindex(gt.index).median(axis=1)
+        chunk = pd.DataFrame({
+            "sample":   ix,
+            "reaction": gt.index,
+            "gt":       gt.values,
+            "pred":     pred.values,
+        }).dropna()
+        if chunk.empty:
+            n_failed += 1
+        else:
+            frames.append(chunk)
     if not frames:
         raise FileNotFoundError(f"No pred_*_flux.h5 files found in {bench_dir}")
     return pd.concat(frames, ignore_index=True), n_failed
