@@ -29,7 +29,10 @@ def _read_pair(out_dir, tag="00000_00001"):
 # ── CLI end-to-end ────────────────────────────────────────────────────────────
 
 def test_ai_benchmark_cli(toy_run, tmp_path):
-    """The AI benchmark writes both H5 files, keyed by absolute sample index."""
+    """An ensemble run writes every member's own raw (unprojected) prediction into
+    the one H5 pair, as a (sample, member) column MultiIndex — mirroring the MFA
+    benchmark's one-job-one-file layout rather than one file per member. Aggregating
+    across members is left to evaluation (plot_test_performance.load_benchmark)."""
     out_dir = tmp_path / "ai_benchmark"
     assert run_ai_benchmark.cli([
         "--config", _TOY_CONFIG_YAML,
@@ -40,10 +43,13 @@ def test_ai_benchmark_cli(toy_run, tmp_path):
     ]) == 0
 
     labeling, flux = _read_pair(out_dir)
-    assert list(flux.columns) == [0, 1]          # HDF5 column indices, not offsets
+    assert isinstance(flux.columns, pd.MultiIndex)
+    assert flux.columns.names == ["sample", "member"]
+    # toy_run's ensemble has 2 members; --n-benchmarks 2 selects samples 0 and 1.
+    assert sorted(flux.columns.tolist()) == [(0, 0), (0, 1), (1, 0), (1, 1)]
     assert list(flux.index) == toy_run["flux_names"]
     assert np.isfinite(flux.values).all()
-    assert list(labeling.columns) == [0, 1]
+    assert flux.columns.equals(labeling.columns)
     assert labeling.index.names == ["Tracer", "Metabolite", "Isotopomer"]
 
 
