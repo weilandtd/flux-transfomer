@@ -15,6 +15,81 @@ EPSILON = 1e-9
 logger = logging.getLogger(__name__)
 
 
+def _prepare_mfa_batches(model, simultanous_experiments):
+    """Experiment batches + measurement tensors + per-block count factors.
+
+    Used by fit_mfa_model and fit_mfa_model_ipopt.
+
+    Args:
+        model: MFAModel whose ``experiments`` supply the measurement data.
+        simultanous_experiments: number of experiments forward-simulated per batch.
+
+    Returns ``(experiment_batches, batch_data, n_L_total, n_F_total, inv_n_L, inv_n_F)``.
+    """
+    device = model.device
+    experiment_batches = []
+    for i in range(0, len(model.experiments), simultanous_experiments):
+        experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
+
+    labeling_scaler = torch.ones(len(model.experiments), device=device)
+    batch_data = {}
+    for exp_ix in experiment_batches:
+        index_labeling, L_mean, _, L_std = get_model_labeling_data(
+            model, labeling_scaler, with_std=True, exp_ix=exp_ix)
+        index_fluxes, v_mean, v_std = get_model_flux_data(
+            model, with_std=True, exp_ix=exp_ix)
+        batch_data[tuple(exp_ix)] = (index_labeling, L_mean, L_std,
+                                     index_fluxes, v_mean, v_std)
+
+    n_L_total = int(sum(bd[0].numel() for bd in batch_data.values()))
+    n_F_total = int(sum(bd[3].numel() for bd in batch_data.values()))
+    inv_n_L = 1.0 / max(n_L_total, 1)
+    inv_n_F = (1.0 / n_F_total) if n_F_total > 0 else 0.0
+    return experiment_batches, batch_data, n_L_total, n_F_total, inv_n_L, inv_n_F
+
+
+def _mfa_residual(model, v_net, r, experiment_batches, batch_data, mask_f,
+                  inv_n_L, inv_n_F, return_blocks=False):
+    """Labeling+flux SSR for one (v_net, r) flux state.
+
+    Differentiable w.r.t. v_net/r via autograd through the EMU forward model.
+
+    return_blocks=False returns the raw sum of squared residuals over both
+    blocks. return_blocks=True returns (labeling, flux) separately, each
+    divided by its own measurement count.
+
+    Args:
+        model: MFAModel the labeling forward pass runs against.
+        v_net: net flux per reaction.
+        r: reversibility per reaction.
+        experiment_batches, batch_data, inv_n_L, inv_n_F: from :func:`_prepare_mfa_batches`.
+        mask_f: reversibility mask (1.0 for reversible reactions), from ``model._reversibility_mask``.
+        return_blocks: return the two reduced-χ² blocks separately instead of
+            the combined raw SSR.
+    """
+    rev = torch.where((r * mask_f) <= model.min_rev_flux,
+                      torch.full_like(r, model.min_rev_flux),
+                      r * mask_f)
+    vf = 0.5 * (v_net.abs() + v_net + rev)
+    vb = 0.5 * (v_net.abs() - v_net + rev)
+    vf = vf - vb * (1.0 - mask_f)
+    vb = vb * mask_f
+    rev_fluxes = torch.cat([vf, vb])
+
+    total_L = v_net.new_zeros(())
+    total_F = v_net.new_zeros(())
+    for exp_ix in experiment_batches:
+        index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
+        output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
+        sim_L = torch.take(output, index_labeling)
+        total_L = total_L + ((sim_L - L_mean) / L_std).square().sum()
+        if index_fluxes.numel() > 0:
+            total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
+    if return_blocks:
+        return total_L * inv_n_L, total_F * inv_n_F
+    return total_L + total_F
+
+
 @time_function
 def fit_mfa_model(model,
                   simultanous_experiments=3,
@@ -23,7 +98,7 @@ def fit_mfa_model(model,
                   checkpoint_file=None,
                   labeling_checkpoint_file=None,
                   disp=0):
-    """Fit an MFA model by minimizing reduced chi-squared over labeling and flux data via L-BFGS-B.
+    """Fit an MFA model by minimizing the raw SSR over labeling and flux data via L-BFGS-B.
 
     Net fluxes are parameterized as v_net = T @ p with T = null(S), so the mass-balance
     constraint S·v = 0 holds automatically; gradients come from autograd.
@@ -49,30 +124,8 @@ def fit_mfa_model(model,
     T_t = torch.tensor(T_np, dtype=dtype, device=device)
     k = T_t.shape[1]
 
-    # ── Experiment batches + measurement data ─────────────────────────────────
-    experiment_batches = []
-    for i in range(0, len(model.experiments), simultanous_experiments):
-        experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
-
-    labeling_scaler = torch.ones(len(model.experiments), device=device)
-    batch_data = {}
-    for exp_ix in experiment_batches:
-        index_labeling, L_mean, _, L_std = get_model_labeling_data(
-            model, labeling_scaler, with_std=True, exp_ix=exp_ix)
-        index_fluxes, v_mean, v_std = get_model_flux_data(
-            model, with_std=True, exp_ix=exp_ix)
-        batch_data[tuple(exp_ix)] = (index_labeling, L_mean, L_std,
-                                     index_fluxes, v_mean, v_std)
-
-    # Per-block measurement counts. The labeling block has many MID measurements
-    # (~hundreds) and the flux block only a handful; a plain summed χ² lets labeling
-    # drown out the flux constraints. Reduced χ² per block (χ²_L/n_L + χ²_F/n_F) gives
-    # each data type equal footing so the few measured fluxes actually constrain the fit.
-    n_L_total = int(sum(bd[0].numel() for bd in batch_data.values()))
-    n_F_total = int(sum(bd[3].numel() for bd in batch_data.values()))
-    # Precompute inverse counts once so the per-iteration objective is branch-free.
-    inv_n_L = 1.0 / max(n_L_total, 1)
-    inv_n_F = (1.0 / n_F_total) if n_F_total > 0 else 0.0
+    (experiment_batches, batch_data, n_L_total, n_F_total,
+     inv_n_L, inv_n_F) = _prepare_mfa_batches(model, simultanous_experiments)
 
     # ── Initial point: project current fluxes onto null(S), keep r ───────────
     # Columns of T are orthonormal, so T^T is the pseudo-inverse.
@@ -94,29 +147,8 @@ def fit_mfa_model(model,
     def objective(x: torch.Tensor, return_blocks: bool = False) -> torch.Tensor:
         p, r = x[:k], x[k:]
         v_net = T_t @ p  # S @ v_net = 0 automatically
-        rev = torch.where((r * mask_f) <= model.min_rev_flux,
-                          torch.full_like(r, model.min_rev_flux),
-                          r * mask_f)
-        vf = 0.5 * (v_net.abs() + v_net + rev)
-        vb = 0.5 * (v_net.abs() - v_net + rev)
-        vf = vf - vb * (1.0 - mask_f)
-        vb = vb * mask_f
-        rev_fluxes = torch.cat([vf, vb])
-
-        total_L = x.new_zeros(())
-        total_F = x.new_zeros(())
-        for exp_ix in experiment_batches:
-            index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
-            output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
-            sim_L = torch.take(output, index_labeling)
-            total_L = total_L + ((sim_L - L_mean) / L_std).square().sum()
-            if index_fluxes.numel() > 0:
-                total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
-        # Reduced χ² per block so the flux constraints aren't drowned out by the
-        # far more numerous labeling measurements (inverse counts precomputed).
-        if return_blocks:
-            return total_L * inv_n_L, total_F * inv_n_F
-        return total_L * inv_n_L + total_F * inv_n_F
+        return _mfa_residual(model, v_net, r, experiment_batches, batch_data,
+                             mask_f, inv_n_L, inv_n_F, return_blocks)
 
     # ── Gradient via autograd ─────────────────────────────────────────────────
     # Track the most recent objective/gradient + evaluation count so the per-iteration
@@ -198,11 +230,11 @@ def fit_mfa_model(model,
         rchi2_L, rchi2_F = objective(x_opt, return_blocks=True)
 
     return {
-        "loss":         float(result.fun),    # mean_ssr_labeling + mean_ssr_fluxes
+        "loss":         float(result.fun),    # raw SSR at the optimum
         "converged":    bool(result.success),
         "n_iter":       int(result.nit),
-        "ssr_labeling": float(rchi2_L),       # reduced χ²_L  (mean ssr labeling)
-        "ssr_fluxes":   float(rchi2_F),       # reduced χ²_F  (mean ssr fluxes)
+        "ssr_labeling": float(rchi2_L),       # reduced χ²_L
+        "ssr_fluxes":   float(rchi2_F),       # reduced χ²_F
         "n_labeling":   n_L_total,
         "n_fluxes":     n_F_total,
     }
