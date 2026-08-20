@@ -3,63 +3,26 @@ experimental_id,model_id
 ADP,adp_c
 ADP,adp_m
 AICAR,aicar_c
-ATP,atp_c
-ATP,atp_m
-Acetyl-CoA,accoa_c
-Acetyl-CoA,accoa_m
-Acon,acon_C_m
-Ala,ala__L_c
-Ala,ala__L_e
-Ala,ala__L_m
-Arg,arg__L_c
-Arg,arg__L_e
-Asp,asp__L_c
-Asp,asp__L_e
-Asp,asp__L_m
 CDP,cdp_c
-Cit,cit_c
-Cit,cit_m
 Citric acid,cit_c
 Citric acid,cit_m
 Citrulline,citr__L_c
 Citrulline,citr__L_m
-Coenzyme A,coa_c
-Coenzyme A,coa_m
 D-Erythrose 4-phosphate,e4p_c
 D-Glucose,glc__D_c
 D-Glucose,glc__D_e
 D-Glyceraldehyde 3-phosphate,g3p_c
 D-Ribose 5-phosphate,r5p_c
 Dihydroxyacetone phosphate,dhap_c
-F6P,f6p_c
-FBP,fdp_c
 "Fructose 1,6-bisphosphate",fdp_c
 Fructose 6-phosphate,f6p_c
-Fum,fum_c
-Fum,fum_m
 Fumaric acid,fum_c
 Fumaric acid,fum_m
-G6P,g6p_c
-GAP,g3p_c
-Gln,gln__L_c
-Gln,gln__L_e
-Gln,gln__L_m
-Glu,glu__L_c
-Glu,glu__L_e
-Glu,glu__L_m
 Glucose 6-phosphate,g6p_c
-Gly,gly_c
-Gly,gly_e
-Gly,gly_m
-Glyc3P,glyc3p_c
 Glycerol 3-phosphate,glyc3p_c
 Glycine,gly_c
 Glycine,gly_e
 Glycine,gly_m
-His,his__L_c
-His,his__L_e
-Ile,ile__L_c
-Ile,ile__L_e
 L-Alanine,ala__L_c
 L-Alanine,ala__L_e
 L-Alanine,ala__L_m
@@ -107,62 +70,16 @@ L-Tyrosine,tyr__L_c
 L-Tyrosine,tyr__L_e
 L-Valine,val__L_c
 L-Valine,val__L_e
-Lac,lac__L_c
-Lac,lac__L_e
-Lac,lac__L_m
-Leu,leu__L_c
-Leu,leu__L_e
-Lys,lys__L_c
-Lys,lys__L_e
-Mal,mal__L_c
-Mal,mal__L_m
-Met,met__L_c
-Met,met__L_e
-NAD,nad_c
-NAD,nad_m
-NADH,nadh_c
-NADH,nadh_m
-NADP,nadp_c
-NADP,nadp_m
-NADPH,nadph_c
-NADPH,nadph_m
-OROT,orot_c
 Ornithine,orn_c
 Ornithine,orn_m
 Orotic acid,orot_c
-PEP,pep_c
-PG,3pg_c
-Phe,phe__L_c
-Phe,phe__L_e
 Phosphoenolpyruvic acid,pep_c
-Pro,pro__L_c
-Pro,pro__L_e
-Pro,pro__L_m
-Pyr,pyr_c
-Pyr,pyr_m
 Pyruvic acid,pyr_c
 Pyruvic acid,pyr_m
-S7P,s7p_c
-Ser,ser__L_c
-Ser,ser__L_e
-Ser,ser__L_m
-Suc,succ_m
 Succinic acid,succ_m
-Thr,thr__L_c
-Thr,thr__L_e
-Trp,trp__L_c
-Trp,trp__L_e
-Tyr,tyr__L_c
-Tyr,tyr__L_e
-UTP,utp_c
-Val,val__L_c
-Val,val__L_e
-aKG,akg_c
-aKG,akg_m
 cis-Aconitic acid,acon_C_m
 dCDP,dcdp_c
 dCTP,dctp_c
 dGDP,dgdp_c
 dTDP,dtdp_c
 dUMP,dump_c
-glucose,glc__D_c

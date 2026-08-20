@@ -8,6 +8,9 @@ from .build_data_name_maps import build_data_name_maps, MANUAL_OVERRIDES
 # ---- LC/MS measurable metabolite space ----
 from .lcms_knowns import match_lcms_knowns, normalize_compound, read_lcms_knowns
 
+# ---- carbon-coverage sanity check for a mapping ----
+from .carbon_coverage import carbon_count, filter_by_carbon_coverage, formulas_from_knowns
+
 # ---- MID data loading ----
 from .read_xlsx_mid_data import read_xlsx_mid_data
 
@@ -27,6 +30,9 @@ __all__ = [
     "match_lcms_knowns",
     "normalize_compound",
     "read_lcms_knowns",
+    "carbon_count",
+    "filter_by_carbon_coverage",
+    "formulas_from_knowns",
     "read_xlsx_mid_data",
     "read_xlsx_extflux",
     "mid_df_to_mass_isotopomer_table",

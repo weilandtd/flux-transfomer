@@ -1,64 +1,84 @@
 experimental_id,model_id
-3PG,3pg_c
-AMP,amp_c
-Ala,ala__L_c
-Ala,ala__L_m
-Arg,arg__L_c
-Asp,asp__L_c
-Asp,asp__L_m
-Cit,cit_m
-Cit,cit_c
-Citrl,citr__L_c
-DHAP,dhap_c
-E4P,e4p_c
-F6P,f6p_c
-FBP,fdp_c
-Fum,fum_c
-Fum,fum_m
-G6P,g6p_c
-GAM6P,gam6p_c
-GAP,g3p_c
-Gln,gln__L_c
-Glu,glu__L_c
-Glu,glu__L_m
-Gly,gly_c
-Gly,gly_m
-Glyc3P,glyc3p_c
-His,his__L_c
-IMP,imp_c
-IPPM,2ippm_c
-Ile,ile__L_m
-Ile,ile__L_c
-Leu,leu__L_c
-Lys,lys__L_c
-Mal,mal__L_c
-Mal,mal__L_m
-Met,met__L_c
-Orn,orn_c
-Orn,orn_m
-PEP,pep_c
-PG,3pg_c
-PG6,6pgc_c
-PHPYR,phpyr_c
-Phe,phe__L_c
-Pro,pro__L_c
-Pro,pro__L_m
-Pyr,pyr_m
-Pyr,pyr_c
-R5P,r5p_c
-S7P,s7p_c
-Ser,ser__L_c
-Ser,ser__L_m
-Suc,succ_c
-Suc,succ_m
-Thr,thr__L_c
-Thr,thr__L_m
-Trp,trp__L_c
-Tyr,tyr__L_c
-UTP,utp_c
-Val,val__L_c
-Val,val__L_m
-aKG,akg_c
-aKG,akg_m
-aKV,3mob_c
-aKV,3mob_m
+2-Isopropylmalic acid,3c3hmp_c
+3-Phosphoglyceric acid,3pg_c
+3-dehydroshikimate,3dhsk_c
+5-Methyltetrahydrofolic acid,5mthf_c
+ADP,adp_c
+ADP,adp_m
+AICAR,aicar_c
+Adenosine,adn_c
+CDP,cdp_c
+Citric acid,cit_c
+Citric acid,cit_m
+Citrulline,citr__L_c
+D-Erythrose 4-phosphate,e4p_c
+D-Glucose,glc__D_c
+D-Glucose,glc__D_e
+D-Glyceraldehyde 3-phosphate,g3p_c
+D-Ribose 5-phosphate,r5p_c
+Dihydroxyacetone phosphate,dhap_c
+"Fructose 1,6-bisphosphate",fdp_c
+Fructose 6-phosphate,f6p_c
+Fumaric acid,fum_c
+Fumaric acid,fum_m
+Gamma-Aminobutyric acid,4abut_c
+Glucose 1-phosphate,g1p_c
+Glucose 6-phosphate,g6p_c
+Glycerol,glyc_c
+Glycerol,glyc_e
+Glycerol 3-phosphate,glyc3p_c
+Glycine,gly_c
+Glycine,gly_m
+Glyoxylic acid,glx_c
+Homocysteine,hcys__L_c
+L-Alanine,ala__L_c
+L-Alanine,ala__L_m
+L-Arginine,arg__L_c
+L-Asparagine,asn__L_c
+L-Aspartic acid,asp__L_c
+L-Aspartic acid,asp__L_m
+L-Cystathionine,cyst__L_c
+L-Cysteine,cys__L_c
+L-Glutamic acid,glu__L_c
+L-Glutamic acid,glu__L_m
+L-Glutamine,gln__L_c
+L-Histidine,his__L_c
+L-Histidinol,histd_c
+L-Homoserine,hom__L_c
+L-Isoleucine,ile__L_c
+L-Isoleucine,ile__L_m
+L-Kynurenine,Lkynr_c
+L-Leucine,leu__L_c
+L-Lysine,lys__L_c
+L-Methionine,met__L_c
+L-Phenylalanine,phe__L_c
+L-Proline,pro__L_c
+L-Proline,pro__L_m
+L-Serine,ser__L_c
+L-Serine,ser__L_m
+L-Threonine,thr__L_c
+L-Threonine,thr__L_m
+L-Tryptophan,trp__L_c
+L-Tyrosine,tyr__L_c
+L-Valine,val__L_c
+L-Valine,val__L_m
+Linoleic acid,linoea_c
+Mannose 6-phosphate,man6p_c
+Ornithine,orn_c
+Ornithine,orn_m
+Orotic acid,orot_c
+Phosphoenolpyruvic acid,pep_c
+Pyruvic acid,pyr_c
+Pyruvic acid,pyr_m
+Shikimic acid,skm_c
+Succinic acid,succ_c
+Succinic acid,succ_e
+Succinic acid,succ_m
+Trehalose,tre_c
+cis-Aconitic acid,acon_C_m
+dCDP,dcdp_c
+dCTP,dctp_c
+dGDP,dgdp_c
+dTDP,dtdp_c
+dUMP,dump_c
+myo-Inositol,inost_c
