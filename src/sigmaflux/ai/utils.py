@@ -6,41 +6,6 @@ import scipy.linalg
 import torch
 
 
-def compute_token_scores(L_c, method='pca', n_components=50, y_c=None, y_std_c=None):
-    """Score labeling tokens by their informativeness for training-time selection.
-
-    Args:
-        L_c:          (n_train, n_tokens) centered labeling matrix
-        method:       'pca' | 'maxr'
-        n_components: PCA components to retain (method='pca' only)
-        y_c:          (n_train, n_free) centered basis targets (method='maxr' only)
-        y_std_c:      (n_free,) std of basis targets (method='maxr' only)
-
-    Returns:
-        scores: (n_tokens,) float tensor — higher means more informative
-    """
-    if method == 'pca':
-        _U, _S, _Vh = torch.linalg.svd(L_c, full_matrices=False)
-        k = min(n_components, _S.shape[0])
-        scores = (_Vh[:k] ** 2 * _S[:k, None] ** 2).sum(dim=0)
-        var_k = (_S[:k] ** 2).sum().item()
-        var_total = (_S ** 2).sum().item()
-        print(f"Token scores (PCA): top-{k} PCs explain {100 * var_k / var_total:.1f}% "
-              f"of labeling variance")
-    elif method == 'maxr':
-        if y_c is None or y_std_c is None:
-            raise ValueError("y_c and y_std_c are required for method='maxr'")
-        L_std_c = L_c.std(dim=0).clamp_min(1e-10)
-        cov     = (y_c.T @ L_c) / y_c.shape[0]
-        corr    = cov / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
-        scores  = corr.abs().max(dim=0).values
-        print(f"Token scores (max|r|): min={scores.min():.3f}, max={scores.max():.3f}, "
-              f"median={scores.median():.3f}")
-    else:
-        raise ValueError(f"Unknown token selection method: {method!r}. Choose 'pca' or 'maxr'.")
-    return scores
-
-
 def load_fisher_token_scores(
     features_csv: str, labeling_df
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -66,7 +31,7 @@ def load_fisher_token_scores(
     included_set: set = set()
     for _, row in feat.iterrows():
         key = (row["metabolite_id"], row["isotopomer"])
-        v = row["marginal_nats"]
+        v = row["standalone_nats"]
         score_map[key] = 0.0 if v != v else float(v)
         if row.get("included", False):
             included_set.add(key)

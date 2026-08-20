@@ -35,9 +35,6 @@ Sample count, epochs and device are config keys (`sampling:`, `training:`,
 Condition letters are scoped per organism: `N` is nitrogen limitation for the yeasts
 and the naive cell state for the T cell.
 
-`i_orientalis_ko.yaml` and `i_orientalis_labelonly.yaml` are variants of the first,
-for the knockout benchmark and for training without measured fluxes.
-
 The T cell is the one mammalian model. Fluxes are nmol/1E6 cells/h rather than
 mmol/gDW/h, one biomass covers both cell states through the macromolecule component
 reactions, and it carries no carbohydrate, so `CARB_c` is absent.
@@ -81,7 +78,9 @@ Outputs `wb_model_labeling_data_*.h5`, `wb_model_flux_data_*.h5` and
 
 ### 3. Select informative features — `sigmaflux-select-features`
 
-Fisher/D-optimal token scoring over the generated HDF5, writing `features.csv`.
+Fisher-information significance token selection over the generated HDF5, writing
+`features.csv`. A token is included iff its standalone information about the free
+fluxes exceeds a permutation-calibrated null floor — no redundancy trimming.
 
 ```bash
 sigmaflux-select-features \
@@ -89,13 +88,11 @@ sigmaflux-select-features \
     --data-dir training_data
 ```
 
-The scoring method is the config key `features.token_selection_method` (`fisher` by
-default). Set it to `fisher_fast` for large models (genome-scale / whole-body) where the
-default becomes intractable: it computes each token's standalone information with the
-matrix-determinant lemma (a k×k determinant, no dense d×d Fisher grams) and keeps every
-significant token instead of running the greedy redundancy trim — O(C·d²) time / O(C·d)
-memory vs O(K·C·d³) / O(C·d²). The output `features.csv` has the same schema, so training
-and inference are unchanged.
+The config key `features.token_selection_method` picks how the underlying
+sensitivity Gram is estimated — `fisher` (exact, cross-fit, bias-corrected) or
+`fisher_fast` (approximate, single-shot, cheaper) — both run the identical
+significance test on top, so `features.csv`'s schema and downstream training are
+unaffected by the choice; `fisher_fast` just costs less.
 
 ### 4. Train the decoder — `sigmaflux-train`
 

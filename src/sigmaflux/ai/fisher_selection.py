@@ -1,11 +1,10 @@
 """
-Fisher information and D-optimal greedy selection of informative labeling tokens.
-==================================================================================
+Fisher information significance selection of informative labeling tokens.
+===========================================================================
 
 Answers, from the *forward simulator or generated samples alone* (no estimator
 training), the experimental-design question: which metabolite isotopologue tokens
-most reduce uncertainty in the estimated free fluxes, and what is the minimal
-non-redundant informative subset?
+carry real information about the free fluxes, versus what chance alone produces?
 
 Framework
 ---------
@@ -16,7 +15,7 @@ orthonormal null-space basis (the same basis the training pipeline uses,
 ``L = g(v)`` produced by the differentiable MFA model, corrupted by labeling
 noise with std ``sigma`` (matching ``apply_labeling_noise``).
 
-**Layer 1 -- Fisher information / optimal experimental design (primary).**
+**Layer 1 -- Fisher information significance test (primary).**
 Linearising the simulator about a flux state, ``L approx g(v0) + J (theta -
 theta0)`` with Jacobian ``J = dL/dtheta``, the Fisher information that
 measuring metabolite ``m`` contributes about ``theta`` is
@@ -25,15 +24,15 @@ measuring metabolite ``m`` contributes about ``theta`` is
 
 averaged over flux states drawn from the prior (Bayesian / expected Fisher).
 In the linear-Gaussian regime this *is* the mutual information
-``I(theta; L_S) = 0.5 * logdet(I + F_S Sigma_prior)``, so the Fisher object and
-an "MI-based" selection coincide -- we just get it in closed form.  The
-informative subset is built by greedy **D-optimal** selection (maximising
-``logdet`` of the posterior precision), which automatically penalises
-redundancy: a metabolite whose sensitivity lies in already-covered flux
-directions adds almost nothing.  The eigenspectrum of the total information
-reports how many independent flux directions the candidate set can resolve --
-the quantitative version of the "one tracer resolves only a few directions"
-observation.
+``I(theta; L_m) = 0.5 * logdet(I + F_m Sigma_prior)``, so the Fisher object and
+an "MI-based" selection coincide -- we just get it in closed form. A token is
+included iff this standalone information exceeds a permutation-calibrated null
+floor -- the largest standalone information any token produces when ``theta``
+is shuffled against the labels, i.e. what chance alone can generate. Two ways
+to estimate the underlying sensitivity Gram trade rigor for cost: an exact,
+cross-fit, bias-corrected estimate (``fisher``), or a cheaper single-shot
+estimate (``fisher_fast``) -- everything downstream of the Gram is identical
+between the two.
 
 **Layer 2 -- mutual-information audit (nonlinearity check).**
 Layer 1 is local/linear.  Because labeling is a nonlinear, sometimes
@@ -342,7 +341,7 @@ def empirical_sensitivity_grams(theta: np.ndarray, token_states: dict,
 
 
 # ----------------------------------------------------------------------------
-# Prior precision and greedy D-optimal subset selection
+# Prior precision and per-token standalone information
 # ----------------------------------------------------------------------------
 def _prior_precision(theta_prior: np.ndarray, d: int, ridge: float = 1e-6):
     """Precision matrix of the flux prior over theta (with ridge).
@@ -364,73 +363,23 @@ def _slogdet(M):
     return val if sign > 0 else -np.inf
 
 
-def greedy_d_optimal(
-    grams: dict,
-    theta_prior: np.ndarray,
-    noise_std: float = 0.02,
-    budget: int = None,
-    gain_threshold: float = 1e-3,
-    rel_gain_threshold: float = 0.01,
-    ridge: float = 1e-6,
-):
-    """Greedy D-optimal metabolite selection on the Fisher Gram matrices: repeatedly add the
-    metabolite with the largest ``logdet(P_{S+m}) - logdet(P_S)`` marginal information gain
-    (nats), where ``P_S = F0 + (1/sigma^2) sum_{m in S} G_m``, stopping at the elbow or *budget*.
-
-    Stopping uses ``max(gain_threshold, rel_gain_threshold * first_gain)`` — a relative elbow,
-    since once resolvable flux directions are covered an absolute nats threshold would
-    over-select. Set ``rel_gain_threshold=0`` to disable.
+def _standalone_gains(grams: dict, theta_prior: np.ndarray, noise_std: float, ridge: float = 1e-6):
+    """Per-token standalone information gain (nats): ``logdet(F0 + inv_sig2*G_m) - logdet(F0)``
+    for each token's Fisher Gram, i.e. the information that token alone would contribute.
 
     :param grams: dict of met_id -> Fisher Gram matrix (d, d).
     :param theta_prior: sampled free-flux coordinates defining the prior precision F0.
     :param noise_std: assumed labeling measurement noise std.
-    :param budget: maximum number of metabolites to select.
-    :param gain_threshold: absolute information-gain floor to stop at.
-    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
     :param ridge: relative ridge added to the prior covariance diagonal.
-    :return: dict with ``order``, ``marginal_gain``, ``cumulative_information``,
-        ``standalone_gain`` (met_id -> gain if it were the only measurement), and ``F0``.
+    :return: dict of met_id -> standalone gain (nats).
     """
-    met_ids = [m for m, G in grams.items() if np.isfinite(G).all() and np.any(G)]
-    if not met_ids:
-        return {"order": [], "marginal_gain": [], "cumulative_information": [],
-                "standalone_gain": {}, "F0": None}
+    if not grams:
+        return {}
     d = next(iter(grams.values())).shape[0]
     inv_sig2 = 1.0 / (noise_std ** 2)
     F0 = _prior_precision(theta_prior, d, ridge)
     base = _slogdet(F0)
-
-    standalone = {m: _slogdet(F0 + inv_sig2 * grams[m]) - base for m in met_ids}
-
-    P = F0.copy()
-    cur = base
-    remaining = set(met_ids)
-    order, gains, cum = [], [], []
-    stop = gain_threshold
-    while remaining and (budget is None or len(order) < budget):
-        best_m, best_g = None, -np.inf
-        for m in remaining:
-            g = _slogdet(P + inv_sig2 * grams[m]) - cur
-            if g > best_g:
-                best_g, best_m = g, m
-        if not order:  # first pick sets the relative elbow threshold
-            stop = max(gain_threshold, rel_gain_threshold * best_g)
-        if best_g < stop:
-            break
-        order.append(best_m)
-        gains.append(best_g)
-        P = P + inv_sig2 * grams[best_m]
-        cur = _slogdet(P)
-        cum.append(cur - base)
-        remaining.discard(best_m)
-
-    return {
-        "order": order,
-        "marginal_gain": gains,
-        "cumulative_information": cum,
-        "standalone_gain": standalone,
-        "F0": F0,
-    }
+    return {m: _slogdet(F0 + inv_sig2 * G) - base for m, G in grams.items()}
 
 
 def observable_spectrum(grams: dict, theta_prior, noise_std: float = 0.02,
@@ -562,133 +511,60 @@ def ksg_nonlinearity_gap(theta: np.ndarray, L: np.ndarray, n_neighbors: int = 5)
 # ----------------------------------------------------------------------------
 # Orchestrator
 # ----------------------------------------------------------------------------
-def rank_informative_metabolites(
-    model,
-    flux_df,
-    measurements,
-    Z=None,
-    exp_ixs=None,
-    reversibility_df=None,
-    noise_std: float = 0.02,
-    n_states: int = 25,
-    eps: float = 1e-2,
-    sensitivity: str = "jacobian",
-    budget: int = None,
-    gain_threshold: float = 1e-3,
-    run_mi_audit: bool = True,
-    seed: int = 0,
-):
-    """End-to-end ranking + minimal-subset selection of informative metabolites.
-
-    :param model: EMU/MFA simulator model.
-    :param flux_df: sampled flux states to average the Fisher information over.
-    :param measurements: candidate ``(metabolite_id, n_atoms)`` pairs; defaults to
-        :func:`candidate_measurements`.
-    :param Z: null-space basis; defaults to :func:`free_flux_basis`.
-    :param exp_ixs: experiment indices to run; defaults to all of ``model.experiments``.
-    :param reversibility_df: optional per-sample reversibilities; see :func:`compute_fisher_grams`.
-    :param noise_std: assumed labeling measurement noise std.
-    :param n_states: number of flux states to sample and average the Jacobian over.
-    :param eps: relative finite-difference step size in theta units.
-    :param sensitivity: ``"jacobian"`` (finite-difference simulator Jacobian, rigorous) or
-        ``"empirical"`` (global-linear from generated samples, fast, no re-run)
-    :param budget: maximum number of metabolites to select.
-    :param gain_threshold: absolute information-gain floor for greedy selection.
-    :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit
-    :param seed: flux-state sampling random seed.
-    :return: ``(results_df, summary)`` — one row per candidate metabolite sorted by selection,
-        and a summary dict (observable spectrum, resolved directions, etc.)
-    """
-    if Z is None:
-        Z = free_flux_basis(model)
-    d = Z.shape[1]
-    if measurements is None:
-        measurements = candidate_measurements(model)
-
-    fg = compute_fisher_grams(
-        model, Z, flux_df, measurements, exp_ixs=exp_ixs,
-        reversibility_df=reversibility_df, n_states=n_states, eps=eps, seed=seed,
-        jacobian=(sensitivity == "jacobian"))
-    theta_states = fg["theta_states"]
-    token_states = fg["token_states"]
-    if sensitivity == "jacobian":
-        grams = fg["grams"]
-    elif sensitivity == "empirical":
-        grams = empirical_sensitivity_grams(theta_states, token_states)
-    else:
-        raise ValueError(f"sensitivity must be 'jacobian' or 'empirical', got {sensitivity}")
-
-    # prior over theta from the full flux sample set
-    reaction_ids = [r.id for r in model.reactions]
-    theta_prior = np.asarray(flux_df[reaction_ids].to_numpy(np.float64)) @ Z
-
-    return _summarize(
-        grams, theta_states, token_states, theta_prior, d, noise_std,
-        budget, gain_threshold, run_mi_audit, sensitivity, fg.get("n_states", 0))
-
-
 def rank_from_samples(
     theta: np.ndarray,
     token_states: dict,
     noise_std: float = 0.02,
-    budget: int = None,
-    gain_threshold: float = 1e-3,
-    rel_gain_threshold: float = 0.05,
     n_permutations: int = 5,
     run_mi_audit: bool = True,
     calibrate_null: bool = True,
-    null_seed: int = 12345,
+    seed: int = 12345,
+    exact: bool = True,
 ):
-    """Rank/select informative metabolites directly from generated samples, with no simulator
-    re-run, using the empirical (global-linear) cross-fitted sensitivity Fisher.
+    """Rank informative metabolites directly from generated samples, with no simulator re-run:
+    a token is included iff its standalone Fisher information about the free fluxes exceeds a
+    permutation-calibrated null floor, flagged by the ``significant``/``included`` column.
 
-    With *calibrate_null*, ``theta`` is shuffled against the labels to build a permutation-null
-    significance floor from the null standalone gains; only metabolites exceeding it are
-    selected, flagged by the ``significant`` column.
+    With *calibrate_null*, ``theta`` is shuffled against the labels to build the null floor from
+    the largest standalone gain any token produces by chance across *n_permutations* draws.
 
     :param theta: free-flux (+ reversibility) coordinates, (n_samples, d).
     :param token_states: dict of met_id -> per-sample MID array.
     :param noise_std: assumed labeling measurement noise std.
-    :param budget: maximum number of metabolites to select.
-    :param gain_threshold: absolute information-gain floor for greedy selection.
-    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
     :param n_permutations: permutations used to build the null significance floor.
     :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit.
     :param calibrate_null: build the permutation-null significance floor.
-    :param null_seed: permutation random seed.
-    :return: ``(results_df, summary)`` as in :func:`rank_informative_metabolites`
+    :param seed: permutation and sensitivity cross-fit random seed.
+    :param exact: cross-fit, bias-corrected sensitivity Gram estimate (costlier, ``fisher``) vs a
+        single-shot estimate (cheaper, biased, ``fisher_fast``) — see
+        :func:`empirical_sensitivity_grams`'s ``cross_fit``. Everything downstream of the Gram is
+        identical between the two.
+    :return: ``(results_df, summary)`` as in :func:`_summarize`.
     """
     theta = np.asarray(theta, dtype=np.float64)
-    grams = empirical_sensitivity_grams(theta, token_states)
+    grams = empirical_sensitivity_grams(theta, token_states, cross_fit=exact, seed=seed)
 
     null_floor = 0.0
     if calibrate_null and len(theta) >= 20:
-        rng = np.random.default_rng(null_seed)
+        rng = np.random.default_rng(seed)
         null_vals = []
         for _ in range(n_permutations):
             perm = rng.permutation(len(theta))
-            null_grams = empirical_sensitivity_grams(theta[perm], token_states, seed=int(rng.integers(1 << 30)))
-            null_sel = greedy_d_optimal(null_grams, theta, noise_std=noise_std,
-                                        budget=1, gain_threshold=0.0, rel_gain_threshold=0.0)
-            null_vals.extend(null_sel["standalone_gain"].values())
+            null_grams = empirical_sensitivity_grams(
+                theta[perm], token_states, cross_fit=exact, seed=int(rng.integers(1 << 30)))
+            null_vals.extend(_standalone_gains(null_grams, theta, noise_std).values())
         if null_vals:
             # family-wise floor: the largest information any independent
             # metabolite produced by chance across the permutations
             null_floor = float(np.max(null_vals))
 
-    # null floor -> the per-metabolite significance flag; a relative elbow on
-    # the marginal gains -> the non-redundant selection (stop when a new
-    # metabolite adds little beyond the directions already covered).
     return _summarize(
         grams, theta, token_states, theta, theta.shape[1], noise_std,
-        budget, gain_threshold, run_mi_audit,
-        "empirical(samples)", len(theta), null_floor=null_floor,
-        rel_gain_threshold=rel_gain_threshold)
+        run_mi_audit, "empirical(samples)", len(theta), null_floor=null_floor)
 
 
 def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,
-               budget, gain_threshold, run_mi_audit, sensitivity, n_states,
-               null_floor=0.0, rel_gain_threshold=0.01):
+               run_mi_audit, sensitivity, n_states, null_floor=0.0):
     """Assemble the results DataFrame + summary from per-metabolite Grams.
 
     :param grams: dict of met_id -> Fisher Gram matrix (d, d).
@@ -697,44 +573,23 @@ def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,
     :param theta_prior: sampled free-flux coordinates defining the prior precision F0.
     :param d: free-flux dimension.
     :param noise_std: assumed labeling measurement noise std.
-    :param budget: maximum number of metabolites to select.
-    :param gain_threshold: absolute information-gain floor for greedy selection.
     :param run_mi_audit: also compute the Layer-2 MI / nonlinearity audit.
     :param sensitivity: label recorded in the summary for how the Grams were computed.
     :param n_states: number of flux states the Grams were averaged over, for the summary.
     :param null_floor: permutation-null significance floor on standalone gain.
-    :param rel_gain_threshold: relative (to the first pick) information-gain floor.
     """
     import pandas as pd
 
-    # per-metabolite standalone information, and the significance flag
-    F0 = _prior_precision(theta_prior, d)
-    base = _slogdet(F0)
-    inv_sig2 = 1.0 / (noise_std ** 2)
-    standalone_all = {m: _slogdet(F0 + inv_sig2 * G) - base for m, G in grams.items()}
-    significant = {m for m, v in standalone_all.items() if v > null_floor}
-
-    # non-redundant selection runs only over significant metabolites
-    grams_sig = {m: grams[m] for m in significant}
-    sel = greedy_d_optimal(
-        grams_sig, theta_prior, noise_std=noise_std, budget=budget,
-        gain_threshold=gain_threshold, rel_gain_threshold=rel_gain_threshold)
+    standalone_all = _standalone_gains(grams, theta_prior, noise_std)
     spec = observable_spectrum(grams, theta_prior, noise_std=noise_std)
 
-    order_rank = {m: i for i, m in enumerate(sel["order"])}
-    marginal = dict(zip(sel["order"], sel["marginal_gain"]))
-
     rows = []
-    for met_id, G in grams.items():
+    for met_id in grams:
         standalone = standalone_all.get(met_id, 0.0)
         row = {
             "metabolite": met_id,
-            "selected": met_id in order_rank,
             "significant": standalone > null_floor,
-            "greedy_rank": order_rank.get(met_id, np.nan),
-            "marginal_gain_nats": marginal.get(met_id, np.nan),
             "standalone_gain_nats": standalone,
-            "fisher_trace": float(np.trace(G)) / (noise_std ** 2),
         }
         if run_mi_audit and met_id in token_states and len(token_states[met_id]):
             Lm = token_states[met_id]
@@ -747,13 +602,11 @@ def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,
     df = pd.DataFrame(rows)
     if df.empty:
         return df, {"n_free_flux_directions": int(d), "n_resolved_directions": 0,
-                    "n_selected": 0, "selected_order": [], "total_information_nats": 0.0,
-                    "n_states_used": int(n_states), "noise_std": noise_std,
-                    "sensitivity": sensitivity, "eigenvalues": np.array([])}
-    df = df.sort_values(
-        by=["selected", "greedy_rank", "standalone_gain_nats"],
-        ascending=[False, True, False],
-    ).reset_index(drop=True)
+                    "n_selected": 0, "n_states_used": int(n_states), "noise_std": noise_std,
+                    "sensitivity": sensitivity, "eigenvalues": np.array([]),
+                    "effective_rank": None, "null_floor_nats": float(null_floor)}
+    df = df.sort_values("standalone_gain_nats", ascending=False).reset_index(drop=True)
+    df["rank"] = np.arange(len(df))
 
     summary = {
         "n_free_flux_directions": int(d),
@@ -764,14 +617,10 @@ def _summarize(grams, theta_states, token_states, theta_prior, d, noise_std,
         "resolve_ratio": spec.get("resolve_ratio"),
         "eigenvalues": spec["eigenvalues"],
         "variance_reduction": spec.get("variance_reduction"),
-        "n_selected": len(sel["order"]),
-        "selected_order": sel["order"],
-        "total_information_nats": float(sel["cumulative_information"][-1])
-        if sel["cumulative_information"] else 0.0,
+        "n_selected": int(df["significant"].sum()),
         "n_states_used": int(n_states),
         "noise_std": noise_std,
         "sensitivity": sensitivity,
         "null_floor_nats": float(null_floor),
-        "n_significant": int(df["significant"].sum()),
     }
     return df, summary

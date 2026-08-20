@@ -1,7 +1,6 @@
 """Shared token feature selection core for SigmaFlux.
 
-Building blocks used by both the pipeline step (extract_informative_features.py)
-and the offline analysis script (paper/analysis/informative_tokens.py).
+Building blocks used by the pipeline step (extract_informative_features.py).
 """
 import numpy as np
 import pandas as pd
@@ -88,128 +87,47 @@ def apply_mapping_filter(token_states: dict, mapping_csv_path: str) -> dict:
     return filtered
 
 
-def select_informative_tokens(
+def select_significant_tokens(
     theta: np.ndarray,
     token_states: dict,
     noise_std: float = 0.02,
-    gain_threshold: float = 0.01,
-    rel_gain_threshold: float = 0.05,
     n_permutations: int = 5,
-    budget: int | None = None,
-    token_filter: str = "significant",
+    seed: int = 42,
+    exact: bool = True,
     run_mi_audit: bool = False,
 ):
-    """Rank and select tokens by Fisher/D-optimal information about free fluxes.
+    """Select tokens by Fisher-information significance against free fluxes.
+
+    A token is included iff its standalone information about theta exceeds a
+    permutation-calibrated null floor -- no redundancy trimming on top,
+    ``included == significant`` always.
 
     Args:
         theta: free-flux (+ reversibility) coordinates, (n_samples, d).
         token_states: dict of token id -> per-sample MID array.
         noise_std: assumed labeling measurement noise std.
-        gain_threshold: absolute information-gain floor for greedy selection.
-        rel_gain_threshold: relative (to the first pick) information-gain floor.
         n_permutations: permutations used for the significance-floor calibration.
-        budget: maximum number of tokens to select.
-        token_filter: which column ('significant' or 'selected') the returned
-            ``included`` column is copied from — the training gate.
+        seed: permutation and sensitivity-Gram cross-fit random seed.
+        exact: cross-fit, bias-corrected sensitivity Gram estimate (costlier,
+            ``token_selection_method: fisher``) vs a single-shot estimate
+            (cheaper, biased, ``fisher_fast``); everything else is identical.
         run_mi_audit: also compute the mutual-information nonlinearity audit.
 
     Returns ``(df, summary)``; *df* has columns metabolite_id, isotopomer, included,
-    significant, rank, standalone_nats, marginal_nats (plus MI columns if *run_mi_audit*).
+    significant, rank, standalone_nats (plus MI columns if *run_mi_audit*).
     """
     df, summary = fisher_selection.rank_from_samples(
         theta, token_states,
         noise_std=noise_std,
-        gain_threshold=gain_threshold,
-        rel_gain_threshold=rel_gain_threshold,
         n_permutations=n_permutations,
-        budget=budget,
+        seed=seed,
+        exact=exact,
         run_mi_audit=run_mi_audit,
     )
     df[["metabolite_id", "isotopomer"]] = df["metabolite"].str.split("|", expand=True)
-    df = df.drop(columns=["metabolite", "fisher_trace"])
-    df = df.rename(columns={
-        "greedy_rank":        "rank",
-        "marginal_gain_nats": "marginal_nats",
-        "standalone_gain_nats": "standalone_nats",
-    })
-    if token_filter == "significant":
-        df["included"] = df["significant"]
-    elif token_filter == "selected":
-        df["included"] = df["selected"]
-    else:
-        raise ValueError(f"token_filter must be 'significant' or 'selected', got {token_filter!r}")
-    df = df.drop(columns=["selected"])
-    front = ["metabolite_id", "isotopomer", "included", "significant", "rank",
-             "standalone_nats", "marginal_nats"]
+    df = df.drop(columns=["metabolite"])
+    df = df.rename(columns={"standalone_gain_nats": "standalone_nats"})
+    df["included"] = df["significant"]
+    front = ["metabolite_id", "isotopomer", "included", "significant", "rank", "standalone_nats"]
     df = df[front + [c for c in df.columns if c not in front]]
-    return df, summary
-
-
-def _token_standalone_nats(L, pinv, Sigma, inv_sig2, Ik):
-    """Det-lemma standalone information (nats) of one token's labeling matrix ``L``.
-
-    Args:
-        L: token's labeling matrix, (n_samples, n_dims).
-        pinv: pseudo-inverse of the centered free-flux coordinates.
-        Sigma: prior covariance of the free-flux coordinates.
-        inv_sig2: inverse measurement-noise variance.
-        Ik: identity matrix sized to L's second dimension.
-
-    ``logdet(I_k + inv_sig2 * B Sigma B^T)`` with ``B = (pinv @ centered(L)).T`` (k×D);
-    returns 0.0 when the determinant is non-positive.
-    """
-    B = (pinv @ (L - L.mean(0, keepdims=True))).T              # (k, D)
-    sign, val = np.linalg.slogdet(Ik + inv_sig2 * (B @ Sigma @ B.T))
-    return float(val) if sign > 0 else 0.0
-
-
-def select_significant_tokens_fast(theta, token_states, noise_std=0.01,
-                                   n_permutations=10, seed=42, ridge=1e-6):
-    """Fast significance-only token selection via the matrix-determinant lemma, for genome /
-    whole-body models where :func:`select_informative_tokens`'s dense d×d Fisher grams and
-    per-candidate d³ log-determinant are intractable. Each token's standalone information is a
-    k×k determinant (never forms a d×d gram); significance is a permutation test, and there is
-    no greedy redundancy step, so ``included == significant``.
-
-    Args:
-        theta: free-flux (+ reversibility) coordinates, (n_samples, d).
-        token_states: dict of token id -> per-sample MID array.
-        noise_std: assumed labeling measurement noise std.
-        n_permutations: permutations used for the significance-floor calibration.
-        seed: permutation random seed.
-        ridge: ridge regularization added to the prior covariance.
-
-    Returns ``(df, summary)`` matching :func:`select_informative_tokens`'s schema.
-    """
-    keys = list(token_states)
-    tc = np.asarray(theta, np.float64)
-    tc = tc - tc.mean(0, keepdims=True)
-    D = tc.shape[1]
-    pinv = np.linalg.pinv(tc)                                   # (D, n) — once
-    cov = np.atleast_2d(np.cov(tc.T))
-    Sigma = cov + ridge * np.trace(cov) / D * np.eye(D)        # F0^{-1} — once
-    inv_sig2 = 1.0 / (noise_std ** 2)
-    Ik = np.eye(np.asarray(token_states[keys[0]]).shape[1])
-
-    real = {t: _token_standalone_nats(np.asarray(token_states[t], np.float64),
-                                      pinv, Sigma, inv_sig2, Ik) for t in keys}
-    rng = np.random.default_rng(seed)
-    floor = 0.0
-    for _ in range(max(1, n_permutations)):
-        perm = rng.permutation(tc.shape[0])
-        for t in keys:
-            floor = max(floor, _token_standalone_nats(
-                np.asarray(token_states[t], np.float64)[perm], pinv, Sigma, inv_sig2, Ik))
-
-    rows = [{"metabolite_id": t.split("|", 1)[0], "isotopomer": t.split("|", 1)[1],
-             "standalone_nats": real[t], "marginal_nats": real[t],
-             "significant": real[t] > floor} for t in keys]
-    df = pd.DataFrame(rows).sort_values("standalone_nats", ascending=False).reset_index(drop=True)
-    df["rank"] = np.arange(len(df))
-    df["included"] = df["significant"]                         # no greedy trim
-    df = df[["metabolite_id", "isotopomer", "included", "significant", "rank",
-             "standalone_nats", "marginal_nats"]]
-    summary = {"n_free_flux_directions": D, "null_floor_nats": floor,
-               "n_selected": int(df["significant"].sum()),
-               "effective_rank": None, "eigenvalues": []}
     return df, summary

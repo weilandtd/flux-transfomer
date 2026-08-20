@@ -39,7 +39,7 @@ from .predict import (
 )
 
 # Utilities (null-space, token scoring, file conversion)
-from .utils import compute_sparse_nullspace, compute_token_scores, load_fisher_token_scores
+from .utils import compute_sparse_nullspace, load_fisher_token_scores
 
 # Data utilities
 from .data import (
@@ -68,7 +68,6 @@ from .data import (
 __all__ = [
     # Utilities
     'compute_sparse_nullspace',
-    'compute_token_scores',
     'load_fisher_token_scores',
     # Model
     'CrossAttention',

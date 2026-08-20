@@ -34,7 +34,7 @@ from sigmaflux.ai.data import (
     prepare_id_dataset,
     radial_embedding_table,
 )
-from sigmaflux.ai.utils import compute_token_scores, load_fisher_token_scores
+from sigmaflux.ai.utils import load_fisher_token_scores
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import (
@@ -161,35 +161,25 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
     return {'flux': flux_loss_fn, 'reversibility': rev_loss_fn}
 
 
-def _print_token_selection(token_information, labeling_df, fixed_idx, method,
-                           features_csv=None, n_original=None):
-    """Print a summary of the token scoring method and pool size.
+def _print_token_selection(labeling_df, fixed_idx, method, features_csv, n_original=None):
+    """Print a summary of the token selection method and pool size.
 
     Args:
-        token_information: per-token scores, or None if no scoring was run.
         labeling_df: labeling (MID) token table, used for the pool size.
         fixed_idx: indices of the fixed (measured) flux tokens.
-        method: token selection method name.
-        features_csv: pre-computed Fisher/D-optimal features file, if used.
+        method: token selection method name ('fisher' or 'fisher_fast').
+        features_csv: pre-computed Fisher significance features file.
         n_original: token count before any filtering, for reporting.
     """
     n_fx  = len(fixed_idx) if fixed_idx else 0
     n_all = labeling_df.shape[0]
 
-    if method == 'fisher' and features_csv:
-        method_label = f"Fisher/D-optimal (pre-computed: {features_csv})"
-        pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
-        if n_original is not None and n_original != n_all:
-            pool_str += f"  [filtered from {n_original}]"
-    elif token_information is not None:
-        method_label = method
-        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
-    else:
-        method_label = "all tokens (no scoring)"
-        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
+    pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
+    if n_original is not None and n_original != n_all:
+        pool_str += f"  [filtered from {n_original}]"
 
     print(f"\n=== Token Selection ===")
-    print(f"Method:  {method_label}")
+    print(f"Method:  {method} (pre-computed: {features_csv})")
     print(f"Pool:    {pool_str}")
 
 
@@ -224,15 +214,13 @@ def main(args):
         print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
 
     n_tokens_all = labeling_df.shape[0]
-    if getattr(args, 'token_selection_method', 'pca') in ('fisher', 'fisher_fast'):
-        if not os.path.isfile(args.features_csv):
-            raise FileNotFoundError(
-                f"token_selection_method='{getattr(args, 'token_selection_method')}' requires "
-                f"features.csv at {args.features_csv}. Run sigmaflux-select-features first."
-            )
-        _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
-        labeling_df = labeling_df[_fisher_mask.numpy()]
-        print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
+    if not os.path.isfile(args.features_csv):
+        raise FileNotFoundError(
+            f"features.csv not found at {args.features_csv}. Run sigmaflux-select-features first."
+        )
+    _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
+    labeling_df = labeling_df[_fisher_mask.numpy()]
+    print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
 
@@ -498,15 +486,7 @@ def main(args):
         corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
         obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
 
-        token_sel_method = getattr(args, 'token_selection_method', 'pca')
-        if token_sel_method in ('fisher', 'fisher_fast'):
-            token_information = None  # selection already applied via labeling_df filter above
-        else:
-            token_information = compute_token_scores(
-                L_c, method=token_sel_method,
-                n_components=getattr(args, 'n_pca_components', 50),
-                y_c=y_c, y_std_c=y_std_c,
-            )
+        token_information = None  # selection already applied via labeling_df filter above
 
         # Extend observability to include measured fluxes — basis modes that are
         # directly constrained by known fluxes are observable even if labeling alone
@@ -592,9 +572,9 @@ def main(args):
     )
 
     _print_token_selection(
-        token_information, labeling_df, fixed_idx,
-        method=getattr(args, 'token_selection_method', 'pca'),
-        features_csv=getattr(args, 'features_csv', None),
+        labeling_df, fixed_idx,
+        method=args.token_selection_method,
+        features_csv=args.features_csv,
         n_original=n_tokens_all,
     )
 
@@ -729,7 +709,7 @@ def main(args):
             "rev_log_std":       rev_log_std_np,
         },
         "token_information":      token_information.numpy() if token_information is not None else None,
-        "token_selection_method": getattr(args, 'token_selection_method', 'pca'),
+        "token_selection_method": args.token_selection_method,
         "h_reaction":           h_reaction,
         "h_type":               h_type,
         "flux_norm_stats":      flux_norm_stats,
@@ -830,10 +810,14 @@ def cli(argv=None):
         compartment_mix           = t.get("compartment_mix", False),
         exclude_extracellular     = t.get("exclude_extracellular", False),
         # Feature selection (from features: config section)
-        token_selection_method = f.get("token_selection_method", "pca"),
-        n_pca_components       = f.get("n_pca_components", 50),
+        token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
+    if args.token_selection_method not in ("fisher", "fisher_fast"):
+        raise ValueError(
+            "features.token_selection_method must be 'fisher' or 'fisher_fast', "
+            f"got {args.token_selection_method!r}"
+        )
 
     # ── Ensemble: N models (distinct seeds) sharing ONE split and ONE basis ──
     # ensemble_size > 1 -> members saved to <data_dir>/ensemble/model_{i}.pt.

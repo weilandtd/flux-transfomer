@@ -3,12 +3,16 @@ Extract informative labeling tokens for flux estimation — pipeline step 3.
 
 Sits between generate_training_data.py (step 2) and train_ai_model.py (step 4).
 Loads the generated HDF5 data, optionally filters to experimentally measurable
-metabolites via the mapping CSV, runs Fisher/D-optimal token selection, and
-writes features.csv to the run directory.
+metabolites via the mapping CSV, runs Fisher-information significance token
+selection, and writes features.csv to the run directory.
 
-The training script consumes this CSV automatically when
-  token_selection_method: fisher
-is set in the config's features: section.
+The training script requires this CSV and reads it automatically; the config's
+features: section must set
+  token_selection_method: fisher       # exact, cross-fit sensitivity Gram
+or
+  token_selection_method: fisher_fast  # approximate, single-shot Gram
+-- both run the identical significance test, differing only in how the
+sensitivity Gram is estimated.
 
 Usage:
     sigmaflux-select-features --config paper/configs/i_orientalis.yaml --data-dir <run_dir>
@@ -20,6 +24,8 @@ from sigmaflux.ai.data import load_data
 from sigmaflux.ai import features as feat_lib
 from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 
+_METHODS = {"fisher", "fisher_fast"}
+
 
 def main(args):
     cfg, root = load_config(args.config, getattr(args, "root", None))
@@ -28,17 +34,18 @@ def main(args):
     n_samples           = fc.get("n_samples", 10000)
     subsample_n         = fc.get("subsample_n", None)
     noise_std           = fc.get("noise_std", 0.02)
-    gain_threshold      = fc.get("gain_threshold", 0.01)
-    rel_gain_threshold  = fc.get("rel_gain_threshold", 0.05)
     n_permutations      = fc.get("n_permutations", 5)
-    budget              = fc.get("budget", None)
-    token_filter        = fc.get("token_filter", "significant")
     include_rev         = fc.get("include_reversibilities", True)
     run_mi_audit        = fc.get("run_mi_audit", False)
     restrict            = fc.get("restrict_to_mapped", False)
     out_name            = fc.get("output", "features.csv")
     method              = fc.get("token_selection_method", "fisher")
     seed                = cfg.get("seed", 42)
+
+    if method not in _METHODS:
+        raise ValueError(
+            f"features.token_selection_method must be one of {sorted(_METHODS)}, got {method!r}"
+        )
 
     output_path = os.path.join(args.data_dir, out_name)
 
@@ -77,31 +84,21 @@ def main(args):
         else:
             print("WARNING: restrict_to_mapped=true but mapping_csv not found — skipping filter")
 
-    if method == "fisher_fast":
-        print("\nToken selection: fisher_fast (det-lemma significance, no greedy) ...")
-        df, summary = feat_lib.select_significant_tokens_fast(
-            theta, token_states,
-            noise_std=noise_std,
-            n_permutations=n_permutations,
-            seed=seed,
-        )
-    else:
-        df, summary = feat_lib.select_informative_tokens(
-            theta, token_states,
-            noise_std=noise_std,
-            gain_threshold=gain_threshold,
-            rel_gain_threshold=rel_gain_threshold,
-            n_permutations=n_permutations,
-            budget=budget,
-            token_filter=token_filter,
-            run_mi_audit=run_mi_audit,
-        )
+    print(f"\nToken selection: {method} "
+          f"({'exact cross-fit' if method == 'fisher' else 'approximate single-shot'} "
+          f"sensitivity Gram) ...")
+    df, summary = feat_lib.select_significant_tokens(
+        theta, token_states,
+        noise_std=noise_std,
+        n_permutations=n_permutations,
+        seed=seed,
+        exact=(method != "fisher_fast"),
+        run_mi_audit=run_mi_audit,
+    )
 
     df.to_csv(output_path, index=False)
 
     n_included = int(df["included"].sum())
-    n_sig      = int(df["significant"].sum())
-    n_sel      = summary.get("n_selected", 0)
 
     print("\n=======================  FEATURE SELECTION SUMMARY  =======================")
     print(f"Free-flux directions                     : {summary['n_free_flux_directions']}")
@@ -110,13 +107,9 @@ def main(args):
         print(f"Effective rank                           : {eff_rank:.2f}")
     print(f"Noise std (σ)                            : {noise_std}")
     print(f"Null floor (nats, {n_permutations} permutations)      : {summary.get('null_floor_nats', 0.0):.4f}")
-    print(f"Gain threshold (abs / rel)               : {gain_threshold} / {rel_gain_threshold}")
-    print(f"Token filter                             : {token_filter}")
     print("-" * 74)
     print(f"TOTAL candidate tokens                   : {len(df)}")
-    print(f"  ... significant (standalone > floor)   : {n_sig}")
-    print(f"  ... greedy D-optimal selected          : {n_sel}")
-    print(f"  ... INCLUDED in training ({token_filter:10s}) : {n_included}")
+    print(f"  ... INCLUDED in training (significant)  : {n_included}")
     if n_included > 0:
         print(f"  unique metabolites included            : "
               f"{df.loc[df['included'], 'metabolite_id'].nunique()}")
