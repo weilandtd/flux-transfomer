@@ -439,6 +439,9 @@ def filter_conv_inputs_with_indices(emu_inputs):
 def convolution(core_met_ix, emu_states, origin_set, device, dtype):
     """Convolve the MIDs of an OriginSet's member EMUs pairwise into the joint MID distribution.
 
+    A singleton OriginSet has no partner to convolve with, so its own MID is
+    already the joint distribution.
+
     Args:
         core_met_ix: per-subnet mapping from EMU to row index in emu_states.
         emu_states: solved MID tensors, keyed by subnet size.
@@ -447,6 +450,10 @@ def convolution(core_met_ix, emu_states, origin_set, device, dtype):
         dtype: torch dtype for intermediate tensors.
     """
     emu_size = origin_set.size
+
+    if len(origin_set) == 1:
+        value = origin_set._values[0]
+        return emu_states[value.size][core_met_ix[value.size][value]]
 
     if len(origin_set) > 2:
         emus = origin_set._values 
