@@ -26,7 +26,7 @@ sampling:
   processes: 8
   method: optgp        # hopsy | optgp | achr
   fva: true
-  ko: false
+  ko: true
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
@@ -86,25 +86,22 @@ labeling:
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
-  restrict_to_mapped: true          # only consider metabolites in mapping_csv
-  token_selection_method: fisher    # pca | maxr | fisher | fisher_fast
-  token_dropout: 0.1                # per-token labeling dropout during training
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
+  token_dropout: 0.2                # per-token labeling dropout during training
 
-  # Fisher selection parameters — all values that determine which tokens are included:
+  # Fisher significance-test parameters:
   noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
-  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
   n_permutations: 10         # null-calibration permutations used to set significance floor
-  token_filter: selected       # significant | selected — which tokens are passed to training
   include_reversibilities: true  # append log1p-z-scored reversibilities to θ for feature selection
-  budget: null                    # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
   output_model: sc_transformer.pt
   ensemble_size: 20             # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
-  epochs: 150
-  batch_size: 512
+  epochs: 1000
+  early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
+  batch_size: 256
   learning_rate: 0.001
   warmup_epochs: 5
   gradient_clip: 1.0
@@ -128,6 +125,7 @@ training:
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
   flux_token_dropout: 0.2
+  normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
   compartment_mix: false       # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
 

@@ -25,7 +25,7 @@ sampling:
   processes: 8
   method: optgp # hopsy | optgp | achr
   fva: true
-  ko: false
+  ko: true
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
@@ -90,18 +90,14 @@ labeling:
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
-  restrict_to_mapped: True          # only consider metabolites in mapping_csv
-  token_selection_method: fisher    # pca | maxr | fisher | fisher_fast
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
   token_dropout: 0.2                # per-token labeling dropout during training
 
-  # Fisher selection parameters — all values that determine which tokens are included:
+  # Fisher significance-test parameters:
   noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
-  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
   n_permutations: 10              # null-calibration permutations used to set significance floor
-  token_filter: selected          # significant | selected — which tokens are passed to training
   include_reversibilities: true    # append log1p-z-scored reversibilities to θ for feature selection
-  budget: null                    # hard cap on token count (null = uncapped)
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -132,7 +128,7 @@ training:
   h_reaction: 8    # reaction identities (n_rxns reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  flux_token_dropout: 0.5       # flux masking rate: per-batch prob. each measured-flux token is masked
+  flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
   compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
   exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
@@ -156,7 +152,7 @@ training:
   labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
   loss: variance                  # variance | mse
   null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
-  flux_loss_space: basis          # basis | flux | basis — train in null-space, reconstructed flux, or combination
+  flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   #mixed_flux_weight: 0.0         # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
   measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes

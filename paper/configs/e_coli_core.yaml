@@ -25,12 +25,12 @@ sampling:
   processes: 8
   method: optgp
   fva: true
-  ko: false
+  ko: true
 
   stratified_sampling:
     enabled: true
     n_subsamples: 500
-    n_bins: 20
+    n_bins: 10
     reactions: null               # null → training.measured_fluxes
 
   # Absolute units, mmol/gDW/h, so growth is a real specific growth rate.
@@ -69,15 +69,11 @@ labeling:
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
-  token_selection_method: fisher
+  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
   token_dropout: 0.2
   noise_std: 0.01
-  gain_threshold: 0.01
-  rel_gain_threshold: 0.01
   n_permutations: 10
-  token_filter: selected
   include_reversibilities: true
-  budget: null
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -105,7 +101,7 @@ training:
   h_reaction: 7
   h_type: 2
 
-  flux_token_dropout: 0.5
+  flux_token_dropout: 0.2
   normalize_mids: false
   compartment_mix: false
   exclude_extracellular: true
