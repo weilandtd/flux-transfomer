@@ -19,6 +19,33 @@ from cobra.io.json import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
 
+def _maybe_decode(x):
+    """Bytes come back from h5py as ``numpy.bytes_``; numeric labels do not."""
+    return x.decode() if isinstance(x, bytes) else x
+
+
+def _read_axis(g, prefix):
+    """A pandas Index or MultiIndex stored under ``prefix`` (``'axis0'``/``'axis1'``).
+
+    A flat axis is one dataset, ``g[prefix]``. A MultiIndex axis (e.g. labeling's
+    3-level Tracer/Metabolite/Isotopomer row index, or an ensemble AI benchmark's
+    (sample, member) column index) is stored as one ``{prefix}_level{i}`` (the
+    categories) plus ``{prefix}_label{i}`` (the per-column category code) dataset
+    pair per level.
+    """
+    if f'{prefix}_level0' not in g:
+        return pd.Index([_maybe_decode(x) for x in g[prefix][:]])
+    n_levels = sum(1 for k in g.keys() if k.startswith(f'{prefix}_level'))
+    arrays, names = [], []
+    for i in range(n_levels):
+        ds   = g[f'{prefix}_level{i}']
+        lvls = [_maybe_decode(x) for x in ds[:]]
+        lbs  = g[f'{prefix}_label{i}'][:]
+        arrays.append([lvls[lb] for lb in lbs])
+        names.append(ds.attrs.get('name', b'').decode())
+    return pd.MultiIndex.from_arrays(arrays, names=names)
+
+
 def _read_hdf(filepath, key):
     """Read a pandas HDF5 file using h5py, bypassing the broken tables package.
 
@@ -28,23 +55,9 @@ def _read_hdf(filepath, key):
     """
     with h5py.File(filepath, 'r') as f:
         g = f[key]
-        columns = g['axis0'][:]
+        columns = _read_axis(g, 'axis0')
+        index   = _read_axis(g, 'axis1')
         values  = g['block0_values'][:]  # (n_rows, n_cols)
-
-        if 'axis1_level0' in g:
-            # MultiIndex (labeling data has 3 levels: Tracer, Metabolite, Isotopomer)
-            n_levels = sum(1 for k in g.keys() if k.startswith('axis1_level'))
-            arrays, names = [], []
-            for i in range(n_levels):
-                ds   = g[f'axis1_level{i}']
-                lvls = [x.decode() for x in ds[:]]
-                lbs  = g[f'axis1_label{i}'][:]
-                arrays.append([lvls[lb] for lb in lbs])
-                names.append(ds.attrs.get('name', b'').decode())
-            index = pd.MultiIndex.from_arrays(arrays, names=names)
-        else:
-            index = pd.Index([x.decode() for x in g['axis1'][:]])
-
         return pd.DataFrame(values, index=index, columns=columns)
 
 
