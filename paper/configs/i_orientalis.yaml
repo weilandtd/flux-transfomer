@@ -32,8 +32,8 @@ sampling:
   # reactions: null falls back to training.measured_fluxes.
   stratified_sampling:
     enabled: true
-    n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
-    n_bins: 10                    # equal-width bins along each measured reaction's FVA range
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
+    n_bins: 20                    # equal-width bins along each measured reaction's FVA range
     reactions: null               # null → training.measured_fluxes; or explicit list
 
   growth:

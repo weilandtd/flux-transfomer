@@ -28,8 +28,8 @@ sampling:
 
   stratified_sampling:
     enabled: true
-    n_subsamples: 500
-    n_bins: 10
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
+    n_bins: 20
     reactions: null               # null → training.measured_fluxes
 
   # Absolute units, mmol/gDW/h, so growth is a real specific growth rate. The
