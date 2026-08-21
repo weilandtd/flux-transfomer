@@ -10,6 +10,7 @@ Example:
 
 import argparse
 import datetime
+import math
 import os
 import warnings
 from pathlib import Path
@@ -408,12 +409,30 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
             bin_hi = lo + (b + 1) * bin_width
             with model:
                 rxn = model.reactions.get_by_id(rxn_id)
-                rxn.bounds = (max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi))
+                # The bin window is cut from *this reaction's own* WT FVA range, so it
+                # normally sits inside [rxn.lower_bound, rxn.upper_bound] by construction.
+                # That stops holding when the caller has separately forced rxn's bounds to
+                # (0, 0) -- e.g. sampling.ko knocking this exact reaction out while it is
+                # also one of the strata reactions -- and the two windows may not overlap
+                # at all, which cobra's bounds setter raises on rather than reports as
+                # infeasible. Treat "no overlap" the same as "infeasible": skip the stratum.
+                new_lo, new_hi = max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi)
+                if new_lo > new_hi:
+                    print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — outside current "
+                          f"bounds [{rxn.lower_bound:g}, {rxn.upper_bound:g}] "
+                          f"(e.g. this reaction is under an active knockout)")
+                    continue
+                rxn.bounds = (new_lo, new_hi)
                 if model.optimize().status != "optimal":
                     print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — infeasible")
                     continue
                 all_strata.append(_do_sample_n(model, s, n_subsamples, seed + b))
         print(f"  [stratify] {rxn_id}: {n_bins} strata × {n_subsamples} samples")
+    # Every stratum can be skipped -- e.g. all of `reactions` were knocked out in this
+    # call -- and pd.concat([]) raises rather than giving an empty pool; an empty pool
+    # is correct here (the caller's pd.concat over KO iterations tolerates it).
+    if not all_strata:
+        return pd.DataFrame(columns=[r.id for r in model.reactions])
     return pd.concat(all_strata, ignore_index=True)
 
 
@@ -528,16 +547,31 @@ def main(cfg, output_dir_override=None):
 
     if strat_cfg.get("enabled", False):
         n_bins = strat_cfg.get("n_bins", 5)
-        n_subsamples = strat_cfg["n_subsamples"]
-        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × {n_subsamples} samples/stratum...")
+        # KO count decides the per-pass sample budget below, so it has to be known
+        # before that budget is resolved -- screen once here rather than inside the
+        # loop that used to follow the WT call.
+        nonessential = screen_nonessential(model) if s.get("ko", False) else []
+        n_ko_passes = 1 + len(nonessential)  # WT + every KO
+        n_subsamples_cfg = strat_cfg["n_subsamples"]
+        if n_subsamples_cfg == "auto":
+            # Each KO reruns the full stratified pass, and draw_quasi_uniform only
+            # keeps n_final of whatever gets drawn -- a fixed n_subsamples multiplies
+            # by n_ko_passes for no benefit (measured: r_toruloides drew ~6.08M raw
+            # samples across 152 passes for a 10k final pool). Spread a ~n_final-sized
+            # budget per reaction across its bins and every pass instead, so the total
+            # pool stays about `len(sub_rxns) x n_final`, not `... x n_ko_passes`.
+            n_subsamples = math.ceil(n_final / n_bins / n_ko_passes)
+            print(f"  n_subsamples=auto -> {n_subsamples} (ceil({n_final}/{n_bins}/{n_ko_passes}))")
+        else:
+            n_subsamples = n_subsamples_cfg
+        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × "
+              f"{n_subsamples} samples/stratum × {n_ko_passes} passes (WT + {len(nonessential)} KO)...")
         all_strata = [stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
-        if s.get("ko", False):
-            nonessential = screen_nonessential(model)
-            for i, rxn_id in enumerate(nonessential):
-                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
-                with model:
-                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                    all_strata.append(stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
+        for i, rxn_id in enumerate(nonessential):
+            print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
+            with model:
+                model.reactions.get_by_id(rxn_id).bounds = (0, 0)
+                all_strata.append(stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
         samples = pd.concat(all_strata, ignore_index=True)
         print(f"Stratified pool: {len(samples)} samples")
         diagnose_pool_coverage(samples, fva_result, sub_rxns, n_bins, label="Stratified pool")
