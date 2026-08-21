@@ -22,7 +22,7 @@ sampling:
   n_samples: 10000
   thinning: 100
   processes: 8
-  method: optgp
+  method: achr
   fva: true
   ko: true
 

@@ -24,6 +24,7 @@ from cobra.io.json import load_json_model
 from cobra.sampling import sample
 
 from ..core.utils import add_dilution_inputs, media_dilution_targets
+from .reusable_sampler import ReusableSampler
 
 try:
     from cobra.sampling import HopsySampler
@@ -381,13 +382,13 @@ def _do_sample_n(model, s, n_samples, seed):
     return _do_sample(model, dict(s, n_samples=n_samples), seed)
 
 
-def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
+def stratified_sample(sampler, s, fva, reactions, n_bins, n_subsamples, seed):
     """
     For each variable measured reaction, run one constrained MCMC chain per bin.
     Returns a DataFrame containing all strata concatenated.
 
     Args:
-        model: model to sample from.
+        sampler: ReusableSampler to draw from.
         s: sampling config (method, thinning, processes, ...).
         fva: per-reaction FVA min/max, used to define the bin bounds.
         reactions: reaction ids to stratify on.
@@ -395,6 +396,7 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
         n_subsamples: samples drawn per stratum.
         seed: base seed; offset per bin.
     """
+    model = sampler.model
     all_strata = []
     for rxn_id in reactions:
         if rxn_id not in model.reactions or rxn_id not in fva.index:
@@ -407,26 +409,25 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
         for b in range(n_bins):
             bin_lo = lo + b * bin_width
             bin_hi = lo + (b + 1) * bin_width
-            with model:
-                rxn = model.reactions.get_by_id(rxn_id)
-                # The bin window is cut from *this reaction's own* WT FVA range, so it
-                # normally sits inside [rxn.lower_bound, rxn.upper_bound] by construction.
-                # That stops holding when the caller has separately forced rxn's bounds to
-                # (0, 0) -- e.g. sampling.ko knocking this exact reaction out while it is
-                # also one of the strata reactions -- and the two windows may not overlap
-                # at all, which cobra's bounds setter raises on rather than reports as
-                # infeasible. Treat "no overlap" the same as "infeasible": skip the stratum.
-                new_lo, new_hi = max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi)
-                if new_lo > new_hi:
-                    print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — outside current "
-                          f"bounds [{rxn.lower_bound:g}, {rxn.upper_bound:g}] "
-                          f"(e.g. this reaction is under an active knockout)")
-                    continue
-                rxn.bounds = (new_lo, new_hi)
+            rxn = model.reactions.get_by_id(rxn_id)
+            # The bin window is cut from *this reaction's own* WT FVA range, so it
+            # normally sits inside [rxn.lower_bound, rxn.upper_bound] by construction.
+            # That stops holding when the caller has separately forced rxn's bounds to
+            # (0, 0) -- e.g. sampling.ko knocking this exact reaction out while it is
+            # also one of the strata reactions -- and the two windows may not overlap
+            # at all, which cobra's bounds setter raises on rather than reports as
+            # infeasible. Treat "no overlap" the same as "infeasible": skip the stratum.
+            new_lo, new_hi = max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi)
+            if new_lo > new_hi:
+                print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — outside current "
+                      f"bounds [{rxn.lower_bound:g}, {rxn.upper_bound:g}] "
+                      f"(e.g. this reaction is under an active knockout)")
+                continue
+            with sampler.temporary_bounds({rxn_id: (new_lo, new_hi)}):
                 if model.optimize().status != "optimal":
                     print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — infeasible")
                     continue
-                all_strata.append(_do_sample_n(model, s, n_subsamples, seed + b))
+                all_strata.append(_do_sample_n(sampler, s, n_subsamples, seed + b))
         print(f"  [stratify] {rxn_id}: {n_bins} strata × {n_subsamples} samples")
     # Every stratum can be skipped -- e.g. all of `reactions` were knocked out in this
     # call -- and pd.concat([]) raises rather than giving an empty pool; an empty pool
@@ -436,11 +437,13 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
     return pd.concat(all_strata, ignore_index=True)
 
 
-def _do_sample(model, s, seed):
+def _do_sample(model_or_sampler, s, seed):
     # optgp, not hopsy: HopsySampler ships only on the cobrapy devel branch, so a released
     # cobra cannot honour a hopsy default. Every config in paper/configs sets this explicitly.
     method = s.get("method", "optgp")
     if method == "hopsy":
+        model = (model_or_sampler.model if isinstance(model_or_sampler, ReusableSampler)
+                  else model_or_sampler)
         if HopsySampler is None:
             warnings.warn(
                 "method: hopsy was requested but HopsySampler is unavailable — SAMPLING WITH "
@@ -460,7 +463,7 @@ def _do_sample(model, s, seed):
         proposal_cls = getattr(_hopsy, _HOPSY_PROPOSALS[proposal_key])
         sol = model.optimize()
         assert sol.status == "optimal", f"Model infeasible before sampling: {sol.status}"
-        sampler = HopsySampler(
+        hopsy_sampler = HopsySampler(
             model,
             sampler=proposal_cls,
             thinning=s["thinning"],
@@ -469,9 +472,11 @@ def _do_sample(model, s, seed):
             seed=seed,
             rounding=s.get("rounding", True),
         )
-        return sampler.sample(s["n_samples"])
+        return hopsy_sampler.sample(s["n_samples"])
+    if isinstance(model_or_sampler, ReusableSampler):
+        return model_or_sampler.sample(s["n_samples"], seed=seed)
     return sample(
-        model,
+        model_or_sampler,
         n=s["n_samples"],
         thinning=s["thinning"],
         processes=s["processes"],
@@ -488,6 +493,14 @@ def main(cfg, output_dir_override=None):
     print(f"Loading model: {cfg['model_file']}")
     model = load_json_model(resolve_path(cfg["model_file"], cfg.get("_root")))
     model.solver.configuration.tolerances.feasibility = 1e-9
+    # TEMPORARY, for a real glpk-vs-gurobi A/B run on e_coli genome-scale -- not a
+    # supported config surface, remove after the comparison is decided either way.
+    _solver_override = os.environ.get("SIGMAFLUX_SOLVER_OVERRIDE")
+    if _solver_override:
+        model.solver = _solver_override
+        if _solver_override == "gurobi":
+            model.solver.configuration.threads = 1
+        print(f"  [SIGMAFLUX_SOLVER_OVERRIDE] solver forced to {_solver_override!r}")
 
     apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
     # Before dilution-target detection: a reversible-transporter override (e.g.
@@ -545,6 +558,16 @@ def main(cfg, output_dir_override=None):
     strat_cfg = s.get("stratified_sampling", {})
     n_final = s["n_samples"]
 
+    # The sampler is built once here and reused for every KO/stratum below -- only the
+    # bounds of the affected reaction(s) change from this point on, via
+    # sampler.temporary_bounds(), instead of rebuilding a sampler per bounds change. hopsy
+    # is devel-only and unavailable in a released cobra (see _do_sample), so it never
+    # actually reaches sampler.sample(); "optgp" here just gives it working warmup/problem
+    # bookkeeping to sample from.
+    method = s.get("method", "optgp")
+    sampler = ReusableSampler(model, method=("optgp" if method == "hopsy" else method),
+                              thinning=s["thinning"], processes=s["processes"], seed=cfg["seed"])
+
     if strat_cfg.get("enabled", False):
         n_bins = strat_cfg.get("n_bins", 5)
         # KO count decides the per-pass sample budget below, so it has to be known
@@ -566,26 +589,24 @@ def main(cfg, output_dir_override=None):
             n_subsamples = n_subsamples_cfg
         print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × "
               f"{n_subsamples} samples/stratum × {n_ko_passes} passes (WT + {len(nonessential)} KO)...")
-        all_strata = [stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
+        all_strata = [stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
         for i, rxn_id in enumerate(nonessential):
             print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
-            with model:
-                model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                all_strata.append(stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
+            with sampler.temporary_bounds({rxn_id: (0, 0)}):
+                all_strata.append(stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
         samples = pd.concat(all_strata, ignore_index=True)
         print(f"Stratified pool: {len(samples)} samples")
         diagnose_pool_coverage(samples, fva_result, sub_rxns, n_bins, label="Stratified pool")
         samples = draw_quasi_uniform(samples, fva_result, n_final, n_bins, sub_rxns)
     else:
         print(f"Sampling {n_final} flux distributions (WT)...")
-        all_samples = [_do_sample(model, s, cfg["seed"])]
+        all_samples = [_do_sample(sampler, s, cfg["seed"])]
         if s.get("ko", False):
             nonessential = screen_nonessential(model)
             for i, rxn_id in enumerate(nonessential):
                 print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({n_final} samples)")
-                with model:
-                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                    all_samples.append(_do_sample(model, s, cfg["seed"] + i + 1))
+                with sampler.temporary_bounds({rxn_id: (0, 0)}):
+                    all_samples.append(_do_sample(sampler, s, cfg["seed"] + i + 1))
         samples = pd.concat(all_samples, ignore_index=True) if len(all_samples) > 1 else all_samples[0]
 
     samples_path = os.path.join(output_dir, "flux_samples.csv")

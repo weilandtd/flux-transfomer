@@ -21,7 +21,7 @@ sampling:
   n_samples: 10000   # final output written to flux_samples.csv
   thinning: 100
   processes: 8
-  method: optgp        # hopsy | optgp | achr
+  method: achr        # hopsy | optgp | achr
   fva: true
   ko: true
 
