@@ -131,10 +131,10 @@ training:
   val_fraction: 0.2
   max_samples: 10000
 
-  combined_dim: 128
+  combined_dim: 256
   num_attn_heads: 8
   num_transformer_layers: 4
-  dropout: 0.3
+  dropout: 0.2
 
   # 626 metabolites and ~740 reactions — the largest network here, so the compound
   # and reaction vocabularies need more harmonics than the yeasts.

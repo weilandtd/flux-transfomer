@@ -174,10 +174,10 @@ training:
   max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
-  combined_dim: 128       # d_model
+  combined_dim: 256       # d_model
   num_attn_heads: 8       # n_head
   num_transformer_layers: 4
-  dropout: 0.3
+  dropout: 0.2
 
   # Radial embedding dimensions (number of harmonics H per vocabulary).
   # Resulting embedding vector length = 2*H.
