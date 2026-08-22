@@ -92,8 +92,8 @@ labeling:
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true       # drop _e tokens (extracellular pools not measured intracellularly in yeast)
   token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  token_dropout: 0.2                # per-token labeling dropout during training
 
   # Fisher significance-test parameters:
   noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
@@ -130,9 +130,9 @@ training:
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
   flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
+  labeling_token_dropout: 0.2   # per-token labeling dropout during training
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
   compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
-  exclude_extracellular: true  # drop _e tokens (extracellular pools not measured intracellularly in yeast)
 
   # Measured fluxes fed as soft inputs through the fusion layer.
   # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS

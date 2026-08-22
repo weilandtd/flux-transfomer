@@ -70,8 +70,8 @@ labeling:
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true
   token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  token_dropout: 0.2
   noise_std: 0.01
   n_permutations: 10
   include_reversibilities: true
@@ -103,9 +103,9 @@ training:
   h_type: 2
 
   flux_token_dropout: 0.2
+  labeling_token_dropout: 0.2
   normalize_mids: false
   compartment_mix: false
-  exclude_extracellular: true
 
   # What the published MFA constrains: glucose uptake (its basis) and acetate yield.
   # O2 and CO2 are deliberately absent — off-gas rates are hard to measure and were

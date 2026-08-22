@@ -111,8 +111,8 @@ labeling:
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true
   token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  token_dropout: 0.2
   noise_std: 0.01
   n_permutations: 10
   include_reversibilities: true
@@ -145,9 +145,9 @@ training:
   h_type: 2
 
   flux_token_dropout: 0.2
+  labeling_token_dropout: 0.2
   normalize_mids: false
   compartment_mix: false
-  exclude_extracellular: true
 
   # iAF1260 has a single lumped biomass, so there is no PROTEIN/RNA/DNA/CARB/LIPID
   # split to measure. What the published MFA constrains is glucose uptake (its
