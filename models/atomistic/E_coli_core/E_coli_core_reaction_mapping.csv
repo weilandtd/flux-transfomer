@@ -1,0 +1,80 @@
+core_id,genomescale_id,name,reaction,our_id,match_type,note
+1,GLCptspp,Gluc.Ext + PEP -> G6P + Pyr,Gluc.Ext + PEP -> G6P + Pyr,gluc_up,exact,"Confirmed: same carbon mapping (glucose transport + activation into G6P) as the real PTS mechanism -- the PEP-vs-ATP cofactor difference doesn't matter for this crosswalk. Model also has R65 (ATP + Gluc_pre -> G6P), an equivalent alternative; mapped to gluc_up since it chains directly off EX_Gluc_e via the shared Gluc_e pool."
+2,PGI,G6P <=> F6P (net),G6P <=> F6P (net),R1,exact,
+3,PFK,F6P + ATP -> FBP,F6P + ATP -> FBP,R2,exact,
+4,FBP,FBP -> F6P,FBP -> F6P,R2x,exact,
+5,FBA,FBP <=> DHAP + GAP (net),FBP <=> DHAP + GAP (net),R3,exact,
+6,TPI,DHAP <=> GAP (net),DHAP <=> GAP (net),R4,exact,
+7,GAPD;PGK,GAP <=> 3PG + ATP + NADH (net),GAP <=> 3PG + ATP + NADH (net),R5,exact,
+8,PGM;ENO,3PG <=> PEP (net),3PG <=> PEP (net),R6,exact,
+9,PYK,PEP <=> Pyr + ATP (net),PEP <=> Pyr + ATP (net),R7,exact,
+10,G6PDH2r;PGL,G6P -> 6PG + NADPH,G6P -> 6PG + NADPH,R8,exact,
+11,GND,6PG -> Ru5P + CO2 + NADPH,6PG -> Ru5P + CO2 + NADPH,R9,exact,
+12,RPE,Ru5P <=> X5P (net),Ru5P <=> X5P (net),R10,exact,
+13,RPI,Ru5P <=> R5P (net),Ru5P <=> R5P (net),R11,exact,
+14,TKT1,X5P <=> GAP + E-C2 (net),X5P <=> GAP + E-C2 (net),R12,different-decomposition,"L&A splits non-ox PPP into E-C2/E-C3 half-reactions (core_id 14-18); we use 3 combined reactions R12/R13/R14 -- needs a many-to-many mapping, not 1:1"
+15,TKT2,F6P <=> E4P + E-C2 (net),F6P <=> E4P + E-C2 (net),R14,different-decomposition,see core_id 14
+16,TKT1,S7P <=> R5P + E-C2 (net),S7P <=> R5P + E-C2 (net),R12,different-decomposition,see core_id 14
+17,TALA,F6P <=> GAP + E-C3 (net),F6P <=> GAP + E-C3 (net),R13,different-decomposition,see core_id 14
+18,TALA,S7P <=> E4P + E-C3 (net),S7P <=> E4P + E-C3 (net),R13,different-decomposition,see core_id 14
+19,EDD,6PG -> KDPG,6PG -> KDPG,R15,exact,
+20,EDA,KDPG -> GAP + Pyr,KDPG -> GAP + Pyr,R16,exact,
+21,PDH,Pyr -> AcCoA + CO2 + NADH,Pyr -> AcCoA + CO2 + NADH,R17,exact,
+22,CS,AcCoA + OAC -> Cit,AcCoA + OAC -> Cit,R18,exact,
+23,ACONTa;ACONTb,Cit <=> ICit (net),Cit <=> ICit (net),R19,exact,
+24,ICDHyr,ICit -> AKG + CO2 + NADPH,ICit -> AKG + CO2 + NADPH,R20,exact-fwd,ICDHyr forward
+25,ICDHyr,AKG + CO2.int + NADPH -> Icit,AKG + CO2.int + NADPH -> Icit,R20,exchange-pair,ICDHyr reverse component of the same reversible R20 -- not a separate reaction
+26,AKGDH,AKG -> SucCoA + CO2 + NADH,AKG -> SucCoA + CO2 + NADH,R21,exact-fwd,AKGDH forward
+27,AKGDH,SucCoA + NADH + CO2.int -> AKG,SucCoA + NADH + CO2.int -> AKG,R21,exchange-pair,AKGDH reverse component of the same reversible R21
+28,SUCOAS,SucCoA <=> Suc + ATP (net),SucCoA <=> Suc + ATP (net),R22,exact,
+29,SUCDi,Suc <=> Fum + FADH2 (net),Suc <=> Fum + FADH2 (net),R23,exact,
+30,FUM,Fum <=> Mal (net),Fum <=> Mal (net),R24,exact,
+31,MDH,Mal <=> OAC + NADH (net),Mal <=> OAC + NADH (net),R25,exact,
+32,ICL,ICit <=> Glyox + Suc (net),ICit <=> Glyox + Suc (net),GlxShnt1,exact-synonym,"our metabolite id is Glx, L&A's text says Glyox -- same compound (glyoxylate)"
+33,MALS,AcCoA + Glyox -> Mal,AcCoA + Glyox -> Mal,GlxShnt2,exact-synonym,same Glx/Glyox synonym as core_id 32
+34,ME2,Mal -> Pyr + CO2 + NADPH,Mal -> Pyr + CO2 + NADPH,R26,exact,
+35,ME1,Mal -> Pyr + CO2 + NADH,Mal -> Pyr + CO2 + NADH,R27,exact,
+36,PPC,PEP + CO2.int -> OAC,PEP + CO2.int -> OAC,R28,exact-synonym,L&A's CO2.int is our plain CO2
+37,PPCK,OAC + ATP -> PEP + CO2,OAC + ATP -> PEP + CO2,R29,exact,
+38,PTAr;ACKr,AcCoA   <=> Ac + ATP (net),AcCoA   <=> Ac + ATP (net),R30,exact,
+39,GLUDy,AKG + NADPH  + NH3 -> Glu,AKG + NADPH  + NH3 -> Glu,R35,exact,
+40,GLNS,Glu + ATP  + NH3 -> Gln,Glu + ATP  + NH3 -> Gln,R36,exact,
+41,lumped:Pro biosynth,Glu + 2 NADPH + ATP -> Pro,Glu + 2 NADPH + ATP -> Pro,R37,exact,
+42,lumped:Arg biosynth,Glu + CO2 + Gln + NADPH + Asp + AcCoA + 5 ATP -> Arg + AKG  + Fum + Ac,Glu + CO2 + Gln + NADPH + Asp + AcCoA + 5 ATP -> Arg + AKG  + Fum + Ac,R38,exact,
+43,ASPTA,OAC + Glu -> Asp + AKG,OAC + Glu -> Asp + AKG,R39,exact,
+44,ASNS1,Asp  + 2 ATP + NH3 -> Asn,Asp  + 2 ATP + NH3 -> Asn,R40,exact,
+45,ALATA_L,Pyr + Glu -> Ala + AKG,Pyr + Glu -> Ala + AKG,R41,exact,
+46,lumped:PGCD;PSERT;PSP,3PG + Glu  -> Ser + NADH + AKG,3PG + Glu  -> Ser + NADH + AKG,R42,exact,
+47,GHMT2r,Ser <=> Gly + MEETHF (net),Ser <=> Gly + MEETHF (net),R43,exact,
+48,GLYCL,Gly -> CO2 + MEETHF  + NADH + NH3,Gly -> CO2 + MEETHF  + NADH + NH3,R44,exact-fwd,GLYCL forward
+49,GLYCL,CO2.int + MEETHF  + NADH -+ NH3 > Gly,CO2.int + MEETHF  + NADH -+ NH3 > Gly,R44,exchange-pair,GLYCL reverse component -- source row text is corrupted (-+ / >) but this is the reverse of core_id 48
+50,lumped:THRAr,Thr  <=> Gly + AcCoA + NADH (net),Thr  <=> Gly + AcCoA + NADH (net),R45,exact,
+51,lumped:Cys biosynth,Ser + AcCoA + SO4 + 3 ATP + 4 NADPH + SO4 -> Cys + Ac,Ser + AcCoA + SO4 + 3 ATP + 4 NADPH + SO4 -> Cys + Ac,R46,exact,
+52,lumped:DAP biosynth,Asp + Pyr + Glu + 2 NADPH + ATP + SucCoA -> LL-DAP + AKG + Suc,Asp + Pyr + Glu + 2 NADPH + ATP + SucCoA -> LL-DAP + AKG + Suc,,near-match,0.80 overlap with R47 -- same reaction family (DAP biosynthesis) but metabolite set doesn't fully agree; check R47's exact stoichiometry by hand
+53,DAPDC,LL-DAP -> Lys + CO2,LL-DAP -> Lys + CO2,R48,exact-synonym,L&A's LL-DAP is our LLDAP (hyphen only)
+54,lumped:Thr biosynth,Asp + 2 NADPH + 2 ATP -> Thr,Asp + 2 NADPH + 2 ATP -> Thr,R49,exact,
+55,lumped:Met biosynth,Asp + METHF + Cys + 2 NADPH + ATP + SucCoA -> Met + Pyr + Suc + NH3,Asp + METHF + Cys + 2 NADPH + ATP + SucCoA -> Met + Pyr + Suc + NH3,R50,exact,
+56,lumped:Val biosynth,2 Pyr + NADPH + Glu -> Val + CO2  + AKG,2 Pyr + NADPH + Glu -> Val + CO2  + AKG,R51,exact,
+57,lumped:Leu biosynth,2 Pyr + AcCoA + Glu + NADPH  -> Leu + 2 CO2 + AKG  + NADH,2 Pyr + AcCoA + Glu + NADPH  -> Leu + 2 CO2 + AKG  + NADH,R52,exact,
+58,lumped:Ile biosynth,Thr + Pyr + Glu + NADPH -> Ile + CO2 + AKG + NH3,Thr + Pyr + Glu + NADPH -> Ile + CO2 + AKG + NH3,R53,exact,
+59,lumped:Phe biosynth,E4P + 2 PEP + Glu + NADPH + ATP -> Phe + CO2 + AKG,E4P + 2 PEP + Glu + NADPH + ATP -> Phe + CO2 + AKG,R54,exact,
+60,lumped:Tyr biosynth,E4P + 2 PEP + Glu + NADPH  + ATP -> Tyr + CO2 + AKG  + NADH,E4P + 2 PEP + Glu + NADPH  + ATP -> Tyr + CO2 + AKG  + NADH,R55,exact,
+61,lumped:Trp biosynth,E4P + 2 PEP + R5P + Ser + Gln + NADPH + 3 ATP -> Trp + CO2 + Pyr + GAP + Glu,E4P + 2 PEP + R5P + Ser + Gln + NADPH + 3 ATP -> Trp + CO2 + Pyr + GAP + Glu,R56,exact,
+62,lumped:His biosynth,R5P + FTHF + Gln + Asp + 5 ATP -> His + 2 NADH + AKG + Fum,R5P + FTHF + Gln + Asp + 5 ATP -> His + 2 NADH + AKG + Fum,R57,exact,
+63,SERD_L,Ser -> Pyr + NH3,Ser -> Pyr + NH3,,no-match,SERD_L (serine deaminase) -- not present as its own reaction in our core model
+64,MTHFR2,MEETHF + NADH -> METHF,MEETHF + NADH -> METHF,R58,exact,
+65,MTHFD;MTHFC,MEETHF  -> FTHF + NADPH,MEETHF  -> FTHF + NADPH,R59,exact,
+66,lumped:NADH16;ATPS4rpp,NADH + 0.5 O2 -> 2 ATP,NADH + 0.5 O2 -> 2 ATP,R60,exact,
+67,lumped:oxphos(FADH2),FADH2 + 0.5 O2 -> ATP,FADH2 + 0.5 O2 -> ATP,R61,exact,
+68,THD2pp;NADTRHD,NADH  <=> NADPH  (net),NADH  <=> NADPH  (net),R62,exact,
+69,ATPM,ATP -> ATP.Ext,ATP -> ATP.Ext,R63,exact-synonym,L&A's ATP.Ext is our generic ATP sink
+70,EX_ac(e),Ac -> Ac.Ext,Ac -> Ac.Ext,ac_out,exact-synonym,L&A's Ac.Ext is our Ac
+71,EX_co2(e),CO2 -> CO2.Ext,CO2 -> CO2.Ext,co2_out,exact-synonym,L&A's CO2.Ext is our CO2
+72,EX_o2(e),O2.Ext -> O2,O2.Ext -> O2,o2_in,exact-synonym,L&A's O2.Ext is our O2
+73,EX_nh4(e),NH3.Ext -> NH3,NH3.Ext -> NH3,R72,exact-synonym,Confirmed: R72 is the NH3 exchange. L&A's NH3.Ext is our NH3.
+74,EX_so4(e),SO4.Ext -> SO4,SO4.Ext -> SO4,R73,exact-synonym,Confirmed: R73 is the SO4 exchange. L&A's SO4.Ext is our SO4.
+75,biomass_out,Biomass production (Cmol of biomass),Biomass production (Cmol of biomass),BIOMASS,exact-context,"""Biomass production"" isn't a parseable stoichiometric string -- matches our BIOMASS reaction by name/context, not substrate/product overlap"
+76,lumped:G6P sink,G6P -> Gluc.snk,G6P -> Gluc.snk,,structural,L&A models a separate G6P biomass-precursor sink; our BIOMASS reaction consumes G6P directly as one of many precursors -- probably not a separate node to map
+77,MGSA,DHAP -> Mglx,DHAP -> Mglx,,no-match,MGSA (methylglyoxal shunt) -- Mglx doesn't exist as a metabolite anywhere in our model
+78,lumped:MGSA2;LGTHL,Mglx -> Lact,Mglx -> Lact,,no-match,"MGSA2;LGTHL -- same methylglyoxal shunt, absent from our model"
+79,LDH_D,Pyr + NADH <=> Lact  (net),Pyr + NADH <=> Lact  (net),,no-match,LDH_D (lactate dehydrogenase) -- Lact doesn't exist as a metabolite anywhere in our model
