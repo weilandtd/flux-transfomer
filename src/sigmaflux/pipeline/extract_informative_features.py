@@ -38,6 +38,7 @@ def main(args):
     include_rev         = fc.get("include_reversibilities", True)
     run_mi_audit        = fc.get("run_mi_audit", False)
     restrict            = fc.get("restrict_to_mapped", False)
+    exclude_extracellular = fc.get("exclude_extracellular", False)
     out_name            = fc.get("output", "features.csv")
     method              = fc.get("token_selection_method", "fisher")
     seed                = cfg.get("seed", 42)
@@ -69,6 +70,9 @@ def main(args):
 
     print(f"\nLoading generated data (up to {n_samples} samples) ...")
     labeling_df, flux_df, reversibility_df = load_data(args.data_dir, max_samples=n_samples)
+
+    if exclude_extracellular:
+        labeling_df = feat_lib.drop_extracellular_tokens(labeling_df)
 
     theta, token_states, d = feat_lib.build_theta_and_token_states(
         labeling_df, flux_df, model_json, n_samples,

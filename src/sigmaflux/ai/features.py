@@ -87,6 +87,20 @@ def apply_mapping_filter(token_states: dict, mapping_csv_path: str) -> dict:
     return filtered
 
 
+def drop_extracellular_tokens(labeling_df: pd.DataFrame) -> pd.DataFrame:
+    """Drop extracellular (``_e``-suffixed metabolite) tokens; returns the filtered
+    ``labeling_df``.
+
+    Args:
+        labeling_df: labeling DataFrame indexed by (Metabolite, Isotopomer, ...).
+    """
+    n_before = labeling_df.shape[0]
+    mask = ~labeling_df.index.get_level_values("Metabolite").str.endswith("_e")
+    filtered = labeling_df.loc[mask]
+    print(f"Excluded extracellular tokens: {n_before} → {filtered.shape[0]}")
+    return filtered
+
+
 def select_significant_tokens(
     theta: np.ndarray,
     token_states: dict,

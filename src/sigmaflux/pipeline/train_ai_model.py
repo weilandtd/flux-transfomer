@@ -202,12 +202,6 @@ def main(args):
         reversibility_df = reversibility_df.iloc[:, idx]
         print(f"Randomly subsampled {args.max_samples} samples (seed={args.seed})")
 
-    if getattr(args, 'exclude_extracellular', False):
-        n_before = labeling_df.shape[0]
-        mask = ~labeling_df.index.get_level_values('Metabolite').str.endswith('_e')
-        labeling_df = labeling_df.loc[mask]
-        print(f"Excluded extracellular tokens: {n_before} → {labeling_df.shape[0]}")
-
     if getattr(args, 'compartment_mix', False):
         n_before = labeling_df.shape[0]
         labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
@@ -808,7 +802,6 @@ def cli(argv=None):
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
         measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
         compartment_mix           = t.get("compartment_mix", False),
-        exclude_extracellular     = t.get("exclude_extracellular", False),
         # Feature selection (from features: config section)
         token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
