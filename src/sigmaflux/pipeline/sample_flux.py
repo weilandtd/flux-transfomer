@@ -378,6 +378,138 @@ def screen_nonessential(model):
     return nonessential
 
 
+_KO_STRATEGIES = ("all", "random", "uncorrelated")
+
+
+def _normalize_ko_strategy(ko_value):
+    """Normalize `sampling.ko` to one of `_KO_STRATEGIES`, or None if disabled.
+
+    Accepts the legacy ``ko: true`` (every non-essential reaction -- now named
+    "all") alongside the ``false | all | random | uncorrelated`` string enum.
+    """
+    if ko_value is False or ko_value is None:
+        return None
+    if ko_value is True:
+        return "all"
+    if ko_value in _KO_STRATEGIES:
+        return ko_value
+    raise ValueError(f"Unknown sampling.ko value {ko_value!r}; expected one of "
+                      f"False, True, or {_KO_STRATEGIES}")
+
+
+def greedy_pivoted_cholesky_select(C, k, tol=1e-10):
+    """Greedy pivoted Cholesky: pick up to *k* indices of *C* whose directions carry
+    the most variance unexplained by picks already made -- the least mutually
+    correlated set. No swaps (a pick is never revisited) and no tuning (runs exactly
+    *k* steps, fewer only once remaining residual variance is numerically exhausted).
+
+    Args:
+        C: symmetric PSD matrix (e.g. a correlation matrix), shape (n, n).
+        k: number of indices to select; capped at n.
+        tol: stop once the largest remaining residual diagonal drops below this.
+    """
+    n = C.shape[0]
+    k = min(k, n)
+    d = np.diag(C).astype(float).copy()
+    L = np.zeros((n, k))
+    selected = []
+    for t in range(k):
+        piv = int(np.argmax(d))
+        if d[piv] <= tol:
+            break
+        L[:, t] = (C[:, piv] - L[:, :t] @ L[piv, :t]) / np.sqrt(d[piv])
+        d -= L[:, t] ** 2
+        d[piv] = -np.inf  # never reselect; also guards against float noise
+        selected.append(piv)
+    return selected
+
+
+def _select_uncorrelated_ko(model, candidates, n_ko, seed):
+    """Pick the *n_ko* of *candidates* whose pFBA solutions move least like each other.
+
+    One pFBA solution per candidate KO plus a wild-type baseline; each KO's change
+    vector is (KO pFBA - WT pFBA) over all reactions. Correlates the change vectors
+    and greedily selects the least mutually correlated set via
+    `greedy_pivoted_cholesky_select`.
+
+    Args:
+        model: prepared model (post FVA-pruning/skip_constraints); its objective is
+            already Zero at the point `main()` calls this, so pfba() finds the
+            minimal-total-flux point of the existing feasible region (which already
+            encodes media/growth), not a growth-optimizing solution.
+        candidates: reaction ids to rank (from `screen_nonessential`).
+        n_ko: number of reactions to select.
+        seed: used only for the degenerate all-uninformative fallback.
+    """
+    from cobra.flux_analysis import pfba
+
+    rxn_ids = [r.id for r in model.reactions]
+    wt = pfba(model).fluxes.reindex(rxn_ids).to_numpy()
+
+    kept, deltas = [], []
+    for rxn_id in candidates:
+        rxn = model.reactions.get_by_id(rxn_id)
+        with model:
+            rxn.bounds = (0, 0)
+            try:
+                ko_fluxes = pfba(model).fluxes.reindex(rxn_ids).to_numpy()
+            except Exception:
+                continue  # pFBA can fail even where the FBA feasibility screen passed
+        kept.append(rxn_id)
+        deltas.append(ko_fluxes - wt)
+
+    if not kept:
+        print("  [uncorrelated] no candidate KO had a successful pFBA solve")
+        return []
+
+    deltas = np.asarray(deltas)
+    informative = deltas.std(axis=1) > 1e-12
+    if not informative.any():
+        print("  [uncorrelated] every candidate's pFBA solution is unchanged by its "
+              "own KO -- falling back to a random n_ko selection")
+        rng = np.random.default_rng(seed)
+        k = min(n_ko, len(kept))
+        return rng.choice(kept, size=k, replace=False).tolist()
+
+    kept = [r for r, keep in zip(kept, informative) if keep]
+    C = np.corrcoef(deltas[informative])
+    chosen = [kept[i] for i in greedy_pivoted_cholesky_select(C, n_ko)]
+    print(f"  [uncorrelated] {len(chosen)}/{len(kept)} least-correlated KO reactions "
+          f"selected (target n_ko={n_ko})")
+    return chosen
+
+
+def select_ko_reactions(model, strategy, n_ko, seed):
+    """Choose which reactions to knock out, per *strategy* (`_normalize_ko_strategy`
+    output). "all": every non-essential reaction. "random": a size-`n_ko` random
+    subset. "uncorrelated": the `n_ko` non-essential reactions whose pFBA change
+    vectors are least mutually correlated (`_select_uncorrelated_ko`). If `n_ko` is
+    at least the number of non-essential candidates, both `random` and
+    `uncorrelated` degrade to `all` (nothing to sub-select).
+
+    Args:
+        model: prepared model to screen for essentiality and knock out from.
+        strategy: one of `_KO_STRATEGIES`.
+        n_ko: number of reactions to select; required for "random"/"uncorrelated",
+            ignored for "all".
+        seed: base seed; "random" draws from it directly, "uncorrelated" only uses
+            it for its degenerate fallback.
+    """
+    nonessential = screen_nonessential(model)
+    if strategy == "all":
+        return nonessential
+    if not n_ko:
+        raise ValueError(f"sampling.n_ko is required when sampling.ko is {strategy!r}")
+    if n_ko >= len(nonessential):
+        print(f"  [{strategy}] n_ko={n_ko} >= {len(nonessential)} non-essential "
+              f"reactions -- using all of them")
+        return nonessential
+    if strategy == "random":
+        rng = np.random.default_rng(seed)
+        return rng.choice(nonessential, size=n_ko, replace=False).tolist()
+    return _select_uncorrelated_ko(model, nonessential, n_ko, seed)
+
+
 def _do_sample_n(model, s, n_samples, seed):
     return _do_sample(model, dict(s, n_samples=n_samples), seed)
 
@@ -487,6 +619,7 @@ def _do_sample(model_or_sampler, s, seed):
 
 def main(cfg, output_dir_override=None):
     s = cfg["sampling"]
+    ko_strategy = _normalize_ko_strategy(s.get("ko", False))
     output_dir = output_dir_for(cfg, output_dir_override)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -552,7 +685,7 @@ def main(cfg, output_dir_override=None):
     cobra.io.save_json_model(model, prepared_model_path)
     print(f"Saved prepared model: {prepared_model_path}")
 
-    if s.get("ko", False) and s.get("growth", {}).get("lb") == 0:
+    if ko_strategy and s.get("growth", {}).get("lb") == 0:
         print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
 
     strat_cfg = s.get("stratified_sampling", {})
@@ -571,10 +704,11 @@ def main(cfg, output_dir_override=None):
     if strat_cfg.get("enabled", False):
         n_bins = strat_cfg.get("n_bins", 5)
         # KO count decides the per-pass sample budget below, so it has to be known
-        # before that budget is resolved -- screen once here rather than inside the
+        # before that budget is resolved -- select once here rather than inside the
         # loop that used to follow the WT call.
-        nonessential = screen_nonessential(model) if s.get("ko", False) else []
-        n_ko_passes = 1 + len(nonessential)  # WT + every KO
+        ko_reactions = (select_ko_reactions(model, ko_strategy, s.get("n_ko"), cfg["seed"])
+                        if ko_strategy else [])
+        n_ko_passes = 1 + len(ko_reactions)  # WT + every KO
         n_subsamples_cfg = strat_cfg["n_subsamples"]
         if n_subsamples_cfg == "auto":
             # Each KO reruns the full stratified pass, and draw_quasi_uniform only
@@ -588,10 +722,11 @@ def main(cfg, output_dir_override=None):
         else:
             n_subsamples = n_subsamples_cfg
         print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × "
-              f"{n_subsamples} samples/stratum × {n_ko_passes} passes (WT + {len(nonessential)} KO)...")
+              f"{n_subsamples} samples/stratum × {n_ko_passes} passes "
+              f"(WT + {len(ko_reactions)} KO, strategy={ko_strategy})...")
         all_strata = [stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
-        for i, rxn_id in enumerate(nonessential):
-            print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
+        for i, rxn_id in enumerate(ko_reactions):
+            print(f"  KO [{i + 1}/{len(ko_reactions)}]: {rxn_id}")
             with sampler.temporary_bounds({rxn_id: (0, 0)}):
                 all_strata.append(stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
         samples = pd.concat(all_strata, ignore_index=True)
@@ -601,10 +736,10 @@ def main(cfg, output_dir_override=None):
     else:
         print(f"Sampling {n_final} flux distributions (WT)...")
         all_samples = [_do_sample(sampler, s, cfg["seed"])]
-        if s.get("ko", False):
-            nonessential = screen_nonessential(model)
-            for i, rxn_id in enumerate(nonessential):
-                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({n_final} samples)")
+        if ko_strategy:
+            ko_reactions = select_ko_reactions(model, ko_strategy, s.get("n_ko"), cfg["seed"])
+            for i, rxn_id in enumerate(ko_reactions):
+                print(f"  KO [{i + 1}/{len(ko_reactions)}]: {rxn_id}  ({n_final} samples)")
                 with sampler.temporary_bounds({rxn_id: (0, 0)}):
                     all_samples.append(_do_sample(sampler, s, cfg["seed"] + i + 1))
         samples = pd.concat(all_samples, ignore_index=True) if len(all_samples) > 1 else all_samples[0]
