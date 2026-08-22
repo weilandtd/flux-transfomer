@@ -48,12 +48,16 @@ CONDITION_COLORS = {
     'N': '#7fb3d5',   # light blue
     'P': '#2c9c8f',   # teal / green
     'A': '#c17429',   # burnt orange — activated T cell (matches plot_mid_data)
+    'B': '#9b7fb3',   # muted purple — batch condition (i_orientalis, m_musculus_t_cell,
+                      # s_cerevisiae, and now e_coli_core all report one); was missing
+                      # from this list entirely, so no organism's batch data ever
+                      # reached these panels before.
 }
 COLORS = {
     'reference': '#888888',   # identity line
     'zero':      '#cccccc',   # annotation box edge
 }
-CONDITIONS = ['C', 'N', 'P', 'A']
+CONDITIONS = ['C', 'N', 'P', 'A', 'B']
 
 # Reactions with |flux| below this are excluded from the log-log plot.
 FLUX_MIN_ABS = 1e-6
