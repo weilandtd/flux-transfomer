@@ -25,7 +25,8 @@ sampling:
   processes: 8
   method: achr
   fva: true
-  ko: true
+  ko: uncorrelated  # false | all | random | uncorrelated
+  n_ko: 25          # required when ko is random/uncorrelated
 
   stratified_sampling:
     enabled: true

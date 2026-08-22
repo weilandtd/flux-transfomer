@@ -21,12 +21,14 @@ skip_constraints:
 
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
-  n_samples: 10000   # final output written to flux_samples.csv
-  thinning: 100
-  processes: 8
+  n_samples: 10000    # final output written to flux_samples.csv
+  thinning: 100       
+  processes: 8        
   method: achr        # hopsy | optgp | achr
-  fva: true
-  ko: true
+  fva: true           
+  ko: uncorrelated    # false | all | random | uncorrelated
+  n_ko: 50            # required when ko is random/uncorrelated
+
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
