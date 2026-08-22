@@ -22,7 +22,7 @@ sampling:
   n_samples: 10000
   thinning: 100
   processes: 8
-  method: achr
+  method: optgp       # hopsy | optgp | achr
   fva: true
   ko: uncorrelated  # false | all | random | uncorrelated
   n_ko: 50          # required when ko is random/uncorrelated
