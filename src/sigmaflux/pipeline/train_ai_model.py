@@ -587,7 +587,6 @@ def main(args):
         token_information          = token_information,
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
-        measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
         early_stopping_patience    = getattr(args, 'early_stopping_patience', None),
     )
 
@@ -800,7 +799,6 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
-        measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
         compartment_mix           = t.get("compartment_mix", False),
         # Feature selection (from features: config section)
         token_selection_method = f.get("token_selection_method", "fisher"),

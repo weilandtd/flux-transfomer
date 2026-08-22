@@ -121,4 +121,3 @@ training:
   null_space_type: targeted_ica
   flux_loss_space: basis
   variance_min_cutoff: 0.1
-  measured_flux_loss_weight: 0.0

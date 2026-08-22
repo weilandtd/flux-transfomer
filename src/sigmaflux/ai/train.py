@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from tqdm import tqdm
 
 
@@ -338,7 +337,7 @@ def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
 def _train_epoch(model, loader, optimizer, device, gradient_clip,
                  flux_token_dropout=0.0, labeling_token_dropout=0.0,
                  flux_loss_fn=None, rev_loss_fn=None,
-                 measured_flux_loss_weight=0.0, labeling_noise_std=0.0):
+                 labeling_noise_std=0.0):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm).
 
     Args:
@@ -351,7 +350,6 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
         labeling_token_dropout: per-batch probability each labeling token's fraction is zeroed.
         flux_loss_fn: loss on flux outputs (None = MSELoss).
         rev_loss_fn: loss on reversibility outputs (None = MSELoss).
-        measured_flux_loss_weight: extra MSE weight on the measured-flux subset of predictions.
         labeling_noise_std: Gaussian noise std applied to fractions (0 disables).
     """
     model.train()
@@ -405,10 +403,6 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
         )
         flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
         loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
-        if measured_flux_loss_weight > 0 and measured_fluxes is not None and len(model.fixed_idx) > 0:
-            meas_pred = flux_preds[:, model.fixed_idx]
-            meas_true = targets[:, model.fixed_idx]
-            loss = loss + measured_flux_loss_weight * F.mse_loss(meas_pred, meas_true)
         loss.backward()
 
         if gradient_clip > 0:
@@ -476,7 +470,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 gradient_clip=1.0, use_scheduler=True, verbose=True,
                 warmup_epochs=0, flux_token_dropout=0.0,
                 labeling_token_dropout=0.0, token_information=None,
-                loss_function=None, measured_flux_loss_weight=0.0, labeling_noise_std=0.0,
+                loss_function=None, labeling_noise_std=0.0,
                 early_stopping_patience=None):
     """Train a FluxDecoder model.
 
@@ -496,7 +490,6 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         labeling_token_dropout:  Per-batch probability each labeling token's fraction is zeroed
         token_information:       (n_tokens,) tensor of scores (used for reporting only)
         loss_function:           callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
-        measured_flux_loss_weight: extra MSE weight on the measured-flux subset of predictions.
         labeling_noise_std:       Gaussian noise std applied to fractions (0 disables).
         early_stopping_patience: Stop after this many consecutive epochs without
                                   val_loss improvement (None = disabled; requires val_loader)
@@ -543,7 +536,6 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             flux_token_dropout=flux_token_dropout,
             labeling_token_dropout=labeling_token_dropout,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
-            measured_flux_loss_weight=measured_flux_loss_weight,
             labeling_noise_std=labeling_noise_std,
         )
         train_losses.append(train_loss)

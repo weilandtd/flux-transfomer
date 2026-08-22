@@ -152,4 +152,3 @@ training:
   flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   #mixed_flux_weight: 0.5          # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
-  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes
