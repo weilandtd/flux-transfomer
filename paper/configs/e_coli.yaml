@@ -128,7 +128,7 @@ training:
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
-  val_fraction: 0.2
+  val_fraction: 0.1
   max_samples: 10000
 
   combined_dim: 256
