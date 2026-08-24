@@ -51,15 +51,21 @@ def fbapro(S, v, fixed=(), fixed_values=None):
     return x
 
 
-def bounded_moma(S, v, lower, upper, fixed=(), fixed_values=None,
+def bounded_moma(S, v, lower, upper, fixed=(), fixed_values=None, weights=None,
                  max_iter=10000, tol=1e-9):
     """Closest steady-state flux to ``v`` that also respects reaction bounds.
 
-    Same objective as :func:`fbapro` (``min ||x - v||^2`` s.t. ``S x = 0``) but with
-    ``lower <= x <= upper`` added -- i.e. the original MoMA. Solved by Dykstra's
-    alternating projection between the balance space (``S x = 0``, an orthogonal
-    projection) and the bounds box (a clip); Dykstra's corrections make it converge to
-    the closest point in the intersection, not just some feasible point.
+    Same minimal-adjustment objective as :func:`fbapro` but with ``lower <= x <= upper``
+    added -- i.e. the original MoMA. Solved by Dykstra's alternating projection between
+    the balance space (``S x = 0``, an orthogonal projection) and the bounds box (a
+    clip); Dykstra's corrections make it converge to the closest point in the
+    intersection, not just some feasible point.
+
+    With *weights* the objective becomes ``min sum_i w_i (x_i - v_i)^2`` -- hold the
+    fluxes you trust (e.g. weight by SigmaFlux's per-reaction inverse variance) close to
+    the reference, and let softly-known fluxes give more when the knockout demands
+    rerouting. Implemented as the unweighted problem in the rescaled variable
+    ``u = sqrt(w) * x``.
 
     Fixed reactions are folded into the box as ``lower = upper = value`` (a knockout is
     just ``value = 0``), so irreversibility keeps them from being revived.
@@ -70,6 +76,7 @@ def bounded_moma(S, v, lower, upper, fixed=(), fixed_values=None,
         lower, upper: per-reaction bounds, each (n_reactions,).
         fixed: indices of reactions pinned to an exact value.
         fixed_values: values for ``fixed`` (defaults to ``v[fixed]``).
+        weights: optional per-reaction non-negative weights; larger = held closer to v.
         max_iter: maximum Dykstra iterations.
         tol: stop when successive iterates move less than this (L2).
 
@@ -77,6 +84,7 @@ def bounded_moma(S, v, lower, upper, fixed=(), fixed_values=None,
     """
     S = np.asarray(S, dtype=np.float64)
     v = np.asarray(v, dtype=np.float64)
+    n = v.shape[0]
     lb = np.array(lower, dtype=np.float64)
     ub = np.array(upper, dtype=np.float64)
     fixed = np.asarray(fixed, dtype=int)
@@ -85,24 +93,30 @@ def bounded_moma(S, v, lower, upper, fixed=(), fixed_values=None,
             np.asarray(fixed_values, dtype=np.float64), fixed.shape)
         lb[fixed] = ub[fixed] = xf
 
-    S_pinv = np.linalg.pinv(S)                       # projector onto {S x = 0}
-    x = v.copy()
-    p = np.zeros_like(v)
-    q = np.zeros_like(v)
+    # confidence weighting: min sum_i w_i (x_i - v_i)^2 is the unweighted problem in
+    # u = sqrt(w) * x, with S x = 0 -> (S / sqrt(w)) u = 0 and the box scaled likewise.
+    s = np.ones(n) if weights is None else np.sqrt(np.clip(np.asarray(weights, float), 1e-8, None))
+    Su = S / s
+    vu, lbu, ubu = s * v, s * lb, s * ub
+
+    Su_pinv = np.linalg.pinv(Su)                     # projector onto {Su u = 0}
+    u = vu.copy()
+    p = np.zeros(n)
+    q = np.zeros(n)
     for _ in range(max_iter):
-        y = (x + p)
-        y = y - S_pinv @ (S @ y)                     # project onto S x = 0
-        p = (x + p) - y
-        x_new = np.clip(y + q, lb, ub)               # project onto the bounds box
-        q = (y + q) - x_new
-        if np.linalg.norm(x_new - x) < tol:
-            x = x_new
+        y = (u + p)
+        y = y - Su_pinv @ (Su @ y)                   # project onto Su u = 0
+        p = (u + p) - y
+        u_new = np.clip(y + q, lbu, ubu)             # project onto the (scaled) bounds box
+        q = (y + q) - u_new
+        if np.linalg.norm(u_new - u) < tol:
+            u = u_new
             break
-        x = x_new
-    return x
+        u = u_new
+    return u / s
 
 
-def predict_knockout_flux(S, v_wt, knockouts, fixed=(), lower=None, upper=None):
+def predict_knockout_flux(S, v_wt, knockouts, fixed=(), lower=None, upper=None, weights=None):
     """Predict a post-knockout flux as the minimal adjustment of a wild-type flux.
 
     Forces the knockout reactions to exactly zero and projects the wild-type flux back
@@ -120,6 +134,7 @@ def predict_knockout_flux(S, v_wt, knockouts, fixed=(), lower=None, upper=None):
         knockouts: indices of reactions to knock out (forced to 0).
         fixed: indices of additional reactions to hold at their wild-type value.
         lower, upper: optional per-reaction bounds; if given, use bounded MoMA.
+        weights: optional per-reaction anchor weights (bounded path only).
 
     Returns the predicted knockout flux vector, (n_reactions,).
     """
@@ -130,10 +145,11 @@ def predict_knockout_flux(S, v_wt, knockouts, fixed=(), lower=None, upper=None):
     values = np.concatenate([np.zeros(knockouts.size), v_wt[fixed]])
     if lower is None or upper is None:
         return fbapro(S, v_wt, fixed=H, fixed_values=values)
-    return bounded_moma(S, v_wt, lower, upper, fixed=H, fixed_values=values)
+    return bounded_moma(S, v_wt, lower, upper, fixed=H, fixed_values=values, weights=weights)
 
 
-def knockout_flux_from_model(model, v_wt, knockout_ids, fixed_ids=(), bounded=False):
+def knockout_flux_from_model(model, v_wt, knockout_ids, fixed_ids=(), bounded=False,
+                             weights=None):
     """Reaction-id wrapper around :func:`predict_knockout_flux` for a COBRA model.
 
     Args:
@@ -143,6 +159,8 @@ def knockout_flux_from_model(model, v_wt, knockout_ids, fixed_ids=(), bounded=Fa
         fixed_ids: reaction ids to hold at their wild-type value.
         bounded: if True, use bounded MoMA with the model's reaction bounds (respects
             irreversibility/capacity); if False, the plain unbounded projection.
+        weights: optional anchor weights as a dict/Series keyed by reaction id (e.g.
+            SigmaFlux ensemble inverse variance); implies ``bounded``.
 
     Returns the predicted knockout fluxes as a dict keyed by reaction id.
     """
@@ -154,10 +172,11 @@ def knockout_flux_from_model(model, v_wt, knockout_ids, fixed_ids=(), bounded=Fa
     v = np.array([float(v_wt[rid]) for rid in reaction_ids])
     ko = [idx[r] for r in knockout_ids]
     fx = [idx[r] for r in fixed_ids]
-    if bounded:
+    if bounded or weights is not None:
         lb = np.array([r.lower_bound for r in model.reactions])
         ub = np.array([r.upper_bound for r in model.reactions])
-        x = predict_knockout_flux(S, v, ko, fx, lower=lb, upper=ub)
+        w = None if weights is None else np.array([float(weights[rid]) for rid in reaction_ids])
+        x = predict_knockout_flux(S, v, ko, fx, lower=lb, upper=ub, weights=w)
     else:
         x = predict_knockout_flux(S, v, ko, fx)
     return {rid: float(x[i]) for i, rid in enumerate(reaction_ids)}
