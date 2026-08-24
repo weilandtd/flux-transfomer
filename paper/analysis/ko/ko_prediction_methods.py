@@ -133,9 +133,9 @@ def main():
         f1["SF|WT"].append(np.abs(vp[wt, j]).mean() / wt_std)
         f1["SF+FBApro"].append(abs(v3[j]) / wt_std)
         f1["SF+FBApro+var"].append(abs(v4[j]) / wt_std)
-        # Figure 2: full-vector prediction vs true KO flux
+        # Figure 2: SF|KO measures the KO (per-sample vs KO truth); SF+FBApro predict it.
+        # SF|WT is handled separately below (SigmaFlux's own WT accuracy, per-sample vs WT truth).
         true_acc["SF|KO"].append(gt_ko);      pred_acc["SF|KO"].append(vp[koR, :])
-        true_acc["SF|WT"].append(gt_ko);      pred_acc["SF|WT"].append(np.tile(v_ref, (koR.sum(), 1)))
         true_acc["SF+FBApro"].append(gt_ko);  pred_acc["SF+FBApro"].append(np.tile(v3, (koR.sum(), 1)))
         true_acc["SF+FBApro+var"].append(gt_ko); pred_acc["SF+FBApro+var"].append(np.tile(v4, (koR.sum(), 1)))
         # sign flips (vs WT reference direction)
@@ -149,7 +149,10 @@ def main():
         print(f"  {r:12s} SF|KO={f1['SF|KO'][-1]:.3f} SF|WT={f1['SF|WT'][-1]:.3f} "
               f"flips: fba={fl3} fbaw={fl4}", flush=True)
 
-    # aggregate bars
+    # aggregate bars. SF|WT = SigmaFlux's own WT accuracy (per-sample WT prediction vs true
+    # WT flux) -- the "naive SF", expected ~0.98 like SF|KO. The other three are vs KO truth.
+    true_acc["SF|WT"] = [gt[wt]]
+    pred_acc["SF|WT"] = [vp[wt]]
     fig1 = [float(np.mean(f1[k])) for k in ORDER]
     fig2_med = [r2_median_per_reaction(true_acc[k], pred_acc[k]) for k in ORDER]   # headline
     fig2_pooled = [r2_pooled(true_acc[k], pred_acc[k]) for k in ORDER]             # context
