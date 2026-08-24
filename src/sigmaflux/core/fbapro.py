@@ -15,17 +15,20 @@ wild-type SigmaFlux/MFA solution -- see :func:`predict_knockout_flux`.
 import numpy as np
 
 
-def fbapro(S, v, fixed=(), fixed_values=None):
+def fbapro(S, v, fixed=(), fixed_values=None, weights=None):
     """Closest steady-state flux to ``v``.
 
-    Solves ``min ||x - v||^2`` subject to ``S x = 0`` and ``x[fixed] = fixed_values``,
-    as an orthogonal projection of ``v`` onto that affine space.
+    Solves ``min sum_i w_i (x_i - v_i)^2`` subject to ``S x = 0`` and
+    ``x[fixed] = fixed_values``, as an orthogonal projection of ``v`` onto that affine
+    space. With ``weights`` (per reaction, non-negative), fluxes you trust more are held
+    closer to ``v``; ``weights=None`` is the plain L2 projection.
 
     Args:
         S: stoichiometric matrix, (n_metabolites, n_reactions).
         v: reference flux vector, (n_reactions,).
         fixed: indices of reactions held at an exact value (the high-confidence set H).
         fixed_values: values for ``fixed`` (defaults to ``v[fixed]``).
+        weights: optional per-reaction non-negative weights; larger = held closer to v.
 
     Returns the projected flux vector, (n_reactions,).
     """
@@ -40,14 +43,19 @@ def fbapro(S, v, fixed=(), fixed_values=None):
     else:
         xf = np.broadcast_to(np.asarray(fixed_values, dtype=np.float64), fixed.shape).copy()
 
-    S_free = S[:, free]
-    b = -S[:, fixed] @ xf if fixed.size else np.zeros(S.shape[0])
-    # project v_free onto the affine space {x_free : S_free x_free = b}
-    x_free = v[free] - np.linalg.pinv(S_free) @ (S_free @ v[free] - b)
+    # weighted objective is the plain projection in u = sqrt(w) * x, with S x = 0 ->
+    # (S / sqrt(w)) u = 0. weights=None (s=1) reduces to the unweighted projection.
+    s = np.ones(n) if weights is None else np.sqrt(np.clip(np.asarray(weights, float), 1e-8, None))
+    Su = S / s
+    Su_free = Su[:, free]
+    b = -Su[:, fixed] @ (s[fixed] * xf) if fixed.size else np.zeros(S.shape[0])
+    ut = s[free] * v[free]
+    # project ut onto {u_free : Su_free u_free = b}
+    u_free = ut - np.linalg.pinv(Su_free) @ (Su_free @ ut - b)
 
     x = np.empty(n)
     x[fixed] = xf
-    x[free] = x_free
+    x[free] = u_free / s[free]
     return x
 
 
@@ -144,7 +152,7 @@ def predict_knockout_flux(S, v_wt, knockouts, fixed=(), lower=None, upper=None, 
     H = np.concatenate([knockouts, fixed]).astype(int)
     values = np.concatenate([np.zeros(knockouts.size), v_wt[fixed]])
     if lower is None or upper is None:
-        return fbapro(S, v_wt, fixed=H, fixed_values=values)
+        return fbapro(S, v_wt, fixed=H, fixed_values=values, weights=weights)
     return bounded_moma(S, v_wt, lower, upper, fixed=H, fixed_values=values, weights=weights)
 
 

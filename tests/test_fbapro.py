@@ -82,3 +82,17 @@ def test_weighting_holds_trusted_fluxes_closer():
     assert np.allclose(S2 @ x_w, 0.0, atol=1e-4)
     assert abs(x_w[2] - 3.0) < abs(x_eq[2] - 3.0)    # v3 held closer than equal-weight
     assert abs(x_w[2] - 3.0) < abs(x_w[3] - 3.0)     # v3 moves less than v4
+
+
+def test_unbounded_fbapro_weights_none_is_unweighted():
+    a = fbapro(S2, V2, fixed=[1], fixed_values=[0.0])
+    b = fbapro(S2, V2, fixed=[1], fixed_values=[0.0], weights=np.ones(4))
+    assert np.allclose(a, b)
+
+
+def test_unbounded_fbapro_weighting_holds_trusted_fluxes():
+    w = np.array([1.0, 1.0, 100.0, 0.01])            # hold v3, free v4
+    x = fbapro(S2, V2, fixed=[1], fixed_values=[0.0], weights=w)
+    assert np.allclose(S2 @ x, 0.0, atol=1e-6)
+    assert abs(x[1]) < 1e-9                            # KO stays exactly 0
+    assert abs(x[2] - 3.0) < abs(x[3] - 3.0)          # v3 moves less than v4
