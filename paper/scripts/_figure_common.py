@@ -9,6 +9,8 @@ so neither script silently depends on plot_test_performance.py having been run f
 against the same run directory.
 """
 
+import glob
+import os
 import pathlib
 import sys
 
@@ -16,12 +18,12 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from sigmaflux.pipeline._paths import load_config, resolve_path
+from sigmaflux.utils import (
+    pair_fluxes, read_predicted_fluxes, read_reference_fluxes, reference_orientation)
+
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-# Both analysis dirs, since this script lives outside either of them.
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
-sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "benchmark"))
-from analysis_predicted_fluxes import (  # noqa: E402
-    CONDITION_COLORS, FLUX_MIN_ABS, _resolve_organism, build_plot_df)
 from plot_test_performance import (  # noqa: E402
     LABEL, R2_THRESHOLD, load_benchmark, per_flux_r2)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
@@ -45,6 +47,32 @@ R2_FLOOR = -0.2          # R² at or below this piles up on the axis floor
 COLORS = {
     "reference": "#AAAAAA",   # threshold and identity lines
     "box":       "#cccccc",   # annotation box edge
+}
+
+# ── This project's data conventions ───────────────────────────────────────────
+# These describe how *these* runs and workbooks are laid out, not anything intrinsic to
+# the file formats, so they live here rather than in sigmaflux.utils: another dataset may
+# use different condition letters, a different sentinel, or none at all.
+CONDITIONS = ["C", "N", "P", "A", "B"]
+
+# Published bounds at or beyond this magnitude are the fit's "unbounded" sentinel (these
+# workbooks write +/-1e8): the flux is not identifiable, and the bound is not a measurement.
+UNBOUNDED_FLUX = 1e6
+
+# Reactions with |flux| at or below this are excluded from the log-log figures.
+FLUX_MIN_ABS = 1e-6
+
+CONFIG_DIR = _REPO_ROOT / "paper" / "configs"
+
+# Per-condition base colors. The letter means different things per organism (N is
+# nitrogen-limited for the yeasts, naive for the T cell), so callers relabel; the color is
+# keyed on the letter regardless.
+CONDITION_COLORS = {
+    "C": "#f3c47f",   # golden
+    "N": "#7fb3d5",   # light blue
+    "P": "#2c9c8f",   # teal
+    "A": "#c17429",   # burnt orange -- activated T cell
+    "B": "#9b7fb3",   # muted purple -- batch
 }
 
 
@@ -109,6 +137,78 @@ def benchmark_r2(model, run_suffix=None):
               f"{n} samples ({n_failed} unsolved), {df['reaction'].nunique()} reactions")
         out[f"r2_{method}"] = per_flux_r2(df)
     return pd.DataFrame(out).dropna()
+
+
+def _config_for_run(run_dir):
+    """The organism config a run directory came from, by ``<config-stem>_<date>``.
+
+    Longest stem first, so ``i_orientalis_ko_20260614`` picks i_orientalis_ko rather than
+    i_orientalis.
+    """
+    stems = sorted(CONFIG_DIR.glob("*.yaml"), key=lambda p: -len(p.stem))
+    for cfg_path in stems:
+        if run_dir.name.startswith(cfg_path.stem):
+            return cfg_path
+    raise ValueError(f"Cannot detect organism config from '{run_dir.name}'. "
+                     f"Known: {[p.stem for p in stems]}")
+
+
+def resolve_organism(run_dir, config=None):
+    """Experimental-data paths and media bounds for a run, read from its organism YAML."""
+    config = pathlib.Path(config) if config else _config_for_run(run_dir)
+    cfg, root = load_config(config)
+    exp = cfg.get("experiment")
+    if not exp:
+        raise ValueError(f"{config} has no 'experiment:' block "
+                         "(data_dir / reference_flux / gem_xlsx)")
+    return dict(
+        prefix    = cfg["name"],
+        data      = exp["data_dir"],
+        reference = exp["reference_flux"],
+        gem_xlsx  = exp.get("gem_xlsx"),
+        media     = cfg.get("sampling", {}).get("media", {}),
+        root      = root,
+    )
+
+
+def build_reference_comparison(run_dir, org, panel_rxns):
+    """Signed pred-vs-reference frame for every condition a run has predictions for.
+
+    Locates this project's files and hands them to :mod:`sigmaflux.utils.read_reference_flux`,
+    which does the reading and pairing but knows nothing about where they live.
+    """
+    ref_path = pathlib.Path(resolve_path(os.path.join(org["data"], org["reference"]),
+                                         org["root"]))
+    orientation = reference_orientation(org.get("media"))
+    parts = []
+
+    for cond in CONDITIONS:
+        hits = sorted(glob.glob(str(run_dir / "predictions" /
+                                    f"predictions_{org['prefix']}_{cond}_*.csv")))
+        if not hits:
+            print(f"  condition {cond}: no predictions CSV — skipping")
+            continue
+        ref_value = read_reference_fluxes(ref_path, cond, unbounded=UNBOUNDED_FLUX)
+        if ref_value is None:
+            print(f"  condition {cond}: no reference column — skipping")
+            continue
+
+        pred = {k: read_predicted_fluxes(hits[-1], c)
+                for k, c in (("value", "Value"), ("lo", "Value_lo"), ("hi", "Value_hi"))}
+        ref = {
+            "value": ref_value,
+            "lo": read_reference_fluxes(ref_path, cond, "_mfaLB", unbounded=UNBOUNDED_FLUX),
+            "hi": read_reference_fluxes(ref_path, cond, "_mfaUB", unbounded=UNBOUNDED_FLUX),
+        }
+        # Growth rate D = the biomass reaction flux per growth condition (h⁻¹).
+        rates = (ref_value.loc["BIOMASS"].abs().round(2).to_dict()
+                 if "BIOMASS" in ref_value.index else {})
+
+        parts.append(pair_fluxes(pred, ref, condition=cond, orientation=orientation,
+                                 reactions=panel_rxns, growth_rates=rates,
+                                 min_abs=FLUX_MIN_ABS))
+
+    return pd.concat(parts, ignore_index=True)
 
 
 def save_figure(fig, path):
