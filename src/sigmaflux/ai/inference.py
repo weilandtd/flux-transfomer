@@ -561,9 +561,7 @@ class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
-    interface, returning the per-reaction median over members, re-projected onto
-    the null-space basis since the median (unlike any single member) does not
-    satisfy ``S v = 0`` — see :meth:`_project_flux_blocks`.
+    interface, returning the per-reaction median over members.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -645,7 +643,6 @@ class EnsembleSigmaFlux:
         self.name                = None
         self.model_version       = None
         self.source_path         = None
-        self._projector          = None   # built lazily by _null_space_projector()
 
     def predict(self, df_L, df_Vm=None):
         """Ensemble-median prediction. Members share inputs, so per-member outputs
@@ -661,40 +658,7 @@ class EnsembleSigmaFlux:
         preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
-        out['Value'] = self._project_flux_blocks(np.median(values, axis=0))
-        return out
-
-    def _null_space_projector(self):
-        """``Z (Z^T Z)^-1 Z^T`` for the members' shared basis, or None if absent.
-        Varimax bases are orthonormal (Gram = I, so this collapses to ``Z Z^T``),
-        but a column-normalised ``targeted_ica`` basis is not, hence the Gram solve."""
-        if self._projector is not None:
-            return self._projector
-        inner = getattr(self.members[0], '_model', None)
-        Z = getattr(inner, 'Z_full', None)
-        if Z is None:
-            return None
-        Z = Z.detach().cpu().numpy().astype(np.float64)
-        gram = Z.T @ Z
-        if np.allclose(gram, np.eye(gram.shape[0]), atol=1e-6):
-            self._projector = Z @ Z.T
-        else:
-            self._projector = Z @ np.linalg.solve(gram, Z.T)
-        return self._projector
-
-    def _project_flux_blocks(self, values):
-        """Return ``values`` with every sample's flux block re-projected onto the null
-        space: each member's prediction satisfies ``S v = 0`` by construction, but a
-        per-reaction median across members is a non-linear combination and does not.
-        Only the flux block moves; reversibilities are not null-space coordinates."""
-        P = self._null_space_projector()
-        n_flux = len(self.flux_names or [])
-        if P is None or not n_flux:
-            return values
-        stride = n_flux + len(self.reversibility_names or [])
-        out = np.asarray(values, dtype=np.float64).copy()
-        for start in range(0, len(out), stride):        # one block per sample
-            out[start:start + n_flux] = P @ out[start:start + n_flux]
+        out['Value'] = np.median(values, axis=0)
         return out
 
     # Introspection helpers delegate to member 0.

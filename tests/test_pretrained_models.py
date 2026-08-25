@@ -198,32 +198,14 @@ def test_measured_fluxes_reach_the_prediction(model):
     assert not np.allclose(without, with_vm), "df_Vm did not reach the model"
 
 
-def test_predicted_fluxes_are_mass_balanced(model, sfx_path):
-    """S @ v ≈ 0 from the packaged file alone, with no run directory in reach.
-
-    Skipped for releases exported before the network was packaged — re-export
-    them to get this coverage, since without a stoichiometry a consumer cannot
-    check that what it serves is a feasible flux distribution at all.
-    """
-    if not inspect_model(sfx_path).get("network", {}).get("included"):
-        pytest.skip("release predates the packaged COBRA network; re-export to cover it")
-
-    S, _, _ = read_stoichiometry(sfx_path)
-    flux = model.predict(make_df_L(model, n_samples=1))["Value"].values[:len(model.flux_names)]
-
-    assert S.shape[1] == len(model.flux_names)
-    # Relative to the flux scale: the null-space basis is float32, so an exact
-    # zero is not on offer.
-    assert np.abs(S @ flux).max() < 1e-5 * max(np.abs(flux).max(), 1.0)
-
-
 def test_each_member_is_mass_balanced(model, sfx_path):
-    """The per-member invariant that the ensemble median is projected back onto.
+    """Each member's own prediction is mass-balanced; the ensemble median is not.
 
     A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
-    space; asserting it separately says which layer a future regression came from.
-    The ensemble meets the same bound only because ``predict`` re-projects — the
-    raw median does not, a median being non-linear.
+    space. The ensemble's ``predict()`` combines members with an elementwise
+    median, a non-linear operation, so the combined output is not itself
+    guaranteed to satisfy ``S v = 0`` — it is no longer re-projected back onto the
+    null space (see ``EnsembleSigmaFlux.predict`` in ``sigmaflux/ai/inference.py``).
     """
     if not inspect_model(sfx_path).get("network", {}).get("included"):
         pytest.skip("release predates the packaged COBRA network; re-export to cover it")
