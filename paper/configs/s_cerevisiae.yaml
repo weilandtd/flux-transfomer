@@ -10,6 +10,7 @@ device: auto  # auto | cpu | cuda
 # The data directory really is spelled "S_cervesiae" on disk.
 experiment:
   data_dir:       data/S_cervesiae
+  mapping_csv:    models/atomistic/S_cerevisiae/S_cerevisiae_experiment_mapping.csv
   reference_flux: Shen_et_al_flux_data_SC.xlsx
   gem_xlsx:       models/atomistic/S_cerevisiae/scGEM.xlsx
 

@@ -19,6 +19,7 @@ experiment:
   data_dir:       data/M_musculus_T_Cell
   reference_flux: Shen_et_al_flux_data_MM.xlsx
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
+  mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform

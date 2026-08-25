@@ -10,6 +10,7 @@ device: auto  # auto | cpu | cuda
 experiment:
   data_dir:       data/I_orientalis
   reference_flux: Shen_et_al_flux_data_IO.xlsx
+  mapping_csv:    models/atomistic/I_orientalis/I_orientalis_experiment_mapping.csv
   gem_xlsx:       models/atomistic/I_orientalis/imIsor_GEM.xlsx
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
