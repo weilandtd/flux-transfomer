@@ -644,9 +644,9 @@ class EnsembleSigmaFlux:
         self.model_version       = None
         self.source_path         = None
 
-    def predict(self, df_L, df_Vm=None):
-        """Ensemble-median prediction. Members share inputs, so per-member outputs
-        have identical row order and are combined positionally.
+    def predict(self, df_L, df_Vm=None, *, aggregate=True):
+        """Ensemble prediction. Members share inputs, so per-member outputs have
+        identical row order and are combined positionally.
 
         Parameters
         ----------
@@ -654,8 +654,22 @@ class EnsembleSigmaFlux:
             Labeling data; see :meth:`SigmaFlux.predict`.
         df_Vm
             Measured exchange fluxes, or None.
+        aggregate
+            ``True`` (default): per-reaction median over members, unchanged schema.
+            ``False``: every member's own raw prediction, long-format with an added
+            'Member' column (one row per Sample x Member x Flux Name) -- no median
+            collapse, no other post-processing.
         """
-        preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        preds = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        if not aggregate:
+            raw = []
+            for midx, p in enumerate(preds):
+                p = p.copy()
+                if 'Sample' not in p.columns:      # single-sample call dropped it
+                    p.insert(0, 'Sample', 0)
+                p.insert(1, 'Member', midx)
+                raw.append(p)
+            return pd.concat(raw, ignore_index=True)
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
         out['Value'] = np.median(values, axis=0)
