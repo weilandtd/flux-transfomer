@@ -39,7 +39,7 @@ from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
 
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
-R2_THRESHOLD = 0.8
+R2_THRESHOLD = 0.9
 # Clip floor sits on the 0.2 tick grid so every interval on the axis is 0.2 wide and the
 # ticks are at their true data positions. The earlier −0.1 floor labelled "≤0" made the
 # first interval 0.3 against 0.2 for the rest, and mislabelled its own position.
