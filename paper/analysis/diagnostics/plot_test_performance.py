@@ -108,8 +108,8 @@ def _sample_columns(pred_df):
             yield int(ix), pred_df[ix]
 
 
-def load_benchmark(bench_dir: pathlib.Path,
-                   flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
+                   require_converged: bool = True) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
     An ensemble AI benchmark's predictions are *raw* (unprojected): every member's
@@ -124,9 +124,18 @@ def load_benchmark(bench_dir: pathlib.Path,
     (``reached_optimum`` is False, see :func:`converged_samples`) or every column's
     value for it was unusable. Either way it is excluded from R² and reported
     alongside it, so a method is never credited for samples it did not actually solve.
+
+    Args:
+        require_converged: when False, skip the χ²-acceptance filter and score every
+            fit the MFA arm wrote (still dropping samples with no usable value at
+            all). Used by the uncertainty benchmark, where a 100-sample condition
+            can leave too few χ²-accepted fits to say anything (some organisms
+            accept under 10% of their fits at the default noise level) — the
+            resulting R² is therefore not comparable to this function's default,
+            accepted-only numbers; report the χ²-acceptance rate alongside it.
     """
     bench_dir = pathlib.Path(bench_dir)
-    converged = converged_samples(bench_dir)
+    converged = converged_samples(bench_dir) if require_converged else None
 
     by_sample = {}
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
