@@ -44,6 +44,7 @@ from ._benchmark import (
     build_mfa_context,
     forward_labeling,
     load_benchmark_inputs,
+    metabolite_subset,
     noisy_measurements,
     pin_threads,
     select_samples,
@@ -79,6 +80,18 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
+    p.add_argument("--subsample", type=int, default=None,
+                   help="Draw this many samples out of the full split before applying "
+                        "--start-ix/--n-benchmarks (seeded at 0, independent of --seed, "
+                        "so a sensitivity study's conditions all score the identical "
+                        "subset). Default: use the whole split, as today.")
+    p.add_argument("--keep-met-frac", type=float, default=None,
+                   help="Restrict the mapped metabolites to this fraction (nested "
+                        "subset, seeded at 0 — see sigmaflux.pipeline._benchmark."
+                        "metabolite_subset), simulating a measurement platform that "
+                        "resolves only some of them. Dropped metabolites are omitted "
+                        "from df_L entirely (predict() then zero-fills their tokens). "
+                        "Default: use every mapped metabolite, as today.")
     p.add_argument("--noise-std", type=float, default=0.01,
                    help="Gaussian noise std added to simulated MID fractions")
     p.add_argument("--flux-noise-std", type=float, default=0.05,
@@ -88,7 +101,7 @@ def build_parser():
     return p
 
 
-def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
+def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer, keep_met_ids=None):
     """Convert the selected training-labeling columns to df_L for ``predict()``.
 
     Uses the shared per-sample RNG, so the MFA benchmark scoring the same sample sees
@@ -100,11 +113,16 @@ def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
         noise_std: Gaussian noise std added to the MID fractions.
         seed: base seed for the per-sample RNG stream.
         inv_tracer: maps internal tracer token to the predictor's tracer name.
+        keep_met_ids: optional metabolite ids to restrict to (dropping the rest
+            before noising, matching run_mfa_benchmark's ordering so the two arms'
+            RNG streams stay in lockstep).
     """
     noisy_cols = {}
     for run_ix, col in enumerate(cols):
         gt = labeling_df.iloc[:, int(col)]
         gt.index.names = ["Tracer", "Metabolite", "Isotopomer"]
+        if keep_met_ids is not None:
+            gt = gt[gt.index.get_level_values("Metabolite").isin(keep_met_ids)]
         noisy_cols[run_ix], _ = noisy_measurements(gt, np.empty(0), noise_std, 0.0,
                                                    seed, int(col))
     batch = pd.DataFrame(noisy_cols)
@@ -118,7 +136,7 @@ def build_df_L(labeling_df, cols, noise_std, seed, inv_tracer):
 
 
 def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_std,
-                labeling_df, seed):
+                labeling_df, seed, keep_met_ids=None):
     """Build df_Vm with noisy measured flux values for the selected columns.
 
     Draws (and discards) the labeling noise first to keep the shared RNG's draw
@@ -132,6 +150,9 @@ def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_
         flux_noise_std: relative Gaussian noise std added to the flux values.
         labeling_df: training-HDF5 labeling table, for the shared RNG draw order.
         seed: base seed for the per-sample RNG stream.
+        keep_met_ids: optional metabolite ids the discarded labeling draw is
+            restricted to, matching ``build_df_L`` so the discarded draw's size
+            (and hence the flux noise that follows it) stays in sync.
     """
     present = [r for r in measured_rxn_ids if r in training_flux_df.index]
     if not present:
@@ -140,6 +161,8 @@ def build_df_Vm(training_flux_df, measured_rxn_ids, cols, noise_std, flux_noise_
     for run_ix, col in enumerate(cols):
         gt_lab = labeling_df.iloc[:, int(col)]
         gt_lab.index.names = ["Tracer", "Metabolite", "Isotopomer"]
+        if keep_met_ids is not None:
+            gt_lab = gt_lab[gt_lab.index.get_level_values("Metabolite").isin(keep_met_ids)]
         true_vals = training_flux_df.loc[present].iloc[:, int(col)].to_numpy(float)
         _, noisy = noisy_measurements(gt_lab, true_vals, noise_std, flux_noise_std,
                                       seed, int(col))
@@ -182,11 +205,17 @@ def main(args):
     split_source = getattr(sf, "split_source", checkpoint)
     print(f"  Members      : {len(members)}")
 
-    cobra_model, _, training_labeling_df, training_flux_df, _ = load_benchmark_inputs(
-        data_dir, cfg, root)
+    cobra_model, mapped_met_ids, training_labeling_df, training_flux_df, _ = \
+        load_benchmark_inputs(data_dir, cfg, root)
+    keep_met_ids = None
+    if args.keep_met_frac is not None and mapped_met_ids:
+        keep_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac)
+        print(f"  Restricted to {len(keep_met_ids)} metabolites "
+              f"({args.keep_met_frac:.0%} of the mapped set)")
 
     sel, tag = select_samples(args.split, split_source, training_flux_df.shape[1],
-                              cfg, args.start_ix, args.n_benchmarks)
+                              cfg, args.start_ix, args.n_benchmarks,
+                              subsample=args.subsample)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
@@ -200,9 +229,11 @@ def main(args):
     )
 
     print(f"\nBuilding input tensors for {n_runs} samples ...")
-    df_L = build_df_L(training_labeling_df, sel, args.noise_std, args.seed, inv_tracer)
+    df_L = build_df_L(training_labeling_df, sel, args.noise_std, args.seed, inv_tracer,
+                      keep_met_ids=keep_met_ids)
     df_Vm = build_df_Vm(training_flux_df, measured_rxn_ids, sel, args.noise_std,
-                        args.flux_noise_std, training_labeling_df, args.seed)
+                        args.flux_noise_std, training_labeling_df, args.seed,
+                        keep_met_ids=keep_met_ids)
 
     # Every member's rows accumulate into these same three lists, so one checkpoint
     # write and one final file cover the whole ensemble — the row key is a plain

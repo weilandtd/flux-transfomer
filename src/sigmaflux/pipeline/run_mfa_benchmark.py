@@ -61,6 +61,7 @@ from ._benchmark import (
     forward_labeling,
     labeling_chi2_scale,
     load_benchmark_inputs,
+    metabolite_subset,
     noisy_measurements,
     pin_threads,
     resolve_split_source,
@@ -92,6 +93,17 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
+    p.add_argument("--subsample", type=int, default=None,
+                   help="Draw this many samples out of the full split before applying "
+                        "--start-ix/--n-benchmarks (seeded at 0, independent of --seed, "
+                        "so a sensitivity study's conditions all score the identical "
+                        "subset). Default: use the whole split, as today.")
+    p.add_argument("--keep-met-frac", type=float, default=None,
+                   help="Restrict the mapped metabolites to this fraction (nested "
+                        "subset, seeded at 0 — see sigmaflux.pipeline._benchmark."
+                        "metabolite_subset), simulating a measurement platform that "
+                        "resolves only some of them. Default: use every mapped "
+                        "metabolite, as today.")
     p.add_argument("--backend", choices=["native", "native-ipopt", "x3cflux"], default="native",
                    help="Which optimiser fits the flux. 'native' is the in-house "
                         "null-space L-BFGS-B (S·v=0 satisfied by construction, no "
@@ -609,10 +621,15 @@ def main(args):
 
     cobra_model, mapped_met_ids, _, all_flux_df, all_rev_df = load_benchmark_inputs(
         data_dir, cfg, root)
+    if args.keep_met_frac is not None and mapped_met_ids:
+        mapped_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac)
+        print(f"  Restricted to {len(mapped_met_ids)} metabolites "
+              f"({args.keep_met_frac:.0%} of the mapped set)")
 
     split_source = resolve_split_source(_p(args.checkpoint), data_dir, args.split)
     sel, tag = select_samples(args.split, split_source, all_flux_df.shape[1], cfg,
-                              args.start_ix, 1 if args.diagnose else args.n_benchmarks)
+                              args.start_ix, 1 if args.diagnose else args.n_benchmarks,
+                              subsample=args.subsample)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
