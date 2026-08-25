@@ -5,13 +5,19 @@
 # predictions are not comparable with the other organisms.
 name: E_coli_core
 model_file: models/atomistic/E_coli_core/e_coli_core_annotated.json
+# Read by training's restrict_to_mapped feature filter; experiment.mapping_csv below
+# overrides this for sigmaflux-infer when the experimental data uses different ids.
 mapping_csv: models/atomistic/E_coli_core/E_coli_core_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
-# No `experiment:` block — the ¹³C data in data/E_coli is mapped onto iAF1260, not
-# onto this network. That block is read only by the paper analyses and by
-# sigmaflux-infer; training needs none of it.
+# MID and ExtFlux data live in data/E_coli, shared with e_coli's own eventual
+# genome-scale onboarding since it's the same Long & Antoniewicz (2019) dataset.
+experiment:
+  data_dir: data/E_coli
+  gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
+  mapping_csv: models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv
+  reference_flux: E_coli_core_reference_flux.xlsx
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
 # biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
