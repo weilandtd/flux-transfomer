@@ -81,7 +81,8 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
     return (cobra_model, mapped_met_ids, *load_data(data_dir))
 
 
-def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
+def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks,
+                   subsample=None):
     """Sample columns for this task, as an offset window into *split*.
 
     Args:
@@ -91,21 +92,54 @@ def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
         cfg: organism config, for the val_fraction/seed fallback when recomputing the split.
         start_ix: offset of the first sample within the split.
         n_benchmarks: number of samples to select from that offset.
+        subsample: when given, first draw this many indices out of the full split
+            (seeded at 0, independent of any run's ``--seed``, so every condition of
+            a sensitivity study draws the identical subset regardless of what noise
+            seed it runs with), sorted back into split order, then windowed by
+            ``start_ix``/``n_benchmarks`` as usual. ``None`` uses the whole split.
 
-    ``start_ix``/``n_benchmarks`` index the sorted split, not raw HDF5 columns, so a
-    SLURM array tiles it deterministically. Returns ``(sel, tag)``; ``sel`` is empty
-    when the offset window falls past the end of the split.
+    ``start_ix``/``n_benchmarks`` index the sorted split (post-subsampling, when
+    given), not raw HDF5 columns, so a SLURM array tiles it deterministically.
+    Returns ``(sel, tag)``; ``sel`` is empty when the offset window falls past the
+    end of the split.
     """
     split_cols = split_sample_indices(
         split, split_source, n_total,
         cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
     )
+    if subsample is not None and subsample < len(split_cols):
+        split_cols = np.sort(
+            np.random.default_rng(0).choice(split_cols, size=subsample, replace=False)
+        )
     sel = split_cols[start_ix:start_ix + n_benchmarks]
     n_runs = len(sel)
-    print(f"  split={split}: {len(split_cols)} samples; this task evaluates "
+    print(f"  split={split}: {len(split_cols)} samples"
+          f"{' (subsampled)' if subsample is not None else ''}; this task evaluates "
           f"offsets {start_ix}–{start_ix + n_runs - 1} → columns "
           f"{sel[0] if n_runs else '-'}..{sel[-1] if n_runs else '-'} of {n_total} total")
     return sel, f"{start_ix:05d}_{start_ix + max(n_runs - 1, 0):05d}"
+
+
+def metabolite_subset(mapped_met_ids, frac, seed=0):
+    """Nested random subset of *mapped_met_ids*, keeping a fixed fraction of it.
+
+    One permutation of the sorted ids is drawn from *seed*; level ``frac`` keeps its
+    first ``round(frac * n)`` entries, so subsets at different fractions nest
+    (frac=0.25 ⊂ frac=0.5 ⊂ frac=0.75 ⊂ frac=1.0) rather than being independent
+    draws — the reading is "this platform resolves these metabolites", and
+    degradation is monotone in how much of that set is dropped.
+
+    Args:
+        mapped_met_ids: full set of metabolite ids the measurement platform can see.
+        frac: fraction of them to keep, in [0, 1].
+        seed: RNG seed for the permutation. Fixed by default (0) so independent
+            callers — the AI and MFA arms of a sensitivity study — drop the
+            identical metabolites without having to share any other state.
+    """
+    ids = np.array(sorted(mapped_met_ids))
+    order = np.random.default_rng(seed).permutation(len(ids))
+    n_keep = round(frac * len(ids))
+    return set(ids[order[:n_keep]].tolist())
 
 
 def resolve_split_source(checkpoint, data_dir, split):
