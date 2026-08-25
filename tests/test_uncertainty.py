@@ -7,6 +7,7 @@ the labeling side and the reduction of raw draws to a reported estimate.
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.stats import t as tdist
 
 from sigmaflux.ai.uncertainty import (
     MidNoiseModel, coverage_by_reaction, fit_mid_noise_model, sample_inputs,
@@ -152,6 +153,31 @@ class TestSummarizeDraws:
         out = summarize_draws(self._raw(), n_draws=40, group_cols=["Type", "Flux Name"])
         row = out.iloc[0]
         assert row["Value_lo"] < row["Value"] < row["Value_hi"]
+
+    def test_interval_is_a_t_interval_on_the_total_spread(self):
+        """Not the empirical percentile of the draws.
+
+        With ~20 members the 2.5/97.5 percentiles sit at the sample extrema and cannot
+        resolve a 2.5% tail; measured against held-out truth they under-cover (0.861-0.875
+        median per-reaction coverage against nominal 0.95, where this reaches 0.928-0.938).
+        sigma is estimated from a small sample, so the quantile is Student-t on the member
+        axis' degrees of freedom.
+        """
+        raw = self._raw(n_members=20)
+        out = summarize_draws(raw, n_draws=40, group_cols=["Type", "Flux Name"])
+        row = out.iloc[0]
+        half = tdist.ppf(0.975, 19) * row["sigma_total"]
+        assert row["Value_hi"] - row["Value"] == pytest.approx(half)
+        assert row["Value"] - row["Value_lo"] == pytest.approx(half)
+
+    def test_degrees_of_freedom_follow_the_member_count(self):
+        """Fewer members means sigma is less well determined and the interval must widen."""
+        few = summarize_draws(self._raw(n_members=3), n_draws=40,
+                              group_cols=["Type", "Flux Name"]).iloc[0]
+        many = summarize_draws(self._raw(n_members=30), n_draws=40,
+                               group_cols=["Type", "Flux Name"]).iloc[0]
+        width = lambda r: (r["Value_hi"] - r["Value_lo"]) / r["sigma_total"]
+        assert width(few) > width(many)
 
     def test_components_separate_member_spread_from_input_spread(self):
         """sigma_model is member disagreement at a fixed input; sigma_input is how far the
