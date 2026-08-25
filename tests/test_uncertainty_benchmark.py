@@ -138,6 +138,57 @@ def test_bad_task_id_raises():
         ])
 
 
+# ── AI checkpoint resolution ─────────────────────────────────────────────────────
+
+def test_resolve_ai_checkpoint_falls_back_to_ensemble_dir(toy_run, tmp_path):
+    """Every current paper/.results/*_20260822 run has an ensemble/ but no
+    top-level .pt (train_ai_model returns from the ensemble branch before writing
+    training.output_model) -- sigmaflux.ai.data.find_checkpoint only looks at the
+    top level and raises there, which is what broke the first real run of this
+    driver against production data. The toy_run fixture always ships a top-level
+    .pt, so this branch needs its own run dir to exercise at all."""
+    from sigmaflux.pipeline.run_uncertainty_benchmark import _resolve_ai_checkpoint
+
+    ensemble_only = tmp_path / "ensemble_only_run"
+    ensemble_only.mkdir()
+    (ensemble_only / "ensemble").symlink_to(toy_run["ensemble_dir"])
+
+    assert _resolve_ai_checkpoint(str(ensemble_only)) == str(ensemble_only / "ensemble")
+    assert _resolve_ai_checkpoint(toy_run["dir"]) == toy_run["checkpoint"]   # top-level wins
+    assert _resolve_ai_checkpoint(str(tmp_path)) is None                    # neither present
+
+
+def test_uncertainty_benchmark_ai_task_works_with_ensemble_only_run(tmp_path, toy_run, monkeypatch):
+    """End-to-end: an ensemble-only run dir (no top-level .pt) must still run the
+    ai method through the sensitivity driver, not just through plain
+    sigmaflux-benchmark -- this is the exact shape every real _20260822 run has."""
+    monkeypatch.chdir(tmp_path)
+    run_dir = tmp_path / "ensemble_only_run"
+    run_dir.mkdir()
+    for name in os.listdir(toy_run["dir"]):
+        if name == "toy_ckpt.pt":
+            continue   # the one file that must NOT exist, to reproduce the real shape
+        os.symlink(os.path.join(toy_run["dir"], name), run_dir / name)
+
+    out_dir = tmp_path / "uncertainty_benchmark"
+    grid = tasks(CONDITIONS, ("ai",), 4, None)
+    task_id = next(i for i, t in enumerate(grid) if t[0].name == "met100_lab001_flux005")
+
+    rc = run_uncertainty_benchmark.cli([
+        "--config", _TOY_CONFIG_YAML,
+        "--data-dir", str(run_dir),
+        "--output-dir", str(out_dir),
+        "--split", "all",
+        "--n-samples", "4",
+        "--methods", "ai",
+        "--task-id", str(task_id),
+    ])
+    assert rc == 0
+
+    flux = pd.read_hdf(out_dir / "met100_lab001_flux005" / "ai" / "pred_00000_00003_flux.h5")
+    assert np.isfinite(flux.values).all()
+
+
 # ── end-to-end smoke, both methods ──────────────────────────────────────────────
 
 def test_uncertainty_benchmark_list_prints_grid_and_runs_nothing(toy_run, capsys):

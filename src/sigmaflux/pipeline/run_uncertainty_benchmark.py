@@ -61,6 +61,7 @@ Usage:
 
 import argparse
 import dataclasses
+import glob
 import os
 
 from ._paths import add_root_argument, load_config, resolve_path
@@ -189,6 +190,26 @@ def _selected_grid(args):
     return tasks(conditions, methods, args.n_samples, args.per_task)
 
 
+def _resolve_ai_checkpoint(data_dir):
+    """Best top-level ``.pt``, else the ``ensemble/`` directory, else ``None``.
+
+    Mirrors ``submit_ai_benchmark.sh``'s own ``FIND_CHECKPOINT`` glob order.
+    ``sigmaflux.ai.data.find_checkpoint`` (``run_ai_benchmark.py``'s own default
+    when ``--checkpoint`` is omitted) only looks at the top level and raises when a
+    run has ensemble members but no top-level ``.pt`` -- true for every current
+    ``paper/.results/*_20260822`` run -- so this module resolves it explicitly
+    rather than relying on that fallback. ``load_predictor`` (what the AI arm
+    actually calls) already knows how to load a directory of ``model_*.pt``.
+    """
+    top = sorted(glob.glob(os.path.join(data_dir, "*.pt")))
+    if top:
+        return top[0]
+    ensemble = os.path.join(data_dir, "ensemble")
+    if glob.glob(os.path.join(ensemble, "model_*.pt")):
+        return ensemble
+    return None   # nothing found; let run_ai_benchmark's own error explain why
+
+
 def _run_task(condition, method, start_ix, n_this_task, args, output_dir):
     """Build argv for the sibling driver and call its ``cli()`` -- never reimplemented."""
     sub_out = os.path.join(output_dir, condition.name, method)
@@ -211,7 +232,11 @@ def _run_task(condition, method, start_ix, n_this_task, args, output_dir):
 
     if method == "ai":
         from .run_ai_benchmark import cli as ai_cli
-        return ai_cli(common)
+        argv = list(common)
+        checkpoint = _resolve_ai_checkpoint(args.data_dir)
+        if checkpoint is not None:
+            argv += ["--checkpoint", checkpoint]
+        return ai_cli(argv)
 
     from .run_mfa_benchmark import cli as mfa_cli
     argv = common + [
