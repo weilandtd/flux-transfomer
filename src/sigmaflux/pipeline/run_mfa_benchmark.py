@@ -163,9 +163,44 @@ def build_parser():
                    help="Fit a single sample (the one at --start-ix) with step-by-step "
                         "diagnostics and recovery metrics, writing no HDF5. Ignores "
                         "--max-starts / --accept-z: exactly one fit is run.")
+    p.add_argument("--ipopt-option", action="append", default=[], metavar="KEY=VALUE",
+                   help="Extra Ipopt option, native-ipopt backend only (e.g. "
+                        "--ipopt-option limited_memory_max_history=20). Repeatable; "
+                        "overrides mfa_ipopt.IPOPT_DEFAULTS.")
+    p.add_argument("--hessian-mode", choices=["limited-memory", "gauss-newton"],
+                   default="limited-memory",
+                   help="native-ipopt backend only. 'limited-memory' (default) uses "
+                        "Ipopt's own L-BFGS approximation. 'gauss-newton' uses the real "
+                        "J^T.J of the residual (J via one backward pass per residual) -- "
+                        "genome-scale timing puts a fresh one at roughly 1-2 hours, so it "
+                        "is cached and only rebuilt every --gn-refresh-every iterations.")
+    p.add_argument("--gn-refresh-every", type=int, default=50,
+                   help="Outer-iteration cadence for rebuilding the Gauss-Newton Hessian "
+                        "(only with --hessian-mode gauss-newton).")
     p.add_argument("--seed", type=int, default=42)
     add_root_argument(p)
     return p
+
+
+def _parse_ipopt_options(pairs):
+    """Turn ``--ipopt-option`` KEY=VALUE strings into a typed dict.
+
+    cyipopt.Problem.add_option infers the Ipopt option type from the Python
+    type of the value passed in, so a numeric-looking string has to become an
+    int or float rather than stay a str (e.g. limited_memory_max_history needs
+    an int; limited_memory_update_type stays the string "sr1"/"bfgs").
+    """
+    options = {}
+    for pair in pairs:
+        key, _, value = pair.partition("=")
+        try:
+            options[key] = int(value)
+        except ValueError:
+            try:
+                options[key] = float(value)
+            except ValueError:
+                options[key] = value
+    return options
 
 
 def measured_flux_ids(measured_rxn_ids, gt_flux_series):
@@ -741,7 +776,10 @@ def main(args):
                 if args.backend == "native-ipopt":
                     from ..core.mfa_ipopt import fit_mfa_model_ipopt
                     res = fit_mfa_model_ipopt(mfa_model, max_iter=args.max_iter, tol=args.tol,
-                                              disp=1 if (args.diagnose or args.verbose) else 0)
+                                              disp=1 if (args.diagnose or args.verbose) else 0,
+                                              ipopt_options=_parse_ipopt_options(args.ipopt_option),
+                                              hessian_mode=args.hessian_mode,
+                                              gn_refresh_every=args.gn_refresh_every)
                 else:
                     res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
                                         disp=1 if (args.diagnose or args.verbose) else 0)

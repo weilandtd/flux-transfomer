@@ -49,14 +49,17 @@ def _prepare_mfa_batches(model, simultanous_experiments):
 
 
 def _mfa_residual(model, v_net, r, experiment_batches, batch_data, mask_f,
-                  inv_n_L, inv_n_F, return_blocks=False):
+                  inv_n_L, inv_n_F, return_blocks=False, return_vector=False):
     """Labeling+flux SSR for one (v_net, r) flux state.
 
     Differentiable w.r.t. v_net/r via autograd through the EMU forward model.
 
-    return_blocks=False returns the raw sum of squared residuals over both
-    blocks. return_blocks=True returns (labeling, flux) separately, each
-    divided by its own measurement count.
+    return_blocks=False, return_vector=False (default) returns the raw sum of
+    squared residuals over both blocks. return_blocks=True returns (labeling,
+    flux) separately, each divided by its own measurement count. return_vector=True
+    returns the concatenated standardized residuals themselves (not squared/summed)
+    -- the SSR is ``residuals.square().sum()`` -- for callers that need the
+    per-measurement Jacobian (e.g. a Gauss-Newton Hessian J^T J), not just the loss.
 
     Args:
         model: MFAModel the labeling forward pass runs against.
@@ -66,6 +69,8 @@ def _mfa_residual(model, v_net, r, experiment_batches, batch_data, mask_f,
         mask_f: reversibility mask (1.0 for reversible reactions), from ``model._reversibility_mask``.
         return_blocks: return the two reduced-χ² blocks separately instead of
             the combined raw SSR.
+        return_vector: return the flat standardized-residual vector instead of
+            any reduction; takes precedence over return_blocks.
     """
     rev = torch.where((r * mask_f) <= model.min_rev_flux,
                       torch.full_like(r, model.min_rev_flux),
@@ -78,13 +83,22 @@ def _mfa_residual(model, v_net, r, experiment_batches, batch_data, mask_f,
 
     total_L = v_net.new_zeros(())
     total_F = v_net.new_zeros(())
+    residuals = [] if return_vector else None
     for exp_ix in experiment_batches:
         index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
         output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
         sim_L = torch.take(output, index_labeling)
-        total_L = total_L + ((sim_L - L_mean) / L_std).square().sum()
+        lab_res = (sim_L - L_mean) / L_std
+        total_L = total_L + lab_res.square().sum()
+        if return_vector:
+            residuals.append(lab_res)
         if index_fluxes.numel() > 0:
-            total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
+            flux_res = (v_net[index_fluxes] - v_mean) / v_std
+            total_F = total_F + flux_res.square().sum()
+            if return_vector:
+                residuals.append(flux_res)
+    if return_vector:
+        return torch.cat(residuals)
     if return_blocks:
         return total_L * inv_n_L, total_F * inv_n_F
     return total_L + total_F

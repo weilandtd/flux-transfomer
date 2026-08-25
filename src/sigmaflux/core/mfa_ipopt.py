@@ -56,10 +56,24 @@ class _MFAIpoptProblem:
 
     objective/gradient are computed via torch.autograd on ``_mfa_residual``.
     constraints/jacobian implement ``S·v = 0``.
+
+    hessian_mode="limited-memory" (default) reports an empty hessianstructure() --
+    cyipopt.Problem.__init__ calls it unconditionally regardless of
+    hessian_approximation, so it must exist and return validly even though Ipopt's
+    own quasi-Newton approximation runs instead and never calls hessian() itself.
+    hessian_mode="gauss-newton" supplies the real Gauss-Newton Hessian
+    J^T·J of the sum-of-squares residual (J from torch.autograd.functional.jacobian,
+    i.e. one backward pass per residual), which genome-scale timing showed costs on
+    the order of an hour to assemble fresh -- so it is cached and only rebuilt every
+    gn_refresh_every outer Ipopt iterations, not every call. The S·v=0 constraint is
+    linear in v (and does not involve r at all), so it contributes exactly zero
+    curvature regardless of the multipliers Ipopt passes in -- no separate
+    constraint-Hessian term is needed.
     """
 
     def __init__(self, model, experiment_batches, batch_data, mask_f,
-                inv_n_L, inv_n_F, n, dtype, device):
+                inv_n_L, inv_n_F, n, dtype, device,
+                hessian_mode="limited-memory", gn_refresh_every=50):
         self.model = model
         self.experiment_batches = experiment_batches
         self.batch_data = batch_data
@@ -70,6 +84,8 @@ class _MFAIpoptProblem:
         self.dtype = dtype
         self.device = device
         self.n_iter = 0
+        self.hessian_mode = hessian_mode
+        self.gn_refresh_every = gn_refresh_every
 
         S_np = model.stoichiometry.detach().cpu().numpy()
         coo = sp.coo_matrix(S_np)
@@ -81,6 +97,20 @@ class _MFAIpoptProblem:
         self._cache_x = None
         self._cache_loss = None
         self._cache_grad = None
+
+        # Defaults for limited-memory mode -- hessianstructure() must exist and be
+        # callable regardless (see class docstring); overwritten below for gauss-newton.
+        self._hess_rows = self._hess_cols = np.array([], dtype=np.int64)
+        self._gn_cache_iter = None
+        self._gn_cache_lower = None
+
+        if hessian_mode == "gauss-newton":
+            # Dense lower triangle over the full 2n block. Some of these (the
+            # irreversible reactions' r-components, fixed at lb=ub=0) are always
+            # zero and Ipopt eliminates them internally anyway -- same trade-off
+            # jacobianstructure() already makes by covering only v's columns.
+            rows, cols = np.tril_indices(2 * n)
+            self._hess_rows, self._hess_cols = rows, cols
 
     def _eval(self, x):
         if self._cache_x is not None and np.array_equal(x, self._cache_x):
@@ -114,6 +144,30 @@ class _MFAIpoptProblem:
     def jacobian(self, x):
         return self._jac_data
 
+    def _residual_vector(self, x_t):
+        v, r = x_t[: self.n], x_t[self.n:]
+        return _mfa_residual(self.model, v, r, self.experiment_batches,
+                             self.batch_data, self.mask_f,
+                             self.inv_n_L, self.inv_n_F, return_vector=True)
+
+    def hessianstructure(self):
+        return self._hess_rows, self._hess_cols
+
+    def hessian(self, x, lagrange, obj_factor):
+        stale = (self._gn_cache_lower is None
+                or self.n_iter - self._gn_cache_iter >= self.gn_refresh_every)
+        if stale:
+            x_t = torch.tensor(x, dtype=self.dtype, device=self.device)
+            J = torch.autograd.functional.jacobian(self._residual_vector, x_t)
+            # Gauss-Newton approx of Hess(sum r_i^2) = 2 J^T J + 2 sum r_i Hess(r_i),
+            # dropping the residual-curvature term -- the leading 2 is not optional,
+            # it is the same factor of 2 that turns d/dx(r^2) into 2 r r'.
+            G = (2.0 * (J.T @ J)).cpu().numpy()
+            self._gn_cache_lower = G[self._hess_rows, self._hess_cols]
+            self._gn_cache_iter = self.n_iter
+            logger.info(f"MFA Ipopt: Gauss-Newton Hessian refreshed at iter {self.n_iter}")
+        return obj_factor * self._gn_cache_lower
+
     def intermediate(self, alg_mod, iter_count, obj_value, inf_pr, inf_du,
                      mu, d_norm, regularization_size, alpha_du, alpha_pr,
                      ls_trials):
@@ -129,7 +183,9 @@ def fit_mfa_model_ipopt(model,
                         checkpoint_file=None,
                         labeling_checkpoint_file=None,
                         disp=0,
-                        ipopt_options=None):
+                        ipopt_options=None,
+                        hessian_mode="limited-memory",
+                        gn_refresh_every=50):
     """Fit an MFA model in full flux space via Ipopt.
 
     S·v = 0 is passed to Ipopt as an explicit linear equality constraint. v is
@@ -149,6 +205,12 @@ def fit_mfa_model_ipopt(model,
         disp: print Ipopt's own iteration log when truthy.
         ipopt_options: extra options passed to ``cyipopt.Problem.add_option``,
             overriding :data:`IPOPT_DEFAULTS`.
+        hessian_mode: "limited-memory" (default, Ipopt's own L-BFGS approximation)
+            or "gauss-newton" (real J^T·J of the residual, J via one backward pass
+            per residual -- genome-scale timing puts a fresh one at ~1-2 hours, so
+            it is cached and rebuilt only every gn_refresh_every iterations).
+        gn_refresh_every: outer-iteration cadence for rebuilding the Gauss-Newton
+            Hessian; only used when hessian_mode="gauss-newton".
 
     Returns:
         dict with loss, converged, n_iter, ssr_labeling, ssr_fluxes, n_labeling,
@@ -180,7 +242,9 @@ def fit_mfa_model_ipopt(model,
     ub = np.clip(torch.cat([ub_v, ub_r]).cpu().numpy(), -BIG, BIG)
 
     problem_obj = _MFAIpoptProblem(model, experiment_batches, batch_data, mask_f,
-                                   inv_n_L, inv_n_F, n, dtype, device)
+                                   inv_n_L, inv_n_F, n, dtype, device,
+                                   hessian_mode=hessian_mode,
+                                   gn_refresh_every=gn_refresh_every)
     m = model.stoichiometry.shape[0]
     nlp = cyipopt.Problem(
         n=2 * n, m=m, problem_obj=problem_obj,
@@ -189,6 +253,8 @@ def fit_mfa_model_ipopt(model,
     options = dict(IPOPT_DEFAULTS)
     options.update(max_iter=max_iter, tol=tol, acceptable_tol=acceptable_tol,
                    print_level=(5 if disp else 0))
+    if hessian_mode == "gauss-newton":
+        options["hessian_approximation"] = "exact"
     options.update(ipopt_options or {})
     for key, value in options.items():
         nlp.add_option(key, value)
