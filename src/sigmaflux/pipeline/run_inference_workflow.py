@@ -14,8 +14,10 @@ Usage:
 
 Optional:
     --conditions C N P      run only these conditions (default: all discovered)
-    --n-flux-samples 50     flux draws per bio-replicate (default: 50)
-    --flux-to-sample EX_glc__D_e
+
+Flux draws per bio-replicate come from experiment.n_flux_samples in the config
+(default 50 when absent) -- not a CLI flag, so the count used for a run is always
+the one recorded in its config.
 """
 
 import argparse
@@ -72,22 +74,23 @@ def _inspect_growth_conditions(xlsx_path: str) -> list[int]:
 
 
 def _expand_samples(
-    df_L:           pd.DataFrame,
-    df_Vm:          pd.DataFrame,
-    flux_to_sample: str,
-    df_err:         pd.DataFrame | None,
-    n_samples:      int,
-    rng:            np.random.Generator,
+    df_L:      pd.DataFrame,
+    df_Vm:     pd.DataFrame,
+    df_err:    pd.DataFrame | None,
+    n_samples: int,
+    rng:       np.random.Generator,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Replicate df_L and df_Vm n_samples times per bio-rep, perturbing flux_to_sample.
+    """Replicate df_L and df_Vm n_samples times per bio-rep, resampling every measured
+    flux that has a known error.
 
     Synthetic sample ID = (R - 1) * n_samples + S for bio-rep R, sample S (0..n_samples-1);
-    the perturbed flux is drawn uniformly from [value - error, value + error].
+    each bounded flux is drawn independently from Normal(value, error) -- error taken as
+    the draw's standard deviation, not a hard bound. Fluxes without a known error are held
+    fixed at their measured value.
 
     Args:
         df_L: labeling (MID) data, one row per bio-rep.
         df_Vm: measured-flux data, one row per bio-rep.
-        flux_to_sample: reaction name whose flux is perturbed.
         df_err: per-flux error bounds used for the perturbation, or None.
         n_samples: number of synthetic draws per bio-replicate.
         rng: random generator used for the perturbation.
@@ -105,9 +108,15 @@ def _expand_samples(
         vm_sample = rep if rep in df_Vm['Sample'].values else int(df_Vm['Sample'].iloc[0])
         df_Vm_rep = df_Vm[df_Vm['Sample'] == vm_sample].copy()
 
-        base_rows = df_Vm_rep.loc[df_Vm_rep['Flux Name'] == flux_to_sample, 'Value']
-        base_val  = float(base_rows.iloc[0]) if len(base_rows) else None
-        err_val   = err_idx.get((vm_sample, flux_to_sample))
+        # Precompute (base value, error) once per bio-rep for every flux that has a
+        # known, usable error -- np.isfinite guards the unmeasured case: float(nan)
+        # passes an `is not None` check but makes rng.normal overflow.
+        bounds = {}
+        for flux_name, base_val in zip(df_Vm_rep['Flux Name'], df_Vm_rep['Value']):
+            err_val = err_idx.get((vm_sample, flux_name))
+            if (base_val is not None and np.isfinite(base_val)
+                    and err_val is not None and err_val > 0):
+                bounds[flux_name] = (float(base_val), float(err_val))
 
         for s in range(n_samples):
             syn_id = (rep - 1) * n_samples + s
@@ -118,12 +127,9 @@ def _expand_samples(
 
             df_Vm_syn = df_Vm_rep.copy()
             df_Vm_syn['Sample'] = syn_id
-            # np.isfinite guards the unmeasured case: float(nan) passes an
-            # `is not None` check but makes rng.uniform overflow.
-            if (base_val is not None and np.isfinite(base_val)
-                    and err_val is not None and err_val > 0):
-                df_Vm_syn.loc[df_Vm_syn['Flux Name'] == flux_to_sample, 'Value'] = \
-                    float(rng.uniform(base_val - err_val, base_val + err_val))
+            for flux_name, (base_val, err_val) in bounds.items():
+                df_Vm_syn.loc[df_Vm_syn['Flux Name'] == flux_name, 'Value'] = \
+                    float(rng.normal(base_val, err_val))
             V_parts.append(df_Vm_syn)
 
     return pd.concat(L_parts, ignore_index=True), pd.concat(V_parts, ignore_index=True)
@@ -144,10 +150,6 @@ def build_parser():
                         help="Directory where per-condition prediction CSVs are written")
     parser.add_argument("--conditions", nargs="+", default=None,
                         help="Conditions to run (default: all discovered from data-dir)")
-    parser.add_argument("--n-flux-samples", type=int, default=50,
-                        help="Independent flux draws per bio-replicate")
-    parser.add_argument("--flux-to-sample", default="EX_glc__D_e",
-                        help="Reaction whose flux is perturbed within ±error per bio-rep")
     return add_root_argument(parser)
 
 
@@ -160,7 +162,21 @@ def cli(argv=None):
     t           = cfg.get("training", {})
     flux_names  = t.get("measured_fluxes") or None
     organism    = cfg.get("name", "organism")
-    mapping_csv = cfg.get("mapping_csv")
+    # experiment.mapping_csv lets one organism's experimental files use compound ids
+    # the training mapping_csv doesn't cover (GC-MS fragments, alternative platform
+    # annotations, ...) without touching the file training's restrict_to_mapped filter
+    # reads. Defaults to the top-level mapping_csv when the experiment data uses the
+    # same ids training does.
+    mapping_csv = cfg.get("experiment", {}).get("mapping_csv") or cfg.get("mapping_csv")
+    # experiment.ext_flux lets one organism pick a specific *_ExtFlux.xlsx out of a
+    # data_dir shared with another organism, when their measured-flux reaction ids
+    # differ (e.g. e_coli's iAF1260 ids vs e_coli_core's naming in the same shared
+    # file) — same override pattern as experiment.mapping_csv above. Defaults to the
+    # single *_ExtFlux.xlsx glob match when absent.
+    ext_flux    = cfg.get("experiment", {}).get("ext_flux")
+    # experiment.n_flux_samples is the sole source for the flux-perturbation draw
+    # count -- no CLI override, so a run's count is always the one its config records.
+    n_flux_samples = cfg.get("experiment", {}).get("n_flux_samples", 50)
 
     def _p(rel):
         return resolve_path(rel, root)
@@ -170,7 +186,7 @@ def cli(argv=None):
     out_dir      = os.path.abspath(args.out_dir)
     mapping_path = _p(mapping_csv) if mapping_csv else None
 
-    ext_file = _find_ext_flux_file(data_dir)
+    ext_file = _p(ext_flux) if ext_flux else _find_ext_flux_file(data_dir)
     if ext_file is None:
         print(f"ERROR: no *_ExtFlux.xlsx found in {data_dir}")
         sys.exit(1)
@@ -235,34 +251,63 @@ def cli(argv=None):
 
             df_L_exp, df_Vm_exp = _expand_samples(
                 df_L, df_Vm,
-                flux_to_sample = args.flux_to_sample,
-                df_err         = df_err,
-                n_samples      = args.n_flux_samples,
-                rng            = rng,
+                df_err    = df_err,
+                n_samples = n_flux_samples,
+                rng       = rng,
             )
 
             n_syn = df_L_exp['Sample'].nunique()
             print(f"     Running inference ({len(bio_reps)} bio-reps × "
-                  f"{args.n_flux_samples} flux samples = {n_syn} synthetic samples)...")
-            result = sf.predict(df_L_exp, df_Vm=df_Vm_exp)
-
-            result['BioRep']          = result['Sample'] // args.n_flux_samples + 1
-            result['GrowthCondition'] = gc
-            result['Condition']       = condition
+                  f"{n_flux_samples} flux samples = {n_syn} synthetic samples)...")
 
             n_flux = len(sf.flux_names)
-            result['Type'] = (
-                result.groupby('Sample', sort=False).cumcount()
-                      .lt(n_flux).map({True: 'flux', False: 'reversibility'})
-            )
+            is_ensemble = hasattr(sf, 'members')
 
-            agg = (
-                result
-                .groupby(['Condition', 'GrowthCondition', 'BioRep', 'Type', 'Flux Name'],
-                         sort=False)['Value']
-                .mean()
-                .reset_index()
-            )
+            if is_ensemble:
+                raw = sf.predict(df_L_exp, df_Vm=df_Vm_exp, aggregate=False)
+                raw['Type'] = (
+                    raw.groupby(['Sample', 'Member'], sort=False).cumcount()
+                       .lt(n_flux).map({True: 'flux', False: 'reversibility'})
+                )
+                raw['BioRep']          = raw['Sample'] // n_flux_samples + 1
+                raw['GrowthCondition'] = gc
+                raw['Condition']       = condition
+                grp_cols = ['Condition', 'GrowthCondition', 'BioRep', 'Type', 'Flux Name']
+
+                # Point estimate: median over members per synthetic sample, then mean
+                # over samples within a bio-rep -- unchanged from the pre-existing
+                # point-estimate computation.
+                per_sample = (raw.groupby(grp_cols + ['Sample'], sort=False)['Value']
+                                 .median().reset_index())
+                point = per_sample.groupby(grp_cols, sort=False)['Value'].mean().reset_index()
+
+                # 95% interval: pooled directly over every (sample x member) draw
+                # within the bio-rep -- the full ensemble x flux-perturbation
+                # uncertainty in one percentile, not decomposed per sample first.
+                bounds = (raw.groupby(grp_cols, sort=False)['Value']
+                             .agg(Value_lo=lambda s: np.percentile(s, 2.5),
+                                  Value_hi=lambda s: np.percentile(s, 97.5))
+                             .reset_index())
+                agg = point.merge(bounds, on=grp_cols)
+            else:
+                result = sf.predict(df_L_exp, df_Vm=df_Vm_exp)
+                result['BioRep']          = result['Sample'] // n_flux_samples + 1
+                result['GrowthCondition'] = gc
+                result['Condition']       = condition
+                result['Type'] = (
+                    result.groupby('Sample', sort=False).cumcount()
+                          .lt(n_flux).map({True: 'flux', False: 'reversibility'})
+                )
+                agg = (
+                    result
+                    .groupby(['Condition', 'GrowthCondition', 'BioRep', 'Type', 'Flux Name'],
+                             sort=False)['Value']
+                    .mean()
+                    .reset_index()
+                )
+                agg['Value_lo'] = agg['Value']
+                agg['Value_hi'] = agg['Value']   # no ensemble -> zero-width interval
+
             cond_frames.append(agg)
             print(f"     → {len(agg)} rows after aggregation")
 
