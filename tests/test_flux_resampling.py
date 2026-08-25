@@ -1,15 +1,17 @@
-"""Tests for the sign-bounded Beta resampler used at inference (run_inference_workflow.py).
+"""Tests for the sign-bounded Beta resampler used at inference (sigmaflux.ai.uncertainty).
 
 An exchange flux is either uptake or secretion in a given condition, never both, so
 resampling it for the inference ensemble must not put mass on the wrong side of zero --
-see _resample_flux's docstring.
+see resample_flux's docstring.
 """
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.pipeline.run_inference_workflow import _expand_samples, _resample_flux
+from sigmaflux.ai.uncertainty import MidNoiseModel, resample_flux, sample_inputs
+
+_resample_flux = resample_flux
 
 
 @pytest.fixture
@@ -64,53 +66,76 @@ class TestResampleFlux:
         assert np.all(np.isfinite(draws))
 
 
-class TestExpandSamples:
-    """Integration through _expand_samples: sign preservation and fixed-flux passthrough."""
+class TestSampleInputs:
+    """Integration through sample_inputs: sign preservation and fixed-flux passthrough."""
 
     @pytest.fixture
     def frames(self):
-        df_L = pd.DataFrame({"Sample": [1, 2], "dummy": ["a", "b"]})
+        # Two replicates of a two-isotopomer composition, so the MID side is well formed.
+        df_L = pd.DataFrame({
+            "Sample":        [1, 1, 2, 2],
+            "Tracer Name":   ["T"] * 4,
+            "Metabolite ID": ["m"] * 4,
+            "Isotopomer":    ["M+1", "M+2", "M+1", "M+2"],
+            "Fraction":      [0.6, 0.4, 0.7, 0.3],
+        })
         df_Vm = pd.DataFrame({
-            "Sample":    [1, 1, 2, 2],
-            "Flux Name": ["EX_glc__D_e", "EX_glyc_e", "EX_glc__D_e", "EX_glyc_e"],
-            "Value":     [-10.0, 0.0, -12.0, 0.0],
+            "Sample":    [1, 1],
+            "Flux Name": ["EX_glc__D_e", "EX_glyc_e"],
+            "Value":     [-10.0, 0.0],
         })
         df_err = pd.DataFrame({
-            "Sample":    [1, 1, 2, 2],
-            "Flux Name": ["EX_glc__D_e", "EX_glyc_e", "EX_glc__D_e", "EX_glyc_e"],
-            "Value":     [0.5, 0.02, 0.6, 0.0],   # EX_glyc_e err==0 for rep 2 -> held fixed
+            "Sample":    [1, 1],
+            "Flux Name": ["EX_glc__D_e", "EX_glyc_e"],
+            "Value":     [0.5, 0.02],
         })
         return df_L, df_Vm, df_err
 
-    def test_resampled_fluxes_keep_measured_sign(self, frames, rng):
-        df_L, df_Vm, df_err = frames
-        n = 200
-        _, df_Vm_exp = _expand_samples(df_L, df_Vm, df_err, n_samples=n, rng=rng)
+    @pytest.fixture
+    def noise(self):
+        return MidNoiseModel(a=1e-5, b=8e-4)
 
-        glc = df_Vm_exp[df_Vm_exp["Flux Name"] == "EX_glc__D_e"]["Value"]
-        glyc_rep1 = df_Vm_exp[
-            (df_Vm_exp["Sample"] < n) & (df_Vm_exp["Flux Name"] == "EX_glyc_e")
-        ]["Value"]
+    def test_resampled_fluxes_keep_measured_sign(self, frames, noise, rng):
+        df_L, df_Vm, df_err = frames
+        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise, n_draws=200, rng=rng)
+
+        glc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glc__D_e"]["Value"]
+        glyc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glyc_e"]["Value"]
         assert (glc < 0).all()
-        assert (glyc_rep1 >= 0).all()
+        assert (glyc >= 0).all()
 
-    def test_zero_error_flux_is_held_fixed(self, frames, rng):
+    def test_zero_error_flux_is_held_fixed(self, frames, noise, rng):
         df_L, df_Vm, df_err = frames
-        n = 50
-        _, df_Vm_exp = _expand_samples(df_L, df_Vm, df_err, n_samples=n, rng=rng)
+        df_err = df_err.assign(Value=[0.5, 0.0])   # EX_glyc_e now has no usable error
+        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise, n_draws=50, rng=rng)
 
-        # Bio-rep 2 synthetic ids are n..2n-1; EX_glyc_e has err==0 there, so it must
-        # stay at its measured value of 0.0 rather than being resampled.
-        glyc_rep2 = df_Vm_exp[
-            (df_Vm_exp["Sample"] >= n) & (df_Vm_exp["Flux Name"] == "EX_glyc_e")
-        ]["Value"]
-        assert (glyc_rep2 == 0.0).all()
+        glyc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glyc_e"]["Value"]
+        assert (glyc == 0.0).all()
 
-    def test_synthetic_sample_ids_and_count(self, frames, rng):
+    def test_last_sample_is_the_unperturbed_maximum_likelihood_input(self, frames, noise, rng):
+        """Sample n_draws carries the measured fluxes and the replicate-mean MIDs as-is.
+
+        That row is what the reported point estimate is evaluated at, so any perturbation
+        leaking into it would silently bias every prediction.
+        """
+        df_L, df_Vm, df_err = frames
+        n = 25
+        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise,
+                                                n_draws=n, rng=rng)
+
+        mle_flux = df_Vm_draws[df_Vm_draws["Sample"] == n].set_index("Flux Name")["Value"]
+        assert mle_flux["EX_glc__D_e"] == -10.0
+        assert mle_flux["EX_glyc_e"] == 0.0
+
+        mle_mid = df_L_draws[df_L_draws["Sample"] == n].set_index("Isotopomer")["Fraction"]
+        assert mle_mid["M+1"] == pytest.approx(0.65)   # mean of 0.6 and 0.7
+        assert mle_mid["M+2"] == pytest.approx(0.35)
+
+    def test_draw_ids_cover_every_draw_plus_the_mle_row(self, frames, noise, rng):
         df_L, df_Vm, df_err = frames
         n = 10
-        df_L_exp, df_Vm_exp = _expand_samples(df_L, df_Vm, df_err, n_samples=n, rng=rng)
+        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise,
+                                                n_draws=n, rng=rng)
 
-        assert df_L_exp["Sample"].nunique() == 2 * n
-        assert sorted(df_L_exp["Sample"].unique()) == list(range(2 * n))
-        assert set(df_Vm_exp["Sample"].unique()) == set(df_L_exp["Sample"].unique())
+        assert sorted(df_L_draws["Sample"].unique()) == list(range(n + 1))
+        assert set(df_Vm_draws["Sample"].unique()) == set(df_L_draws["Sample"].unique())
