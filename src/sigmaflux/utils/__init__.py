@@ -17,6 +17,15 @@ from .read_xlsx_mid_data import read_xlsx_mid_data
 # ---- external flux data loading ----
 from .read_xlsx_extflux import read_xlsx_extflux
 
+# ---- predicted vs published-reference flux comparison ----
+from .read_reference_flux import (
+    magnitude_bounds,
+    pair_fluxes,
+    read_predicted_fluxes,
+    read_reference_fluxes,
+    reference_orientation,
+)
+
 # ---- DataFrame → pipeline-ready table converters ----
 from .read_df_data import (
     mid_df_to_mass_isotopomer_table,
@@ -38,4 +47,9 @@ __all__ = [
     "mid_df_to_mass_isotopomer_table",
     "extflux_df_to_flux_table",
     "extract_tracer_list",
+    "magnitude_bounds",
+    "pair_fluxes",
+    "read_predicted_fluxes",
+    "read_reference_fluxes",
+    "reference_orientation",
 ]
