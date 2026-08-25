@@ -1,0 +1,228 @@
+"""
+SigmaFlux predictions vs published MFA fits, on real experimental ¹³C data.
+
+Per model:
+  experimental_flux_<key>.svg      SigmaFlux vs reference, log-log, one point per
+                                    (condition, growth condition, reaction)
+Across all models:
+  experimental_flux_summary.csv    per-(model, condition) R², point count, reaction count
+
+By default (``--reactions mfa``) each model is restricted to reactions **MFA** resolves
+on held-out simulations (R² >= R2_THRESHOLD in the simulation benchmark — see
+plot_mfa_benchmark.py). The x axis here is a published MFA fit, so where MFA cannot
+determine a flux the reference value is itself unreliable and agreement with it would
+mean nothing. ``--reactions all`` skips this filter (and the benchmark HDF5s it needs)
+entirely, for a model that has predictions but no mfa_benchmark/ run yet.
+
+Axes are log-log for display -- fluxes span ~8 orders of magnitude across these
+organisms -- but the R² reported in each panel's annotation box (``_r2_linear``) is
+always computed in plain linear space. Log-space R² was tried and dropped: it is
+fragile for exactly this kind of data, since a prediction that collapses to ~0 when the
+true flux was merely a few units off produces a huge log-residual against a much
+smaller log-space SS_tot, so a single bad sample can crater an otherwise-good
+condition's R².
+
+A model whose predictions or (for --reactions mfa) benchmark data is missing is skipped
+with a warning rather than failing the run, so the figure set fills itself in as runs
+land.
+
+Usage:
+    python paper/scripts/plot_experimental_predictions.py
+    python paper/scripts/plot_experimental_predictions.py --models e_coli_core
+    python paper/scripts/plot_experimental_predictions.py --models e_coli_core --reactions all
+    python paper/scripts/plot_experimental_predictions.py --run-suffix 20260807
+"""
+
+import argparse
+
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from _figure_common import (
+    COLORS, CONDITION_COLORS, FLUX_MIN_ABS, R2_THRESHOLD, _resolve_organism,
+    add_common_args, apply_style, benchmark_r2, build_plot_df, run_dir_for,
+    save_figure, selected_models)
+
+apply_style()
+
+# Which conditions and growth condition go into each model's panel.
+# "max_D" keeps only the highest dilution rate per condition; "wt" keeps only the
+# wild-type strain (gc=1, condition B); "all" keeps every one.
+PREDICTION_SPECS = {
+    # The Long & Antoniewicz reference is a 21-strain knockout panel (condition 'B',
+    # gc 1..21 per data/E_coli/strain_index.csv); reindexed onto our own reaction ids
+    # by models/atomistic/build_e_coli_reference_flux.py. Wild type only, not the
+    # knockouts, is the like-for-like comparison the other models make.
+    "e_coli_core":       dict(conditions=["B"],           select="wt"),
+    "s_cerevisiae":      dict(conditions=["C", "N", "P"], select="max_D"),
+    "i_orientalis":      dict(conditions=["C", "N", "P"], select="max_D"),
+    "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
+}
+
+# The condition letter means different things per organism: N is nitrogen-limited for
+# the yeasts and naive for the T cell, so the legend cannot be derived from the letter.
+CONDITION_LABEL = {
+    "m_musculus_t_cell": {"N": "naive", "A": "activated"},
+}
+
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_common_args(p)
+    p.add_argument("--reactions", choices=["mfa", "all"], default="mfa",
+                   help="'mfa' (default) restricts to reactions MFA resolves in the "
+                        "simulation benchmark (R² >= R2_THRESHOLD); 'all' skips the "
+                        "benchmark and uses every reaction the reference crosswalk maps.")
+    return p.parse_args()
+
+
+def literature_df(model, tbl, spec, run_suffix=None):
+    """Tidy pred-vs-reference frame for one model, or None when it cannot be built."""
+    run = run_dir_for(model, run_suffix)
+    if not list(run.glob("predictions/predictions_*.csv")):
+        print(f"  {model['label']}: skipped — no predictions/ in {run.name}; "
+              f"run paper/submit/submit_inference.sh {run}")
+        return None
+    if tbl is not None:
+        # The panel is defined as the fluxes MFA resolves, so an empty set is not a
+        # plotting failure but a statement about the run: MFA cleared R² >= R2_THRESHOLD
+        # on nothing.
+        mfa_rxns = set(tbl.index[tbl["r2_mfa"] >= R2_THRESHOLD])
+        if not mfa_rxns:
+            print(f"  {model['label']}: skipped — no reaction has MFA R² >= {R2_THRESHOLD} "
+                  f"in {run.name}, so the MFA-identifiable set is empty")
+            return None
+    else:
+        # --reactions all, or no mfa_benchmark run for this model -- fall back to
+        # whatever reactions its own reference-flux crosswalk maps.
+        # build_plot_df(..., None) still restricts to reactions shared with predictions,
+        # so this is exactly the mapped reaction set, with no MFA-identifiability filter.
+        print(f"  {model['label']}: using its reference-flux crosswalk's reaction set "
+              f"as-is (no MFA-identifiability filter)")
+        mfa_rxns = None
+    try:
+        org = _resolve_organism(run)
+        df = build_plot_df(run, org, mfa_rxns)
+    except (ValueError, FileNotFoundError, KeyError) as exc:
+        print(f"  {model['label']}: skipped — {type(exc).__name__}: {exc}")
+        return None
+
+    df = df[df["condition"].isin(spec["conditions"])]
+    if spec["select"] == "max_D":
+        # The highest dilution rate per condition, read off the reference's own BIOMASS
+        # row (build_plot_df already resolved it into D), never a hardcoded index.
+        df = df[df["D"] == df.groupby("condition")["D"].transform("max")]
+    elif spec["select"] == "wt":
+        # Wild type is growth condition 1 in data/E_coli/strain_index.csv; the other 20
+        # growth conditions are single-gene knockouts, not a like-for-like comparison.
+        df = df[df["gc"] == 1]
+    if df.empty:
+        print(f"  {model['label']}: skipped — no points for "
+              f"conditions {spec['conditions']}")
+        return None
+    return df.assign(model=model["label"], key=model["key"])
+
+
+def _r2_linear(pred, ref):
+    """Standard linear-space R² between predicted and reference flux magnitudes."""
+    if len(ref) < 2:
+        return float("nan")
+    ss_res = ((pred - ref) ** 2).sum()
+    ss_tot = ((ref - ref.mean()) ** 2).sum()
+    return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
+
+
+def plot_experimental_flux(model, df, out_dir):
+    """SigmaFlux vs the published MFA reference, log-log, one figure per model."""
+    lim_lo, lim_hi = FLUX_MIN_ABS, df[["ref", "pred"]].to_numpy().max() * 2.0
+
+    fig, ax = plt.subplots(figsize=(3.5, 3.5))
+    ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi],
+            color=COLORS["reference"], lw=1.0, ls="--", zorder=1)
+
+    names = CONDITION_LABEL.get(model["key"], {})
+    summary_rows = []
+    r2_lines = []
+    for cond, grp in df.groupby("condition", sort=False):
+        label = names.get(cond, cond)
+        color = CONDITION_COLORS.get(cond, "#777777")
+
+        ref, pred = grp["ref"].to_numpy(), grp["pred"].to_numpy()
+        ref_lo  = np.clip(grp["ref_lo"].to_numpy(),  lim_lo, ref)
+        ref_hi  = np.clip(grp["ref_hi"].to_numpy(),  ref,    lim_hi)
+        pred_lo = np.clip(grp["pred_lo"].to_numpy(), lim_lo, pred)
+        pred_hi = np.clip(grp["pred_hi"].to_numpy(), pred,   lim_hi)
+        xerr = np.where(np.isfinite(ref_lo) & np.isfinite(ref_hi),
+                        [ref - ref_lo, ref_hi - ref], 0.0)
+        yerr = np.where(np.isfinite(pred_lo) & np.isfinite(pred_hi),
+                        [pred - pred_lo, pred_hi - pred], 0.0)
+        ax.errorbar(ref, pred, xerr=xerr, yerr=yerr, fmt="none",
+                    ecolor=color, elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
+        ax.scatter(grp["ref"], grp["pred"], s=18, linewidths=0,
+                   color=color, marker="o", label=label, zorder=2)
+
+        # One R² per condition, not a single value pooled across them -- conditions
+        # can differ a lot in fit quality, and pooling would hide that.
+        r2c = _r2_linear(pred, ref)
+        r2_lines.append(f"{label}: $R^2$ = {r2c:.2f}")
+        summary_rows.append(dict(model=model["label"], key=model["key"], condition=cond,
+                                 label=label, r2=r2c, n_points=len(grp),
+                                 n_reactions=grp["reaction"].nunique()))
+
+    ax.text(0.97, 0.04, "\n".join(r2_lines), transform=ax.transAxes,
+            fontsize=9, va="bottom", ha="right",
+            bbox=dict(facecolor="white", alpha=0.85, edgecolor=COLORS["box"],
+                      boxstyle="round,pad=0.25"))
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlim(lim_lo, lim_hi)
+    ax.set_ylim(lim_lo, lim_hi)
+    ax.set_aspect("equal")
+    # Mathtext, not a literal Unicode superscript: Arial has no glyph for U+207B and
+    # silently falls back to a "Last Resort" placeholder box in the saved SVG.
+    ax.set_xlabel("Reference MFA\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
+    ax.set_ylabel("SigmaFlux\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
+    ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.4)
+    sns.despine(ax=ax)
+    save_figure(fig, out_dir / f"experimental_flux_{model['key']}.svg")
+    return summary_rows
+
+
+def main():
+    args = parse_args()
+    out_dir = args.out_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    models = [m for m in selected_models(args) if m["key"] in PREDICTION_SPECS]
+
+    print("── Per-reaction R² (MFA-identifiability filter) ──")
+    tables = {}
+    if args.reactions == "mfa":
+        for m in models:
+            tbl = benchmark_r2(m, args.run_suffix)
+            if tbl is not None:
+                tables[m["key"]] = tbl
+
+    print("\n── Predictions vs published reference ──")
+    summary = []
+    for model in models:
+        spec = PREDICTION_SPECS[model["key"]]
+        df = literature_df(model, tables.get(model["key"]), spec, args.run_suffix)
+        if df is None:
+            print(f"experimental_flux_{model['key']}: skipped — no usable data")
+            continue
+        summary.extend(plot_experimental_flux(model, df, out_dir))
+
+    if summary:
+        path = out_dir / "experimental_flux_summary.csv"
+        pd.DataFrame(summary).to_csv(path, index=False)
+        print(f"Saved: {path}")
+    else:
+        print("No model had usable prediction data — nothing written.")
+
+
+if __name__ == "__main__":
+    main()
