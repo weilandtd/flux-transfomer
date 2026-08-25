@@ -32,6 +32,7 @@ dependencies = [
     "tqdm>=4.0",
     "matplotlib>=3.7",
     "seaborn>=0.13",
+    "matplotlib-venn>=1.1",
     "h5py>=3.8",
     "tables>=3.8",
     "pyyaml>=6.0",
