@@ -38,6 +38,17 @@ def test_metabolite_subset_nests_and_is_deterministic():
     assert metabolite_subset(ids, 0.5) == levels[0.5]         # deterministic
 
 
+def test_metabolite_subset_floors_at_one_for_tiny_sets():
+    """A positive frac must never round down to an empty set -- on a tiny mapped-
+    metabolite count (e.g. a toy/test model with 2 metabolites) round(0.25 * 2) is 0
+    under banker's rounding, which would otherwise silently turn a restriction into a
+    no-op downstream (an empty set is falsy, so callers guarding on ``if ids:`` would
+    skip the restriction entirely instead of keeping the smallest meaningful subset)."""
+    ids = {"A", "B"}
+    assert len(metabolite_subset(ids, 0.25)) == 1
+    assert metabolite_subset(ids, 0.0) == set()
+
+
 def test_metabolite_subset_different_seed_still_nests():
     """Nesting is a property of one seed's permutation, not the fractions alone."""
     ids = {f"M{i}" for i in range(40)}

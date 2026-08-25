@@ -124,21 +124,26 @@ def metabolite_subset(mapped_met_ids, frac, seed=0):
     """Nested random subset of *mapped_met_ids*, keeping a fixed fraction of it.
 
     One permutation of the sorted ids is drawn from *seed*; level ``frac`` keeps its
-    first ``round(frac * n)`` entries, so subsets at different fractions nest
-    (frac=0.25 ⊂ frac=0.5 ⊂ frac=0.75 ⊂ frac=1.0) rather than being independent
-    draws — the reading is "this platform resolves these metabolites", and
-    degradation is monotone in how much of that set is dropped.
+    first ``max(1, round(frac * n))`` entries (matching the floor
+    ``paper/analysis/diagnostics/test_missing_metabolites.py`` already uses for its
+    masking rate), so subsets at different fractions nest (frac=0.25 ⊂ frac=0.5 ⊂
+    frac=0.75 ⊂ frac=1.0) rather than being independent draws — the reading is "this
+    platform resolves these metabolites", and degradation is monotone in how much of
+    that set is dropped. The floor keeps a positive ``frac`` from ever rounding to
+    an empty set on a small metabolite count (e.g. a toy/test model): a restriction
+    that quietly reverted to "no restriction" downstream would be a worse bug than a
+    slightly generous smallest subset.
 
     Args:
         mapped_met_ids: full set of metabolite ids the measurement platform can see.
-        frac: fraction of them to keep, in [0, 1].
+        frac: fraction of them to keep, in [0, 1]. ``frac <= 0`` keeps nothing.
         seed: RNG seed for the permutation. Fixed by default (0) so independent
             callers — the AI and MFA arms of a sensitivity study — drop the
             identical metabolites without having to share any other state.
     """
     ids = np.array(sorted(mapped_met_ids))
     order = np.random.default_rng(seed).permutation(len(ids))
-    n_keep = round(frac * len(ids))
+    n_keep = max(1, round(frac * len(ids))) if frac > 0 else 0
     return set(ids[order[:n_keep]].tolist())
 
 
