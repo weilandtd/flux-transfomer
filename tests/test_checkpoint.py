@@ -193,6 +193,42 @@ def test_ensemble_predict_is_median(toy_run):
     assert len(combined) == len(single.predict(df_L))
 
 
+def test_ensemble_predict_aggregate_false(toy_run):
+    """aggregate=False returns every member's raw prediction, not the median."""
+    ens = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
+
+    df_L = _toy_df_L(n_samples=2)
+    aggregated = ens.predict(df_L)
+    raw = ens.predict(df_L, aggregate=False)
+
+    assert len(raw) == len(ens.members) * len(aggregated)
+    assert raw["Member"].nunique() == len(ens.members)
+    assert "Sample" in raw.columns
+
+    # Row order within each member's block matches `aggregated`'s row order exactly
+    # (same Sample/Flux Name sequence per member, since flux_names/rev_names are
+    # shared across members) -- reshape by Member and take the positional median,
+    # mirroring EnsembleSigmaFlux.predict()'s own aggregate=True path. A name-based
+    # groupby would be wrong here: reversibility names can repeat a flux's own
+    # reaction id, so "Flux Name" alone is not unique per Sample.
+    for midx in range(len(ens.members)):
+        sub = raw[raw["Member"] == midx].reset_index(drop=True)
+        assert list(sub["Sample"]) == list(aggregated["Sample"])
+        assert list(sub["Flux Name"]) == list(aggregated["Flux Name"])
+    per_member_values = np.stack([
+        raw[raw["Member"] == midx]["Value"].to_numpy()
+        for midx in range(len(ens.members))
+    ])
+    assert np.allclose(np.median(per_member_values, axis=0), aggregated["Value"].to_numpy())
+
+    # Single-sample calls drop 'Sample' inside SigmaFlux.predict(); aggregate=False
+    # must still guarantee the column is present.
+    single_df_L = _toy_df_L(n_samples=1)
+    raw_single = ens.predict(single_df_L, aggregate=False)
+    assert "Sample" in raw_single.columns
+    assert raw_single["Member"].nunique() == len(ens.members)
+
+
 def test_ensemble_missing_members_raises(tmp_path, toy_run):
     with pytest.raises(FileNotFoundError, match="No model_.*pt"):
         EnsembleSigmaFlux(toy_run["config"], str(tmp_path), device="cpu")
