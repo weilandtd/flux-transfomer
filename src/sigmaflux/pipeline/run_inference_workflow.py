@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import truncnorm
 
 from sigmaflux.ai.inference import load_predictor
 from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
@@ -73,6 +74,32 @@ def _inspect_growth_conditions(xlsx_path: str) -> list[int]:
     return gcs if gcs else [1]
 
 
+def _resample_flux(
+    value:     float,
+    err:       float,
+    n_samples: int,
+    rng:       np.random.Generator,
+) -> np.ndarray:
+    """n_samples draws of one measured flux, bounded to the side of zero it was measured on.
+
+    An exchange flux is either uptake or secretion in a given condition, never both, so
+    the measurement's Gaussian error is truncated at zero on the physical side. Draws come
+    from a Beta on [0, M] scaled by the measured sign, with M the truncated law's 97.5th
+    percentile (the one-sided 95% upper confidence limit) and (alpha, beta) matched to its
+    mean and variance:  kappa = x(1-x)/v - 1, alpha = kappa*x, beta = kappa*(1-x).
+
+    kappa is bounded below by ~2.17 (the value == 0 limit) and grows with |value|/err, so
+    alpha and beta are always positive -- there is no infeasible case to fall back on.
+    """
+    a  = -abs(value) / err   # zero, standardized -- the truncation point
+    tn = truncnorm(a, np.inf, loc=abs(value), scale=err)
+    m, s, M = tn.mean(), tn.std(), tn.ppf(0.975)
+    x, v = m / M, (s / M) ** 2
+    kappa = x * (1 - x) / v - 1
+    sign = 1.0 if value >= 0 else -1.0
+    return sign * M * rng.beta(kappa * x, kappa * (1 - x), size=n_samples)
+
+
 def _expand_samples(
     df_L:      pd.DataFrame,
     df_Vm:     pd.DataFrame,
@@ -84,9 +111,10 @@ def _expand_samples(
     flux that has a known error.
 
     Synthetic sample ID = (R - 1) * n_samples + S for bio-rep R, sample S (0..n_samples-1);
-    each bounded flux is drawn independently from Normal(value, error) -- error taken as
-    the draw's standard deviation, not a hard bound. Fluxes without a known error are held
-    fixed at their measured value.
+    each bounded flux is drawn independently from the sign-bounded Beta in
+    :func:`_resample_flux`, so a flux measured as an uptake never resamples as a
+    secretion (or vice versa) regardless of how large its error is relative to its value.
+    Fluxes without a known error are held fixed at their measured value.
 
     Args:
         df_L: labeling (MID) data, one row per bio-rep.
@@ -108,15 +136,16 @@ def _expand_samples(
         vm_sample = rep if rep in df_Vm['Sample'].values else int(df_Vm['Sample'].iloc[0])
         df_Vm_rep = df_Vm[df_Vm['Sample'] == vm_sample].copy()
 
-        # Precompute (base value, error) once per bio-rep for every flux that has a
+        # Precompute all n_samples draws once per bio-rep for every flux that has a
         # known, usable error -- np.isfinite guards the unmeasured case: float(nan)
-        # passes an `is not None` check but makes rng.normal overflow.
-        bounds = {}
+        # passes an `is not None` check but makes the resampler overflow.
+        draws = {}
         for flux_name, base_val in zip(df_Vm_rep['Flux Name'], df_Vm_rep['Value']):
             err_val = err_idx.get((vm_sample, flux_name))
             if (base_val is not None and np.isfinite(base_val)
                     and err_val is not None and err_val > 0):
-                bounds[flux_name] = (float(base_val), float(err_val))
+                draws[flux_name] = _resample_flux(float(base_val), float(err_val),
+                                                   n_samples, rng)
 
         for s in range(n_samples):
             syn_id = (rep - 1) * n_samples + s
@@ -127,9 +156,9 @@ def _expand_samples(
 
             df_Vm_syn = df_Vm_rep.copy()
             df_Vm_syn['Sample'] = syn_id
-            for flux_name, (base_val, err_val) in bounds.items():
+            for flux_name, flux_draws in draws.items():
                 df_Vm_syn.loc[df_Vm_syn['Flux Name'] == flux_name, 'Value'] = \
-                    float(rng.normal(base_val, err_val))
+                    float(flux_draws[s])
             V_parts.append(df_Vm_syn)
 
     return pd.concat(L_parts, ignore_index=True), pd.concat(V_parts, ignore_index=True)
