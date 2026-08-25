@@ -40,9 +40,11 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from sigmaflux.utils import magnitude_bounds
+
 from _figure_common import (
-    COLORS, CONDITION_COLORS, FLUX_MIN_ABS, R2_THRESHOLD, _resolve_organism,
-    add_common_args, apply_style, benchmark_r2, build_plot_df, run_dir_for,
+    COLORS, CONDITION_COLORS, FLUX_MIN_ABS, R2_THRESHOLD, add_common_args, apply_style,
+    benchmark_r2, build_reference_comparison, resolve_organism, run_dir_for,
     save_figure, selected_models)
 
 apply_style()
@@ -103,8 +105,8 @@ def literature_df(model, tbl, spec, run_suffix=None):
               f"as-is (no MFA-identifiability filter)")
         mfa_rxns = None
     try:
-        org = _resolve_organism(run)
-        df = build_plot_df(run, org, mfa_rxns)
+        org = resolve_organism(run)
+        df = build_reference_comparison(run, org, mfa_rxns)
     except (ValueError, FileNotFoundError, KeyError) as exc:
         print(f"  {model['label']}: skipped — {type(exc).__name__}: {exc}")
         return None
@@ -126,7 +128,12 @@ def literature_df(model, tbl, spec, run_suffix=None):
 
 
 def _r2_linear(pred, ref):
-    """Standard linear-space R² between predicted and reference flux magnitudes."""
+    """Standard linear-space R², on **signed** fluxes.
+
+    Signed, not magnitudes: a flux predicted in the wrong direction is wrong, and scoring
+    |v| would credit it as a perfect hit. Exchange reactions are oriented into the model's
+    convention upstream, so a surviving sign disagreement is real.
+    """
     if len(ref) < 2:
         return float("nan")
     ss_res = ((pred - ref) ** 2).sum()
@@ -134,42 +141,81 @@ def _r2_linear(pred, ref):
     return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
 
 
+def _error_offsets(value, lo, hi, lim_hi, open_decades=1.0):
+    """Per-point (lower, upper) error-bar lengths on a log magnitude axis.
+
+    Returns ``(offsets, open_lower)``. A NaN lower bound means the interval spans zero, so
+    the magnitude has no positive floor; those bars are drawn one decade long and marked
+    with a caret rather than run down to the axis edge. Roughly half the points are in that
+    state, and full-height lines would hide the figure behind them while saying nothing a
+    caret does not. A missing bound contributes no bar at all.
+    """
+    value = np.asarray(value, dtype=float)
+    open_lower = np.isnan(lo) & np.isfinite(hi)
+    lo = np.where(open_lower, value / 10.0 ** open_decades, lo)
+    lower = np.where(np.isfinite(lo), value - np.minimum(lo, value), 0.0)
+    upper = np.where(np.isfinite(hi), np.clip(hi, value, lim_hi) - value, 0.0)
+    return np.vstack([lower, upper]), open_lower
+
+
 def plot_experimental_flux(model, df, out_dir):
     """SigmaFlux vs the published MFA reference, log-log, one figure per model."""
-    lim_lo, lim_hi = FLUX_MIN_ABS, df[["ref", "pred"]].to_numpy().max() * 2.0
+    names = CONDITION_LABEL.get(model["key"], {})
+    ref_lo, ref_hi, _ = magnitude_bounds(df["ref_lo"], df["ref_hi"])
+    pred_lo, pred_hi, _ = magnitude_bounds(df["pred_lo"], df["pred_hi"])
+
+    tidy = pd.DataFrame({
+        "reference":  df["ref"].abs().to_numpy(),
+        "sigmaflux":  df["pred"].abs().to_numpy(),
+        "key":        df["condition"].to_numpy(),
+        "condition":  [names.get(c, c) for c in df["condition"]],
+        "ref_lo": ref_lo, "ref_hi": ref_hi, "pred_lo": pred_lo, "pred_hi": pred_hi,
+    })
+
+    lim_lo = FLUX_MIN_ABS
+    lim_hi = float(np.nanmax([tidy["reference"].max(), tidy["sigmaflux"].max()])) * 2.0
 
     fig, ax = plt.subplots(figsize=(3.5, 3.5))
     ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi],
             color=COLORS["reference"], lw=1.0, ls="--", zorder=1)
 
-    names = CONDITION_LABEL.get(model["key"], {})
-    summary_rows = []
-    r2_lines = []
+    # Error bars first, so the markers sit on top of them. Drawn per condition because each
+    # carries its own color; seaborn has no per-point xerr/yerr equivalent.
+    for key, grp in tidy.groupby("key", sort=False):
+        x, y = grp["reference"].to_numpy(), grp["sigmaflux"].to_numpy()
+        color = CONDITION_COLORS.get(key, "#777777")
+        xerr, x_open = _error_offsets(x, grp["ref_lo"].to_numpy(),
+                                      grp["ref_hi"].to_numpy(), lim_hi)
+        yerr, y_open = _error_offsets(y, grp["pred_lo"].to_numpy(),
+                                      grp["pred_hi"].to_numpy(), lim_hi)
+        ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="none", ecolor=color,
+                    elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
+        # Mark the open ends explicitly rather than with errorbar's lolims/uplims, whose
+        # caret is placed by limit semantics that do not mean "this bar continues".
+        ax.scatter(x[y_open], (y - yerr[0])[y_open], marker="v", s=7, linewidths=0,
+                   color=color, alpha=0.5, zorder=1.6)
+        ax.scatter((x - xerr[0])[x_open], y[x_open], marker="<", s=7, linewidths=0,
+                   color=color, alpha=0.5, zorder=1.6)
+
+    palette = {names.get(k, k): CONDITION_COLORS.get(k, "#777777")
+               for k in tidy["key"].unique()}
+    # Sign disagreement is reported as a count in the summary CSV rather than as a second
+    # marker style: encoding it here made the panel hard to read for a case that is rare
+    # (zero points on the MFA-identifiable set) once exchanges are correctly oriented.
+    sns.scatterplot(data=tidy, x="reference", y="sigmaflux", hue="condition",
+                    palette=palette, s=18, linewidth=0, ax=ax, zorder=2)
+
+    # One R² per condition, not a single value pooled across them -- conditions can differ
+    # a lot in fit quality, and pooling would hide that.
+    summary_rows, r2_lines = [], []
     for cond, grp in df.groupby("condition", sort=False):
         label = names.get(cond, cond)
-        color = CONDITION_COLORS.get(cond, "#777777")
-
-        ref, pred = grp["ref"].to_numpy(), grp["pred"].to_numpy()
-        ref_lo  = np.clip(grp["ref_lo"].to_numpy(),  lim_lo, ref)
-        ref_hi  = np.clip(grp["ref_hi"].to_numpy(),  ref,    lim_hi)
-        pred_lo = np.clip(grp["pred_lo"].to_numpy(), lim_lo, pred)
-        pred_hi = np.clip(grp["pred_hi"].to_numpy(), pred,   lim_hi)
-        xerr = np.where(np.isfinite(ref_lo) & np.isfinite(ref_hi),
-                        [ref - ref_lo, ref_hi - ref], 0.0)
-        yerr = np.where(np.isfinite(pred_lo) & np.isfinite(pred_hi),
-                        [pred - pred_lo, pred_hi - pred], 0.0)
-        ax.errorbar(ref, pred, xerr=xerr, yerr=yerr, fmt="none",
-                    ecolor=color, elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
-        ax.scatter(grp["ref"], grp["pred"], s=18, linewidths=0,
-                   color=color, marker="o", label=label, zorder=2)
-
-        # One R² per condition, not a single value pooled across them -- conditions
-        # can differ a lot in fit quality, and pooling would hide that.
-        r2c = _r2_linear(pred, ref)
+        r2c = _r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy())
         r2_lines.append(f"{label}: $R^2$ = {r2c:.2f}")
         summary_rows.append(dict(model=model["label"], key=model["key"], condition=cond,
                                  label=label, r2=r2c, n_points=len(grp),
-                                 n_reactions=grp["reaction"].nunique()))
+                                 n_reactions=grp["reaction"].nunique(),
+                                 n_sign_opposed=int((~grp["sign_agrees"]).sum())))
 
     ax.text(0.97, 0.04, "\n".join(r2_lines), transform=ax.transAxes,
             fontsize=9, va="bottom", ha="right",
