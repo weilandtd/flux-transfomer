@@ -26,7 +26,7 @@ Outputs (--out-dir, default paper/figures), one bar chart per (model, study):
   uncertainty_missing_metabolites_<model>.svg
   uncertainty_lab_noise_<model>.svg
   uncertainty_flux_noise_<model>.svg
-  uncertainty_benchmark_summary.csv   bootstrap mean + 95% PI behind every bar
+  uncertainty_benchmark_summary.csv   bootstrap median + 95% PI behind every bar
 
 Usage:
     python paper/scripts/plot_uncertainty_benchmark.py
@@ -46,7 +46,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from _figure_common import (  # noqa: E402
-    add_common_args, apply_style, run_dir_for, save_figure, selected_models)
+    MODELS, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
 from plot_test_performance import COLORS, LABEL, R2_THRESHOLD, load_benchmark  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
 
@@ -182,7 +182,7 @@ def plot_bars(replicates, model, study, out_dir):
     sns.barplot(data=sub, x="x_cat", y="n_reactions", order=order,
                hue="Method", hue_order=[LABEL["ai"], LABEL["mfa"]],
                palette={LABEL["ai"]: COLORS["ai"], LABEL["mfa"]: COLORS["mfa"]},
-               estimator="mean", errorbar=("pi", 95), err_kws={"linewidth": 1.2},
+               estimator="median", errorbar=("pi", 95), err_kws={"linewidth": 1.2},
                capsize=0.15, ax=ax)
     ax.set_xlabel(X_LABEL[study])
     ax.set_ylabel(f"Reactions with $R^2$ > {R2_THRESHOLD}")
@@ -191,12 +191,32 @@ def plot_bars(replicates, model, study, out_dir):
     save_figure(fig, out_dir / f"uncertainty_{study}_{model['key']}.svg")
 
 
-def _clear_old_outputs(out_dir):
-    """Remove every uncertainty_* artifact so a re-run never leaves stale files
-    (an old model x study combination, or the earlier line-plot figures)."""
-    for f in out_dir.glob("uncertainty_*"):
-        f.unlink()
-        print(f"Removed: {f}")
+def _clear_old_outputs(out_dir, models):
+    """Delete this run's own SVGs plus anything that isn't current-format output.
+
+    Only touches ``.svg`` files -- the summary CSV is a separate concern that
+    ``main()`` merges rather than replaces, for the same reason this function
+    exists at all: a ``--models`` subset run must not destroy a sibling model's
+    good output.
+
+    Two different reasons to remove a file, so that holds:
+      - a file for one of THIS run's *selected* models -- always removed, it is
+        about to be rewritten;
+      - a file that is not current-format output for ANY model in the full
+        registry (a stale name from an earlier version of this script, e.g. the
+        old un-suffixed line plots) -- always removed, nothing produces it anymore.
+    A current-format file for a model that exists but was NOT selected this run
+    is left alone.
+    """
+    selected_keys = {m["key"] for m in models}
+    valid_names = {f"uncertainty_{study}_{m['key']}.svg" for m in MODELS for study in _GRID}
+    for f in out_dir.glob("uncertainty_*.svg"):
+        is_selected = any(f.name == f"uncertainty_{study}_{k}.svg"
+                          for study in _GRID for k in selected_keys)
+        is_legacy = f.name not in valid_names
+        if is_selected or is_legacy:
+            f.unlink()
+            print(f"Removed: {f}")
 
 
 def parse_args():
@@ -209,9 +229,9 @@ def main():
     args = parse_args()
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    _clear_old_outputs(out_dir)
 
     models = selected_models(args)
+    _clear_old_outputs(out_dir, models)
     print("── Uncertainty benchmark (missing metabolites, noise) ──")
     replicates = build_replicates(models, args.run_suffix, args.uncertainty_subdir, args.n_boot)
 
@@ -221,10 +241,18 @@ def main():
 
     summary = (replicates.groupby(["model", "label", "study", "x_cat", "method", "n_scored"])
               ["n_reactions"]
-              .agg(mean="mean", pi_lo=lambda s: s.quantile(0.025), pi_hi=lambda s: s.quantile(0.975))
+              .agg(median="median", pi_lo=lambda s: s.quantile(0.025), pi_hi=lambda s: s.quantile(0.975))
               .reset_index())
-    summary.to_csv(out_dir / "uncertainty_benchmark_summary.csv", index=False)
-    print(f"Saved: {out_dir / 'uncertainty_benchmark_summary.csv'}")
+
+    # A --models subset must not drop other models' rows from the persisted CSV --
+    # same principle as _clear_old_outputs: only this run's own models are replaced.
+    csv_path = out_dir / "uncertainty_benchmark_summary.csv"
+    if csv_path.exists():
+        existing = pd.read_csv(csv_path)
+        existing = existing[~existing["model"].isin(summary["model"].unique())]
+        summary = pd.concat([existing, summary], ignore_index=True)
+    summary.to_csv(csv_path, index=False)
+    print(f"Saved: {csv_path}")
 
     for model in models:
         for study in _GRID:
