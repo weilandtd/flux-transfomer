@@ -2,131 +2,42 @@
 Uncertainty quantification for SigmaFlux flux predictions.
 
 The experiment's inputs are measurements, so they are draws from a distribution rather
-than known constants. This module estimates that distribution from the measurement
-replicates, propagates it through the ensemble by Monte Carlo, and reports the plug-in
-maximum-likelihood estimate together with the resulting spread.
+than known constants. This module propagates the measured replicates through the
+ensemble and reports the plug-in maximum-likelihood estimate together with the resulting
+interval.
 
-Two measured quantities enter, and they carry their uncertainty differently:
+The replicates are used directly rather than resampled from a fitted noise model: they
+already are the realizations of the measurement distribution, and drawing synthetic
+samples from a distribution fitted to them would manufacture precision the data does not
+have. (The replicate noise is genuinely heteroscedastic -- a constant sigma has R^2 = 0.000
+against it, versus 0.851 for sigma^2 = a + b*p(1-p) -- but that is a fact about the data,
+not a step this propagation needs; a fitted noise model would only be needed again for a
+likelihood/chi-squared construction, which this module does not attempt.) Measured exchange
+fluxes carry no replicates -- one value and one reported error per growth condition -- so
+they are instead resampled from that error, one draw per MID replicate, via the
+sign-truncated Beta in :func:`resample_flux`.
 
-* **MID fractions** are supplied as individual replicates, so the noise model is fitted
-  from them and the model is fed the replicate *mean*. The relevant input uncertainty is
-  therefore the standard error of that mean, ``sigma / sqrt(n_reps)`` -- not the raw
-  replicate spread.
-* **Measured exchange fluxes** arrive already aggregated: one value and one ``_err`` per
-  growth condition, with no replicates to average. ``_err`` is taken at face value as the
-  uncertainty of the reported number, and is *not* divided again.
+Two variance sources compose into the reported interval, measured together rather than
+assumed independent (they are the pooled spread of every (replicate, member) prediction,
+capturing their interaction rather than assuming ``sigma_total^2 = sigma_model^2 +
+sigma_input^2``):
 
-What comes out is a percentile interval over the propagated draws plus the variance
-components behind it, so a caller can also form a symmetric interval. No factor is fitted
-to make the interval cover any known answer -- coverage against held-out ground truth is a
-diagnostic (:func:`coverage_by_reaction`), and tuning to it would make it true by
-construction.
+* ``sigma_model``  -- epistemic: ensemble members disagree, at the maximum-likelihood input.
+* ``sigma_input``  -- measurement: the ensemble consensus moves with which replicate it sees.
+
+No factor is fitted to make the interval cover any known answer -- coverage against
+held-out ground truth is a diagnostic (:func:`coverage_by_reaction`), and tuning to it
+would make it true by construction.
 """
-
-from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.optimize import nnls
 from scipy.stats import truncnorm
 
 # The isotopomers of one metabolite under one tracer are a composition: they sum to 1.
 _MID_GROUP = ['Tracer Name', 'Metabolite ID']
 _MID_POINT = _MID_GROUP + ['Isotopomer']
-
-
-@dataclass(frozen=True)
-class MidNoiseModel:
-    """Replicate noise of a measured MID fraction as a function of its magnitude.
-
-    ``sigma^2(p) = a + b * p * (1 - p)``. The ``p(1-p)`` term is the multinomial shape a
-    composition of fractions carries by construction; ``a`` is the magnitude-independent
-    floor the instrument still has as ``p -> 0``. A single scalar sigma applied to every
-    measurement is the special case ``b = 0``, which the replicates reject outright.
-    """
-
-    a: float
-    b: float
-
-    def sigma(self, fraction):
-        """Standard deviation of one replicate measurement at these fractions."""
-        p = np.clip(np.asarray(fraction, dtype=float), 0.0, 1.0)
-        return np.sqrt(self.a + self.b * p * (1.0 - p))
-
-
-def _replicate_stats(frames):
-    """Per-MID-point replicate mean and variance, pooled over many measurement frames.
-
-    Each frame must hold one (condition, growth condition): the same
-    (tracer, metabolite, isotopomer) has a different true value in each, so they are kept
-    apart by frame and only the replicate axis within a frame is treated as repeat
-    measurement.
-
-    Args:
-        frames: iterable of long-format df_L frames, one per (condition, growth condition).
-    """
-    parts = []
-    for i, df in enumerate(frames):
-        part = df[_MID_POINT + ['Fraction']].copy()
-        part['_frame'] = i
-        parts.append(part)
-
-    grouped = pd.concat(parts, ignore_index=True).groupby(['_frame'] + _MID_POINT)['Fraction']
-    stats = pd.DataFrame({
-        'mean': grouped.mean(),
-        'var':  grouped.var(ddof=1),
-        'n':    grouped.size(),
-    })
-    return stats[(stats['n'] >= 2) & stats['var'].notna()]
-
-
-def fit_mid_noise_model(frames, n_bins: int = 12) -> MidNoiseModel:
-    """Fit :class:`MidNoiseModel` to the replicate spread pooled across every MID point.
-
-    A point measured in 3 replicates yields a variance estimate with 2 degrees of freedom,
-    whose own relative error is ~50% -- far too noisy to use per point, which is why this
-    returns a pooled curve rather than a per-point sigma. Binning by magnitude and
-    averaging the *squared* replicate deviation gives an unbiased variance per bin; the
-    two-parameter curve is then fitted to those bins, weighted by how many points each
-    holds. Coefficients are constrained non-negative because a variance component cannot
-    be negative.
-
-    Args:
-        frames: iterable of long-format df_L frames, one per (condition, growth condition).
-        n_bins: magnitude bins the fit is computed over.
-    """
-    stats = _replicate_stats(frames)
-    if stats.empty:
-        raise ValueError("no MID point has replicates to estimate a noise model from")
-
-    binned = stats.assign(_bin=pd.qcut(stats['mean'], n_bins, duplicates='drop'))
-    agg = binned.groupby('_bin', observed=True).agg(
-        p=('mean', 'mean'), var=('var', 'mean'), n=('var', 'size'))
-
-    p, w = agg['p'].to_numpy(), np.sqrt(agg['n'].to_numpy())
-    design = np.column_stack([np.ones_like(p), p * (1.0 - p)])
-    coef, _ = nnls(design * w[:, None], agg['var'].to_numpy() * w)
-    return MidNoiseModel(a=float(coef[0]), b=float(coef[1]))
-
-
-def _renormalize(draws: np.ndarray, codes: np.ndarray) -> np.ndarray:
-    """Rescale each compositional group of every draw back to sum 1.
-
-    A diagonal covariance ignores that the isotopomers of one metabolite must sum to 1, so
-    an independent draw per isotopomer leaves the composition off-constraint. Rescaling the
-    group projects that violation out and recovers most of the negative off-diagonal
-    covariance the constraint implies. Fractions are clipped at zero first, since a
-    negative abundance is unphysical; that clip biases near-zero points marginally upward,
-    which is the accepted cost of a diagonal approximation.
-    """
-    out = np.clip(draws, 0.0, None)
-    n_groups = int(codes.max()) + 1
-    for i in range(out.shape[0]):
-        totals = np.bincount(codes, weights=out[i], minlength=n_groups)
-        scale = np.where(totals > 0, totals, 1.0)[codes]
-        out[i] /= scale
-    return out
 
 
 def resample_flux(value: float, err: float, n_samples: int,
@@ -157,40 +68,33 @@ def resample_flux(value: float, err: float, n_samples: int,
     return sign * M * rng.beta(kappa * x, kappa * (1 - x), size=n_samples)
 
 
-def sample_inputs(df_L, df_Vm, df_err, noise: MidNoiseModel, n_draws: int,
-                  rng: np.random.Generator):
-    """Monte Carlo draws of the measured inputs, plus the unperturbed maximum-likelihood row.
+def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator):
+    """The measured inputs to evaluate the model at: each MID replicate paired with an
+    independent flux draw, plus the replicate mean as the maximum-likelihood row.
 
-    Returns ``(df_L_draws, df_Vm_draws)`` carrying samples ``0 .. n_draws``, where sample
-    ``n_draws`` holds the replicate mean and the measured flux values unperturbed. That row
-    is the plug-in MLE input: by invariance of the maximum-likelihood estimate under
-    transformation, ``f(mean)`` is the estimate, whereas averaging ``f`` over the individual
-    replicates is a different, Jensen-biased quantity.
+    Returns ``(df_L_draws, df_Vm_draws)`` carrying samples ``0 .. n_reps-1`` (one per
+    measured MID replicate) plus sample ``n_reps`` holding the replicate mean and the
+    measured flux values unperturbed. That row is the plug-in MLE input: by invariance of
+    the maximum-likelihood estimate under transformation, ``f(mean)`` is the estimate,
+    whereas averaging ``f`` over the individual replicates is a different, Jensen-biased
+    quantity.
 
     Args:
         df_L: long-format labeling data, one row per (bio-rep, tracer, metabolite, isotopomer).
         df_Vm: measured-flux data for this growth condition.
         df_err: reported uncertainty per measured flux, or None.
-        noise: fitted MID noise model.
-        n_draws: number of perturbed draws.
-        rng: random generator used for the perturbation.
+        rng: random generator used for the flux draws.
     """
-    n_reps = df_L['Sample'].nunique()
-    mu = (df_L.groupby(_MID_POINT, sort=False)['Fraction'].mean().reset_index())
+    reps = sorted(df_L['Sample'].unique())
+    n_reps = len(reps)
+    mu = df_L.groupby(_MID_POINT, sort=False)['Fraction'].mean().reset_index()
 
-    # The model is fed the replicate mean, so its uncertainty is the standard error.
-    sigma = noise.sigma(mu['Fraction'].to_numpy()) / np.sqrt(n_reps)
-    centre = mu['Fraction'].to_numpy()
-    perturbed = centre + sigma * rng.standard_normal((n_draws, centre.size))
-    codes = pd.factorize(pd.MultiIndex.from_frame(mu[_MID_GROUP]))[0]
-    fractions = np.vstack([_renormalize(perturbed, codes), centre[None, :]])
+    parts = [df_L.loc[df_L['Sample'] == rep, _MID_POINT + ['Fraction']].assign(Sample=s)
+             for s, rep in enumerate(reps)]
+    parts.append(mu.assign(Sample=n_reps))
+    df_L_draws = pd.concat(parts, ignore_index=True)
 
-    template = mu.drop(columns='Fraction')
-    df_L_draws = pd.concat(
-        [template.assign(Sample=s, Fraction=fractions[s]) for s in range(n_draws + 1)],
-        ignore_index=True)
-
-    df_Vm_draws = _flux_draws(df_Vm, df_err, n_draws, rng)
+    df_Vm_draws = _flux_draws(df_Vm, df_err, n_reps, rng)
     return df_L_draws, df_Vm_draws
 
 
@@ -228,27 +132,29 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
 
     The point estimate is the ensemble median at the unperturbed input -- the same
     aggregation :meth:`EnsembleSigmaFlux.predict` uses, evaluated at the MLE input rather
-    than averaged over perturbed ones.
+    than averaged over the replicates.
 
-    The interval is ``point +/- t * sigma_total``, **not** the empirical percentile of the
-    draws. With an ensemble of ~20 members the 2.5th and 97.5th percentiles sit essentially
-    at the sample minimum and maximum, so they cannot resolve a 2.5% tail and under-cover
-    badly: measured against held-out ground truth the percentile interval reaches median
-    per-reaction coverage 0.861 / 0.875 / 0.866 (I. orientalis / S. cerevisiae / T cell)
-    against a nominal 0.95, where this construction reaches 0.928 / 0.938 / 0.937. Because
-    sigma is *estimated* from a small sample the quantile is Student-t, not normal; the
-    degrees of freedom follow the member axis, which carries the fewest independent units
-    and dominates the spread. None of this is fitted to the coverage -- it is the standard
-    treatment of an estimated scale, and the coverage above is the check on it.
+    Two variance sources compose into the interval:
 
-    ``sigma_total`` is measured directly over every perturbed draw, so it captures both
-    sources and their interaction without assuming ``sigma_total^2 = sigma_input^2 +
-    sigma_model^2``; the map is nonlinear and that identity need not hold. The two
-    components are reported alongside, each isolated by holding the other axis fixed.
+    * ``sigma_model``  -- member disagreement at the maximum-likelihood input (epistemic).
+    * ``sigma_input``  -- how far the ensemble consensus moves across replicates
+      (measurement).
+
+    ``sigma_total`` is measured directly over every (replicate, member) draw pooled
+    together, not assumed to be ``sqrt(sigma_model^2 + sigma_input^2)`` -- pooling captures
+    their interaction, which that identity would not.
+
+    The reported interval is ``point +/- t * sigma_total``, not the empirical percentile of
+    the draws: with as few as 3 replicates the 2.5th/97.5th percentiles sit at the sample
+    extrema and cannot resolve a 2.5% tail. Because sigma is *estimated* from a small sample
+    the quantile is Student-t rather than normal; the degrees of freedom follow the
+    replicate axis, since with 3 replicates against ~20 members it is now the thinner one.
+    None of this is fitted to coverage -- it is the standard treatment of an estimated
+    scale, and coverage (:func:`coverage_by_reaction`) is the check on it, not a target.
 
     Args:
         raw: long predictions with Sample, Member, Value and the group columns.
-        n_draws: number of perturbed draws; sample ``n_draws`` is the unperturbed row.
+        n_draws: number of replicate draws; sample ``n_draws`` is the unperturbed MLE row.
         group_cols: columns identifying one predicted quantity. A reaction can appear both
             as a flux and as a reversibility, so 'Type' belongs here alongside the name.
         alpha: two-sided miss rate of the reported interval.
@@ -263,18 +169,15 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
     at_mle = mle.groupby(keys, sort=False)['Value']
     out = pd.DataFrame({
         'Value':       at_mle.median(),
-        # Epistemic: member disagreement at the maximum-likelihood input.
         'sigma_model': at_mle.std(ddof=1).fillna(0.0),
     })
-
-    consensus = (drawn.groupby(keys + ['Sample'], sort=False)['Value']
-                      .median().reset_index())
-    # Measurement propagation: how far the ensemble consensus moves with the input.
-    out['sigma_input'] = (consensus.groupby(keys, sort=False)['Value']
-                                   .std(ddof=1).fillna(0.0))
+    out['sigma_input'] = (drawn.groupby(keys + ['Sample'], sort=False)['Value']
+                                .median().reset_index()
+                                .groupby(keys, sort=False)['Value']
+                                .std(ddof=1).fillna(0.0))
     out['sigma_total'] = drawn.groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0)
 
-    dof = max(raw['Member'].nunique() - 1, 1)
+    dof = max(n_draws - 1, 1)
     half = stats.t.ppf(1.0 - alpha / 2.0, dof) * out['sigma_total']
     out['Value_lo'] = out['Value'] - half
     out['Value_hi'] = out['Value'] + half

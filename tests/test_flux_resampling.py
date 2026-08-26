@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.ai.uncertainty import MidNoiseModel, resample_flux, sample_inputs
+from sigmaflux.ai.uncertainty import resample_flux, sample_inputs
 
 _resample_flux = resample_flux
 
@@ -67,17 +67,17 @@ class TestResampleFlux:
 
 
 class TestSampleInputs:
-    """Integration through sample_inputs: sign preservation and fixed-flux passthrough."""
+    """Integration through sample_inputs: replicate pass-through, sign preservation,
+    and fixed-flux passthrough. Three replicates, matching the real bio-rep count."""
 
     @pytest.fixture
     def frames(self):
-        # Two replicates of a two-isotopomer composition, so the MID side is well formed.
         df_L = pd.DataFrame({
-            "Sample":        [1, 1, 2, 2],
-            "Tracer Name":   ["T"] * 4,
-            "Metabolite ID": ["m"] * 4,
-            "Isotopomer":    ["M+1", "M+2", "M+1", "M+2"],
-            "Fraction":      [0.6, 0.4, 0.7, 0.3],
+            "Sample":        [1, 1, 2, 2, 3, 3],
+            "Tracer Name":   ["T"] * 6,
+            "Metabolite ID": ["m"] * 6,
+            "Isotopomer":    ["M+1", "M+2"] * 3,
+            "Fraction":      [0.6, 0.4, 0.7, 0.3, 0.5, 0.5],
         })
         df_Vm = pd.DataFrame({
             "Sample":    [1, 1],
@@ -91,51 +91,59 @@ class TestSampleInputs:
         })
         return df_L, df_Vm, df_err
 
-    @pytest.fixture
-    def noise(self):
-        return MidNoiseModel(a=1e-5, b=8e-4)
-
-    def test_resampled_fluxes_keep_measured_sign(self, frames, noise, rng):
+    def test_resampled_fluxes_keep_measured_sign(self, frames, rng):
         df_L, df_Vm, df_err = frames
-        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise, n_draws=200, rng=rng)
+        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng)
 
         glc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glc__D_e"]["Value"]
         glyc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glyc_e"]["Value"]
         assert (glc < 0).all()
         assert (glyc >= 0).all()
 
-    def test_zero_error_flux_is_held_fixed(self, frames, noise, rng):
+    def test_zero_error_flux_is_held_fixed(self, frames, rng):
         df_L, df_Vm, df_err = frames
         df_err = df_err.assign(Value=[0.5, 0.0])   # EX_glyc_e now has no usable error
-        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise, n_draws=50, rng=rng)
+        _, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng)
 
         glyc = df_Vm_draws[df_Vm_draws["Flux Name"] == "EX_glyc_e"]["Value"]
         assert (glyc == 0.0).all()
 
-    def test_last_sample_is_the_unperturbed_maximum_likelihood_input(self, frames, noise, rng):
-        """Sample n_draws carries the measured fluxes and the replicate-mean MIDs as-is.
+    def test_replicate_rows_are_passed_through_unperturbed(self, frames, rng):
+        """The MID side has no synthetic noise model any more -- each of the 3
+        replicate rows must appear in df_L_draws exactly as measured."""
+        df_L, df_Vm, df_err = frames
+        df_L_draws, _ = sample_inputs(df_L, df_Vm, df_err, rng)
+
+        for s, rep in enumerate(sorted(df_L["Sample"].unique())):
+            got = (df_L_draws[df_L_draws["Sample"] == s]
+                   .set_index("Isotopomer")["Fraction"])
+            want = (df_L[df_L["Sample"] == rep]
+                   .set_index("Isotopomer")["Fraction"])
+            assert got["M+1"] == pytest.approx(want["M+1"])
+            assert got["M+2"] == pytest.approx(want["M+2"])
+
+    def test_last_sample_is_the_unperturbed_maximum_likelihood_input(self, frames, rng):
+        """Sample n_reps carries the measured fluxes and the replicate-mean MIDs as-is.
 
         That row is what the reported point estimate is evaluated at, so any perturbation
         leaking into it would silently bias every prediction.
         """
         df_L, df_Vm, df_err = frames
-        n = 25
-        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise,
-                                                n_draws=n, rng=rng)
+        n_reps = df_L["Sample"].nunique()
+        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng)
 
-        mle_flux = df_Vm_draws[df_Vm_draws["Sample"] == n].set_index("Flux Name")["Value"]
+        mle_flux = df_Vm_draws[df_Vm_draws["Sample"] == n_reps].set_index("Flux Name")["Value"]
         assert mle_flux["EX_glc__D_e"] == -10.0
         assert mle_flux["EX_glyc_e"] == 0.0
 
-        mle_mid = df_L_draws[df_L_draws["Sample"] == n].set_index("Isotopomer")["Fraction"]
-        assert mle_mid["M+1"] == pytest.approx(0.65)   # mean of 0.6 and 0.7
-        assert mle_mid["M+2"] == pytest.approx(0.35)
+        mle_mid = df_L_draws[df_L_draws["Sample"] == n_reps].set_index("Isotopomer")["Fraction"]
+        assert mle_mid["M+1"] == pytest.approx((0.6 + 0.7 + 0.5) / 3)
+        assert mle_mid["M+2"] == pytest.approx((0.4 + 0.3 + 0.5) / 3)
 
-    def test_draw_ids_cover_every_draw_plus_the_mle_row(self, frames, noise, rng):
+    def test_sample_ids_cover_every_replicate_plus_the_mle_row(self, frames, rng):
         df_L, df_Vm, df_err = frames
-        n = 10
-        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, noise,
-                                                n_draws=n, rng=rng)
+        n_reps = df_L["Sample"].nunique()
+        df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng)
 
-        assert sorted(df_L_draws["Sample"].unique()) == list(range(n + 1))
+        assert sorted(df_L_draws["Sample"].unique()) == list(range(n_reps + 1))
         assert set(df_Vm_draws["Sample"].unique()) == set(df_L_draws["Sample"].unique())

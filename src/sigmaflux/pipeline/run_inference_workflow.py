@@ -15,10 +15,10 @@ Usage:
 Optional:
     --conditions C N P      run only these conditions (default: all discovered)
 
-Measurement uncertainty is propagated through the ensemble by Monte Carlo -- see
-:mod:`sigmaflux.ai.uncertainty` for the model. The number of input draws comes from
-experiment.n_input_draws in the config (default 100 when absent) -- not a CLI flag, so
-the count used for a run is always the one recorded in its config.
+Measurement uncertainty is propagated through the ensemble using the measured MID
+replicates directly (one flux draw per replicate) plus, on a checkpoint trained with
+loss='nll', the model's own learned aleatoric variance -- see
+:mod:`sigmaflux.ai.uncertainty` for the composition.
 """
 
 import argparse
@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import fit_mid_noise_model, sample_inputs, summarize_draws
+from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
 from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
@@ -113,9 +113,6 @@ def cli(argv=None):
     # file) — same override pattern as experiment.mapping_csv above. Defaults to the
     # single *_ExtFlux.xlsx glob match when absent.
     ext_flux    = cfg.get("experiment", {}).get("ext_flux")
-    # experiment.n_input_draws is the sole source for the Monte Carlo draw count -- no
-    # CLI override, so a run's count is always the one its config records.
-    n_input_draws = cfg.get("experiment", {}).get("n_input_draws", 100)
 
     def _p(rel):
         return resolve_path(rel, root)
@@ -158,29 +155,13 @@ def cli(argv=None):
 
     rng = np.random.default_rng(seed=42)
 
-    # Every condition's labeling data is read up front because the MID noise model pools
-    # replicate spread across all of them: one point's 3 replicates give a 2-dof variance
-    # estimate far too noisy to use on its own.
-    labeling = {}
-    for condition in conditions:
-        mid_file = all_condition_files[condition]
-        for gc in _inspect_growth_conditions(mid_file):
-            df_L = read_xlsx_mid_data(
-                xlsx_path        = mid_file,
-                mapping_csv      = mapping_path,
-                growth_condition = gc,
-            )
-            df_L['Sample'] = df_L['Sample'].rank(method='dense').astype(int)
-            labeling[(condition, gc)] = df_L
-
-    noise = fit_mid_noise_model(labeling.values())
-    print(f"MID noise model : sigma^2 = {noise.a:.3e} + {noise.b:.3e}*p(1-p)")
-    print(f"                  sigma = {noise.sigma(0.0):.4f} at p=0, "
-          f"{noise.sigma(0.5):.4f} at p=0.5  ({len(labeling)} growth conditions pooled)")
-    print()
-
     n_flux = len(sf.flux_names)
     is_ensemble = hasattr(sf, 'members')
+    if sf.has_variance_head:
+        print("Variance head : trained (loss='nll') -- aleatoric uncertainty included.")
+    else:
+        print("Variance head : none -- interval is ensemble/replicate spread only.")
+    print()
 
     for condition in conditions:
         mid_file = all_condition_files[condition]
@@ -193,7 +174,12 @@ def cli(argv=None):
         for gc in gcs:
             print(f"  ── Growth condition {gc} ──")
 
-            df_L = labeling[(condition, gc)]
+            df_L = read_xlsx_mid_data(
+                xlsx_path        = mid_file,
+                mapping_csv      = mapping_path,
+                growth_condition = gc,
+            )
+            df_L['Sample'] = df_L['Sample'].rank(method='dense').astype(int)
             df_Vm, df_err = read_xlsx_extflux(
                 xlsx_path        = ext_file,
                 condition        = condition,
@@ -207,16 +193,15 @@ def cli(argv=None):
             n_reps = df_L['Sample'].nunique()
             print(f"     Replicates: {n_reps}  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
 
-            df_L_draws, df_Vm_draws = sample_inputs(
-                df_L, df_Vm, df_err, noise, n_draws=n_input_draws, rng=rng)
+            df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng)
 
-            print(f"     Running inference ({n_input_draws} input draws "
+            print(f"     Running inference ({n_reps} replicate draws "
                   f"+ 1 maximum-likelihood input)...")
 
             if is_ensemble:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False)
+                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False, uncertainty=True)
             else:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws)
+                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, uncertainty=True)
 
             # Outputs come back per sample in flux-then-reversibility order, and a reaction
             # can appear in both, so Type is part of what identifies a predicted quantity.
@@ -226,7 +211,7 @@ def cli(argv=None):
                    .lt(n_flux).map({True: 'flux', False: 'reversibility'})
             )
 
-            agg = summarize_draws(raw, n_draws=n_input_draws,
+            agg = summarize_draws(raw, n_draws=n_reps,
                                   group_cols=['Type', 'Flux Name'])
             agg.insert(0, 'GrowthCondition', gc)
             agg.insert(0, 'Condition', condition)
