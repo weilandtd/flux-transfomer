@@ -21,9 +21,14 @@ Every R²/NRMSE here (``per_flux_r2``/``per_flux_nrmse`` in plot_test_performanc
 computed in plain linear space over the benchmark HDF5s directly -- not read from
 output/identifiability.csv -- so this script has one source of truth and does not depend
 on plot_test_performance.py having been run first against the same run directory. NRMSE
-(RMSE normalised by each reaction's own GT range) rather than raw RMSE, so the histogram
-and violin compare fit *quality* across reactions of very different flux magnitude, not
-just their absolute scale -- same rationale as ``plot_uncertainty_benchmark.py``'s NRMSE.
+z-scores each reaction's GT to mean 0/std 1 across samples, applies that same transform
+to pred, and takes the RMSE of the two -- equivalently RMSE(pred,gt) / std(gt), and
+therefore exactly sqrt(1 - R2): a deliberate reparametrisation of the R² panel, not
+independent information, so the histogram and violin reads as "how far below the R²
+threshold, in an absolute, cross-reaction-comparable unit" rather than a second metric.
+(Not the same NRMSE as ``plot_uncertainty_benchmark.py``, which normalises by each
+reaction's own GT *range* instead -- the two scripts answer different questions and
+intentionally use different denominators.)
 Both metrics share the same chi2-accepted ("statistically acceptable") sample set -- see
 ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for one model describe
 the identical reaction population.
