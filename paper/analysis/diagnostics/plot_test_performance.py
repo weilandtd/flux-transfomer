@@ -186,33 +186,16 @@ def per_flux_r2(df: pd.DataFrame) -> pd.Series:
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
 
 
-def per_flux_nrmse(df: pd.DataFrame) -> pd.Series:
-    """NRMSE for each reaction: z-score GT to mean 0 / std 1 across every sample the
-    method solved, apply that *same* (mean, std) transform to pred, then RMSE the two
-    z-scored series. So reactions of very different flux magnitude become directly
-    comparable, without the mean-flux normalisation blowing up on reversible/near-
-    zero-mean reactions (RMSE / mean(gt) does, since mean(gt) can sit arbitrarily
-    close to zero even when the reaction's spread is large -- confirmed against real
-    e_coli_core data, e.g. reaction R43: mean=0.021, range=0.87).
+def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
+    """RMSE for each reaction across every sample the method solved.
 
-    Written out explicitly (not collapsed algebraically) so the z-scoring step stays
-    visible in the code: the mean term cancels in the (pred_z - gt_z) residual, so this
-    reduces exactly to RMSE(pred, gt) / std(gt) -- and, under this file's own R2
-    convention (same ss_res/ss_tot), exactly to sqrt(1 - R2). That is a deliberate
-    choice, not an oversight: this metric is a monotonic reparametrisation of R2, not
-    independent information from it -- see per_flux_r2 for the underlying R2.
-
-    Reactions whose GT is constant across samples carry zero std to normalise by and
-    yield NaN; they are dropped, same convention as per_flux_r2's zero-variance guard.
+    Unlike per_flux_r2, well-defined for any n >= 1 (no variance term needed), so a
+    reaction with too little spread for R2 (dropped there) can still carry an RMSE here.
     """
-    def _nrmse(g):
+    def _rmse(g):
         gt, pred = g["gt"].to_numpy(), g["pred"].to_numpy()
-        mu, sigma = gt.mean(), gt.std()   # population std (ddof=0), matching ss_tot's convention
-        if sigma <= 0:
-            return np.nan
-        gt_z, pred_z = (gt - mu) / sigma, (pred - mu) / sigma
-        return float(np.sqrt(np.mean((pred_z - gt_z) ** 2)))
-    return df.groupby("reaction").apply(_nrmse, include_groups=False).dropna()
+        return float(np.sqrt(np.mean((pred - gt) ** 2)))
+    return df.groupby("reaction").apply(_rmse, include_groups=False)
 
 
 def overall_r2(df: pd.DataFrame) -> float:

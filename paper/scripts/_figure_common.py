@@ -25,7 +25,7 @@ from sigmaflux.utils import (
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import (  # noqa: E402
-    LABEL, R2_THRESHOLD, load_benchmark, per_flux_nrmse, per_flux_r2)
+    LABEL, R2_THRESHOLD, load_benchmark, per_flux_r2, per_flux_rmse)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
 
@@ -114,7 +114,7 @@ def run_dir_for(model, run_suffix=None):
 
 
 def benchmark_metrics(model, run_suffix=None):
-    """Per-reaction R² and NRMSE for both methods, or None when the model has no
+    """Per-reaction R² and RMSE for both methods, or None when the model has no
     benchmark yet.
 
     Computed from the benchmark HDF5s rather than read from ``output/identifiability.csv``
@@ -124,7 +124,7 @@ def benchmark_metrics(model, run_suffix=None):
     Both metrics come from the same ``load_benchmark()`` call per method, so they share
     the identical chi2-accepted sample set -- no second, differently-filtered pass. The
     final ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also
-    dropped from NRMSE here, keeping one reaction population across all four columns.
+    dropped from RMSE here, keeping one reaction population across all four columns.
     """
     run = run_dir_for(model, run_suffix)
     missing = [d for d in ("mfa_benchmark", "ai_benchmark")
@@ -142,7 +142,7 @@ def benchmark_metrics(model, run_suffix=None):
         print(f"  {model['label']:26s} {LABEL[method]:10s} "
               f"{n} samples ({n_failed} unsolved), {df['reaction'].nunique()} reactions")
         out[f"r2_{method}"] = per_flux_r2(df)
-        out[f"nrmse_{method}"] = per_flux_nrmse(df)
+        out[f"rmse_{method}"] = per_flux_rmse(df)
     return pd.DataFrame(out).dropna()
 
 
