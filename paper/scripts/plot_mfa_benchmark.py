@@ -1,28 +1,31 @@
 """
-MFA-vs-SigmaFlux simulation benchmark — per-reaction R²/RMSE distributions and Venn
+MFA-vs-SigmaFlux simulation benchmark — per-reaction R²/NRMSE distributions and Venn
 diagrams.
 
 Per model:
   mfa_benchmark_r2_<key>.svg               R² against the cumulative fraction of reactions
-  mfa_benchmark_rmse_hist_<key>.svg        Per-reaction RMSE distribution, log-x histogram
+  mfa_benchmark_nrmse_hist_<key>.svg       Per-reaction NRMSE distribution, log-x histogram
   mfa_benchmark_venn_<key>.svg             2-set Venn of reactions each method resolves
-  mfa_benchmark_r2_per_reaction_<key>.csv  the R²/RMSE table behind all three plots
+  mfa_benchmark_r2_per_reaction_<key>.csv  the R²/NRMSE table behind all three plots
 
 Across all models:
   mfa_benchmark_identifiable_sets.csv      Venn set sizes for every model
-  mfa_benchmark_rmse_violin.svg            RMSE distribution, all models side by side
+  mfa_benchmark_nrmse_violin.svg           NRMSE distribution, all models side by side
 
-R² curves and the RMSE histogram/violin all plot both methods on the same axis
+R² curves and the NRMSE histogram/violin all plot both methods on the same axis
 (SigmaFlux vs MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or
 above a given R², sorted descending. A model whose benchmark data is missing is skipped
 with a warning rather than failing the run, so the figure set fills itself in as runs land.
 
-Every R²/RMSE here (``per_flux_r2``/``per_flux_rmse`` in plot_test_performance.py) is
+Every R²/NRMSE here (``per_flux_r2``/``per_flux_nrmse`` in plot_test_performance.py) is
 computed in plain linear space over the benchmark HDF5s directly -- not read from
 output/identifiability.csv -- so this script has one source of truth and does not depend
-on plot_test_performance.py having been run first against the same run directory. Both
-metrics share the same chi2-accepted ("statistically acceptable") sample set -- see
-``_figure_common.benchmark_metrics`` -- so the R² and RMSE panels for one model describe
+on plot_test_performance.py having been run first against the same run directory. NRMSE
+(RMSE normalised by each reaction's own GT range) rather than raw RMSE, so the histogram
+and violin compare fit *quality* across reactions of very different flux magnitude, not
+just their absolute scale -- same rationale as ``plot_uncertainty_benchmark.py``'s NRMSE.
+Both metrics share the same chi2-accepted ("statistically acceptable") sample set -- see
+``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for one model describe
 the identical reaction population.
 
 Usage:
@@ -88,60 +91,61 @@ def plot_r2_quantiles(model, tbl, out_dir):
     save_figure(fig, out_dir / f"mfa_benchmark_r2_{model['key']}.svg")
 
 
-def _rmse_long(model, tbl):
-    """Tidy (Model, Method, rmse) frame from tbl's rmse_mfa/rmse_ai columns.
+def _nrmse_long(model, tbl):
+    """Tidy (Model, Method, nrmse) frame from tbl's nrmse_mfa/nrmse_ai columns.
 
-    Floored at FLUX_MIN_ABS -- same idiom as R2_FLOOR for R2 -- so the log-x histogram
+    Floored at FLUX_MIN_ABS -- reused here purely as a tiny positive epsilon (NRMSE is
+    dimensionless, not a flux), same idiom as R2_FLOOR for R2 -- so the log-x histogram
     and the log10-transformed violin never see an exact zero.
     """
-    long = (tbl[["rmse_mfa", "rmse_ai"]]
-            .rename(columns={"rmse_mfa": "mfa", "rmse_ai": "ai"})
-            .melt(var_name="method", value_name="rmse"))
-    long["rmse"] = np.clip(long["rmse"].to_numpy(), FLUX_MIN_ABS, None)
+    long = (tbl[["nrmse_mfa", "nrmse_ai"]]
+            .rename(columns={"nrmse_mfa": "mfa", "nrmse_ai": "ai"})
+            .melt(var_name="method", value_name="nrmse"))
+    long["nrmse"] = np.clip(long["nrmse"].to_numpy(), FLUX_MIN_ABS, None)
     long["Method"] = long["method"].map(LABEL)
     long["Model"] = model["label"]
-    return long[["Model", "Method", "rmse"]]
+    return long[["Model", "Method", "nrmse"]]
 
 
-def plot_rmse_histogram(model, long, out_dir):
-    """Per-reaction flux RMSE, SigmaFlux vs MFA, one model, log-x histogram."""
+def plot_nrmse_histogram(model, long, out_dir):
+    """Per-reaction flux NRMSE, SigmaFlux vs MFA, one model, log-x histogram."""
     fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    sns.histplot(data=long, x="rmse", hue="Method", hue_order=[LABEL["ai"], LABEL["mfa"]],
+    sns.histplot(data=long, x="nrmse", hue="Method", hue_order=[LABEL["ai"], LABEL["mfa"]],
                 palette=METHOD_PALETTE, log_scale=True, element="step", alpha=0.55, ax=ax)
-    ax.set_xlabel(r"Per-reaction flux RMSE (mmol gDW$^{-1}$ h$^{-1}$)")
+    ax.set_xlabel("Per-reaction flux NRMSE")
     ax.set_ylabel("Number of reactions")
     sns.move_legend(ax, "upper right", frameon=False, title=None)
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"mfa_benchmark_rmse_hist_{model['key']}.svg")
+    save_figure(fig, out_dir / f"mfa_benchmark_nrmse_hist_{model['key']}.svg")
 
 
-def plot_rmse_violin(df, model_order, out_dir):
-    """Cross-model RMSE violins: 4 models x 2 methods = 8 violins, log-y.
+def plot_nrmse_violin(df, model_order, out_dir):
+    """Cross-model NRMSE violins: 4 models x 2 methods = 8 violins, log-y.
 
     Width is the one explicit, user-approved exception to the 3.5x3.5 default
     (3.5 * 1.8 = 6.3in); height is unchanged.
 
-    Drawn on log10(rmse), not on rmse with ax.set_yscale('log') after the fact:
-    seaborn's KDE is fit in whatever coordinates it's given, so fitting on raw RMSE and
+    Drawn on log10(nrmse), not on nrmse with ax.set_yscale('log') after the fact:
+    seaborn's KDE is fit in whatever coordinates it's given, so fitting on raw NRMSE and
     rescaling the axis afterwards would still smooth with a linear-space bandwidth and
     distort the shape wherever the (roughly log-normal) density isn't uniform on that
-    scale. Fitting on log10(rmse) directly makes the displayed shape the actual density
+    scale. Fitting on log10(nrmse) directly makes the displayed shape the actual density
     in the space it's drawn in; ticks are relabelled as 10^n.
     """
     df = df.copy()
-    df["log10_rmse"] = np.log10(df["rmse"])
+    df["log10_nrmse"] = np.log10(df["nrmse"])
     fig, ax = plt.subplots(figsize=(3.5 * 1.8, 3.5))
-    sns.violinplot(data=df, x="Model", y="log10_rmse", hue="Method", order=model_order,
+    sns.violinplot(data=df, x="Model", y="log10_nrmse", hue="Method", order=model_order,
                    hue_order=[LABEL["ai"], LABEL["mfa"]], palette=METHOD_PALETTE,
                    cut=0, linewidth=0.8, ax=ax)
-    lo, hi = np.floor(df["log10_rmse"].min()), np.ceil(df["log10_rmse"].max())
+    lo, hi = np.floor(df["log10_nrmse"].min()), np.ceil(df["log10_nrmse"].max())
     ax.set_yticks(np.arange(lo, hi + 1))
     ax.set_yticklabels([f"$10^{{{int(t)}}}$" for t in np.arange(lo, hi + 1)])
     ax.set_xlabel("")
-    ax.set_ylabel(r"Per-reaction flux RMSE (mmol gDW$^{-1}$ h$^{-1}$)")
+    ax.set_ylabel("Per-reaction flux NRMSE")
     sns.move_legend(ax, "upper right", frameon=False, title=None)
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / "mfa_benchmark_rmse_violin.svg")
+    save_figure(fig, out_dir / "mfa_benchmark_nrmse_violin.svg")
 
 
 def set_counts(model, tbl):
@@ -219,24 +223,24 @@ def main():
 
     models = selected_models(args)
 
-    print("── Per-reaction R²/RMSE ──")
-    records, rmse_frames, model_order = [], [], []
+    print("── Per-reaction R²/NRMSE ──")
+    records, nrmse_frames, model_order = [], [], []
     for model in models:
         tbl = benchmark_metrics(model, args.run_suffix)
         if tbl is None:
             continue
         tbl.to_csv(out_dir / f"mfa_benchmark_r2_per_reaction_{model['key']}.csv")
         plot_r2_quantiles(model, tbl, out_dir)
-        long = _rmse_long(model, tbl)
-        plot_rmse_histogram(model, long, out_dir)
-        rmse_frames.append(long)
+        long = _nrmse_long(model, tbl)
+        plot_nrmse_histogram(model, long, out_dir)
+        nrmse_frames.append(long)
         model_order.append(model["label"])
         counts = set_counts(model, tbl)
         records.append(counts)
         plot_venn(model, counts, out_dir)
 
-    if rmse_frames:
-        plot_rmse_violin(pd.concat(rmse_frames, ignore_index=True), model_order, out_dir)
+    if nrmse_frames:
+        plot_nrmse_violin(pd.concat(nrmse_frames, ignore_index=True), model_order, out_dir)
 
     if records:
         report_sets(records, out_dir)

@@ -186,16 +186,22 @@ def per_flux_r2(df: pd.DataFrame) -> pd.Series:
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
 
 
-def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
-    """RMSE for each reaction across every sample the method solved.
+def per_flux_nrmse(df: pd.DataFrame) -> pd.Series:
+    """NRMSE for each reaction across every sample the method solved: RMSE normalised
+    by that reaction's own range (max - min) across those same samples, so reactions of
+    very different flux magnitude are directly comparable (mirrors
+    ``plot_uncertainty_benchmark._per_reaction_nrmse``'s rationale for the same fix).
 
-    Unlike per_flux_r2, well-defined for any n >= 1 (no variance term needed), so a
-    reaction with too little spread for R2 (dropped there) can still carry an RMSE here.
+    Reactions whose GT is constant across samples carry no range to normalise by and
+    yield NaN; they are dropped, same convention as per_flux_r2's zero-variance guard.
     """
-    def _rmse(g):
+    def _nrmse(g):
         gt, pred = g["gt"].to_numpy(), g["pred"].to_numpy()
-        return float(np.sqrt(np.mean((pred - gt) ** 2)))
-    return df.groupby("reaction").apply(_rmse, include_groups=False)
+        rng = gt.max() - gt.min()
+        if rng <= 0:
+            return np.nan
+        return float(np.sqrt(np.mean((pred - gt) ** 2)) / rng)
+    return df.groupby("reaction").apply(_nrmse, include_groups=False).dropna()
 
 
 def overall_r2(df: pd.DataFrame) -> float:
