@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 
 from _figure_common import (
     COLORS, LABEL, METHOD_COLORS, R2_FLOOR, R2_THRESHOLD, add_common_args,
-    apply_style, benchmark_r2, save_figure, selected_models)
+    apply_style, benchmark_metrics, save_figure, selected_models)
 
 apply_style()
 
@@ -157,7 +157,7 @@ def main():
     print("── Per-reaction R² ──")
     records = []
     for model in models:
-        tbl = benchmark_r2(model, args.run_suffix)
+        tbl = benchmark_metrics(model, args.run_suffix)
         if tbl is None:
             continue
         tbl.to_csv(out_dir / f"mfa_benchmark_r2_per_reaction_{model['key']}.csv")

@@ -113,7 +113,7 @@ def run_dir_for(model, run_suffix=None):
     return (_REPO_ROOT / run).resolve()
 
 
-def benchmark_r2(model, run_suffix=None):
+def benchmark_metrics(model, run_suffix=None):
     """Per-reaction R² for both methods, or None when the model has no benchmark yet.
 
     Computed from the benchmark HDF5s rather than read from ``output/identifiability.csv``

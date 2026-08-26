@@ -44,7 +44,7 @@ from sigmaflux.utils import magnitude_bounds
 
 from _figure_common import (
     COLORS, CONDITION_COLORS, FLUX_MIN_ABS, R2_THRESHOLD, add_common_args, apply_style,
-    benchmark_r2, build_reference_comparison, resolve_organism, run_dir_for,
+    benchmark_metrics, build_reference_comparison, resolve_organism, run_dir_for,
     save_figure, selected_models)
 
 apply_style()
@@ -248,7 +248,7 @@ def main():
     tables = {}
     if args.reactions == "mfa":
         for m in models:
-            tbl = benchmark_r2(m, args.run_suffix)
+            tbl = benchmark_metrics(m, args.run_suffix)
             if tbl is not None:
                 tables[m["key"]] = tbl
 
