@@ -1,32 +1,46 @@
 """
-Missing-metabolite and measurement-noise sensitivity — bar plots.
+Missing-metabolite and measurement-noise sensitivity -- line plots.
 
 Reads what ``sigmaflux-benchmark-uncertainty`` writes --
-``<run_dir>/uncertainty_benchmark/<condition>/{ai,mfa}/`` -- and for each (model,
-study) pair draws one bar chart: x = condition level, one bar per method (SigmaFlux
-/ MFA) in the paper's established method colours (``plot_test_performance.COLORS``),
-y = number of reactions with per-reaction R² > ``R2_THRESHOLD`` (0.9).
+``<run_dir>/uncertainty_benchmark/<condition>/{ai,mfa}/`` -- and draws six
+single-panel line figures, one per (quantity x metric):
 
-Error bars are a 95% bootstrap percentile interval, resampling the scored validation
-samples with replacement (``N_BOOT`` draws) and recomputing the reaction count on
-each draw -- the standard way to get an error bar on a threshold-count statistic
-without new raw data. Mirrors the barplot convention already used in
-``paper/analysis/observability/ablation_grid.py`` (``estimator='mean'``,
-``errorbar=('pi', ...)`` over per-replicate rows), just with ``hue='Method'``.
+  quantity: metabolites observed (100% -> 25%, descending), MID noise, flux noise
+  metric  : fraction of reactions with R² > R2_THRESHOLD (normalised per model, so
+            all four share one axis), median per-sample flux RMSE
 
-MFA is scored over EVERY fit here (``load_benchmark(..., require_converged=False)``),
-unlike Figure 2's ``benchmark_r2()`` which scores only χ²-accepted fits: at 100
-samples/condition the accepted-only filter would leave too few fits to say anything
-for some organisms (S. cerevisiae accepts under 10% of its fits at the default noise
-level -- see the ``mfa_benchmark_characterization`` project notes). The MFA counts
-here therefore read lower than Figure 2's published ones; the comparison ACROSS
-conditions is still like-for-like.
+Colour is METHOD (SigmaFlux/MFA, ``plot_test_performance.COLORS`` -- the paper's own
+convention); marker + linestyle is MODEL, via seaborn's ``style``. The condition grid
+itself is never re-derived here -- imported straight from
+:mod:`sigmaflux.pipeline.run_uncertainty_benchmark`, so a change to the grid there
+cannot silently desync from what this script expects to find on disk.
 
-Outputs (--out-dir, default paper/figures), one bar chart per (model, study):
-  uncertainty_missing_metabolites_<model>.svg
-  uncertainty_lab_noise_<model>.svg
-  uncertainty_flux_noise_<model>.svg
-  uncertainty_benchmark_summary.csv   bootstrap median + 95% PI behind every bar
+Two different sources of spread, matching how the underlying data was collected:
+  missing-metabolite points -- each of the (up to) 20 replicate metabolite draws
+      IS an independent real run, so the error band is their spread directly.
+  noise points -- one real draw per level, so the error band comes from bootstrap-
+      resampling that draw's scored samples (:func:`_bootstrap_estimates`).
+Both are fed to seaborn as raw per-replicate/per-draw rows and rendered with the
+same ``errorbar=('pi', 95)``, so one plotting code path serves both figures.
+
+MFA is scored over EVERY fit (``load_benchmark(..., require_converged=False)``),
+same as the bar-chart version this replaces -- see that rationale in
+``sigmaflux.pipeline.run_uncertainty_benchmark``'s module docstring (the
+solved-sample pool already excludes the fits MFA could not solve at baseline; this
+is a *further*, per-condition acceptance test that would leave too few fits to say
+anything for some organism/condition combinations).
+
+Outputs (--out-dir, default paper/figures):
+  uncertainty_missing_metabolites_fracR2.svg
+  uncertainty_missing_metabolites_rmse.svg
+  uncertainty_midnoise_fracR2.svg
+  uncertainty_midnoise_rmse.svg
+  uncertainty_fluxnoise_fracR2.svg
+  uncertainty_fluxnoise_rmse.svg
+  uncertainty_benchmark_summary.csv    every plotted point, long format
+  uncertainty_paired_tests.csv         per-condition Wilcoxon signed-rank, AI vs MFA
+                                        per-sample RMSE (paired by construction: both
+                                        arms score the identical solved-sample pool)
 
 Usage:
     python paper/scripts/plot_uncertainty_benchmark.py
@@ -41,45 +55,25 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from scipy import stats
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from _figure_common import (  # noqa: E402
-    MODELS, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
-from plot_test_performance import COLORS, LABEL, R2_THRESHOLD, load_benchmark  # noqa: E402
+    add_common_args, apply_style, run_dir_for, save_figure, selected_models)
+from plot_test_performance import COLORS, LABEL, R2_THRESHOLD, load_benchmark, per_flux_r2  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
+from sigmaflux.pipeline.run_uncertainty_benchmark import (  # noqa: E402
+    DEFAULT_FLUX_STD, DEFAULT_LAB_STD, _build_conditions)
 
 apply_style()
 
-N_BOOT = 200   # bootstrap resamples (over scored samples) behind each error bar
+N_BOOT = 200   # bootstrap resamples behind each noise-axis error band
 
-#: (condition, x-axis category label), in plot order -- study membership and
-#: condition names mirror sigmaflux.pipeline.run_uncertainty_benchmark.CONDITIONS
-#: exactly; see that module's docstring for why 1e-6 stands in for a literal 0% noise.
-_GRID = {
-    "missing_metabolites": [
-        ("met025_lab001_flux005", "25%"),
-        ("met050_lab001_flux005", "50%"),
-        ("met075_lab001_flux005", "75%"),
-        ("met100_lab001_flux005", "100%"),
-    ],
-    "lab_noise": [
-        ("met100_lab000_flux005", "0%"),
-        ("met100_lab001_flux005", "1%"),
-        ("met100_lab005_flux005", "5%"),
-    ],
-    "flux_noise": [
-        ("met100_lab001_flux000", "0%"),
-        ("met100_lab001_flux005", "5%"),
-        ("met100_lab001_flux025", "25%"),
-    ],
-}
-X_LABEL = {
-    "missing_metabolites": "Metabolites observed",
-    "lab_noise": "MID noise (% absolute)",
-    "flux_noise": "Flux noise (% relative)",
-}
+MISSING_ORDER = ["25%", "50%", "75%", "100%"]           # x_cat order; reversed to plot
+LAB_ORDER = ["0.1%", "1%", "2%", "5%"]
+FLUX_ORDER = ["0.1%", "5%", "10%", "25%"]
 
 
 def add_args(parser):
@@ -88,25 +82,43 @@ def add_args(parser):
                         help="Subdirectory of each run holding the condition "
                              "folders (default: uncertainty_benchmark)")
     parser.add_argument("--n-boot", type=int, default=N_BOOT,
-                        help=f"Bootstrap resamples per bar (default: {N_BOOT})")
+                        help=f"Bootstrap resamples per noise-axis point (default: {N_BOOT})")
+    parser.add_argument("--n-met-reps", type=int, default=None,
+                        help="Metabolite-draw replicate count the grid was run "
+                             "with (default: read from the driver's own default)")
     return parser
 
 
-def _bootstrap_counts(df, n_boot, seed):
-    """Bootstrap distribution of #reactions with R² > R2_THRESHOLD.
+def _long_frame(run_dir, subdir, condition_name, method, flux_df):
+    """The (sample, reaction, gt, pred) frame for one (condition, method) cell, or
+    ``None`` if it was never run."""
+    d = run_dir / subdir / condition_name / method
+    if not list(d.glob("pred_*_flux.h5")):
+        return None
+    df, _ = load_benchmark(d, flux_df, require_converged=False)
+    return df
 
-    Resamples the scored *samples* with replacement (not individual rows), so a
-    resampled column carries every reaction's (gt, pred) pair for that sample
-    together -- the correct unit for a flux-recovery bootstrap. Vectorised: the
-    python loop is only over ``n_boot``, each iteration is plain numpy array ops
-    over a (reactions, samples) matrix.
 
-    Args:
-        df: long frame with columns [sample, reaction, gt, pred], as returned by
-            ``plot_test_performance.load_benchmark``.
-        n_boot: number of bootstrap resamples.
-        seed: RNG seed, for reproducibility across runs.
-    """
+def _per_sample_rmse(gt, pred):
+    """RMSE across reactions, one value per column (sample) -- shared by the point
+    estimate and the bootstrap so both define RMSE identically."""
+    with np.errstate(invalid="ignore"):
+        return np.sqrt(np.nanmean((pred - gt) ** 2, axis=0))
+
+
+def _point_estimate(df, n_total):
+    """(frac_above_threshold, median_rmse) from one real, unresampled draw."""
+    r2 = per_flux_r2(df)
+    frac = float((r2 > R2_THRESHOLD).sum()) / n_total
+    wide = df.pivot(index="reaction", columns="sample", values=["gt", "pred"])
+    rmse = float(np.nanmedian(_per_sample_rmse(wide["gt"].to_numpy(), wide["pred"].to_numpy())))
+    return frac, rmse
+
+
+def _bootstrap_estimates(df, n_total, n_boot, seed):
+    """``n_boot`` (frac_above_threshold, median_rmse) pairs, resampling *samples*
+    (not rows) with replacement -- the correct unit, since a resampled column must
+    carry every reaction's (gt, pred) pair for that sample together."""
     gt = df.pivot(index="reaction", columns="sample", values="gt")
     pred = df.pivot(index="reaction", columns="sample", values="pred")
     gt, pred = gt.align(pred, join="inner", axis=None)
@@ -116,8 +128,8 @@ def _bootstrap_counts(df, n_boot, seed):
     n_samples = gt_arr.shape[1]
 
     rng = np.random.default_rng(seed)
-    counts = np.empty(n_boot, dtype=int)
-    for b in range(n_boot):
+    out = []
+    for _ in range(n_boot):
         draw = rng.integers(0, n_samples, size=n_samples)
         g, p = gt_arr[:, draw], pred_arr[:, draw]
         n_valid = np.sum(~np.isnan(g), axis=1)
@@ -126,97 +138,122 @@ def _bootstrap_counts(df, n_boot, seed):
             ss_res = np.nansum((p - g) ** 2, axis=1)
             ss_tot = np.nansum((g - mean[:, None]) ** 2, axis=1)
             r2 = np.where((ss_tot > 0) & (n_valid >= 2), 1.0 - ss_res / ss_tot, np.nan)
-        counts[b] = int(np.nansum(r2 > R2_THRESHOLD))
-    return counts
+        frac = float(np.nansum(r2 > R2_THRESHOLD)) / n_total
+        rmse = float(np.nanmedian(_per_sample_rmse(g, p)))
+        out.append((frac, rmse))
+    return out
 
 
-def score_condition(run_dir, subdir, condition, method, flux_df, n_boot, seed):
-    """Bootstrap replicate rows for one (condition, method) cell, or ``None`` if unrun."""
-    d = run_dir / subdir / condition / method
-    if not list(d.glob("pred_*_flux.h5")):
-        return None
-    df, _ = load_benchmark(d, flux_df, require_converged=False)
-    counts = _bootstrap_counts(df, n_boot, seed)
-    return counts, int(df["sample"].nunique())
+def _model_n_reactions(run_dir):
+    _, flux_df, _ = load_data(str(run_dir))
+    flux_df.columns = range(flux_df.shape[1])
+    return flux_df, flux_df.shape[0]
 
 
-def build_replicates(models, run_suffix, subdir, n_boot):
-    """Long DataFrame, one row per (model, study, x_cat, method, bootstrap draw)."""
-    rows, seed = [], 0
-    for model in models:
-        run_dir = run_dir_for(model, run_suffix)
-        if not (run_dir / subdir).exists():
-            print(f"  {model['label']}: skipped — no {run_dir / subdir}")
-            continue
-        _, flux_df, _ = load_data(str(run_dir))
-        flux_df.columns = range(flux_df.shape[1])
-
-        cache = {}
-        for study, conditions in _GRID.items():
-            for condition, x_cat in conditions:
-                for method in ("ai", "mfa"):
-                    key = (condition, method)
-                    if key not in cache:
-                        seed += 1
-                        cache[key] = score_condition(
-                            run_dir, subdir, condition, method, flux_df, n_boot, seed)
-                    res = cache[key]
-                    if res is None:
-                        continue
-                    counts, n_scored = res
-                    rows += [{"model": model["key"], "label": model["label"],
-                             "study": study, "x_cat": x_cat, "condition": condition,
-                             "method": method, "Method": LABEL[method],
-                             "n_scored": n_scored, "n_reactions": c} for c in counts]
-        n_found = sum(1 for v in cache.values() if v is not None)
-        print(f"  {model['label']:26s} {n_found}/{len(cache)} (condition, method) cells found")
-    return pd.DataFrame(rows)
+def build_missing_data(model, run_dir, subdir, flux_df, n_total, conditions):
+    """One row per (method, replicate) real draw -- the error band's raw material."""
+    rows = []
+    for c in (c for c in conditions if "missing" in c.studies):
+        for method in ("ai", "mfa"):
+            df = _long_frame(run_dir, subdir, c.name, method, flux_df)
+            if df is None:
+                continue
+            frac, rmse = _point_estimate(df, n_total)
+            rows.append({"model": model["key"], "Model": model["label"], "method": method,
+                        "Method": LABEL[method], "x_cat": f"{round(c.keep_met_frac * 100)}%",
+                        "rep": c.keep_met_seed, "frac_r2": frac, "rmse": rmse})
+    return rows
 
 
-def plot_bars(replicates, model, study, out_dir):
-    sub = replicates[(replicates["model"] == model["key"]) & (replicates["study"] == study)]
-    if sub.empty:
-        return
-    order = [x for _, x in _GRID[study]]
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    sns.barplot(data=sub, x="x_cat", y="n_reactions", order=order,
-               hue="Method", hue_order=[LABEL["ai"], LABEL["mfa"]],
-               palette={LABEL["ai"]: COLORS["ai"], LABEL["mfa"]: COLORS["mfa"]},
-               estimator="median", errorbar=("pi", 95), err_kws={"linewidth": 1.2},
-               capsize=0.15, ax=ax)
-    ax.set_xlabel(X_LABEL[study])
-    ax.set_ylabel(f"Reactions with $R^2$ > {R2_THRESHOLD}")
-    ax.legend(frameon=False, fontsize=8, title=None)
-    sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"uncertainty_{study}_{model['key']}.svg")
+def build_noise(model, run_dir, subdir, flux_df, n_total, conditions, axis, n_boot, seed0):
+    """One row per (method, level, bootstrap draw) -- axis is 'lab' or 'flux'."""
+    if axis == "lab":
+        cells = sorted((c for c in conditions if "noise" in c.studies
+                        and c.flux_std == DEFAULT_FLUX_STD), key=lambda c: c.labeling_std)
+        x_of = lambda c: f"{c.labeling_std * 100:g}%"   # noqa: E731
+    else:
+        cells = sorted((c for c in conditions if "noise" in c.studies
+                        and c.labeling_std == DEFAULT_LAB_STD), key=lambda c: c.flux_std)
+        x_of = lambda c: f"{c.flux_std * 100:g}%"        # noqa: E731
+
+    rows, seed = [], seed0
+    for c in cells:
+        for method in ("ai", "mfa"):
+            df = _long_frame(run_dir, subdir, c.name, method, flux_df)
+            if df is None:
+                continue
+            seed += 1
+            for frac, rmse in _bootstrap_estimates(df, n_total, n_boot, seed):
+                rows.append({"model": model["key"], "Model": model["label"], "method": method,
+                            "Method": LABEL[method], "x_cat": x_of(c),
+                            "frac_r2": frac, "rmse": rmse})
+    return rows
 
 
-def _clear_old_outputs(out_dir, models):
-    """Delete this run's own SVGs plus anything that isn't current-format output.
+def build_paired_tests(model, run_dir, subdir, flux_df, conditions):
+    """Per-condition Wilcoxon signed-rank test, AI vs MFA per-sample RMSE.
 
-    Only touches ``.svg`` files -- the summary CSV is a separate concern that
-    ``main()`` merges rather than replaces, for the same reason this function
-    exists at all: a ``--models`` subset run must not destroy a sibling model's
-    good output.
-
-    Two different reasons to remove a file, so that holds:
-      - a file for one of THIS run's *selected* models -- always removed, it is
-        about to be rewritten;
-      - a file that is not current-format output for ANY model in the full
-        registry (a stale name from an earlier version of this script, e.g. the
-        old un-suffixed line plots) -- always removed, nothing produces it anymore.
-    A current-format file for a model that exists but was NOT selected this run
-    is left alone.
+    Paired by construction: both arms score the identical solved-sample pool
+    (samples.json), so sample i's AI RMSE and MFA RMSE are a genuine matched pair,
+    not an independent-groups comparison.
     """
-    selected_keys = {m["key"] for m in models}
-    valid_names = {f"uncertainty_{study}_{m['key']}.svg" for m in MODELS for study in _GRID}
-    for f in out_dir.glob("uncertainty_*.svg"):
-        is_selected = any(f.name == f"uncertainty_{study}_{k}.svg"
-                          for study in _GRID for k in selected_keys)
-        is_legacy = f.name not in valid_names
-        if is_selected or is_legacy:
-            f.unlink()
-            print(f"Removed: {f}")
+    rows = []
+    for c in conditions:
+        ai = _long_frame(run_dir, subdir, c.name, "ai", flux_df)
+        mfa = _long_frame(run_dir, subdir, c.name, "mfa", flux_df)
+        if ai is None or mfa is None:
+            continue
+        ai_w = ai.pivot(index="reaction", columns="sample", values=["gt", "pred"])
+        mfa_w = mfa.pivot(index="reaction", columns="sample", values=["gt", "pred"])
+        shared = ai_w.columns.get_level_values(1).intersection(mfa_w.columns.get_level_values(1))
+        if len(shared) < 6:      # scipy.stats.wilcoxon's own practical floor
+            continue
+        ai_rmse = _per_sample_rmse(ai_w["gt"][shared].to_numpy(), ai_w["pred"][shared].to_numpy())
+        mfa_rmse = _per_sample_rmse(mfa_w["gt"][shared].to_numpy(), mfa_w["pred"][shared].to_numpy())
+        diff = ai_rmse - mfa_rmse
+        diff = diff[np.isfinite(diff)]
+        if len(diff) < 6 or np.allclose(diff, 0):
+            continue
+        stat, p = stats.wilcoxon(diff)
+        rows.append({"model": model["key"], "Model": model["label"], "condition": c.name,
+                    "n_paired": len(diff), "median_rmse_diff_ai_minus_mfa": float(np.median(diff)),
+                    "wilcoxon_stat": float(stat), "wilcoxon_p": float(p)})
+    return rows
+
+
+def _plot(df, order, reverse, xlabel, y, ylabel, out_path):
+    if df.empty:
+        return
+    fig, ax = plt.subplots(figsize=(3.5, 3.5))
+    sns.lineplot(data=df, x="x_cat", y=y, hue="Method", style="Model",
+                hue_order=[LABEL["ai"], LABEL["mfa"]],
+                palette={LABEL["ai"]: COLORS["ai"], LABEL["mfa"]: COLORS["mfa"]},
+                markers=True, dashes=True, err_style="band", errorbar=("pi", 95),
+                sort=False, ax=ax)
+    lo, hi = -0.5, len(order) - 0.5
+    ax.set_xlim(hi, lo) if reverse else ax.set_xlim(lo, hi)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(order)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.legend(frameon=False, fontsize=6, loc="best")
+    sns.despine(ax=ax)
+    save_figure(fig, out_path)
+
+
+def plot_all(df, out_dir):
+    # (study, category order, x reversed?, x-axis label, output-name tag)
+    specs = (("missing", MISSING_ORDER, True, "Metabolites observed", "missing_metabolites"),
+            ("lab_noise", LAB_ORDER, False, "MID noise (% absolute)", "midnoise"),
+            ("flux_noise", FLUX_ORDER, False, "Flux noise (% relative)", "fluxnoise"))
+    for study, order, reverse, xlabel, tag in specs:
+        sub = df[df["study"] == study].copy()
+        sub["x_cat"] = pd.Categorical(sub["x_cat"], categories=order, ordered=True).codes
+        _plot(sub, order, reverse, xlabel, "frac_r2",
+              f"Fraction of reactions with $R^2$ > {R2_THRESHOLD}",
+              out_dir / f"uncertainty_{tag}_fracR2.svg")
+        _plot(sub, order, reverse, xlabel, "rmse", "Median per-sample flux RMSE",
+              out_dir / f"uncertainty_{tag}_rmse.svg")
 
 
 def parse_args():
@@ -229,34 +266,52 @@ def main():
     args = parse_args()
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    for f in out_dir.glob("uncertainty_*"):
+        f.unlink()
 
     models = selected_models(args)
-    _clear_old_outputs(out_dir, models)
+    conditions = _build_conditions(args.n_met_reps) if args.n_met_reps else _build_conditions()
     print("── Uncertainty benchmark (missing metabolites, noise) ──")
-    replicates = build_replicates(models, args.run_suffix, args.uncertainty_subdir, args.n_boot)
 
-    if replicates.empty:
+    all_rows, paired_rows = [], []
+    for model in models:
+        run_dir = run_dir_for(model, args.run_suffix)
+        subdir = run_dir / args.uncertainty_subdir
+        if not subdir.exists():
+            print(f"  {model['label']}: skipped — no {subdir}")
+            continue
+        flux_df, n_total = _model_n_reactions(run_dir)
+
+        missing_rows = build_missing_data(model, run_dir, args.uncertainty_subdir,
+                                          flux_df, n_total, conditions)
+        lab_rows = build_noise(model, run_dir, args.uncertainty_subdir, flux_df, n_total,
+                               conditions, "lab", args.n_boot, seed0=0)
+        flux_rows = build_noise(model, run_dir, args.uncertainty_subdir, flux_df, n_total,
+                                conditions, "flux", args.n_boot, seed0=10_000)
+        for rows, study in ((missing_rows, "missing"), (lab_rows, "lab_noise"),
+                            (flux_rows, "flux_noise")):
+            for r in rows:
+                r["study"] = study
+            all_rows += rows
+        paired_rows += build_paired_tests(model, run_dir, args.uncertainty_subdir,
+                                          flux_df, conditions)
+        n_cells = len({(r["study"], r["x_cat"], r["method"])
+                      for r in missing_rows + lab_rows + flux_rows})
+        print(f"  {model['label']:26s} {n_cells} (study, level, method) cells found")
+
+    if not all_rows:
         print("No model had uncertainty-benchmark data — nothing written.")
         return
 
-    summary = (replicates.groupby(["model", "label", "study", "x_cat", "method", "n_scored"])
-              ["n_reactions"]
-              .agg(median="median", pi_lo=lambda s: s.quantile(0.025), pi_hi=lambda s: s.quantile(0.975))
-              .reset_index())
+    df = pd.DataFrame(all_rows)
+    df.to_csv(out_dir / "uncertainty_benchmark_summary.csv", index=False)
+    print(f"Saved: {out_dir / 'uncertainty_benchmark_summary.csv'}")
 
-    # A --models subset must not drop other models' rows from the persisted CSV --
-    # same principle as _clear_old_outputs: only this run's own models are replaced.
-    csv_path = out_dir / "uncertainty_benchmark_summary.csv"
-    if csv_path.exists():
-        existing = pd.read_csv(csv_path)
-        existing = existing[~existing["model"].isin(summary["model"].unique())]
-        summary = pd.concat([existing, summary], ignore_index=True)
-    summary.to_csv(csv_path, index=False)
-    print(f"Saved: {csv_path}")
+    if paired_rows:
+        pd.DataFrame(paired_rows).to_csv(out_dir / "uncertainty_paired_tests.csv", index=False)
+        print(f"Saved: {out_dir / 'uncertainty_paired_tests.csv'}")
 
-    for model in models:
-        for study in _GRID:
-            plot_bars(replicates, model, study, out_dir)
+    plot_all(df, out_dir)
 
 
 if __name__ == "__main__":
