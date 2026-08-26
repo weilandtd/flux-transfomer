@@ -11,6 +11,8 @@ Per model:
 Across all models:
   mfa_benchmark_identifiable_sets.csv      Venn set sizes for every model
   mfa_benchmark_rmse_violin.svg            RMSE distribution, all models side by side
+  mfa_benchmark_rmse_paired_tests.csv      Per-organism Wilcoxon signed-rank test, AI vs
+                                            MFA per-reaction RMSE, paired by reaction
 
 R² curves and the RMSE histogram/violin all plot both methods on the same axis
 (SigmaFlux vs MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or
@@ -37,6 +39,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from scipy import stats
 
 from _figure_common import (
     COLORS, FLUX_MIN_ABS, LABEL, METHOD_COLORS, R2_FLOOR, R2_THRESHOLD, add_common_args,
@@ -144,6 +147,47 @@ def plot_rmse_violin(df, model_order, out_dir):
     save_figure(fig, out_dir / "mfa_benchmark_rmse_violin.svg")
 
 
+def paired_rmse_test(model, tbl):
+    """Wilcoxon signed-rank test, AI vs MFA per-reaction RMSE, paired by reaction.
+
+    ``tbl``'s rmse_mfa/rmse_ai columns already share one reaction index --
+    ``benchmark_metrics``'s trailing ``dropna()`` keeps only reactions both methods
+    have a value for -- so reaction r's MFA RMSE and AI RMSE are a genuine matched
+    pair, not an independent-groups comparison. Returns None when there are too few
+    reactions for scipy's own practical floor, or every pair ties exactly.
+    """
+    mfa, ai = tbl["rmse_mfa"].to_numpy(), tbl["rmse_ai"].to_numpy()
+    diff = ai - mfa
+    diff = diff[np.isfinite(diff)]
+    if len(diff) < 6 or np.allclose(diff, 0):
+        return None
+    stat, p = stats.wilcoxon(diff)
+    return {
+        "model": model["label"],
+        "n_reactions": len(diff),
+        "median_rmse_mfa": float(np.median(mfa)),
+        "median_rmse_ai": float(np.median(ai)),
+        "lower_rmse": LABEL["ai"] if np.median(diff) < 0 else LABEL["mfa"],
+        "wilcoxon_stat": float(stat),
+        "wilcoxon_p": float(p),
+    }
+
+
+def report_paired_tests(records, out_dir):
+    """Print the per-organism paired RMSE test and write it next to the figures."""
+    print(f"\n── Paired RMSE test (Wilcoxon signed-rank, {LABEL['ai']} vs {LABEL['mfa']}, "
+          f"per reaction) ──")
+    for r in records:
+        print(f"\n{r['model']}   (n = {r['n_reactions']} reactions)")
+        print(f"   median RMSE — MFA {r['median_rmse_mfa']:.4g}, "
+              f"SigmaFlux {r['median_rmse_ai']:.4g}")
+        print(f"   lower RMSE : {r['lower_rmse']}"
+              f"   (p = {r['wilcoxon_p']:.3g}, W = {r['wilcoxon_stat']:.1f})")
+    path = out_dir / "mfa_benchmark_rmse_paired_tests.csv"
+    pd.DataFrame(records).to_csv(path, index=False)
+    print(f"\nSaved: {path}")
+
+
 def set_counts(model, tbl):
     """The Venn partition of reactions each method resolves (R² >= R2_THRESHOLD).
 
@@ -220,7 +264,7 @@ def main():
     models = selected_models(args)
 
     print("── Per-reaction R²/RMSE ──")
-    records, rmse_frames, model_order = [], [], []
+    records, rmse_frames, model_order, paired_records = [], [], [], []
     for model in models:
         tbl = benchmark_metrics(model, args.run_suffix)
         if tbl is None:
@@ -234,9 +278,15 @@ def main():
         counts = set_counts(model, tbl)
         records.append(counts)
         plot_venn(model, counts, out_dir)
+        paired = paired_rmse_test(model, tbl)
+        if paired is not None:
+            paired_records.append(paired)
 
     if rmse_frames:
         plot_rmse_violin(pd.concat(rmse_frames, ignore_index=True), model_order, out_dir)
+
+    if paired_records:
+        report_paired_tests(paired_records, out_dir)
 
     if records:
         report_sets(records, out_dir)
