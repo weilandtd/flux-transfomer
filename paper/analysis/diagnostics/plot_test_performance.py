@@ -186,6 +186,18 @@ def per_flux_r2(df: pd.DataFrame) -> pd.Series:
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
 
 
+def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
+    """RMSE for each reaction across every sample the method solved.
+
+    Unlike per_flux_r2, well-defined for any n >= 1 (no variance term needed), so a
+    reaction with too little spread for R2 (dropped there) can still carry an RMSE here.
+    """
+    def _rmse(g):
+        gt, pred = g["gt"].to_numpy(), g["pred"].to_numpy()
+        return float(np.sqrt(np.mean((pred - gt) ** 2)))
+    return df.groupby("reaction").apply(_rmse, include_groups=False)
+
+
 def overall_r2(df: pd.DataFrame) -> float:
     ss_res = float(((df["pred"] - df["gt"]) ** 2).sum())
     ss_tot = float(((df["gt"] - df["gt"].mean()) ** 2).sum())
