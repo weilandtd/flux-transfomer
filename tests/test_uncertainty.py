@@ -1,9 +1,9 @@
 """Tests for sigmaflux.ai.uncertainty: replicate-based input draws and the composed
-interval (ensemble + measurement + learned aleatoric uncertainty).
+interval (ensemble + measurement).
 
 The flux-side resampler and sample_inputs' replicate handling have their own file
 (test_flux_resampling.py); what is covered here is summarize_draws' composition of the
-three variance sources, and coverage_by_reaction.
+two variance sources, and coverage_by_reaction.
 """
 
 import numpy as np
@@ -16,20 +16,18 @@ from sigmaflux.ai.uncertainty import coverage_by_reaction, summarize_draws
 
 class TestSummarizeDraws:
 
-    def _raw(self, n_reps=3, n_members=5, seed=0, sigma=None):
-        """Synthetic (Sample, Member, Value[, Sigma]) draws: sample n_reps is the MLE
-        row, samples 0..n_reps-1 are replicate draws. Members disagree by a fixed
-        offset; draws add their own scatter."""
+    def _raw(self, n_reps=3, n_members=5, seed=0):
+        """Synthetic (Sample, Member, Value) draws: sample n_reps is the MLE row,
+        samples 0..n_reps-1 are replicate draws. Members disagree by a fixed offset;
+        draws add their own scatter."""
         rng = np.random.default_rng(seed)
         rows = []
         for s in range(n_reps + 1):
             for m in range(n_members):
                 base = 5.0 + 0.5 * m
                 value = base if s == n_reps else base + rng.normal(0, 0.2)
-                row = dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R1", "Value": value})
-                if sigma is not None:
-                    row["Sigma"] = sigma
-                rows.append(row)
+                rows.append(dict(Sample=s, Member=m, Type="flux",
+                                 **{"Flux Name": "R1", "Value": value}))
         return pd.DataFrame(rows)
 
     def test_point_estimate_is_the_ensemble_median_at_the_mle_input(self):
@@ -92,36 +90,14 @@ class TestSummarizeDraws:
         out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"])
         assert out["sigma_model"].iloc[0] == 0.0
 
-    def test_no_sigma_column_falls_back_to_ensemble_and_measurement_only(self):
-        """A checkpoint with no variance head produces no Sigma column at all; the
-        interval must still be well formed, with a zero aleatoric contribution."""
-        raw = self._raw(sigma=None)
-        assert "Sigma" not in raw.columns
-        out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"])
-        assert out["sigma_aleatoric"].iloc[0] == 0.0
-        assert out["Value_lo"].iloc[0] < out["Value"].iloc[0] < out["Value_hi"].iloc[0]
-
-    def test_learned_aleatoric_variance_widens_the_interval(self):
-        """A model with a variance head reports Sigma per (sample, member); a larger
-        learned sigma must widen the interval, since it is a genuinely separate source
-        from ensemble/replicate disagreement (nonzero even at one exact input)."""
-        narrow = summarize_draws(self._raw(sigma=0.05), n_draws=3,
-                                 group_cols=["Type", "Flux Name"]).iloc[0]
-        wide = summarize_draws(self._raw(sigma=2.0), n_draws=3,
-                               group_cols=["Type", "Flux Name"]).iloc[0]
-        assert wide["sigma_aleatoric"] > narrow["sigma_aleatoric"] > 0
-        assert (wide["Value_hi"] - wide["Value_lo"]) > (narrow["Value_hi"] - narrow["Value_lo"])
-
-    def test_components_combine_in_quadrature_not_additively(self):
-        """sigma_total^2 = sigma_mi^2 + sigma_aleatoric^2 -- the aleatoric term is not
-        simply added to the pooled spread linearly."""
-        sigma = 1.0
-        raw = self._raw(sigma=sigma)
+    def test_sigma_total_is_the_pooled_spread_not_assumed_additive(self):
+        """sigma_total is measured directly over every pooled (replicate, member) draw,
+        not sqrt(sigma_model^2 + sigma_input^2) -- that identity need not hold and is
+        not imposed."""
+        raw = self._raw()
         out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"]).iloc[0]
-        sigma_mi = raw[raw["Sample"] < 3].groupby("Flux Name")["Value"].std(ddof=1).iloc[0]
-        expected_total = np.sqrt(sigma_mi ** 2 + sigma ** 2)
-        half = tdist.ppf(0.975, 2) * expected_total
-        assert out["Value_hi"] - out["Value"] == pytest.approx(half)
+        pooled = raw[raw["Sample"] < 3].groupby("Flux Name")["Value"].std(ddof=1).iloc[0]
+        assert out["sigma_total"] == pytest.approx(pooled)
 
 
 class TestCoverageByReaction:

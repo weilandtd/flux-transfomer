@@ -16,9 +16,8 @@ Optional:
     --conditions C N P      run only these conditions (default: all discovered)
 
 Measurement uncertainty is propagated through the ensemble using the measured MID
-replicates directly (one flux draw per replicate) plus, on a checkpoint trained with
-loss='nll', the model's own learned aleatoric variance -- see
-:mod:`sigmaflux.ai.uncertainty` for the composition.
+replicates directly (one flux draw per replicate) -- see :mod:`sigmaflux.ai.uncertainty`
+for the composition.
 """
 
 import argparse
@@ -157,11 +156,6 @@ def cli(argv=None):
 
     n_flux = len(sf.flux_names)
     is_ensemble = hasattr(sf, 'members')
-    if sf.has_variance_head:
-        print("Variance head : trained (loss='nll') -- aleatoric uncertainty included.")
-    else:
-        print("Variance head : none -- interval is ensemble/replicate spread only.")
-    print()
 
     for condition in conditions:
         mid_file = all_condition_files[condition]
@@ -199,9 +193,9 @@ def cli(argv=None):
                   f"+ 1 maximum-likelihood input)...")
 
             if is_ensemble:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False, uncertainty=True)
+                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False)
             else:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, uncertainty=True)
+                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws)
 
             # Outputs come back per sample in flux-then-reversibility order, and a reaction
             # can appear in both, so Type is part of what identifies a predicted quantity.
