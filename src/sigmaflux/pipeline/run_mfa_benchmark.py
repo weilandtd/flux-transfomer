@@ -39,6 +39,7 @@ multi-start hyperparameters before committing to the full array benchmark:
 """
 
 import argparse
+import json
 import os
 import time
 from collections import defaultdict
@@ -97,13 +98,23 @@ def build_parser():
                    help="Draw this many samples out of the full split before applying "
                         "--start-ix/--n-benchmarks (seeded at 0, independent of --seed, "
                         "so a sensitivity study's conditions all score the identical "
-                        "subset). Default: use the whole split, as today.")
+                        "subset). Default: use the whole split, as today. Ignored when "
+                        "--samples is given.")
+    p.add_argument("--samples", default=None,
+                   help="JSON file holding a list of explicit absolute HDF5 sample "
+                        "columns to use as the pool (e.g. a sensitivity study's "
+                        "solved-sample pool), bypassing --subsample entirely so every "
+                        "condition and method shares exactly this pool. Default: derive "
+                        "the pool from --split/--subsample, as today.")
     p.add_argument("--keep-met-frac", type=float, default=None,
                    help="Restrict the mapped metabolites to this fraction (nested "
-                        "subset, seeded at 0 — see sigmaflux.pipeline._benchmark."
-                        "metabolite_subset), simulating a measurement platform that "
-                        "resolves only some of them. Default: use every mapped "
-                        "metabolite, as today.")
+                        "subset — see sigmaflux.pipeline._benchmark.metabolite_subset), "
+                        "simulating a measurement platform that resolves only some of "
+                        "them. Default: use every mapped metabolite, as today.")
+    p.add_argument("--keep-met-seed", type=int, default=0,
+                   help="Seed for --keep-met-frac's metabolite draw (default: 0, "
+                        "matching metabolite_subset's own default). Vary this to draw "
+                        "an independent replicate of the same fraction.")
     p.add_argument("--backend", choices=["native", "native-ipopt", "x3cflux"], default="native",
                    help="Which optimiser fits the flux. 'native' is the in-house "
                         "null-space L-BFGS-B (S·v=0 satisfied by construction, no "
@@ -225,6 +236,20 @@ def measured_flux_ids(measured_rxn_ids, gt_flux_series):
     return [r for r in measured_rxn_ids if r in gt_flux_series.index]
 
 
+#: Absolute floor under the relative flux σ (`max(flux_noise_std·|v_true|, FLOOR)`),
+#: shared by the native and x3cflux fitters so a measured flux near zero can never
+#: get a vanishing std and the 1/σ² weight it implies. mmol/gDW/h — far below any
+#: real biological signal, so it only ever binds when |v_true| is itself near zero.
+#: Was 1e-9, which at the production default (flux_noise_std=0.05) only bites below
+#: |v_true|=2e-8 and is invisible; at the smaller σ a sensitivity study needs
+#: (flux_noise_std=0.001) it bites below |v_true|=1e-6 -- measured, real for several
+#: models' measured fluxes (RNA_c, some amino-acid exchanges) in a few percent of
+#: samples -- and gives a weight of ~1e18 on that one measurement, the same 1/σ
+#: pathology that makes a literal 0% noise level unusable (see run_uncertainty_
+#: benchmark's module docstring). 1e-3 keeps the worst case at ~1e6 instead.
+FLUX_SIGMA_FLOOR = 1e-3
+
+
 def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, noisy_values):
     """Wrap already-noised flux observations as FluxData.
 
@@ -239,7 +264,7 @@ def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, 
         noisy_values: already-noised measured flux values.
     """
     rows = [{"reaction": rxn_id, "mean": float(meas),
-             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
+             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), FLUX_SIGMA_FLOOR)}
             for rxn_id, meas in zip(rxn_ids, noisy_values)]
     return FluxData(mfa_model, pd.DataFrame(rows)) if rows else None
 
@@ -622,14 +647,20 @@ def main(args):
     cobra_model, mapped_met_ids, _, all_flux_df, all_rev_df = load_benchmark_inputs(
         data_dir, cfg, root)
     if args.keep_met_frac is not None and mapped_met_ids:
-        mapped_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac)
+        mapped_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac,
+                                           seed=args.keep_met_seed)
         print(f"  Restricted to {len(mapped_met_ids)} metabolites "
-              f"({args.keep_met_frac:.0%} of the mapped set)")
+              f"({args.keep_met_frac:.0%} of the mapped set, seed={args.keep_met_seed})")
+
+    sample_ids = None
+    if args.samples:
+        with open(_p(args.samples)) as fh:
+            sample_ids = json.load(fh)
 
     split_source = resolve_split_source(_p(args.checkpoint), data_dir, args.split)
     sel, tag = select_samples(args.split, split_source, all_flux_df.shape[1], cfg,
                               args.start_ix, 1 if args.diagnose else args.n_benchmarks,
-                              subsample=args.subsample)
+                              subsample=args.subsample, sample_ids=sample_ids)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
@@ -725,7 +756,8 @@ def main(args):
                 )
             # Same sigmas make_measured_flux_data gives the native arm.
             flux_sigma = np.maximum(
-                flux_noise_std * np.abs(gt_flux.reindex(flux_ids).to_numpy(float)), 1e-9)
+                flux_noise_std * np.abs(gt_flux.reindex(flux_ids).to_numpy(float)),
+                FLUX_SIGMA_FLOOR)
             simulator, fluxmap = backend.simulator_for(
                 noisy_series.to_numpy(float), noisy_flux, flux_sigma)
 

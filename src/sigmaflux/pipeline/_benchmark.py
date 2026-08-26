@@ -82,7 +82,7 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
 
 
 def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks,
-                   subsample=None):
+                   subsample=None, sample_ids=None):
     """Sample columns for this task, as an offset window into *split*.
 
     Args:
@@ -97,24 +97,36 @@ def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks,
             a sensitivity study draws the identical subset regardless of what noise
             seed it runs with), sorted back into split order, then windowed by
             ``start_ix``/``n_benchmarks`` as usual. ``None`` uses the whole split.
+            Ignored when ``sample_ids`` is given.
+        sample_ids: explicit absolute HDF5 column indices to use as the pool,
+            bypassing both the split lookup and ``subsample`` -- for a caller (e.g.
+            a sensitivity study's solved-sample pool) that has already decided
+            exactly which columns every condition and method must share. Sorted,
+            then windowed by ``start_ix``/``n_benchmarks`` exactly like the other
+            two paths, so the offset-window/tiling contract is identical either way.
 
     ``start_ix``/``n_benchmarks`` index the sorted split (post-subsampling, when
     given), not raw HDF5 columns, so a SLURM array tiles it deterministically.
     Returns ``(sel, tag)``; ``sel`` is empty when the offset window falls past the
     end of the split.
     """
-    split_cols = split_sample_indices(
-        split, split_source, n_total,
-        cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
-    )
-    if subsample is not None and subsample < len(split_cols):
-        split_cols = np.sort(
-            np.random.default_rng(0).choice(split_cols, size=subsample, replace=False)
+    if sample_ids is not None:
+        split_cols = np.sort(np.asarray(sample_ids, dtype=int))
+        note = " (explicit sample pool)"
+    else:
+        split_cols = split_sample_indices(
+            split, split_source, n_total,
+            cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
         )
+        note = ""
+        if subsample is not None and subsample < len(split_cols):
+            split_cols = np.sort(
+                np.random.default_rng(0).choice(split_cols, size=subsample, replace=False)
+            )
+            note = " (subsampled)"
     sel = split_cols[start_ix:start_ix + n_benchmarks]
     n_runs = len(sel)
-    print(f"  split={split}: {len(split_cols)} samples"
-          f"{' (subsampled)' if subsample is not None else ''}; this task evaluates "
+    print(f"  split={split}: {len(split_cols)} samples{note}; this task evaluates "
           f"offsets {start_ix}–{start_ix + n_runs - 1} → columns "
           f"{sel[0] if n_runs else '-'}..{sel[-1] if n_runs else '-'} of {n_total} total")
     return sel, f"{start_ix:05d}_{start_ix + max(n_runs - 1, 0):05d}"

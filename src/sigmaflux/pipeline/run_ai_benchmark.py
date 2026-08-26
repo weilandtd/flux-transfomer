@@ -32,6 +32,7 @@ Usage (I. orientalis):
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -84,14 +85,26 @@ def build_parser():
                    help="Draw this many samples out of the full split before applying "
                         "--start-ix/--n-benchmarks (seeded at 0, independent of --seed, "
                         "so a sensitivity study's conditions all score the identical "
-                        "subset). Default: use the whole split, as today.")
+                        "subset). Default: use the whole split, as today. Ignored when "
+                        "--samples is given.")
+    p.add_argument("--samples", default=None,
+                   help="JSON file holding a list of explicit absolute HDF5 sample "
+                        "columns to use as the pool (e.g. a sensitivity study's "
+                        "solved-sample pool), bypassing --subsample entirely so every "
+                        "condition and method shares exactly this pool. Default: derive "
+                        "the pool from --split/--subsample, as today.")
     p.add_argument("--keep-met-frac", type=float, default=None,
                    help="Restrict the mapped metabolites to this fraction (nested "
-                        "subset, seeded at 0 — see sigmaflux.pipeline._benchmark."
-                        "metabolite_subset), simulating a measurement platform that "
-                        "resolves only some of them. Dropped metabolites are omitted "
-                        "from df_L entirely (predict() then zero-fills their tokens). "
-                        "Default: use every mapped metabolite, as today.")
+                        "subset — see sigmaflux.pipeline._benchmark.metabolite_subset), "
+                        "simulating a measurement platform that resolves only some of "
+                        "them. Dropped metabolites are omitted from df_L entirely "
+                        "(predict() then zero-fills their tokens). Default: use every "
+                        "mapped metabolite, as today.")
+    p.add_argument("--keep-met-seed", type=int, default=0,
+                   help="Seed for --keep-met-frac's metabolite draw (default: 0, "
+                        "matching metabolite_subset's own default). Vary this to draw "
+                        "an independent replicate of the same fraction; must match the "
+                        "MFA arm's --keep-met-seed for the two to see the same metabolites.")
     p.add_argument("--noise-std", type=float, default=0.01,
                    help="Gaussian noise std added to simulated MID fractions")
     p.add_argument("--flux-noise-std", type=float, default=0.05,
@@ -209,13 +222,19 @@ def main(args):
         load_benchmark_inputs(data_dir, cfg, root)
     keep_met_ids = None
     if args.keep_met_frac is not None and mapped_met_ids:
-        keep_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac)
+        keep_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac,
+                                         seed=args.keep_met_seed)
         print(f"  Restricted to {len(keep_met_ids)} metabolites "
-              f"({args.keep_met_frac:.0%} of the mapped set)")
+              f"({args.keep_met_frac:.0%} of the mapped set, seed={args.keep_met_seed})")
+
+    sample_ids = None
+    if args.samples:
+        with open(_p(args.samples)) as fh:
+            sample_ids = json.load(fh)
 
     sel, tag = select_samples(args.split, split_source, training_flux_df.shape[1],
                               cfg, args.start_ix, args.n_benchmarks,
-                              subsample=args.subsample)
+                              subsample=args.subsample, sample_ids=sample_ids)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
