@@ -4,18 +4,24 @@ statistically acceptable fit.
 
 The MFA benchmark gives each sample up to ``--max-starts`` random-restart attempts
 and keeps the best fit found; not every sample clears the standard 13C-MFA chi-square
-goodness-of-fit test even after exhausting all restarts. This script asks whether
-that failure is a random draw or a structural property of the sample's underlying
-metabolic state, with two analyses per organism:
+goodness-of-fit test even after exhausting all restarts. This script visualizes
+whether that failure looks structural (unsolved samples occupy a distinct region of
+the flux landscape) or scattered, and checks a simple structural predictor directly:
+how many fluxes are actually measured relative to the size of the network.
 
-  1. A t-SNE embedding of ground-truth flux vectors, colored by attempts-to-solve.
-  2. A clustering analysis testing whether unsolved samples concentrate in
-     particular regions of flux space, plus a per-reaction test of what
-     specifically differs between solved and unsolved samples.
+  1. A t-SNE embedding of ground-truth flux vectors for the FULL sample population
+     (not just the benchmarked subset), colored by attempts-to-solve, so the
+     benchmarked samples are seen in the context of the whole flux landscape rather
+     than in isolation.
+  2. Resolved fraction vs. known/total flux ratio across organisms -- "known"
+     fluxes are the ones directly measured (extracellular exchange rates, biomass
+     components; ``training.measured_fluxes`` in the organism config) rather than
+     inferred only from the labeling pattern, so this is a direct test of "is a
+     model with proportionally fewer direct measurements harder to solve".
 
-Ground truth (not the MFA fit) is used throughout: the question is whether the
-TRUE metabolic state predicts difficulty, and using the (partially failed) MFA
-estimate would be circular.
+Ground truth (not the MFA fit) is used for the t-SNE embedding: the question is
+whether the TRUE metabolic state predicts difficulty, and using the (partially
+failed) MFA estimate would be circular.
 
 ``starts_used`` in *_convergence.csv is ``best["start"]`` -- the restart index that
 produced the lowest-SSR fit, not a count of attempts made (see the restart loop in
@@ -27,24 +33,26 @@ the best-but-still-rejected SSR, and empirically lands anywhere from 1 to 10. It
 therefore never put on the continuous color scale; unsolved samples are always
 drawn black.
 
+The t-SNE embedding is fit on the full ~10,000-sample population per organism
+(10x the ~1,000 that are actually benchmarked), so it is noticeably slower than a
+1,000-point embedding and worth capping BLAS/OpenMP threads for on a shared node
+(export OMP_NUM_THREADS/OPENBLAS_NUM_THREADS/MKL_NUM_THREADS=4 or similar --
+sklearn's TSNE(n_jobs=-1) oversubscribing every core on a many-core node has caused
+a multi-minute run to spin for 50+ CPU-minutes with no progress). Every scatter
+point is drawn as a true vector path (no ``rasterized=True``), which makes these
+SVGs meaningfully larger for ~10,000 points -- a deliberate tradeoff, not an
+oversight.
+
 Per model, in --out-dir:
-  mfa_failure_tsne_<key>.svg          t-SNE of ground-truth flux, colored by attempts
-  mfa_failure_tsne_<key>.csv          per-sample t-SNE coords, cluster, attempts, solved
-  mfa_failure_clusters_<key>.svg      unsolved fraction per flux cluster
-  mfa_failure_clusters_<key>.csv      the table behind that plot
-  mfa_failure_cluster_kscan_<key>.csv silhouette + cluster/failure association vs k
-  mfa_failure_reactions_<key>.csv     per-reaction Mann-Whitney U test, solved vs unsolved
-  mfa_failure_top_reactions_<key>.svg the most significant reactions from that table
+  mfa_failure_tsne_<key>.svg   t-SNE of the full population, colored by attempts
+  mfa_failure_tsne_<key>.csv   per-sample t-SNE coords, attempts, solved, benchmarked
 
 Across all models:
-  mfa_failure_modes_summary.csv                one row per model
-  mfa_failure_summary_unsolved_fraction.svg    unsolved fraction, one bar per model
-  mfa_failure_summary_cramers_v.svg            cluster/failure association strength
+  mfa_failure_modes_summary.csv              one row per model
+  mfa_failure_resolved_vs_known_ratio.svg    resolved fraction vs. known/total flux ratio
 
 A model with no MFA benchmark data yet is skipped with a warning rather than
-failing the run. The per-reaction test and the cluster/failure association test
-are skipped (with a warning) when the smaller of {solved, unsolved} falls below
---min-group -- too few samples in one group to say anything about it.
+failing the run.
 
 Usage:
     python paper/scripts/mfa_failure_modes.py
@@ -58,25 +66,22 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-from scipy.cluster.hierarchy import fcluster, linkage
-from scipy.spatial.distance import pdist
-from scipy.stats import chi2_contingency, mannwhitneyu
 from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score
 
 from _figure_common import (
-    add_common_args, apply_style, run_dir_for, save_figure, selected_models)
+    CONFIG_DIR, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
 from sigmaflux.ai.data import load_data
+from sigmaflux.pipeline._paths import load_config
 
 apply_style()
 
 COLORS = {
-    "unsolved":        "#000000",  # failed attempts -- always black, never on the RdBu scale
-    "reference":       "#AAAAAA",  # baseline / threshold lines
-    "bar":             "#c17429",  # per-cluster unsolved-fraction bars
-    "higher_unsolved": "#B2182B",  # RdBu_r red end -- flux higher where unsolved
-    "higher_solved":   "#2166AC",  # RdBu_r blue end -- flux higher where solved
+    "unsolved":   "#000000",  # failed attempts -- always black, never on the attempts scale
+    "population": "#DDDDDD",  # full population, not benchmarked -- background context
 }
+
+# Continuous scale for "attempts to solve" (solved samples only -- see plot_tsne_scatter).
+ATTEMPTS_CMAP = sns.color_palette("dark:salmon_r", as_cmap=True)
 
 # Duplicated from plot_uncertainty_vs_mfa.py / plot_uncertainty_validation.py: this
 # palette isn't exported from _figure_common.py, so every script that needs a
@@ -101,26 +106,7 @@ def parse_args():
     p.add_argument("--perplexity", type=float, default=30.0,
                    help="t-SNE perplexity (default: 30.0)")
     p.add_argument("--random-state", type=int, default=42,
-                   help="Random state for t-SNE and the permutation test (default: 42)")
-    p.add_argument("--k", type=int, default=5,
-                   help="Cluster count for the headline cluster plot, fixed across "
-                        "models for comparability (default: 5)")
-    p.add_argument("--max-clusters", type=int, default=8,
-                   help="Upper end of the diagnostic silhouette/association k-scan "
-                        "(default: 8)")
-    p.add_argument("--min-group", type=int, default=5,
-                   help="Minimum size of the smaller of {solved, unsolved} required "
-                        "to run the per-reaction test and cluster association test "
-                        "(default: 5)")
-    p.add_argument("--n-permutations", type=int, default=10000,
-                   help="Permutation-test resamples when contingency cells are too "
-                        "small for the chi-square approximation (default: 10000)")
-    p.add_argument("--fdr", type=float, default=0.05,
-                   help="Benjamini-Hochberg FDR threshold for the per-reaction test "
-                        "(default: 0.05)")
-    p.add_argument("--top-reactions", type=int, default=15,
-                   help="Number of reactions shown in the top-reactions plot "
-                        "(default: 15)")
+                   help="Random state for t-SNE (default: 42)")
     return p.parse_args()
 
 
@@ -147,14 +133,14 @@ def load_convergence(bench_dir):
     return df
 
 
-def zscore_flux(flux_sub):
+def zscore_flux(flux_df):
     """(n_samples, n_reactions) population z-score of a reactions x samples frame.
 
     Same zero-variance guard as sigmaflux.ai.data.prepare_dataset: a constant
     reaction has (value - mean) == 0 for every sample, so flooring the divisor to
     1.0 rather than dropping the reaction is exact, not an approximation.
     """
-    mat = flux_sub.to_numpy(dtype=float).T
+    mat = flux_df.to_numpy(dtype=float).T
     mu = mat.mean(axis=0)
     std = mat.std(axis=0)
     std = np.where(std < 1e-6, 1.0, std)
@@ -171,194 +157,75 @@ def embed_tsne(z, perplexity, random_state):
     return tsne.fit_transform(z)
 
 
-def association_test(labels, reached_optimum, n_permutations, random_state):
-    """Chi-square test of cluster membership vs. solved/unsolved, with a Cramer's V
-    effect size and an automatic permutation-test fallback when expected cell
-    counts are too small for the chi-square approximation (Cochran's rule: every
-    expected count >= 5).
+def known_flux_ratio(model, n_total):
+    """(n_known, n_total, ratio) of directly-measured vs. total fluxes for a model.
+
+    "Known" = ``training.measured_fluxes`` in the organism's YAML -- the
+    extracellular/biomass-component fluxes measured directly and fed to the MFA fit
+    as constraints (see ``measured_rxn_ids`` in run_mfa_benchmark.py), as opposed to
+    fluxes inferred only from the labeling pattern. ``n_total`` is the benchmark's
+    own reaction axis (``flux_df.shape[0]``), passed in since it is already loaded
+    once per model by the caller.
     """
-    table = pd.crosstab(labels, reached_optimum).to_numpy()
-    chi2, p_asymptotic, _, expected = chi2_contingency(table)
-    n = table.sum()
-    cramers_v = float(np.sqrt(chi2 / (n * (min(table.shape) - 1))))
-
-    if expected.min() >= 5:
-        return dict(chi2_stat=float(chi2), p_value=float(p_asymptotic),
-                    cramers_v=cramers_v, test_method="chi2")
-
-    rng = np.random.default_rng(random_state)
-    reached = np.asarray(reached_optimum)
-    perm_stats = np.empty(n_permutations)
-    for i in range(n_permutations):
-        shuffled = rng.permutation(reached)
-        perm_stats[i] = chi2_contingency(pd.crosstab(labels, shuffled).to_numpy())[0]
-    p_value = float((1 + np.sum(perm_stats >= chi2)) / (n_permutations + 1))
-    return dict(chi2_stat=float(chi2), p_value=p_value, cramers_v=cramers_v,
-                test_method="permutation")
-
-
-def cluster_kscan(z, reached_optimum, max_k, n_permutations, random_state, test_association):
-    """Ward-linkage hierarchical clustering; silhouette (+ association test, when
-    the caller says there are enough samples of both outcomes) at every k from 2
-    to max_k. Returns the linkage matrix (the caller cuts it at the fixed --k) and
-    the scan table -- this makes the "structural, not random" claim robust to the
-    choice of k rather than resting on a single value.
-    """
-    n = z.shape[0]
-    link = linkage(pdist(z, metric="euclidean"), method="ward")
-    rows = []
-    for kk in range(2, min(max_k, n - 1) + 1):
-        labels = fcluster(link, kk, criterion="maxclust")
-        if len(np.unique(labels)) < 2:
-            continue
-        row = dict(k=kk, silhouette=float(silhouette_score(z, labels)))
-        if test_association:
-            row.update(association_test(labels, reached_optimum, n_permutations, random_state))
-        else:
-            row.update(test_method=None, chi2_stat=np.nan, p_value=np.nan, cramers_v=np.nan)
-        rows.append(row)
-    return link, pd.DataFrame(rows)
-
-
-def per_cluster_table(labels, reached_optimum):
-    df = pd.DataFrame({"cluster": labels, "reached_optimum": reached_optimum})
-    tbl = df.groupby("cluster")["reached_optimum"].agg(n="size", n_solved="sum")
-    tbl["n_unsolved"] = tbl["n"] - tbl["n_solved"]
-    tbl["unsolved_frac"] = tbl["n_unsolved"] / tbl["n"]
-    return tbl.reset_index()
-
-
-def bh_fdr(p):
-    """Benjamini-Hochberg adjusted p-values, order preserved."""
-    p = np.asarray(p, dtype=float)
-    n = len(p)
-    order = np.argsort(p)
-    q = np.empty(n)
-    running = 1.0
-    for rank, idx in zip(range(n, 0, -1), order[::-1]):
-        running = min(running, p[idx] * n / rank)
-        q[idx] = running
-    return q
-
-
-def per_reaction_failure_test(flux_sub, reached_optimum, fdr):
-    """Mann-Whitney U test per reaction: does its ground-truth flux differ between
-    solved and unsolved samples? ``flux_sub`` columns must be in the same sample
-    order as ``reached_optimum``'s index (both threaded from one canonical sample
-    list by the caller).
-    """
-    reached = reached_optimum.to_numpy()
-    rows = []
-    for reaction, values in flux_sub.iterrows():
-        v = values.to_numpy(dtype=float)
-        solved_v, unsolved_v = v[reached], v[~reached]
-        if len(solved_v) < 2 or len(unsolved_v) < 2 or len(np.unique(v)) < 2:
-            rows.append(dict(
-                reaction=reaction, n_solved=len(solved_v), n_unsolved=len(unsolved_v),
-                median_solved=np.median(solved_v) if len(solved_v) else np.nan,
-                median_unsolved=np.median(unsolved_v) if len(unsolved_v) else np.nan,
-                cliffs_delta=np.nan, p_value=np.nan, direction=None))
-            continue
-        u_stat, p = mannwhitneyu(unsolved_v, solved_v, alternative="two-sided")
-        delta = 2 * u_stat / (len(unsolved_v) * len(solved_v)) - 1
-        rows.append(dict(
-            reaction=reaction, n_solved=len(solved_v), n_unsolved=len(unsolved_v),
-            median_solved=float(np.median(solved_v)), median_unsolved=float(np.median(unsolved_v)),
-            cliffs_delta=float(delta), p_value=float(p),
-            direction="higher_in_unsolved" if delta > 0 else "higher_in_solved"))
-
-    tbl = pd.DataFrame(rows)
-    valid = tbl["p_value"].notna()
-    tbl["q_value"] = np.nan
-    tbl.loc[valid, "q_value"] = bh_fdr(tbl.loc[valid, "p_value"].to_numpy())
-    return tbl.sort_values("q_value", na_position="last").reset_index(drop=True)
+    cfg, _ = load_config(CONFIG_DIR / f"{model['key']}.yaml")
+    n_known = len(cfg.get("training", {}).get("measured_fluxes", []))
+    return n_known, n_total, (n_known / n_total if n_total else np.nan)
 
 
 def plot_tsne_scatter(df, model, out_dir, max_starts):
+    """t-SNE of the full population; benchmarked samples colored on top of it.
+
+    Three layers, later drawn over earlier: the full population in light grey
+    (context -- where do the benchmarked samples sit in the whole flux landscape),
+    solved samples colored by attempts-to-solve, unsolved samples in solid black.
+    """
     fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    solved = df[df["reached_optimum"]]
-    unsolved = df[~df["reached_optimum"]]
+    population = df[~df["benchmarked"]]
+    solved = df[df["benchmarked"] & df["reached_optimum"]]
+    unsolved = df[df["benchmarked"] & ~df["reached_optimum"]]
+
+    ax.scatter(population["tsne_1"], population["tsne_2"], color=COLORS["population"],
+              s=3, alpha=0.4, linewidths=0, label=f"not benchmarked (n={len(population)})")
     sc = ax.scatter(solved["tsne_1"], solved["tsne_2"], c=solved["starts_used"],
-                    cmap="RdBu_r", vmin=1, vmax=max_starts, s=5, alpha=0.7,
-                    linewidths=0, rasterized=True)
+                    cmap=ATTEMPTS_CMAP, vmin=1, vmax=max_starts, s=5, alpha=0.8, linewidths=0)
     ax.scatter(unsolved["tsne_1"], unsolved["tsne_2"], color=COLORS["unsolved"],
-              s=5, alpha=0.7, linewidths=0, rasterized=True,
-              label=f"unsolved (n={len(unsolved)})")
+              s=5, alpha=0.8, linewidths=0, label=f"unsolved (n={len(unsolved)})")
     fig.colorbar(sc, ax=ax, label="Attempts to solve")
     ax.set_xlabel("t-SNE 1")
     ax.set_ylabel("t-SNE 2")
-    ax.legend(frameon=False, fontsize=9, loc="best")
+    ax.legend(frameon=False, fontsize=8, loc="best", markerscale=2)
     sns.despine(ax=ax)
     save_figure(fig, out_dir / f"mfa_failure_tsne_{model['key']}.svg")
 
 
-def plot_cluster_failure_rate(cluster_tbl, overall_unsolved_frac, model, out_dir):
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    sns.barplot(data=cluster_tbl, x="cluster", y="unsolved_frac", color=COLORS["bar"], ax=ax)
-    ax.axhline(overall_unsolved_frac, color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
-    for i, row in cluster_tbl.iterrows():
-        ax.annotate(f"n={int(row['n'])}", xy=(i, row["unsolved_frac"]),
-                    xytext=(0, 3), textcoords="offset points", ha="center", fontsize=8)
-    ax.set_ylim(0, 1)
-    ax.set_xlabel("Flux cluster")
-    ax.set_ylabel("Unsolved fraction")
-    sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"mfa_failure_clusters_{model['key']}.svg")
-
-
-def plot_top_reactions(react_tbl, model, out_dir, top_n, fdr):
-    tbl = react_tbl.dropna(subset=["q_value"]).head(top_n).copy()
-    if tbl.empty:
-        print(f"  {model['label']}: no reactions with a valid test -- "
-              f"skipping top-reactions plot")
+def plot_resolved_vs_known_ratio(summary_df, out_dir):
+    """Resolved fraction vs. known/total flux ratio, one point per organism."""
+    sub = summary_df.dropna(subset=["known_flux_ratio", "resolved_fraction"])
+    if sub.empty:
         return
-    tbl["neglog10q"] = -np.log10(tbl["q_value"].clip(lower=1e-300))
-    fig, ax = plt.subplots(figsize=(3.5, max(3.5, 0.22 * len(tbl) + 1)))
-    palette = {"higher_in_unsolved": COLORS["higher_unsolved"],
-              "higher_in_solved": COLORS["higher_solved"]}
-    sns.barplot(data=tbl, y="reaction", x="neglog10q", hue="direction",
-               palette=palette, dodge=False, order=tbl["reaction"], ax=ax)
-    ax.axvline(-np.log10(fdr), color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
-    ax.set_xlabel(r"$-\log_{10}(q)$")
-    ax.set_ylabel("")
-    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    palette = {row["label"]: MODEL_COLORS.get(row["model"], "#777777")
+              for _, row in sub.iterrows()}
+    fig, ax = plt.subplots(figsize=(3.5, 3.5))
+    sns.scatterplot(data=sub, x="known_flux_ratio", y="resolved_fraction", hue="label",
+                    palette=palette, s=60, linewidth=0, legend=False, ax=ax)
+    for _, row in sub.iterrows():
+        ax.annotate(row["label"], xy=(row["known_flux_ratio"], row["resolved_fraction"]),
+                    xytext=(4, 4), textcoords="offset points", fontsize=8)
+    ax.set_xlim(0, sub["known_flux_ratio"].max() * 1.25)
+    ax.set_ylim(0, 1)
+    ax.set_xlabel("Measured / total fluxes")
+    ax.set_ylabel("Resolved fraction")
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"mfa_failure_top_reactions_{model['key']}.svg")
+    save_figure(fig, out_dir / "mfa_failure_resolved_vs_known_ratio.svg")
 
 
-def plot_summary_comparison(summary_df, out_dir):
-    for metric, ylabel, fname in [
-            ("unsolved_fraction", "Unsolved fraction",
-             "mfa_failure_summary_unsolved_fraction.svg"),
-            ("cramers_v", "Cluster/failure association (Cramer's V)",
-             "mfa_failure_summary_cramers_v.svg")]:
-        sub = summary_df.dropna(subset=[metric])
-        if sub.empty:
-            continue
-        colors = dict(zip(sub["label"], (MODEL_COLORS.get(k, "#777777") for k in sub["model"])))
-        fig, ax = plt.subplots(figsize=(3.5, 3.5))
-        sns.barplot(data=sub, x="label", y=metric, order=sub["label"].tolist(),
-                   hue="label", palette=colors, legend=False, ax=ax)
-        ax.set_xlabel("")
-        ax.set_ylabel(ylabel)
-        ax.tick_params(axis="x", rotation=25)
-        sns.despine(ax=ax)
-        save_figure(fig, out_dir / fname)
-
-
-def summarize_model(model, n_samples, n_solved, n_unsolved, k, assoc, react_tbl, fdr):
+def summarize_model(model, n_samples, n_solved, n_unsolved, n_known, n_total, known_ratio):
     return dict(
         model=model["key"], label=model["label"],
         n_samples=n_samples, n_solved=n_solved, n_unsolved=n_unsolved,
         unsolved_fraction=n_unsolved / n_samples if n_samples else np.nan,
-        k=k,
-        cluster_test_method=assoc["test_method"] if assoc else None,
-        cluster_p_value=assoc["p_value"] if assoc else np.nan,
-        cramers_v=assoc["cramers_v"] if assoc else np.nan,
-        n_reactions_tested=int(react_tbl["p_value"].notna().sum()) if react_tbl is not None else 0,
-        n_reactions_fdr_significant=(int((react_tbl["q_value"] < fdr).sum())
-                                     if react_tbl is not None else 0),
-        fdr_threshold=fdr,
+        resolved_fraction=n_solved / n_samples if n_samples else np.nan,
+        n_known_fluxes=n_known, n_total_fluxes=n_total, known_flux_ratio=known_ratio,
     )
 
 
@@ -376,69 +243,48 @@ def main():
             print(f"  {model['label']}: skipped — no MFA convergence records in {bench_dir}")
             continue
 
-        # One canonical sample list threads through every array-producing step
-        # below (z, reached, tsne_2d, labels) so they stay positionally aligned;
-        # sample identity is only ever reattached via merge/reindex on "sample".
-        samples = sorted(conv["sample"].unique())
         _, flux_df, _ = load_data(str(run))
         flux_df.columns = range(flux_df.shape[1])
-        flux_sub = flux_df[samples]
 
-        reached = conv.set_index("sample").reindex(samples)["reached_optimum"].to_numpy()
-        n_samples = len(samples)
-        n_solved = int(reached.sum())
+        n_samples = len(conv)
+        n_solved = int(conv["reached_optimum"].sum())
         n_unsolved = n_samples - n_solved
-        print(f"\n{model['label']}: {n_samples} samples ({n_unsolved} unsolved)")
+        print(f"\n{model['label']}: {n_samples} benchmarked of {flux_df.shape[1]} "
+              f"total samples ({n_unsolved} unsolved)")
 
-        z = zscore_flux(flux_sub)
+        # t-SNE is fit on the FULL population so the embedding reflects the whole
+        # flux landscape, not just the samples that happened to be benchmarked --
+        # the benchmarked subset is then colored on top of that shared geometry.
+        z = zscore_flux(flux_df)
         tsne_2d = embed_tsne(z, args.perplexity, args.random_state)
 
-        test_association = min(n_solved, n_unsolved) >= args.min_group
-        if not test_association:
-            print(f"  smaller group ({min(n_solved, n_unsolved)}) below --min-group "
-                  f"({args.min_group}) — cluster association and per-reaction test skipped")
-
-        link, kscan = cluster_kscan(z, reached, args.max_clusters, args.n_permutations,
-                                    args.random_state, test_association)
-        kscan.to_csv(out_dir / f"mfa_failure_cluster_kscan_{model['key']}.csv", index=False)
-
-        k = min(args.k, n_samples - 1) if n_samples > 1 else 1
-        labels = fcluster(link, k, criterion="maxclust")
-
         sample_df = pd.DataFrame({
-            "sample": samples, "tsne_1": tsne_2d[:, 0], "tsne_2": tsne_2d[:, 1], "cluster": labels,
+            "sample": flux_df.columns, "tsne_1": tsne_2d[:, 0], "tsne_2": tsne_2d[:, 1],
         }).merge(conv[["sample", "starts_used", "crashed_starts", "reached_optimum"]],
                  on="sample", how="left")
+        # The left join leaves reached_optimum as NaN for non-benchmarked rows,
+        # which coerces the whole column to object dtype and breaks `~` downstream
+        # -- record "benchmarked" first, then collapse reached_optimum to a clean
+        # bool (False for the non-benchmarked rows is never read as a real outcome,
+        # only ever gated behind "benchmarked").
+        sample_df["benchmarked"] = sample_df["reached_optimum"].notna()
+        sample_df["reached_optimum"] = np.where(
+            sample_df["benchmarked"], sample_df["reached_optimum"], False).astype(bool)
         sample_df.to_csv(out_dir / f"mfa_failure_tsne_{model['key']}.csv", index=False)
         plot_tsne_scatter(sample_df, model, out_dir, args.max_starts)
 
-        cluster_tbl = per_cluster_table(labels, reached)
-        cluster_tbl.to_csv(out_dir / f"mfa_failure_clusters_{model['key']}.csv", index=False)
-        plot_cluster_failure_rate(cluster_tbl, n_unsolved / n_samples, model, out_dir)
+        n_known, n_total, known_ratio = known_flux_ratio(model, flux_df.shape[0])
+        print(f"  known/total fluxes: {n_known}/{n_total} = {known_ratio:.3f}")
 
-        assoc, react_tbl = None, None
-        if test_association:
-            assoc = association_test(labels, reached, args.n_permutations, args.random_state)
-            print(f"  cluster association ({assoc['test_method']}): "
-                  f"p={assoc['p_value']:.4g}, Cramer's V={assoc['cramers_v']:.3f}")
-
-            react_tbl = per_reaction_failure_test(
-                flux_sub, pd.Series(reached, index=samples), args.fdr)
-            react_tbl.to_csv(out_dir / f"mfa_failure_reactions_{model['key']}.csv", index=False)
-            n_sig = int((react_tbl["q_value"] < args.fdr).sum())
-            print(f"  {n_sig} of {int(react_tbl['p_value'].notna().sum())} reactions "
-                  f"FDR-significant (q < {args.fdr})")
-            plot_top_reactions(react_tbl, model, out_dir, args.top_reactions, args.fdr)
-
-        summaries.append(summarize_model(model, n_samples, n_solved, n_unsolved, k,
-                                         assoc, react_tbl, args.fdr))
+        summaries.append(summarize_model(model, n_samples, n_solved, n_unsolved,
+                                         n_known, n_total, known_ratio))
 
     if summaries:
         summary_df = pd.DataFrame(summaries)
         summary_path = out_dir / "mfa_failure_modes_summary.csv"
         summary_df.to_csv(summary_path, index=False)
         print(f"\nSaved: {summary_path}")
-        plot_summary_comparison(summary_df, out_dir)
+        plot_resolved_vs_known_ratio(summary_df, out_dir)
     else:
         print("No model had MFA convergence data — nothing written.")
 
