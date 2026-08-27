@@ -52,8 +52,17 @@ def main():
     feats = os.path.join(args.data_dir, 'features.csv')
     if os.path.isfile(feats):
         f = pd.read_csv(feats)
-        inc = set(f.loc[f['included'], 'metabolite_id'].astype(str) + '|' + f.loc[f['included'], 'isotopomer'].astype(str))
-        token_states = {k: v for k, v in token_states.items() if k in inc}
+        sel = f.loc[f['included']]
+        # token_states keys are (tracer, metabolite, isotopomer). A features.csv written
+        # before per-tracer selection has no tracer column and applied to every tracer,
+        # so it is matched on the last two components instead.
+        if 'tracer' in f.columns:
+            inc = set(zip(sel['tracer'].astype(str), sel['metabolite_id'].astype(str),
+                          sel['isotopomer'].astype(str)))
+            token_states = {k: v for k, v in token_states.items() if k in inc}
+        else:
+            inc = set(zip(sel['metabolite_id'].astype(str), sel['isotopomer'].astype(str)))
+            token_states = {k: v for k, v in token_states.items() if k[1:] in inc}
         print(f"restricted to {len(token_states)} model-used tokens")
 
     grams = empirical_sensitivity_grams(theta, token_states)

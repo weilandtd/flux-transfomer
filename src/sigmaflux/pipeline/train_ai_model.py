@@ -173,10 +173,12 @@ def _print_token_selection(labeling_df, fixed_idx, method, features_csv, n_origi
     """
     n_fx  = len(fixed_idx) if fixed_idx else 0
     n_all = labeling_df.shape[0]
+    per_tracer = labeling_df.index.get_level_values('Tracer').value_counts()
 
     pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
     if n_original is not None and n_original != n_all:
         pool_str += f"  [filtered from {n_original}]"
+    pool_str += "\n         " + ", ".join(f"{t}: {n}" for t, n in per_tracer.items())
 
     print(f"\n=== Token Selection ===")
     print(f"Method:  {method} (pre-computed: {features_csv})")
@@ -302,13 +304,14 @@ def main(args):
     flux_dim          = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
 
-    n_tracers           = len(base_tracer_names)
-    n_labeling_per_tracer = labeling_df.shape[0] // max(n_tracers, 1)
-    n_bypass            = len(args.measured_fluxes) if args.measured_fluxes else 0
+    # Per-tracer selection means the tracers no longer carry equal token counts, so this
+    # is counted rather than divided out.
+    per_tracer = labeling_df.index.get_level_values('Tracer').value_counts()
+    n_bypass   = len(args.measured_fluxes) if args.measured_fluxes else 0
     print(f"\n=== Input / Output Summary ===")
     print(f"Samples:       train={len(train_dataset):>6,}  val={len(val_dataset):>6,}")
     print(f"Input tokens:  labeling={labeling_df.shape[0]:>5,}"
-          f"  ({n_labeling_per_tracer} per tracer × {n_tracers} tracers)"
+          f"  ({', '.join(f'{t}: {n}' for t, n in per_tracer.items())})"
           f"  bypass_flux={n_bypass}")
     print(f"Targets:       flux={flux_dim}  reversibility={reversibility_dim}")
     print()

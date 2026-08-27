@@ -13,12 +13,17 @@ def load_fisher_token_scores(
     produced by extract_informative_features.py) aligned to labeling_df row order.
     Tokens absent from the CSV get score 0.0 and included=False.
 
+    A features.csv carrying a ``tracer`` column is matched per tracer, so one tracer may
+    select a token another leaves out. An older, tracer-less CSV is matched on
+    (metabolite, isotopomer) and therefore applies identically to every tracer, exactly as
+    it did when it was written — so existing run directories keep reproducing.
+
     Parameters
     ----------
     features_csv
         Path to the features.csv produced by extract_informative_features.py.
     labeling_df
-        Labeling DataFrame whose (Metabolite, Isotopomer) row order the output
+        Labeling DataFrame whose (Tracer, Metabolite, Isotopomer) row order the output
         is aligned to.
 
     Returns
@@ -27,30 +32,45 @@ def load_fisher_token_scores(
         labeling_df row order.
     """
     feat = pd.read_csv(features_csv)
-    score_map: dict = {}
-    included_set: set = set()
-    for _, row in feat.iterrows():
-        key = (row["metabolite_id"], row["isotopomer"])
-        v = row["standalone_nats"]
-        score_map[key] = 0.0 if v != v else float(v)
-        if row.get("included", False):
-            included_set.add(key)
+    per_tracer = "tracer" in feat.columns
 
-    mets = labeling_df.index.get_level_values('Metabolite')
-    isos = labeling_df.index.get_level_values('Isotopomer')
-    scores = torch.tensor(
-        [score_map.get((m, i), 0.0) for m, i in zip(mets, isos)],
-        dtype=torch.float32,
-    )
-    included_mask = torch.tensor(
-        [(m, i) in included_set for m, i in zip(mets, isos)],
-        dtype=torch.bool,
-    )
-    n_matched = sum(1 for m, i in zip(mets, isos) if (m, i) in score_map)
+    tracers = labeling_df.index.get_level_values("Tracer")
+    mets    = labeling_df.index.get_level_values("Metabolite")
+    isos    = labeling_df.index.get_level_values("Isotopomer")
+    cols    = ["metabolite_id", "isotopomer"]
+    keys    = list(zip(mets, isos))
+    if per_tracer:
+        cols = ["tracer"] + cols
+        keys = list(zip(tracers, mets, isos))
+
+    csv_keys = list(zip(*(feat[c] for c in cols)))
+    scores_in = feat["standalone_nats"]
+    included_in = feat["included"].astype(bool) if "included" in feat else [False] * len(feat)
+
+    score_map = {k: (0.0 if v != v else float(v)) for k, v in zip(csv_keys, scores_in)}
+    included_set = {k for k, inc in zip(csv_keys, included_in) if inc}
+
+    scores = torch.tensor([score_map.get(k, 0.0) for k in keys], dtype=torch.float32)
+    included_mask = torch.tensor([k in included_set for k in keys], dtype=torch.bool)
+
+    n_matched = sum(1 for k in keys if k in score_map)
     n_inc = int(included_mask.sum().item())
-    print(f"Fisher scores loaded from {features_csv}: "
-          f"{n_matched}/{len(scores)} tokens matched, "
-          f"{n_inc} included")
+    print(f"Fisher scores loaded from {features_csv} "
+          f"({'per tracer' if per_tracer else 'shared across tracers'}): "
+          f"{n_matched}/{len(scores)} tokens matched, {n_inc} included")
+    for tracer in pd.unique(tracers):
+        rows = tracers == tracer
+        print(f"  {tracer}: {int(included_mask.numpy()[rows].sum())}/{int(rows.sum())} included")
+
+    # An empty selection is not a degenerate-but-workable case: training would proceed on a
+    # zero-row labeling_df and only fail much later, with nothing pointing back to here.
+    if n_inc == 0:
+        raise ValueError(
+            f"{features_csv} selects none of the {len(scores)} labeling tokens "
+            f"({n_matched} matched by key). A stale features.csv from a run with different "
+            f"tracers or metabolite ids is the usual cause -- delete it and re-run "
+            f"sigmaflux-select-features."
+        )
     return scores, included_mask
 
 
