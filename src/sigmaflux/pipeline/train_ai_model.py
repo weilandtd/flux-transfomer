@@ -677,6 +677,18 @@ def main(args):
     # can reconstruct the token structure without needing the training HDF5 data.
     token_index = list(labeling_df.index)   # list of (Tracer, Metabolite, Isotopomer)
 
+    _bounds = {r.id: (r.lower_bound, r.upper_bound) for r in cobra_model.reactions}
+    _missing = [n for n in flux_names if n not in _bounds]
+    if _missing:
+        raise ValueError(
+            f"{len(_missing)} predicted reaction(s) are absent from the prepared model, "
+            f"so their bounds cannot be stored: {_missing[:5]}"
+        )
+    flux_bounds = {
+        "lb": np.array([_bounds[n][0] for n in flux_names], dtype=np.float64),
+        "ub": np.array([_bounds[n][1] for n in flux_names], dtype=np.float64),
+    }
+
     checkpoint = {
         "model_state_dict":     model.state_dict(),
         "model_config":         model_config,
@@ -691,6 +703,12 @@ def main(args):
         "log":                  log,
         "val_correlations":     val_correlations,
         "flux_names":           flux_names,
+        # The prepared model's own reaction bounds, aligned to flux_names. Inference
+        # projects every predicted flux state back inside them (see
+        # SigmaFlux._project_into_bounds); storing them here is what lets it do that
+        # without the COBRA model or a solver. Read off the prepared model as-is -- no
+        # FVA is re-run, these are the bounds sampling and training already saw.
+        "flux_bounds":          flux_bounds,
         "reversibility_names":  reversibility_df.index.tolist(),
         "measured_fluxes":      args.measured_fluxes,
         "null_space_data": {

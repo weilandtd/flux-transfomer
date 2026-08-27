@@ -595,6 +595,13 @@ def export_model(source, out_path=None, *, name=None, model_version,
             if nsd.get(key) is not None:
                 w.write_array(f"shared/null_space/{key}.npy",
                               np.asarray(nsd[key], dtype=np.int32))
+        if spec.flux_bounds:
+            # float64: the projection's ratio test divides by the slack to a bound, and
+            # float32 rounding there can put a state marginally outside the bound it was
+            # just projected onto.
+            for key in ("lb", "ub"):
+                w.write_array(f"shared/flux_bounds/{key}.npy",
+                              np.asarray(spec.flux_bounds[key], dtype=np.float64))
         if spec.flux_norm_stats:
             for key in ("mean", "std"):
                 w.write_array(f"shared/flux_norm/{key}.npy",
@@ -705,6 +712,21 @@ def load_model(path, *, device=None):
             flux_norm_stats = {"mean": r.read_array("shared/flux_norm/mean.npy"),
                                "std": r.read_array("shared/flux_norm/std.npy")}
 
+        # Bounds are required to predict. An export written before they were stored can
+        # still supply them from the prepared network it embeds, which is the same file
+        # they were read off in the first place.
+        flux_bounds = None
+        if r.has("shared/flux_bounds/lb.npy"):
+            flux_bounds = {"lb": r.read_array("shared/flux_bounds/lb.npy"),
+                           "ub": r.read_array("shared/flux_bounds/ub.npy")}
+        elif r.has(NETWORK_ENTRY):
+            from cobra.io.json import from_json
+
+            from .inference import bounds_from_cobra
+            flux_bounds = bounds_from_cobra(
+                from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8")),
+                names["flux_names"], source=f"{path}'s embedded network")
+
         spec = ModelSpec(
             model_config         = m["model"]["model_config"],
             vocabs               = {k: vocabs[k] for k in
@@ -717,6 +739,7 @@ def load_model(path, *, device=None):
             reversibility_names  = names["reversibility_names"],
             measured_fluxes      = names["measured_fluxes"],
             null_space_data      = nsd,
+            flux_bounds          = flux_bounds,
             flux_norm_stats      = flux_norm_stats,
             norm_stats           = r.read_json("shared/norm_stats.json", default={}),
             h_reaction           = m["model"]["h_reaction"],
