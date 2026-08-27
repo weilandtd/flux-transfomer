@@ -42,7 +42,7 @@ Verify:
 
 ```bash
 python -c "import sigmaflux; print(sigmaflux.__version__)"
-sigmaflux-inspect models/pretrained/i_orientalis-v1.0.0.sfx
+sigmaflux-inspect models/pretrained/i_orientalis-v1.2.0.sfx
 ```
 
 If `sigmaflux-inspect` reports a format error, the LFS objects were not fetched —
@@ -60,7 +60,7 @@ network JSON required.
 import pandas as pd
 from sigmaflux.ai import load_model
 
-sf = load_model("models/pretrained/i_orientalis-v1.0.0.sfx")
+sf = load_model("models/pretrained/i_orientalis-v1.2.0.sfx")
 
 # What the model expects
 sf.expected_tracers()          # tracer names to use in df_L
@@ -93,7 +93,7 @@ to `df_L`/`df_Vm` to predict many samples in one call.
 To inspect a model without loading any weights (no torch required):
 
 ```bash
-sigmaflux-inspect models/pretrained/i_orientalis-v1.0.0.sfx --verify
+sigmaflux-inspect models/pretrained/i_orientalis-v1.2.0.sfx --verify
 ```
 
 Reads the name, version, output dimensions, tracers, and provenance — the

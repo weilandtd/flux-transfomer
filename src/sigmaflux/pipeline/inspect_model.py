@@ -5,8 +5,8 @@ Reads only the manifest — no weights, no torch, no COBRA — so it is instant 
 works anywhere numpy is available.
 
 Example:
-    sigmaflux-inspect i_orientalis-v1.0.0.sfx
-    sigmaflux-inspect i_orientalis-v1.0.0.sfx --verify
+    sigmaflux-inspect i_orientalis-v1.2.0.sfx
+    sigmaflux-inspect i_orientalis-v1.2.0.sfx --verify
 """
 
 import argparse

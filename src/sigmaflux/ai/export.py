@@ -8,7 +8,7 @@ model**: inference-only, self-describing, and loadable with nothing but the file
     from sigmaflux.ai import export_model, load_model
 
     export_model("run/ensemble", name="i_orientalis", model_version="1.0.0")
-    sf = load_model("i_orientalis-v1.0.0.sfx")
+    sf = load_model("i_orientalis-v1.2.0.sfx")
     sf.predict(df_L, df_Vm)
 
 What is stored
