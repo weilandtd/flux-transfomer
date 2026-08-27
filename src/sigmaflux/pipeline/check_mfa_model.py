@@ -58,16 +58,18 @@ DEFAULT_FIT_ITERS = 3
 def measurable_metabolites(cfg, root):
     """Model ids of the metabolites the measurement platform can see.
 
-    Read from ``mapping_csv``'s ``model_id`` column. Returns ``None`` (meaning
-    "target everything with an atom pattern") when the config declares no mapping.
+    Read from the ``model_id`` column of the CSV :func:`mapping_csv_for` picks, so the EMU
+    expansion targets, feature selection and inference all describe the same platform.
+    Returns ``None`` (meaning "target everything with an atom pattern") when the config
+    declares no mapping.
 
     Args:
-        cfg: organism config; supplies ``mapping_csv``.
+        cfg: organism config; supplies ``experiment.mapping_csv`` / ``mapping_csv``.
         root: project root for resolving the mapping CSV path.
     """
-    from ._paths import resolve_path
+    from ._paths import mapping_csv_for, resolve_path
 
-    mapping_csv = cfg.get("mapping_csv")
+    mapping_csv = mapping_csv_for(cfg)
     if not mapping_csv:
         return None
     path = resolve_path(mapping_csv, root)

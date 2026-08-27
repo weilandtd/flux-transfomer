@@ -76,6 +76,21 @@ def resolve_path(path, root):
     return path if os.path.isabs(path) else os.path.join(root, path)
 
 
+def mapping_csv_for(cfg):
+    """The mapping CSV describing what the measurement platform can actually see.
+
+    ``experiment.mapping_csv`` wins over the top-level ``mapping_csv`` whenever it is
+    set, so one source of truth answers "which metabolites are observable" for feature
+    selection, the EMU expansion targets and inference alike. The top-level key stays
+    the fallback for a config with no ``experiment`` block (r_toruloides) and for
+    callers that predate the split.
+
+    Args:
+        cfg: organism config dict.
+    """
+    return cfg.get("experiment", {}).get("mapping_csv") or cfg.get("mapping_csv")
+
+
 def add_root_argument(parser):
     """Add the shared ``--root`` option to an argparse parser."""
     parser.add_argument(

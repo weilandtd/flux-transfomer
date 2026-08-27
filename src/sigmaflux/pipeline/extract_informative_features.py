@@ -22,7 +22,9 @@ import os
 
 from sigmaflux.ai.data import load_data
 from sigmaflux.ai import features as feat_lib
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
+from sigmaflux.pipeline._paths import (
+    add_root_argument, load_config, mapping_csv_for, resolve_path,
+)
 
 _METHODS = {"fisher", "fisher_fast"}
 
@@ -66,7 +68,10 @@ def main(args):
     if os.path.isfile(prepared):
         model_json = prepared
 
-    mapping_csv = _abs(cfg["mapping_csv"]) if cfg.get("mapping_csv") else None
+    # experiment.mapping_csv wins where it is set: selecting tokens the measurement
+    # platform cannot resolve trains the model on inputs no real experiment can supply,
+    # and drops measured metabolites the training mapping happens not to list.
+    mapping_csv = _abs(mapping_csv_for(cfg))
 
     print(f"\nLoading generated data (up to {n_samples} samples) ...")
     labeling_df, flux_df, reversibility_df = load_data(args.data_dir, max_samples=n_samples)
