@@ -198,24 +198,31 @@ def test_measured_fluxes_reach_the_prediction(model):
     assert not np.allclose(without, with_vm), "df_Vm did not reach the model"
 
 
-def test_each_member_is_mass_balanced(model, sfx_path):
-    """Each member's own prediction is mass-balanced; the ensemble median is not.
+def test_each_member_and_the_ensemble_are_mass_balanced(model, sfx_path):
+    """Every member is mass-balanced, and so is what ``predict()`` reports.
 
     A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
-    space. The ensemble's ``predict()`` combines members with an elementwise
-    median, a non-linear operation, so the combined output is not itself
-    guaranteed to satisfy ``S v = 0`` — it is no longer re-projected back onto the
-    null space (see ``EnsembleSigmaFlux.predict`` in ``sigmaflux/ai/inference.py``).
+    space. ``EnsembleSigmaFlux.predict`` combines members with an elementwise **mean**,
+    a convex combination, which stays in the null space — so the reported value is a
+    flux state too. It was an elementwise median before, which is not a convex
+    combination and did leave it (measured ``max|S v| = 5.74`` on E. coli core LC-MS
+    against a glucose uptake of 8.6); this pins the fix.
     """
     if not inspect_model(sfx_path).get("network", {}).get("included"):
         pytest.skip("release predates the packaged COBRA network; re-export to cover it")
 
     S, _, _ = read_stoichiometry(sfx_path)
     df_L = make_df_L(model, n_samples=1)
+    n_flux = len(model.flux_names)
     for i, member in enumerate(model.members):
-        flux = member.predict(df_L)["Value"].values[:len(model.flux_names)]
+        flux = member.predict(df_L)["Value"].values[:n_flux]
         resid = np.abs(S @ flux).max()
         assert resid < 1e-5 * max(np.abs(flux).max(), 1.0), f"member {i}: |S@v|max={resid:.3e}"
+
+    combined = model.predict(df_L)["Value"].values[:n_flux]
+    resid = np.abs(S @ combined).max()
+    assert resid < 1e-5 * max(np.abs(combined).max(), 1.0), \
+        f"ensemble aggregate: |S@v|max={resid:.3e}"
 
 
 @pytest.mark.skipif(len(FETCHED) < 2, reason="needs two fetched models")

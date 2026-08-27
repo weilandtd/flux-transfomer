@@ -16,13 +16,14 @@ Each benchmark run:
 When the checkpoint is an ensemble, one job predicts with every member and writes
 each member's own *raw* prediction into the same ``pred_{tag}_{labeling,flux}.h5``
 pair MFA and a single checkpoint also write — columns become a ``(sample, member)``
-MultiIndex instead of one column per sample. No ensemble-median combination and no
-null-space re-projection happens here: each member's own output already satisfies
-``S v = 0`` by construction, and only a median across members breaks that. Combining
-members (and re-projecting if a plain median is wanted) is left to the evaluation
-side (``plot_test_performance.load_benchmark``), which medians per (sample, reaction)
-across whatever members a file holds — so a different aggregation can be tried
-without rerunning inference.
+MultiIndex instead of one column per sample. No ensemble combination happens here:
+each member's own output already satisfies ``S v = 0`` by construction. Combining is
+left to the evaluation side (``plot_test_performance.load_benchmark``), which
+aggregates per (sample, reaction) across whatever members a file holds — so a
+different aggregation can be tried without rerunning inference. Note that only a
+*convex* combination preserves ``S v = 0``: the mean does, which is why
+``EnsembleSigmaFlux.predict`` reports it, while a per-reaction median does not and
+would need re-projecting.
 
 Usage (I. orientalis):
     sigmaflux-benchmark \\

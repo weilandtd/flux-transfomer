@@ -171,13 +171,67 @@ def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator) -> pd.Dat
     return pd.concat(parts, ignore_index=True)
 
 
+def _bc_percentile_interval(drawn, keys, point, alpha):
+    """Bias-corrected bootstrap percentile interval, one row per group.
+
+    The draws are already a nonparametric bootstrap -- measured replicates resampled with
+    replacement across tracers (:func:`sample_inputs`) -- so the interval is the matching
+    percentile of the bootstrap distribution rather than a scale fitted to it. That is
+    what lets it come out asymmetric: a flux whose predictions pile up against zero on one
+    side and spread on the other now reports that shape instead of averaging it away.
+
+    ``z0`` is Efron's bias correction: the bootstrap distribution generally does not centre
+    on the point estimate (which is evaluated at the maximum-likelihood input, not at any
+    resample), and a plain percentile interval would inherit that offset. It is read off
+    the fraction of bootstrap values below the point estimate and clamped to +/- one
+    half-observation, so an estimate outside the bootstrap range shifts the quantiles by a
+    finite amount rather than an infinite one.
+
+    The acceleration term of a full BCa is not estimated: it needs a jackknife over the
+    measured replicates, and with as few as two per tracer that estimate would be noisier
+    than the skewness it corrects.
+
+    Args:
+        drawn: the bootstrap rows (Sample < n_draws), long-format with 'Value'.
+        keys: the group columns identifying one predicted quantity.
+        point: the point estimate per group, indexed by those keys.
+        alpha: two-sided miss rate.
+    """
+    z_lo, z_hi = stats.norm.ppf(alpha / 2.0), stats.norm.ppf(1.0 - alpha / 2.0)
+    bounds = {}
+    for key, values in drawn.groupby(keys, sort=False)['Value']:
+        v = values.to_numpy()
+        theta = float(point.loc[key])
+        n = len(v)
+        if n < 2 or np.ptp(v) == 0.0:
+            bounds[key] = (theta, theta)      # nothing resampled, or nothing moved
+            continue
+        p0 = np.clip((v < theta).mean(), 1.0 / (2 * n), 1.0 - 1.0 / (2 * n))
+        z0 = stats.norm.ppf(p0)
+        q = stats.norm.cdf(2.0 * z0 + np.array([z_lo, z_hi]))
+        bounds[key] = tuple(np.quantile(v, q))
+
+    idx = point.index
+    return (pd.Series([bounds[k][0] for k in idx], index=idx),
+            pd.Series([bounds[k][1] for k in idx], index=idx))
+
+
 def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
                     alpha: float = 0.05) -> pd.DataFrame:
     """Reduce raw per-(sample, member) predictions to the MLE point and its interval.
 
-    The point estimate is the ensemble median at the unperturbed input -- the same
+    The point estimate is the ensemble *mean* at the unperturbed input -- the same
     aggregation :meth:`EnsembleSigmaFlux.predict` uses, evaluated at the MLE input rather
     than averaged over the replicates.
+
+    The mean rather than the median because only the mean is still a flux state. Each
+    member predicts ``v = y @ Z_full.T``, so it lies in the stoichiometric null space; a
+    mean is a convex combination of those and stays there, and stays inside the (convex)
+    bounding box whenever the members do. A per-reaction median is neither, and measurably
+    so -- on E. coli core LC-MS it reported ``max|S.v| = 5.74`` against a glucose uptake of
+    8.6, where the mean gave 2e-6. Fit to the measured labeling is a wash between them, so
+    nothing is traded away for that. What is given up is the median's robustness to a
+    single pathological member; watch ``sigma_model``, which reports exactly that spread.
 
     Two variance sources compose into the interval:
 
@@ -189,13 +243,22 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
     together, not assumed to be ``sqrt(sigma_model^2 + sigma_input^2)`` -- pooling captures
     their interaction, which that identity would not.
 
-    The reported interval is ``point +/- t * sigma_total``, not the empirical percentile of
-    the draws: with as few as 3 replicates the 2.5th/97.5th percentiles sit at the sample
-    extrema and cannot resolve a 2.5% tail. Because sigma is *estimated* from a small sample
-    the quantile is Student-t rather than normal; the degrees of freedom follow the
-    replicate axis, since with 3 replicates against ~20 members it is now the thinner one.
-    None of this is fitted to coverage -- it is the standard treatment of an estimated
-    scale, and coverage (:func:`coverage_by_reaction`) is the check on it, not a target.
+    The reported interval is the bias-corrected bootstrap percentile of the draws
+    (:func:`_bc_percentile_interval`), so it is **asymmetric** wherever the predictions are.
+    It replaces a ``point +/- t * sigma_total`` interval, which could only ever be
+    symmetric. That interval was chosen when a draw was one measured replicate and there
+    were as few as three of them -- too few for a 2.5% tail, since the extreme percentiles
+    sat on the sample extrema. Draws are now bootstrap resamples and there are hundreds, so
+    the percentile is resolvable and no distributional shape has to be assumed. Note the
+    resolution is still bounded by the replicate structure rather than by the draw count:
+    with 4/2/2 replicates there are only 16 distinct MID configurations to resample, and
+    the tails are as fine as that allows.
+
+    The sigma columns are kept as diagnostics -- they say where the width comes from, which
+    an interval alone does not -- but nothing is computed from them any more.
+
+    None of this is fitted to coverage; coverage (:func:`coverage_by_reaction`) is the check
+    on it, not a target.
 
     Args:
         raw: long predictions with Sample, Member, Value and the group columns.
@@ -213,19 +276,17 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
 
     at_mle = mle.groupby(keys, sort=False)['Value']
     out = pd.DataFrame({
-        'Value':       at_mle.median(),
+        'Value':       at_mle.mean(),
         'sigma_model': at_mle.std(ddof=1).fillna(0.0),
     })
     out['sigma_input'] = (drawn.groupby(keys + ['Sample'], sort=False)['Value']
-                                .median().reset_index()
+                                .mean().reset_index()
                                 .groupby(keys, sort=False)['Value']
                                 .std(ddof=1).fillna(0.0))
     out['sigma_total'] = drawn.groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0)
 
-    dof = max(n_draws - 1, 1)
-    half = stats.t.ppf(1.0 - alpha / 2.0, dof) * out['sigma_total']
-    out['Value_lo'] = out['Value'] - half
-    out['Value_hi'] = out['Value'] + half
+    out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(
+        drawn, keys, out['Value'], alpha)
     return out.reset_index()
 
 

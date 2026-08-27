@@ -746,7 +746,7 @@ class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
-    interface, returning the per-reaction median over members.
+    interface, returning the per-reaction mean over members.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -840,12 +840,14 @@ class EnsembleSigmaFlux:
         df_Vm
             Measured exchange fluxes, or None.
         aggregate
-            ``True`` (default): per-reaction median over members, unchanged schema.
+            ``True`` (default): per-reaction mean over members, unchanged schema.
             ``False``: every member's own raw prediction, long-format with an added
-            'Member' column (one row per Sample x Member x Flux Name) -- no median
+            'Member' column (one row per Sample x Member x Flux Name) -- no mean
             collapse, no other post-processing.
         """
-        preds = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        # Members see identical inputs, so only the first reports coverage.
+        preds = [m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0))
+                 for i, m in enumerate(self.members)]
         if not aggregate:
             raw = []
             for midx, p in enumerate(preds):
@@ -855,15 +857,22 @@ class EnsembleSigmaFlux:
                 p.insert(1, 'Member', midx)
                 raw.append(p)
             return pd.concat(raw, ignore_index=True)
+        # Mean, not median: every member predicts v = y @ Z_full.T and so lies in the
+        # stoichiometric null space, and a mean is a convex combination of those -- it
+        # stays a flux state. A per-reaction median is not a convex combination and can
+        # leave the null space entirely (measured: max|S.v| = 5.74 on E. coli core LC-MS,
+        # versus 2e-6 for the mean), which makes it unusable for anything that forward-
+        # simulates or mass-balances the reported value.
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
-        out['Value'] = np.median(values, axis=0)
+        out['Value'] = values.mean(axis=0)
         return out
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
     def expected_tracers(self):         return self.members[0].expected_tracers()
     def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
+    def tracer_ids(self):               return self.members[0].tracer_ids()
 
 
 def load_predictor(config, checkpoint, data_dir=None, device=None):

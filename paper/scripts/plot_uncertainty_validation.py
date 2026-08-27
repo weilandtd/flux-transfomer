@@ -56,7 +56,16 @@ ALPHA = 0.05
 
 
 def norm_or_t_quantile(n_members):
-    """The quantile summarize_draws uses: Student-t on the member axis' degrees of freedom."""
+    """Student-t quantile on the member axis' degrees of freedom.
+
+    A *proxy* for the shipped interval, not a copy of it. ``summarize_draws`` now reports a
+    bias-corrected bootstrap percentile over resampled measured replicates crossed with
+    members; a held-out benchmark sample has no replicates to resample, so that
+    construction cannot be reproduced here. This keeps the symmetric t-interval over the
+    member axis alone -- the widest thing the benchmark data supports -- so the coverage
+    curve stays comparable with earlier runs. It will read narrow wherever the real
+    interval is skewed.
+    """
     return t_dist.ppf(1.0 - ALPHA / 2.0, max(n_members - 1, 1))
 
 
@@ -96,11 +105,9 @@ def member_predictions(run):
 def per_reaction_validation(reactions, stack, truth):
     """Per-reaction coverage of the ensemble interval, and the spread behind it.
 
-    Built the same way inference builds it -- ``point +/- t * sigma`` with the degrees of
-    freedom taken from the member axis (see :func:`sigmaflux.ai.uncertainty.summarize_draws`)
-    -- formed here over the member axis alone, the only axis a held-out sample carries. An
-    empirical percentile over ~20 members would be a different, narrower interval than the
-    one that ships, and would validate something nobody uses.
+    Formed over the member axis alone, the only axis a held-out sample carries, as
+    ``point +/- t * sigma``. See :func:`norm_or_t_quantile` for why this is a proxy for the
+    shipped bootstrap-percentile interval rather than the same construction.
     """
     point = np.nanmedian(stack, axis=2)
     sigma = np.nanstd(stack, axis=2, ddof=1)
