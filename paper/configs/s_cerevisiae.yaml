@@ -13,6 +13,10 @@ experiment:
   mapping_csv:    models/atomistic/S_cerevisiae/S_cerevisiae_experiment_mapping.csv
   reference_flux: Shen_et_al_flux_data_SC.xlsx
   gem_xlsx:       models/atomistic/S_cerevisiae/scGEM.xlsx
+  # Bootstrapped cross-tracer replicate combinations used to propagate measurement
+  # uncertainty. The reported interval's width still follows the pooled replicate
+  # dof, sum(R_t - 1), not this count.
+  n_bootstrap: 200
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform

@@ -5,19 +5,28 @@
 # predictions are not comparable with the other organisms.
 name: E_coli_core
 model_file: models/atomistic/E_coli_core/e_coli_core_annotated.json
-# Read by training's restrict_to_mapped feature filter; experiment.mapping_csv below
-# overrides this for sigmaflux-infer when the experimental data uses different ids.
+# Fallback only: experiment.mapping_csv below overrides this everywhere the measurable
+# metabolite set is needed -- feature selection, the EMU expansion targets and inference
+# alike -- so the model is only ever trained on tokens this platform can supply.
 mapping_csv: models/atomistic/E_coli_core/E_coli_core_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
-# MID and ExtFlux data live in data/E_coli, shared with e_coli's own eventual
-# genome-scale onboarding since it's the same Long & Antoniewicz (2019) dataset.
+# LC-MS (HILIC) data: 2 tracers x 5 biological replicates, one growth condition.
+# The GC-MS arm of the same study lives in data/E_coli_GC_MS, driven by e_coli_core_gc.yaml.
 experiment:
-  data_dir: data/E_coli
+  data_dir: data/E_coli_LC_MS
   gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
-  mapping_csv: models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv
-  reference_flux: E_coli_core_reference_flux.xlsx
+  mapping_csv: data/E_coli_LC_MS/E_coli_core_mapping.csv
+  # The published MFA fit is the GC-MS study's; both arms quote the same reference,
+  # so it is named by path rather than duplicated into this data directory.
+  reference_flux: data/E_coli_GC_MS/E_coli_core_reference_flux.xlsx
+  # Synthetic replicates, each pairing one independently drawn replicate per tracer.
+  # The three tracers are separate cultures on separate sheets with 4/2/2 replicates, so
+  # index-pairing reached 2 of the 4x2x2 = 16 legitimate combinations and left the
+  # under-replicated tracers with no data at all on samples 3 and 4. The t-interval still
+  # uses the pooled replicate dof, sum(R_t - 1) = 5, not the draw count.
+  n_bootstrap: 200
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
 # biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
@@ -70,8 +79,12 @@ labeling:
       name: "1,2-13C glucose"
     - tracer_id: Gluc_e
       labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: Gluc_e
+      labeling: [0, 0, 1, 0, 0, 0]
       enrichment: 1.0
-      name: "U-13C glucose"
+      name: "3-13C glucose"
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:

@@ -1,6 +1,6 @@
 # SigmaFlux training configuration — Escherichia coli, genome-scale iAF1260
 #
-# The ¹³C data in data/E_coli is Long & Antoniewicz (2019): wild type plus 20 single
+# The ¹³C data in data/E_coli_GC_MS is Long & Antoniewicz (2019): wild type plus 20 single
 # knockouts of glycolysis and the pentose phosphate pathway, on a glucose = 100 basis.
 name: E_coli
 model_file: models/atomistic/E_coli/iAF1260_annotated.json
@@ -8,14 +8,18 @@ mapping_csv: models/atomistic/E_coli/E_coli_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
-# MID and ExtFlux data live in data/E_coli, shared with e_coli's own eventual
+# MID and ExtFlux data live in data/E_coli_GC_MS, shared with e_coli_core's GC-MS
 # genome-scale onboarding since it's the same Long & Antoniewicz (2019) dataset.
 experiment:
-  data_dir: data/E_coli
+  data_dir: data/E_coli_GC_MS
   gem_xlsx: models/atomistic/E_coli/example_GEM.xlsx
   mapping_csv: models/atomistic/E_coli/E_coli_fragment_mapping.csv
-  ext_flux: data/E_coli/EColi_ExtFlux_genomescale.xlsx
+  ext_flux: data/E_coli_GC_MS/EColi_ExtFlux_genomescale.xlsx
   reference_flux: E_coli_reference_flux.xlsx
+  # Bootstrapped cross-tracer replicate combinations used to propagate measurement
+  # uncertainty. The reported interval's width still follows the pooled replicate
+  # dof, sum(R_t - 1), not this count.
+  n_bootstrap: 200
 
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
