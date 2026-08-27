@@ -184,8 +184,15 @@ def build_reference_comparison(run_dir, org, panel_rxns):
     Locates this project's files and hands them to :mod:`sigmaflux.utils.read_reference_flux`,
     which does the reading and pairing but knows nothing about where they live.
     """
-    ref_path = pathlib.Path(resolve_path(os.path.join(org["data"], org["reference"]),
-                                         org["root"]))
+    # A bare filename sits next to the experimental data; anything with a directory in
+    # it is resolved against the project root instead, so a reference shared between two
+    # platforms (the E. coli LC-MS and GC-MS arms quote the same published MFA fit) does
+    # not have to be duplicated into both data directories.
+    reference = org["reference"]
+    rel = reference if os.path.dirname(reference) else os.path.join(org["data"], reference)
+    ref_path = pathlib.Path(resolve_path(rel, org["root"]))
+    if not ref_path.exists():
+        raise FileNotFoundError(f"reference_flux not found: {ref_path}")
     orientation = reference_orientation(org.get("media"))
     parts = []
 

@@ -5,7 +5,8 @@ Per model:
   experimental_flux_<key>.svg      SigmaFlux vs reference, log-log, one point per
                                     (condition, growth condition, reaction)
 Across all models:
-  experimental_flux_summary.csv    per-(model, condition) R², point count, reaction count
+  experimental_flux_summary.csv    per-(model, condition) interval overlap and R²,
+                                    point count, reaction count
 
 By default (``--reactions mfa``) each model is restricted to reactions **MFA** resolves
 on held-out simulations (R² >= R2_THRESHOLD in the simulation benchmark — see
@@ -14,13 +15,20 @@ determine a flux the reference value is itself unreliable and agreement with it 
 mean nothing. ``--reactions all`` skips this filter (and the benchmark HDF5s it needs)
 entirely, for a model that has predictions but no mfa_benchmark/ run yet.
 
+Each panel reports how many reactions have a predicted 95% interval that **overlaps**
+the reference MFA's own (``_interval_overlap``), not R². Both sides publish an
+uncertainty, and asking whether they are compatible uses it; R² compares two point
+estimates and is dominated by whichever reactions carry the largest flux. On E. coli
+core that difference is stark -- five of 64 reactions produce 97% of the squared error,
+and two of them are ones MFA cannot determine either (its own interval for R2x spans
+0.05 to 39.85), so squaring a deviation from its point estimate measures nothing there.
+R² is still written to the summary CSV.
+
 Axes are log-log for display -- fluxes span ~8 orders of magnitude across these
-organisms -- but the R² reported in each panel's annotation box (``_r2_linear``) is
-always computed in plain linear space. Log-space R² was tried and dropped: it is
-fragile for exactly this kind of data, since a prediction that collapses to ~0 when the
-true flux was merely a few units off produces a huge log-residual against a much
-smaller log-space SS_tot, so a single bad sample can crater an otherwise-good
-condition's R².
+organisms -- while the overlap test is computed on signed, linear fluxes. Error bars are
+drawn identically on both axes: an interval that spans zero has no positive floor on a
+log magnitude axis, so its bar is truncated to one decade rather than run to the axis
+edge, with no caret marking the open end.
 
 A model whose predictions or (for --reactions mfa) benchmark data is missing is skipped
 with a warning rather than failing the run, so the figure set fills itself in as runs
@@ -127,6 +135,27 @@ def literature_df(model, tbl, spec, run_suffix=None):
     return df.assign(model=model["label"], key=model["key"])
 
 
+def _interval_overlap(df):
+    """Reactions whose predicted interval overlaps the reference MFA's, as ``(n, total)``.
+
+    Two intervals overlap iff each starts before the other ends. Computed on **signed**
+    fluxes, like the R² it replaces: a flux predicted in the wrong direction has no
+    business counting as agreement, and the published exchange bounds are already oriented
+    into the model's convention upstream (``pair_fluxes``), so a surviving sign
+    disagreement is real.
+
+    This is the honest question to ask of this figure. R² in linear space is dominated by
+    whichever reactions carry the largest flux, and where MFA itself cannot determine a
+    flux -- on E. coli core its own 95% interval for R2x spans 0.05 to 39.85 -- a squared
+    deviation from its point estimate measures nothing. Asking whether the two intervals
+    are compatible uses the uncertainty both sides actually report.
+    """
+    lo_p, hi_p = df["pred_lo"].to_numpy(), df["pred_hi"].to_numpy()
+    lo_r, hi_r = df["ref_lo"].to_numpy(), df["ref_hi"].to_numpy()
+    overlap = (lo_p <= hi_r) & (lo_r <= hi_p)
+    return int(np.sum(overlap)), int(np.sum(np.isfinite(lo_p) & np.isfinite(lo_r)))
+
+
 def _r2_linear(pred, ref):
     """Standard linear-space R², on **signed** fluxes.
 
@@ -141,21 +170,36 @@ def _r2_linear(pred, ref):
     return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
 
 
-def _error_offsets(value, lo, hi, lim_hi, open_decades=1.0):
+def _error_offsets(value, lo, hi, lim_lo, lim_hi):
     """Per-point (lower, upper) error-bar lengths on a log magnitude axis.
 
-    Returns ``(offsets, open_lower)``. A NaN lower bound means the interval spans zero, so
-    the magnitude has no positive floor; those bars are drawn one decade long and marked
-    with a caret rather than run down to the axis edge. Roughly half the points are in that
-    state, and full-height lines would hide the figure behind them while saying nothing a
-    caret does not. A missing bound contributes no bar at all.
+    A NaN lower bound means the interval spans zero, so on a magnitude axis it has no
+    positive floor: the bar is drawn all the way to the axis edge, because that is where
+    it actually reaches. It used to be cut to a fixed one decade and tagged with a caret;
+    with the caret gone that stub was indistinguishable from a genuinely tight interval,
+    which is a worse failure than a busy panel -- on E. coli core it understated 19 of 64
+    bars by a median of 6.3 decades. The axis floor is set from the data
+    (:func:`_axis_floor`) rather than from FLUX_MIN_ABS, so a truthful bar spans the
+    couple of decades that are actually in play instead of six mostly-empty ones.
+
+    A missing bound contributes no bar at all.
     """
     value = np.asarray(value, dtype=float)
-    open_lower = np.isnan(lo) & np.isfinite(hi)
-    lo = np.where(open_lower, value / 10.0 ** open_decades, lo)
-    lower = np.where(np.isfinite(lo), value - np.minimum(lo, value), 0.0)
+    lo = np.where(np.isnan(lo) & np.isfinite(hi), lim_lo, lo)
+    lower = np.where(np.isfinite(lo), value - np.clip(lo, lim_lo, value), 0.0)
     upper = np.where(np.isfinite(hi), np.clip(hi, value, lim_hi) - value, 0.0)
-    return np.vstack([lower, upper]), open_lower
+    return np.vstack([lower, upper])
+
+
+def _axis_floor(*series, decades=0.5):
+    """Lower axis limit: half a decade below the smallest plotted magnitude.
+
+    The shared FLUX_MIN_ABS floor is 1e-6, four decades below anything E. coli core
+    predicts, which left most of the panel empty and made every open-ended bar six
+    decades long. Never goes below FLUX_MIN_ABS.
+    """
+    smallest = np.nanmin([np.nanmin(np.abs(s)) for s in series])
+    return max(FLUX_MIN_ABS, float(smallest) / 10.0 ** decades)
 
 
 def plot_experimental_flux(model, df, out_dir):
@@ -172,7 +216,7 @@ def plot_experimental_flux(model, df, out_dir):
         "ref_lo": ref_lo, "ref_hi": ref_hi, "pred_lo": pred_lo, "pred_hi": pred_hi,
     })
 
-    lim_lo = FLUX_MIN_ABS
+    lim_lo = _axis_floor(tidy["reference"], tidy["sigmaflux"])
     lim_hi = float(np.nanmax([tidy["reference"].max(), tidy["sigmaflux"].max()])) * 2.0
 
     fig, ax = plt.subplots(figsize=(3.5, 3.5))
@@ -184,18 +228,12 @@ def plot_experimental_flux(model, df, out_dir):
     for key, grp in tidy.groupby("key", sort=False):
         x, y = grp["reference"].to_numpy(), grp["sigmaflux"].to_numpy()
         color = CONDITION_COLORS.get(key, "#777777")
-        xerr, x_open = _error_offsets(x, grp["ref_lo"].to_numpy(),
-                                      grp["ref_hi"].to_numpy(), lim_hi)
-        yerr, y_open = _error_offsets(y, grp["pred_lo"].to_numpy(),
-                                      grp["pred_hi"].to_numpy(), lim_hi)
+        xerr = _error_offsets(x, grp["ref_lo"].to_numpy(), grp["ref_hi"].to_numpy(),
+                              lim_lo, lim_hi)
+        yerr = _error_offsets(y, grp["pred_lo"].to_numpy(), grp["pred_hi"].to_numpy(),
+                              lim_lo, lim_hi)
         ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="none", ecolor=color,
                     elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
-        # Mark the open ends explicitly rather than with errorbar's lolims/uplims, whose
-        # caret is placed by limit semantics that do not mean "this bar continues".
-        ax.scatter(x[y_open], (y - yerr[0])[y_open], marker="v", s=7, linewidths=0,
-                   color=color, alpha=0.5, zorder=1.6)
-        ax.scatter((x - xerr[0])[x_open], y[x_open], marker="<", s=7, linewidths=0,
-                   color=color, alpha=0.5, zorder=1.6)
 
     palette = {names.get(k, k): CONDITION_COLORS.get(k, "#777777")
                for k in tidy["key"].unique()}
@@ -205,19 +243,24 @@ def plot_experimental_flux(model, df, out_dir):
     sns.scatterplot(data=tidy, x="reference", y="sigmaflux", hue="condition",
                     palette=palette, s=18, linewidth=0, ax=ax, zorder=2)
 
-    # One R² per condition, not a single value pooled across them -- conditions can differ
-    # a lot in fit quality, and pooling would hide that.
-    summary_rows, r2_lines = [], []
+    # One figure per condition, not a single value pooled across them -- conditions can
+    # differ a lot in agreement, and pooling would hide that.
+    summary_rows, lines = [], []
     for cond, grp in df.groupby("condition", sort=False):
         label = names.get(cond, cond)
-        r2c = _r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy())
-        r2_lines.append(f"{label}: $R^2$ = {r2c:.2f}")
+        n_ov, n_cmp = _interval_overlap(grp)
+        lines.append(f"{label}: {n_ov}/{n_cmp} overlap")
+        # R² stays in the CSV -- it is no longer what the panel reports, but dropping it
+        # from the machine-readable record would lose a number already published.
         summary_rows.append(dict(model=model["label"], key=model["key"], condition=cond,
-                                 label=label, r2=r2c, n_points=len(grp),
+                                 label=label, n_overlap=n_ov, n_compared=n_cmp,
+                                 frac_overlap=(n_ov / n_cmp if n_cmp else float("nan")),
+                                 r2=_r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy()),
+                                 n_points=len(grp),
                                  n_reactions=grp["reaction"].nunique(),
                                  n_sign_opposed=int((~grp["sign_agrees"]).sum())))
 
-    ax.text(0.97, 0.04, "\n".join(r2_lines), transform=ax.transAxes,
+    ax.text(0.97, 0.04, "\n".join(lines), transform=ax.transAxes,
             fontsize=9, va="bottom", ha="right",
             bbox=dict(facecolor="white", alpha=0.85, edgecolor=COLORS["box"],
                       boxstyle="round,pad=0.25"))
