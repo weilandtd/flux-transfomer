@@ -430,6 +430,9 @@ class SigmaFlux:
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes, columns 'Flux Name', 'Value' (optional 'Sample'
             matching df_L); names must match expected_measured_fluxes().
+        verbose : bool
+            Print the input-coverage report. An ensemble sets this only for its first
+            member, since every member sees identical inputs.
 
         Returns
         -------
@@ -451,13 +454,14 @@ class SigmaFlux:
         # so M+0 is fully determined by M+1…M+N and was excluded at generation time).
         m0_rows = (df_L['Isotopomer'] == 'M+0').sum()
         if m0_rows > 0:
-            print(f"Dropping {m0_rows} M+0 row(s) — M+0 is not used by the model.")
+            if verbose:
+                print(f"Dropping {m0_rows} M+0 row(s) — M+0 is not used by the model.")
             df_L = df_L[df_L['Isotopomer'] != 'M+0'].copy()
 
         # Convert human-readable tracer names → internal tracer IDs
         user_tracers = set(df_L['Tracer Name'].unique())
         unknown = user_tracers - set(self.tracer_names)
-        if unknown:
+        if unknown and verbose:
             print(f"WARNING: unknown tracer name(s): {unknown}")
             print(f"  Expected: {self.tracer_names}")
         df_L = df_L.copy()
@@ -470,31 +474,40 @@ class SigmaFlux:
         # absent from training data). Report once as a summary, not per-token.
         unknown_mets = user_metabolites - self._known_metabolites
         if unknown_mets:
-            print(f"Ignoring {len(unknown_mets)} metabolite(s) not in training set: "
-                  f"{', '.join(sorted(unknown_mets))}")
+            if verbose:
+                print(f"Ignoring {len(unknown_mets)} metabolite(s) not in training set: "
+                      f"{', '.join(sorted(unknown_mets))}")
             df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
             user_metabolites -= unknown_mets
 
-        # ── Build full-skeleton labeling_df ───────────────────────────────────
-        # One column per sample; ALL training tokens present; zero where user
-        # has no measurement.
+        # ── Build the labeling frame on the training token skeleton ───────────
+        # Rows stay in token_index order rather than being lexicographically sorted:
+        # norm_stats' mid_mean/mid_std are *positional* arrays in training order, so a
+        # re-sorted frame would z-score every token against another token's statistics.
+        # One pivot instead of a row-by-row assignment loop -- bootstrapped inputs push
+        # the sample count into the hundreds, and the loop was O(rows x samples) in Python.
         skeleton_index = pd.MultiIndex.from_tuples(
             self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
         )
-        labeling_df = pd.DataFrame(
-            0.0,
-            index   = skeleton_index,
-            columns = list(range(n_samples)),
-            dtype   = np.float32,
-        ).sort_index()   # sort MultiIndex for efficient .loc access
+        col_of = {s: i for i, s in enumerate(samples)}
+        if df_L.empty:
+            # Nothing survived the tracer/metabolite filters. An all-NaN frame keeps the
+            # shape contract so this fails as "no coverage" below rather than on a pivot
+            # over an empty frame, which produces no index levels to reindex against.
+            wide = pd.DataFrame(np.nan, index=skeleton_index, columns=range(n_samples))
+        else:
+            wide = (df_L.assign(_col=df_L['Sample'].map(col_of))
+                        .pivot_table(index=['Tracer Name', 'Metabolite ID', 'Isotopomer'],
+                                     columns='_col', values='Fraction', aggfunc='mean')
+                        .reindex(index=skeleton_index, columns=range(n_samples)))
 
-        # Fill in user's values (Tracer Name already converted to internal ID)
-        for col_idx, s in enumerate(samples):
-            sub = df_L[df_L['Sample'] == s]
-            for _, row in sub.iterrows():
-                key = (row['Tracer Name'], row['Metabolite ID'], row['Isotopomer'])
-                if key in labeling_df.index:
-                    labeling_df.loc[key, col_idx] = np.float32(row['Fraction'])
+        # NaN is "no measurement for this token in this sample" and becomes a mask entry;
+        # the value underneath it is never read, so the fill is arbitrary.
+        absent = wide.isna().to_numpy().T                     # (n_samples, n_tokens)
+        labeling_df = wide.fillna(0.0).astype(np.float32)
+
+        if verbose:
+            self._report_coverage(wide)
 
         # ── Flux DataFrames ───────────────────────────────────────────────────
         flux_df, rev_df = self._build_flux_dfs(df_Vm, n_samples, samples)
@@ -511,6 +524,9 @@ class SigmaFlux:
             norm_stats_input= self.spec.norm_stats,  # applies MID z-score if model trained with it
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
+
+        # Which labeling tokens to hide, sliced per batch alongside the flux tokens below.
+        absent_t = torch.tensor(absent, dtype=torch.bool)
 
         # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
         # Normalize to match training if checkpoint used normalize_targets.
@@ -545,8 +561,18 @@ class SigmaFlux:
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
+                labeling_mask = absent_t[batch_offset:batch_offset + B].to(self.device)
+                # An all-hidden row makes attention softmax over nothing and returns NaN.
+                # The flux tokens are never masked, so the sequence still has visible keys
+                # whenever they exist; without them, keep one labeling token visible.
+                if fixed_fluxes is None:
+                    all_hidden = labeling_mask.all(dim=1)
+                    if all_hidden.any():
+                        labeling_mask[all_hidden, 0] = False
+
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     measured_fluxes=fixed_fluxes)
+                                     measured_fluxes=fixed_fluxes,
+                                     labeling_mask=labeling_mask)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
                 batch_offset += B
