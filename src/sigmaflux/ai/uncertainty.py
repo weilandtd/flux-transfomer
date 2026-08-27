@@ -14,8 +14,19 @@ against it, versus 0.851 for sigma^2 = a + b*p(1-p) -- but that is a fact about 
 not a step this propagation needs; a fitted noise model would only be needed again for a
 likelihood/chi-squared construction, which this module does not attempt.) Measured exchange
 fluxes carry no replicates -- one value and one reported error per growth condition -- so
-they are instead resampled from that error, one draw per MID replicate, via the
-sign-truncated Beta in :func:`resample_flux`.
+they are instead resampled from that error, one draw per MID draw, via the sign-truncated
+Beta in :func:`resample_flux`.
+
+Replicates of *different tracers* are recombined, however. Each tracer is its own culture
+measured on its own sheet, so pairing replicate 1 of one with replicate 1 of another
+asserts a correspondence that does not exist and reaches only min_t R_t of the prod_t R_t
+legitimate combinations -- and leaves an under-replicated tracer contributing nothing past
+its own replicate count. Draws are therefore always bootstrapped pairings, ``n_bootstrap``
+of them. This resamples measured values only, nothing from a fitted distribution, and the
+interval's degrees of freedom stay tied to the real replicate count -- pooled as
+``sum_t(R_t - 1)``, which is just ``R - 1`` for a single tracer -- so the extra draws
+sharpen the estimate of the spread without narrowing the interval on resampling alone, and the reported interval is the bootstrap percentile itself rather than
+a symmetric band fitted to its width.
 
 Two variance sources compose into the reported interval, measured together rather than
 assumed independent (they are the pooled spread of every (replicate, member) prediction,
@@ -34,6 +45,11 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from scipy.stats import truncnorm
+
+#: Bootstrap draws when the config's ``experiment`` block does not say. Large enough for a
+#: 2.5% tail to be resolvable in the percentile interval; past that the limit is how many
+#: distinct replicate combinations exist, not how many are drawn.
+DEFAULT_N_BOOTSTRAP = 200
 
 # The isotopomers of one metabolite under one tracer are a composition: they sum to 1.
 _MID_GROUP = ['Tracer Name', 'Metabolite ID']
@@ -68,34 +84,63 @@ def resample_flux(value: float, err: float, n_samples: int,
     return sign * M * rng.beta(kappa * x, kappa * (1 - x), size=n_samples)
 
 
-def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator):
-    """The measured inputs to evaluate the model at: each MID replicate paired with an
-    independent flux draw, plus the replicate mean as the maximum-likelihood row.
+def _bootstrap_replicates(df_L, n_bootstrap: int, rng: np.random.Generator):
+    """*n_bootstrap* synthetic replicates, each drawing one replicate per tracer independently.
 
-    Returns ``(df_L_draws, df_Vm_draws)`` carrying samples ``0 .. n_reps-1`` (one per
-    measured MID replicate) plus sample ``n_reps`` holding the replicate mean and the
-    measured flux values unperturbed. That row is the plug-in MLE input: by invariance of
-    the maximum-likelihood estimate under transformation, ``f(mean)`` is the estimate,
-    whereas averaging ``f`` over the individual replicates is a different, Jensen-biased
-    quantity.
+    A synthetic replicate is a combination such as (T1-R2, T2-R4): the tracers were grown
+    and measured separately, so any pairing of their replicates is as legitimate as the
+    index-matched one, and there are ``prod_t R_t`` of them rather than ``min_t R_t``.
+    Drawing with replacement (rather than enumerating the product) keeps the count
+    independent of the tracer count and handles unequal replicate counts per tracer.
+
+    Args:
+        df_L: long-format labeling data for one growth condition.
+        n_bootstrap: number of synthetic replicates to build.
+        rng: random generator used for the replicate draws.
+    """
+    by_tracer = {tracer: [g[_MID_POINT + ['Fraction']]
+                          for _, g in sub.groupby('Sample', sort=True)]
+                 for tracer, sub in df_L.groupby('Tracer Name', sort=True)}
+    return [reps[rng.integers(len(reps))].assign(Sample=s)
+            for s in range(n_bootstrap)
+            for reps in by_tracer.values()]
+
+
+def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator,
+                  n_bootstrap: int = DEFAULT_N_BOOTSTRAP):
+    """The measured inputs to evaluate the model at, plus the replicate mean as the
+    maximum-likelihood row.
+
+    Returns ``(df_L_draws, df_Vm_draws)`` carrying samples ``0 .. n_bootstrap-1`` plus
+    sample ``n_bootstrap`` holding the per-(tracer, metabolite, isotopomer) replicate mean
+    and the measured flux values unperturbed. That row is the plug-in MLE input: by
+    invariance of the maximum-likelihood estimate under transformation, ``f(mean)`` is the
+    estimate, whereas averaging ``f`` over the individual replicates is a different,
+    Jensen-biased quantity. Each draw is paired with an independent flux draw.
+
+    Draws are always bootstrapped combinations (:func:`_bootstrap_replicates`). Taking
+    replicate index *i* of every tracer together instead -- which this used to do -- is not
+    a defensible alternative but a mistake: it asserts a correspondence between separately
+    grown cultures that does not exist, reaches ``min_t R_t`` of the ``prod_t R_t``
+    legitimate combinations, and leaves an under-replicated tracer contributing nothing at
+    all on the draws past its own replicate count.
 
     Args:
         df_L: long-format labeling data, one row per (bio-rep, tracer, metabolite, isotopomer).
         df_Vm: measured-flux data for this growth condition.
         df_err: reported uncertainty per measured flux, or None.
-        rng: random generator used for the flux draws.
+        rng: random generator used for the replicate and flux draws.
+        n_bootstrap: number of bootstrapped cross-tracer replicate combinations.
     """
-    reps = sorted(df_L['Sample'].unique())
-    n_reps = len(reps)
+    n_draws = int(n_bootstrap)
+    if n_draws < 1:
+        raise ValueError(f"n_bootstrap must be at least 1, got {n_bootstrap}")
+
     mu = df_L.groupby(_MID_POINT, sort=False)['Fraction'].mean().reset_index()
+    parts = _bootstrap_replicates(df_L, n_draws, rng)
+    parts.append(mu.assign(Sample=n_draws))
 
-    parts = [df_L.loc[df_L['Sample'] == rep, _MID_POINT + ['Fraction']].assign(Sample=s)
-             for s, rep in enumerate(reps)]
-    parts.append(mu.assign(Sample=n_reps))
-    df_L_draws = pd.concat(parts, ignore_index=True)
-
-    df_Vm_draws = _flux_draws(df_Vm, df_err, n_reps, rng)
-    return df_L_draws, df_Vm_draws
+    return pd.concat(parts, ignore_index=True), _flux_draws(df_Vm, df_err, n_draws, rng)
 
 
 def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator) -> pd.DataFrame:

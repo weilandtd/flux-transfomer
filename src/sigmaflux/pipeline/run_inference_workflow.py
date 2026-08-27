@@ -15,9 +15,9 @@ Usage:
 Optional:
     --conditions C N P      run only these conditions (default: all discovered)
 
-Measurement uncertainty is propagated through the ensemble using the measured MID
-replicates directly (one flux draw per replicate) -- see :mod:`sigmaflux.ai.uncertainty`
-for the composition.
+Measurement uncertainty is propagated through the ensemble by resampling cross-tracer
+combinations of the measured MID replicates, one flux draw each; ``experiment.n_bootstrap``
+sets how many. See :mod:`sigmaflux.ai.uncertainty` for the composition.
 """
 
 import argparse
@@ -31,8 +31,12 @@ import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
+from sigmaflux.ai.uncertainty import (
+    DEFAULT_N_BOOTSTRAP, sample_inputs, summarize_draws,
+)
+from sigmaflux.pipeline._paths import (
+    add_root_argument, load_config, mapping_csv_for, resolve_path,
+)
 from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
 
@@ -73,6 +77,54 @@ def _inspect_growth_conditions(xlsx_path: str) -> list[int]:
     return gcs if gcs else [1]
 
 
+def load_condition_inputs(mid_file, ext_file, condition, gc, mapping_path, flux_names):
+    """Measured MID and exchange-flux frames for one growth condition.
+
+    ``Sample`` is dense-ranked on both sides so the replicate ids line up regardless of
+    how the workbook numbered them.
+
+    Args:
+        mid_file: per-condition MID xlsx.
+        ext_file: the *_ExtFlux.xlsx for this organism.
+        condition: condition prefix, e.g. 'B'.
+        gc: growth-condition number within that file.
+        mapping_path: experimental-id -> model-id CSV.
+        flux_names: measured flux columns to keep, or None for all.
+
+    Returns ``(df_L, df_Vm, df_err)``.
+    """
+    df_L = read_xlsx_mid_data(xlsx_path=mid_file, mapping_csv=mapping_path,
+                              growth_condition=gc)
+    df_L['Sample'] = df_L['Sample'].rank(method='dense').astype(int)
+    df_Vm, df_err = read_xlsx_extflux(xlsx_path=ext_file, condition=condition,
+                                      flux_names=flux_names, return_errors=True,
+                                      growth_condition=gc)
+    for _df in (df_Vm, df_err):
+        _df['Sample'] = _df['Sample'].rank(method='dense').astype(int)
+    return df_L, df_Vm, df_err
+
+
+def predict_draws(sf, df_L_draws, df_Vm_draws, n_flux):
+    """Raw per-(sample, member) predictions, tagged flux vs reversibility.
+
+    Outputs come back per sample in flux-then-reversibility order and a reaction can
+    appear in both, so 'Type' is assigned by position -- it is part of what identifies a
+    predicted quantity, not a property of the name.
+
+    Args:
+        sf: predictor, single or ensemble.
+        df_L_draws: labeling inputs, one Sample per draw.
+        df_Vm_draws: matching measured-flux inputs.
+        n_flux: number of flux outputs, i.e. where the reversibility block starts.
+    """
+    raw = (sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False)
+           if hasattr(sf, 'members') else sf.predict(df_L_draws, df_Vm=df_Vm_draws))
+    member_key = ['Sample', 'Member'] if 'Member' in raw.columns else ['Sample']
+    raw['Type'] = (raw.groupby(member_key, sort=False).cumcount()
+                      .lt(n_flux).map({True: 'flux', False: 'reversibility'}))
+    return raw
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Run SigmaFlux inference for all conditions and growth rates.",
@@ -100,18 +152,17 @@ def cli(argv=None):
     t           = cfg.get("training", {})
     flux_names  = t.get("measured_fluxes") or None
     organism    = cfg.get("name", "organism")
-    # experiment.mapping_csv lets one organism's experimental files use compound ids
-    # the training mapping_csv doesn't cover (GC-MS fragments, alternative platform
-    # annotations, ...) without touching the file training's restrict_to_mapped filter
-    # reads. Defaults to the top-level mapping_csv when the experiment data uses the
-    # same ids training does.
-    mapping_csv = cfg.get("experiment", {}).get("mapping_csv") or cfg.get("mapping_csv")
+    mapping_csv = mapping_csv_for(cfg)
     # experiment.ext_flux lets one organism pick a specific *_ExtFlux.xlsx out of a
     # data_dir shared with another organism, when their measured-flux reaction ids
     # differ (e.g. e_coli's iAF1260 ids vs e_coli_core's naming in the same shared
     # file) — same override pattern as experiment.mapping_csv above. Defaults to the
     # single *_ExtFlux.xlsx glob match when absent.
     ext_flux    = cfg.get("experiment", {}).get("ext_flux")
+    # Each tracer is its own culture, so replicate i of one says nothing about replicate i
+    # of another; draws are always bootstrapped combinations, experiment.n_bootstrap only
+    # sets how many.
+    n_bootstrap = cfg.get("experiment", {}).get("n_bootstrap", DEFAULT_N_BOOTSTRAP)
 
     def _p(rel):
         return resolve_path(rel, root)
@@ -155,7 +206,6 @@ def cli(argv=None):
     rng = np.random.default_rng(seed=42)
 
     n_flux = len(sf.flux_names)
-    is_ensemble = hasattr(sf, 'members')
 
     for condition in conditions:
         mid_file = all_condition_files[condition]
@@ -168,44 +218,23 @@ def cli(argv=None):
         for gc in gcs:
             print(f"  ── Growth condition {gc} ──")
 
-            df_L = read_xlsx_mid_data(
-                xlsx_path        = mid_file,
-                mapping_csv      = mapping_path,
-                growth_condition = gc,
-            )
-            df_L['Sample'] = df_L['Sample'].rank(method='dense').astype(int)
-            df_Vm, df_err = read_xlsx_extflux(
-                xlsx_path        = ext_file,
-                condition        = condition,
-                flux_names       = flux_names,
-                return_errors    = True,
-                growth_condition = gc,
-            )
-            for _df in (df_Vm, df_err):
-                _df['Sample'] = _df['Sample'].rank(method='dense').astype(int)
+            df_L, df_Vm, df_err = load_condition_inputs(
+                mid_file, ext_file, condition, gc, mapping_path, flux_names)
 
-            n_reps = df_L['Sample'].nunique()
-            print(f"     Replicates: {n_reps}  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
+            n_draws = int(n_bootstrap)
+            reps_by_tracer = df_L.groupby('Tracer Name')['Sample'].nunique()
+            print(f"     Replicates per tracer: {reps_by_tracer.to_dict()}"
+                  f"  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
 
-            df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng)
+            df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng,
+                                                    n_bootstrap=n_bootstrap)
 
-            print(f"     Running inference ({n_reps} replicate draws "
-                  f"+ 1 maximum-likelihood input)...")
+            print(f"     Running inference ({n_draws} bootstrapped cross-tracer draws "
+                  f"+ 1 maximum-likelihood input, bias-corrected percentile interval)...")
 
-            if is_ensemble:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False)
-            else:
-                raw = sf.predict(df_L_draws, df_Vm=df_Vm_draws)
+            raw = predict_draws(sf, df_L_draws, df_Vm_draws, n_flux)
 
-            # Outputs come back per sample in flux-then-reversibility order, and a reaction
-            # can appear in both, so Type is part of what identifies a predicted quantity.
-            member_key = ['Sample', 'Member'] if 'Member' in raw.columns else ['Sample']
-            raw['Type'] = (
-                raw.groupby(member_key, sort=False).cumcount()
-                   .lt(n_flux).map({True: 'flux', False: 'reversibility'})
-            )
-
-            agg = summarize_draws(raw, n_draws=n_reps,
+            agg = summarize_draws(raw, n_draws=n_draws,
                                   group_cols=['Type', 'Flux Name'])
             agg.insert(0, 'GrowthCondition', gc)
             agg.insert(0, 'Condition', condition)
