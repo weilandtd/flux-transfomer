@@ -48,17 +48,21 @@ def pin_threads():
     return n_threads
 
 
-def load_benchmark_inputs(data_dir, cfg=None, root=None):
-    """Load the run directory's model, observable metabolites and training data.
+def load_prepared_model(data_dir, cfg=None, root=None):
+    """The run directory's MFA-prepared model and the metabolites the platform can see.
+
+    Reads the ``model_prepared_for_mfa.json`` the run already holds rather than
+    re-deriving it: rebuilding re-solves FVA (bounds drift at ~1e-13) and depends on the
+    solver still behaving as it did then, so the saved model is the one training and
+    sampling actually saw.
 
     Args:
-        data_dir: run directory holding the prepared model and training HDF5 files.
-        cfg: organism config; supplies ``mapping_csv`` when given.
+        data_dir: run directory holding ``model_prepared_for_mfa.json``.
+        cfg: organism config; supplies the mapping CSV when given.
         root: project root for resolving config-relative paths.
 
-    Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
-    ``mapped_met_ids`` comes from the config's ``mapping_csv`` when given, else
-    every metabolite id in the run's ``features.csv``.
+    Returns ``(cobra_model, mapped_met_ids)``. ``mapped_met_ids`` comes from the config's
+    mapping CSV when given, else every metabolite id in the run's ``features.csv``.
     """
     model_path = os.path.join(data_dir, "model_prepared_for_mfa.json")
     print(f"Loading model: {model_path}")
@@ -76,6 +80,20 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
         mapped_met_ids = set(pd.read_csv(os.path.join(data_dir, "features.csv"))
                                ["metabolite_id"].dropna())
         print(f"  {len(mapped_met_ids)} metabolite IDs from features.csv")
+    return cobra_model, mapped_met_ids
+
+
+def load_benchmark_inputs(data_dir, cfg=None, root=None):
+    """Load the run directory's model, observable metabolites and training data.
+
+    Args:
+        data_dir: run directory holding the prepared model and training HDF5 files.
+        cfg: organism config; supplies ``mapping_csv`` when given.
+        root: project root for resolving config-relative paths.
+
+    Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
+    """
+    cobra_model, mapped_met_ids = load_prepared_model(data_dir, cfg, root)
 
     print(f"Loading training data from: {data_dir}")
     return (cobra_model, mapped_met_ids, *load_data(data_dir))

@@ -661,6 +661,15 @@ class SigmaFlux:
         """Tracer experiment names from the config."""
         return list(self.tracer_names)
 
+    def tracer_ids(self):
+        """Display tracer name -> internal tracer id, as used in the token index.
+
+        Anything that has to line measured data up against the token index (or against a
+        simulated labeling vector, whose tracer level is the same internal id) needs this
+        map; rebuilding it from the config at each call site is how the two drift apart.
+        """
+        return dict(self._tracer_name_to_id)
+
     def expected_measured_fluxes(self):
         """Reaction IDs to provide in df_Vm."""
         return list(self.measured_flux_ids)
