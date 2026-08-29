@@ -303,16 +303,46 @@ def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, 
     return v_init, r_init, {"j": j, "dev": dev}
 
 
-def fitted_parameter_count(model):
+def fitted_parameter_count(model, observed=None):
     """Free parameters the fit spends: null-space net-flux coordinates + exchanges.
 
     ``fit_mfa_model`` optimises ``v_net = T·p`` with ``T = null(S)`` plus one
     reversibility per reversible reaction; this ``p`` is what the χ² test subtracts
     from the measurement count, and applies to both the native and x3cflux backends.
+
+    **Measurement pools are counted by what they can be identified from, not by how
+    much they widen the null space.** A k-member pool puts k+1 columns and one balance
+    row into S, so ``null(S)`` grows by k. What the data can actually constrain is:
+
+    * an **observed** pool -- k-1, the compartment ratios. Its block scale leaves the
+      pool's EMU balance ``sum_i(v_i X_i) / sum_i(v_i)`` unchanged, so no fit can spend
+      it. x3cflux pins exactly that direction with the drain equality and reports the
+      same reduced count as ``num_free_parameters``;
+      :func:`~sigmaflux.ai.utils.split_constant_directions` removes it on the AI side.
+    * an **unobserved** pool -- zero. Nothing measures it, so every one of its k
+      directions is flat in the objective. It is a parameter with no matching
+      measurement: counting it shrinks dof without ever adding to the measurement count.
+
+    Both corrections are *structural* -- they depend only on the model and on which
+    metabolites the platform reports, never on a flux state. That matters, because the
+    χ² test is the only thing computable on real data where the true fluxes are unknown;
+    a parameter count read off a Jacobian at some flux solution would make the
+    acceptance threshold depend on the answer it is meant to judge.
+
+    On I. orientalis this is 94, against 152 uncorrected: 36 pools cost 58 phantom
+    directions (14 observed × 1 scale + 22 unobserved × 2), worth 58 dof.
+
+    Args:
+        model: the prepared :class:`~sigmaflux.core.model.MFAModel`.
+        observed: metabolite ids the measurement platform reports. Omit to treat every
+            pool as observed, which only removes the scale directions.
     """
     from ..core.mfa import gen_SVD_kernel
+    from ..core.measurement_pools import pool_members
 
     k = gen_SVD_kernel(model.stoichiometry.cpu().numpy()).shape[1]
+    for pool, members in pool_members(model).items():
+        k -= 1 if observed is None or pool in observed else len(members)
     return int(k + int(model._reversibility_mask.sum().item()))
 
 
@@ -773,7 +803,7 @@ def main(args):
         # count, neither of which varies across samples, so it is built once and reused.
         if chi2_bound is None:
             n_L, n_F = _block_counts(mfa_model)
-            n_params = fitted_parameter_count(mfa_model)
+            n_params = fitted_parameter_count(mfa_model, mapped_met_ids)
             scale_L = (args.chi2_scale if args.chi2_scale is not None
                        else labeling_chi2_scale(noisy_series, args.noise_std,
                                                 np.random.default_rng(args.seed)))
