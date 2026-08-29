@@ -98,10 +98,16 @@ _FP16_SAFE_MAX = 6.0e4
 _REGENERATED = (
     "compound_emb.weight", "label_emb.weight", "tracer_emb.weight",
     "reaction_emb.weight", "_token_type_emb.weight",
-    "Z_full", "token_experiment_ids", "fixed_idx_t",
+    "Z_full", "flux_offset", "token_experiment_ids", "fixed_idx_t",
     "flux_norm_mean", "flux_norm_std",
     "y_norm_mean", "y_norm_std", "rev_norm_mean", "rev_norm_std",
 )
+
+#: Regenerated buffers added after the shipped bundles were written. Each defaults to a
+#: neutral value -- ``flux_offset`` to zeros, which is exactly what a model trained with
+#: no pinned basis directions had implicitly -- so a manifest that predates one is still
+#: a match. Only these are forgiven, so a *renamed* key is still caught.
+_OPTIONAL_REGENERATED = frozenset({"flux_offset"})
 
 #: Keys that must agree across ensemble members.
 _SHARED_KEYS = (
@@ -109,7 +115,8 @@ _SHARED_KEYS = (
     "token_index", "h_reaction", "h_type", "val_indices",
 )
 
-_NULL_SPACE_FLOAT = ("Z_free", "y_mean", "y_std", "rev_log_mean", "rev_log_std", "obs_weights")
+_NULL_SPACE_FLOAT = ("Z_free", "flux_offset", "y_mean", "y_std", "rev_log_mean",
+                     "rev_log_std", "obs_weights")
 _NULL_SPACE_INT = ("free_idx", "fixed_idx", "rev_variable_idx")
 
 
@@ -771,7 +778,7 @@ def load_model(path, *, device=None):
     model._adopt(members, split_source=None)
     # strict=False would also hide a renamed key, so check the difference exactly.
     expected = set(model.members[0]._model.state_dict()) - set(state_dicts[0])
-    if expected != regenerated:
+    if expected - _OPTIONAL_REGENERATED != regenerated - _OPTIONAL_REGENERATED:
         raise SfxFormatError(
             f"{path}: weights do not match the model. Missing but not listed as "
             f"regenerated: {sorted(expected - regenerated)}; listed but present: "

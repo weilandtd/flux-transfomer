@@ -38,12 +38,13 @@ from sigmaflux.ai.utils import load_fisher_token_scores
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import (
-    BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
+    BasisSpaceLoss, FluxNorm,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
 from sigmaflux.ai.utils import (
     compute_sparse_nullspace, compute_targeted_nullspace,
     compute_ica_nullspace, compute_targeted_ica_nullspace,
+    split_constant_directions,
 )
 
 
@@ -203,11 +204,6 @@ def main(args):
         flux_df          = flux_df.iloc[:, idx]
         reversibility_df = reversibility_df.iloc[:, idx]
         print(f"Randomly subsampled {args.max_samples} samples (seed={args.seed})")
-
-    if getattr(args, 'compartment_mix', False):
-        n_before = labeling_df.shape[0]
-        labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
-        print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
 
     n_tokens_all = labeling_df.shape[0]
     if not os.path.isfile(args.features_csv):
@@ -443,6 +439,19 @@ def main(args):
     # members must share one basis, exactly as they share one train/val split.
     Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
 
+    # Directions no sample moves along -- a measurement pool's pinned drain, an
+    # FVA-fixed route -- still have to be representable for v = y @ Z.T to reconstruct a
+    # real flux vector, but there is nothing to predict along them. Left in, each one
+    # takes maximum loss weight (variance_min_cutoff) on a target that is identically
+    # zero once standardised, and inflates every basis-space metric.
+    _V_all = flux_df.loc[[r for r in flux_df.index]].to_numpy(np.float64).T
+    Z_full, Z_const, y_const = split_constant_directions(Z_full, _V_all)
+    flux_offset = (y_const @ Z_const.T).astype(np.float32)
+    if Z_const.shape[1]:
+        print(f"Constant basis directions (pinned reactions): {Z_const.shape[1]} held "
+              f"fixed, predicting {Z_full.shape[1]} of "
+              f"{Z_full.shape[1] + Z_const.shape[1]}")
+
     n_free_basis = Z_full.shape[1]
 
     print(f"Full null-space basis dimension: {n_free_basis}")
@@ -515,6 +524,7 @@ def main(args):
     # in the latent space
     null_space_data = dict(
         Z_free           = Z_full,               # (n_fluxes, 38) — field name kept for compat
+        flux_offset      = flux_offset,          # constant null-space offset for pinned reactions
         free_idx         = free_idx,             # metadata: indices of non-measured reactions
         fixed_idx        = fixed_idx,            # metadata: indices of measured reactions
         obs_weights      = obs_weights_np,
@@ -713,6 +723,7 @@ def main(args):
         "measured_fluxes":      args.measured_fluxes,
         "null_space_data": {
             "Z_free":            Z_full,
+            "flux_offset":       flux_offset,
             "free_idx":          free_idx,
             "fixed_idx":         fixed_idx,
             "obs_weights":       obs_weights_np,
@@ -820,7 +831,6 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
-        compartment_mix           = t.get("compartment_mix", False),
         # Feature selection (from features: config section)
         token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),

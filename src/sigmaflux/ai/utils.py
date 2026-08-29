@@ -664,3 +664,60 @@ def compute_targeted_ica_nullspace(
         'n_active_free': n_active,
         'fallback': False,
     }
+
+
+def split_constant_directions(Z, flux_samples, rel_tol=1e-9):
+    """Partition a null-space basis into the directions the samples move along and those they do not.
+
+    A pinned reaction -- a measurement pool's drain fixed at 1, an FVA-fixed route --
+    still has to be *representable*, so its direction must stay in the basis for
+    ``v = y @ Z.T`` to reconstruct a real flux vector. But no sample varies along it, and
+    a constant coordinate is not something the labeling data can speak about: Fisher
+    selection's ``pinv`` over theta reads numerical noise out of such a column, and the
+    training loss gives it maximum weight (``variance_min_cutoff``) on a target that is
+    identically zero once standardised. On iAF1260 eleven such directions took the
+    permutation null floor to 32.7 nats and selected zero tokens; the workaround then was
+    to delete eleven reactions from the model.
+
+    The split is exact: ``v == y_var @ Z_var.T + y_const @ Z_const.T`` for every sample,
+    because the basis is only rotated, never truncated.
+
+    Args:
+        Z: null-space basis, shape (n_reactions, k), orthonormal columns.
+        flux_samples: sampled flux vectors, shape (n_samples, n_reactions).
+        rel_tol: a direction counts as constant when its coordinate's variance is below
+            this fraction of the largest coordinate variance.
+
+    Returns ``(Z_var, Z_const, y_const)``: the varying basis, the constant basis, and the
+    constant coordinates' shared value, shape (k_const,).
+    """
+    Z = np.asarray(Z, dtype=np.float64)
+    V = np.asarray(flux_samples, dtype=np.float64)
+    k, n = Z.shape[1], V.shape[0]
+
+    # With fewer samples than basis directions the covariance is rank-deficient for want
+    # of data, not because anything is pinned, and its null eigenvectors are arbitrary.
+    # Splitting there would discard directions the model must still predict.
+    if n < k + 2:
+        return Z, np.zeros((Z.shape[0], 0)), np.zeros(0)
+
+    y = V @ Z                                        # (n, k)
+
+    # Rotate within the basis so the constant directions are exactly the null
+    # eigenvectors of cov(y); picking columns by their own variance alone would miss a
+    # constant direction that is a *combination* of two varying columns.
+    eigvals, eigvecs = np.linalg.eigh(np.cov(y, rowvar=False, ddof=1))   # ascending
+    order = np.argsort(eigvals)[::-1]                # varying first
+    Z_rot = Z @ eigvecs[:, order]
+
+    # Confirm on the coordinates themselves rather than trusting the eigenvalue: a tiny
+    # eigenvalue is a claim about the sample covariance, whereas "no sample moves along
+    # this direction" is the property actually being relied on.
+    y_rot = V @ Z_rot
+    spread = np.abs(y_rot - y_rot.mean(axis=0)).max(axis=0)
+    scale = max(spread.max(), 1.0)
+    k_var = int((spread > rel_tol * scale).sum())
+
+    Z_var, Z_const = Z_rot[:, :k_var], Z_rot[:, k_var:]
+    y_const = y_rot[:, k_var:].mean(axis=0) if k_var < k else np.zeros(0)
+    return Z_var, Z_const, y_const

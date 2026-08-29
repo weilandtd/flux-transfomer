@@ -116,7 +116,7 @@ class FluxDecoder(nn.Module):
     Builds a unified token sequence from labeling and flux tokens (sharing one
     input_proj/input_norm), self-attends via a TransformerEncoder, cross-attends
     R = n_free + n_rev flux/reversibility queries over it, and reconstructs
-    fluxes as ``x_l @ Z_full.T`` (satisfying S v = 0).
+    fluxes as ``x_l @ Z_full.T + flux_offset`` (satisfying S v = 0).
     """
 
     def __init__(
@@ -231,6 +231,16 @@ class FluxDecoder(nn.Module):
         if not isinstance(Z_full, torch.Tensor):
             Z_full = torch.tensor(Z_full, dtype=torch.float32)
         self.register_buffer('Z_full', Z_full)
+
+        # Directions the training fluxes never moved along -- a measurement pool's
+        # pinned drain, an FVA-fixed route -- are held at their constant value instead of
+        # being predicted. The offset lies in the null space, so S v = 0 still holds.
+        _offset = null_space_data.get('flux_offset')
+        if _offset is None:
+            _offset = torch.zeros(Z_full.shape[0])
+        elif not isinstance(_offset, torch.Tensor):
+            _offset = torch.tensor(_offset, dtype=torch.float32)
+        self.register_buffer('flux_offset', _offset)
 
         # Basis-space normalization statistics (y_mean/y_std from training data)
         # Used to denormalize logits from N(0,1) to actual y-space in forward()
@@ -402,7 +412,7 @@ class FluxDecoder(nn.Module):
             x_l = x_l_raw * self.y_norm_std + self.y_norm_mean
         else:
             x_l = x_l_raw
-        fluxes = x_l @ self.Z_full.T
+        fluxes = x_l @ self.Z_full.T + self.flux_offset
 
         rev_raw = logits[:, n_free:]
         if self.rev_norm_mean is not None:
