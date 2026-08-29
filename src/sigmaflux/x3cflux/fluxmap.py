@@ -22,6 +22,12 @@ ub <= 0 so cobra's ``reversibility`` (lb < 0 < ub) is False, and the 2x-rescaled
 pair is irreversible too. ``_check_exchange_scaling`` asserts that rather than
 trusting it.
 
+Measurement pools need no case of their own. Their taps and drains convert to plain
+irreversible reactions at scale 1 with no parents and no exchange, so the generic path
+above already carries them -- which is the point of the carrier-shape encoding in
+:mod:`~sigmaflux.x3cflux.convert`, and the reason this module lost three special cases
+when it replaced the net-zero one.
+
 This module is deliberately free of x3cflux itself -- the parameter space is
 passed in -- so the mapping can be unit-tested without the optional dependency.
 """
