@@ -23,6 +23,8 @@ from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
 
+from ..core.measurement_pools import (POOL_DRAIN_PREFIX, is_pool_reaction,
+                                     warn_unproducible_members)
 from ..core.utils import add_dilution_inputs, media_dilution_targets
 from .reusable_sampler import ReusableSampler
 
@@ -201,6 +203,97 @@ def constrain_by_fva(model):
     return len(zero_reactions), len(orphaned_metabolites), fva
 
 
+#: Upper bound the measurement-pool block is reopened to once sampling is done.
+POOL_RELAXED_UB = 100.0
+
+
+def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB):
+    """Reopen each pool *drain*, after the samples have been drawn.
+
+    Sampling needs each pool's drain pinned at 1: that is what puts its mixing fluxes on
+    the unit simplex, so they read directly as compartment fractions. The pinning belongs
+    to how the fractions are drawn, though, not to the network. A pool's EMU balance is
+    ``X_pool = sum_i(v_i X_i) / sum_i(v_i)``, invariant under scaling the whole block, so
+    the ratios carry all of the information and the absolute values none -- the flux only
+    has to stay positive. A zero-width interval is also something downstream code cannot
+    work with at all: the ray projection in inference needs its origin strictly inside
+    the box, which no pinned reaction can be.
+
+    Only the drain is reopened. That is the one zero-width interval, and reopening it is
+    what frees the block to scale; the mixing legs already sit in ``[0, 1]``, which has
+    an interior and is what they actually mean -- a compartment fraction. Widening them
+    to ``[0, upper]`` as well used to assert they could carry a hundred times their own
+    meaning, and handed the MFA fit a search box 100x larger than the simplex the fluxes
+    are confined to.
+
+    Args:
+        model: prepared cobra model, modified in place.
+        upper: upper bound to reopen each drain to.
+
+    Returns the ids of the reactions reopened.
+    """
+    reopened = [r.id for r in model.reactions
+                if r.id.startswith(POOL_DRAIN_PREFIX)]
+    for rxn_id in reopened:
+        model.reactions.get_by_id(rxn_id).bounds = (0.0, upper)
+    return reopened
+
+
+def prepare_for_mfa(model, cfg):
+    """Bring a loaded organism model to the state sampling and MFA both need.
+
+    Media, reaction-bound overrides, unlabeled dilution inputs, the growth window, a
+    feasibility check, FVA tightening, then skip-constraint drops -- in that order,
+    because each step's input is the one before it: dilution targets are only detectable
+    once the bound overrides are applied.
+
+    The sampler and the MFA model checker each kept a hand-maintained copy of this
+    sequence, which is how they drifted; they now both call this.
+
+    Args:
+        model: loaded cobra model, modified in place.
+        cfg: organism config supplying sampling, media and growth settings.
+
+    Returns the flux-variability frame computed by :func:`constrain_by_fva`.
+    """
+    s = cfg["sampling"]
+    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+    # Before dilution-target detection: a reversible-transporter override (e.g.
+    # ALAt_c_e lb 0 -> -20) only makes its metabolite internally-producible once
+    # applied. Detecting on the pre-override bounds silently skipped dilution for
+    # any medium component whose only internal route was such an override.
+    apply_reaction_bounds(model, s.get("reaction_bounds"))
+
+    # Medium components the cell also produces are mixing nodes whose exchange
+    # carries no label, so they cannot be diluted by the medium. Give each one an
+    # explicit unlabeled input. Done here rather than in the model files because
+    # the medium is a property of the experiment, not of the organism.
+    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
+    if diluted:
+        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
+    if s.get("growth"):
+        constrain_growth(model, s["growth"])
+
+    solution = model.optimize()
+    if solution.status != "optimal":
+        raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
+    print(f"  Prepared model status: {solution.status}, objective={solution.objective_value}")
+
+    model.objective = Zero
+    n_zero, n_orphan, fva = constrain_by_fva(model)
+    print(f"  Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; "
+          f"tightened remaining bounds with ±1e-6")
+
+    if cfg.get("skip_constraints"):
+        drop_skip_constraints(model, cfg["skip_constraints"])
+
+    # The pools ship in the model file, so their member set is fixed before FVA rather
+    # than after it. A member FVA leaves unproducible still carries its mixing flux and
+    # contributes a zeroed MID, so name it here instead of only per sample.
+    warn_unproducible_members(model, fva)
+    return fva
+
+
 def check_sampling_coverage(samples, fva, key_reactions=None):
     common = [r for r in samples.columns if r in fva.index]
     obs_min = samples[common].min(axis=0)
@@ -364,7 +457,12 @@ def screen_nonessential(model):
     """Return IDs of reactions whose knockout leaves the prepared model feasible."""
     nonessential = []
     essential = []
+    # A measurement pool's mixing leg is trivially non-essential -- it carries no mass --
+    # so it would otherwise soak up the KO budget on "knockouts" that only set a
+    # compartment fraction to zero.
     for rxn in model.reactions:
+        if is_pool_reaction(rxn):
+            continue
         with model:
             rxn.bounds = (0, 0)
             if model.optimize().status == "optimal":
@@ -635,36 +733,7 @@ def main(cfg, output_dir_override=None):
             model.solver.configuration.threads = 1
         print(f"  [SIGMAFLUX_SOLVER_OVERRIDE] solver forced to {_solver_override!r}")
 
-    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
-    # Before dilution-target detection: a reversible-transporter override (e.g.
-    # ALAt_c_e lb 0 -> -20) only makes its metabolite internally-producible once
-    # applied. Detecting on the pre-override bounds silently skipped dilution for
-    # any medium component whose only internal route was such an override.
-    apply_reaction_bounds(model, s.get("reaction_bounds"))
-
-    # Medium components the cell also produces are mixing nodes whose exchange
-    # carries no label, so they cannot be diluted by the medium. Give each one an
-    # explicit unlabeled input. Done here rather than in the model files because
-    # the medium is a property of the experiment, not of the organism.
-    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
-    if diluted:
-        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
-    if s.get("growth"):
-        constrain_growth(model, s["growth"])
-
-    solution = model.optimize()
-    if solution.status != "optimal":
-        raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
-    print(f"Prepared model status: {solution.status}, objective={solution.objective_value}")
-
-    model.objective = Zero
-
-    n_zero, n_orphan, fva_result = constrain_by_fva(model)
-    print(f"Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; tightened remaining bounds with ±1e-6")
-
-    skip_constraints = cfg.get("skip_constraints", [])
-    if skip_constraints:
-        drop_skip_constraints(model, skip_constraints)
+    fva_result = prepare_for_mfa(model, cfg)
 
     measured_rxns = cfg.get("training", {}).get("measured_fluxes", [])
     sub_rxns = s.get("stratified_sampling", {}).get("reactions") or measured_rxns
@@ -680,10 +749,6 @@ def main(cfg, output_dir_override=None):
                 print(f"  {rxn_id:<30s}  bounds=[{r.lower_bound:8.4f}, {r.upper_bound:8.4f}]  FVA=[{fva_lo:8.4f}, {fva_hi:8.4f}]{flag}")
             else:
                 print(f"  {rxn_id:<30s}  REMOVED (zero-flux by FVA)")
-
-    prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
-    cobra.io.save_json_model(model, prepared_model_path)
-    print(f"Saved prepared model: {prepared_model_path}")
 
     if ko_strategy and s.get("growth", {}).get("lb") == 0:
         print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
@@ -743,6 +808,19 @@ def main(cfg, output_dir_override=None):
                 with sampler.temporary_bounds({rxn_id: (0, 0)}):
                     all_samples.append(_do_sample(sampler, s, cfg["seed"] + i + 1))
         samples = pd.concat(all_samples, ignore_index=True) if len(all_samples) > 1 else all_samples[0]
+
+    # Sampling is done, so the pool block's pinned drains have served their purpose:
+    # the fractions are drawn. Reopen the bounds before the model is written, since the
+    # saved bounds are what training and inference read.
+    reopened = relax_measurement_pool_bounds(model)
+    if reopened:
+        print(f"Reopened {len(reopened)} measurement-pool drain(s) to "
+              f"[0, {POOL_RELAXED_UB:g}]; the mixing legs stay in [0, 1], which is "
+              f"what a compartment fraction means")
+
+    prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
+    cobra.io.save_json_model(model, prepared_model_path)
+    print(f"Saved prepared model: {prepared_model_path}")
 
     samples_path = os.path.join(output_dir, "flux_samples.csv")
     samples.to_csv(samples_path)
