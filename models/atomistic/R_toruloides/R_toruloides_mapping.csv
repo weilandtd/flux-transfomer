@@ -3,77 +3,58 @@ experimental_id,model_id
 3-Phosphoglyceric acid,3pg_c
 3-dehydroshikimate,3dhsk_c
 5-Methyltetrahydrofolic acid,5mthf_c
-ADP,adp_c
-ADP,adp_m
+ADP,adp
 AICAR,aicar_c
 Acetylphosphate,actp_c
 Adenosine,adn_c
 CDP,cdp_c
-Citric acid,cit_c
-Citric acid,cit_m
+Citric acid,cit
 Citrulline,citr__L_c
 D-Erythrose 4-phosphate,e4p_c
 D-Glucose,glc__D_c
-D-Glucose,glc__D_e
 D-Glyceraldehyde 3-phosphate,g3p_c
 D-Ribose 5-phosphate,r5p_c
-Dihydroxyacetone phosphate,dhap_c
-Dihydroxyacetone phosphate,dhap_m
+Dihydroxyacetone phosphate,dhap
 "Fructose 1,6-bisphosphate",fdp_c
 Fructose 6-phosphate,f6p_c
-Fumaric acid,fum_c
-Fumaric acid,fum_m
-Gamma-Aminobutyric acid,4abut_c
-Gamma-Aminobutyric acid,4abut_m
+Fumaric acid,fum
+Gamma-Aminobutyric acid,4abut
 Glucose 1-phosphate,g1p_c
 Glucose 6-phosphate,g6p_c
-Glycerol 3-phosphate,glyc3p_c
-Glycerol 3-phosphate,glyc3p_m
-Glycine,gly_c
-Glycine,gly_m
+Glycerol 3-phosphate,glyc3p
+Glycine,gly
 Glyoxylic acid,glx_c
 Homocysteine,hcys__L_c
-L-Alanine,ala__L_c
-L-Alanine,ala__L_m
+L-Alanine,ala__L
 L-Arginine,arg__L_c
 L-Asparagine,asn__L_c
-L-Aspartic acid,asp__L_c
-L-Aspartic acid,asp__L_m
+L-Aspartic acid,asp__L
 L-Cystathionine,cyst__L_c
 L-Cysteine,cys__L_c
-L-Glutamic acid,glu__L_c
-L-Glutamic acid,glu__L_m
+L-Glutamic acid,glu__L
 L-Glutamine,gln__L_c
 L-Histidine,his__L_c
 L-Histidinol,histd_c
 L-Homoserine,hom__L_c
-L-Isoleucine,ile__L_c
-L-Isoleucine,ile__L_m
+L-Isoleucine,ile__L
 L-Kynurenine,Lkynr_c
 L-Leucine,leu__L_c
 L-Lysine,lys__L_c
 L-Methionine,met__L_c
 L-Phenylalanine,phe__L_c
-L-Proline,pro__L_c
-L-Proline,pro__L_m
-L-Serine,ser__L_c
-L-Serine,ser__L_m
-L-Threonine,thr__L_c
-L-Threonine,thr__L_m
+L-Proline,pro__L
+L-Serine,ser__L
+L-Threonine,thr__L
 L-Tryptophan,trp__L_c
 L-Tyrosine,tyr__L_c
-L-Valine,val__L_c
-L-Valine,val__L_m
+L-Valine,val__L
 Mannose 6-phosphate,man6p_c
-Ornithine,orn_c
-Ornithine,orn_m
+Ornithine,orn
 Orotic acid,orot_c
 Phosphoenolpyruvic acid,pep_c
-Pyruvic acid,pyr_c
-Pyruvic acid,pyr_m
+Pyruvic acid,pyr
 Shikimic acid,skm_c
-Succinic acid,succ_c
-Succinic acid,succ_m
+Succinic acid,succ
 Trehalose,tre_c
 cis-Aconitic acid,acon_C_m
 dCDP,dcdp_c
