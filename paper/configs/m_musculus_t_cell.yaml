@@ -197,7 +197,6 @@ training:
   flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
   labeling_token_dropout: 0.2   # per-token labeling dropout during training
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
-  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
 
   # Measured fluxes fed as soft inputs through the fusion layer, and the strata for
   # stratified sampling. This is every flux the curated ExtFlux carries — all 22.

@@ -124,7 +124,6 @@ training:
   flux_token_dropout: 0.2
   labeling_token_dropout: 0.2
   normalize_mids: false
-  compartment_mix: false
 
   # What the published MFA constrains: glucose uptake (its basis) and acetate yield.
   # O2 and CO2 are deliberately absent — off-gas rates are hard to measure and were

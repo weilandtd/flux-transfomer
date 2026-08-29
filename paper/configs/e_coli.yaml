@@ -157,7 +157,6 @@ training:
   flux_token_dropout: 0.2
   labeling_token_dropout: 0.2
   normalize_mids: false
-  compartment_mix: false
 
   # iAF1260 has a single lumped biomass, so there is no PROTEIN/RNA/DNA/CARB/LIPID
   # split to measure. What the published MFA constrains is glucose uptake (its
