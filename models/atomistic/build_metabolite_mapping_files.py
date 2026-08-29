@@ -140,10 +140,38 @@ def _filter_carbon_coverage(org, root):
     print(f"  Carbon coverage: {len(mapping)} -> {len(filtered)} mappings")
 
 
+def _collapse_to_measurement_tokens(org, root):
+    """Rewrite ``model_id`` to the id the platform actually reports.
+
+    A metabolite the model pools is reported as its pool -- naming one compartment would
+    assert a labeling the extract cannot distinguish -- and a metabolite in an excluded
+    compartment is not in the extract at all. Doing it here is what keeps a re-run of
+    this script from reverting the mapping files to per-compartment ids.
+
+    Args:
+        org: this organism's config dict from ORGANISMS.
+        root: project root, for resolving org's relative paths.
+    """
+    from cobra.io import load_json_model
+
+    from sigmaflux.core.measurement_pools import measurement_token
+
+    model = load_json_model(os.path.join(root, org["model_json"]))
+    output = os.path.join(root, org["output_csv"])
+    mapping = pd.read_csv(output)
+    mapping["model_id"] = [measurement_token(model, m) for m in mapping["model_id"]]
+    collapsed = (mapping.dropna(subset=["model_id"])
+                        .drop_duplicates(["experimental_id", "model_id"])
+                        .sort_values(["experimental_id", "model_id"]))
+    collapsed.to_csv(output, index=False)
+    print(f"  Measurement tokens: {len(mapping)} -> {len(collapsed)} mappings")
+
+
 if __name__ == "__main__":
     _root = os.path.join(os.path.dirname(__file__), '..', '..')
     for org in ORGANISMS:
         print(f"\n=== {org['name']} ===")
         _build_platform_mapping(org, _root)
         _filter_carbon_coverage(org, _root)
+        _collapse_to_measurement_tokens(org, _root)
     print("\nDone.")
