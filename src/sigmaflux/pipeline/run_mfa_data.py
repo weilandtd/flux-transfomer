@@ -26,6 +26,7 @@ import pandas as pd
 import torch
 import yaml
 from cobra.io.json import load_json_model
+
 from torch.nn import MSELoss
 
 _n_threads = int(os.environ.get("SLURM_CPUS_PER_TASK", 1))

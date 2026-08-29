@@ -77,7 +77,23 @@ def _inspect_growth_conditions(xlsx_path: str) -> list[int]:
     return gcs if gcs else [1]
 
 
-def load_condition_inputs(mid_file, ext_file, condition, gc, mapping_path, flux_names):
+def prepared_network_for(checkpoint):
+    """The run's ``model_prepared_for_mfa.json``, or None if it is not beside *checkpoint*.
+
+    Needed only for its measurement-pool annotations, which decide whether a measured
+    compound resolves to one whole-cell token or to one per compartment.
+    """
+    for directory in (os.path.dirname(os.path.abspath(checkpoint)),
+                      os.path.dirname(os.path.dirname(os.path.abspath(checkpoint)))):
+        path = os.path.join(directory, "model_prepared_for_mfa.json")
+        if os.path.isfile(path):
+            from cobra.io.json import load_json_model
+            return load_json_model(path)
+    return None
+
+
+def load_condition_inputs(mid_file, ext_file, condition, gc, mapping_path, flux_names,
+                          model=None):
     """Measured MID and exchange-flux frames for one growth condition.
 
     ``Sample`` is dense-ranked on both sides so the replicate ids line up regardless of
@@ -90,6 +106,8 @@ def load_condition_inputs(mid_file, ext_file, condition, gc, mapping_path, flux_
         gc: growth-condition number within that file.
         mapping_path: experimental-id -> model-id CSV.
         flux_names: measured flux columns to keep, or None for all.
+        model: prepared cobra model, so compounds the platform reports as one pool
+            resolve to that pool's token rather than to one token per compartment.
 
     Returns ``(df_L, df_Vm, df_err)``.
     """
@@ -205,6 +223,11 @@ def cli(argv=None):
 
     rng = np.random.default_rng(seed=42)
 
+    # Only for its measurement-pool annotations: without them a compound the platform
+    # reports as one pool would be written into each compartment separately, and every
+    # such token would then be dropped as absent from the trained token index.
+    network = prepared_network_for(checkpoint)
+
     n_flux = len(sf.flux_names)
 
     for condition in conditions:
@@ -219,7 +242,8 @@ def cli(argv=None):
             print(f"  ── Growth condition {gc} ──")
 
             df_L, df_Vm, df_err = load_condition_inputs(
-                mid_file, ext_file, condition, gc, mapping_path, flux_names)
+                mid_file, ext_file, condition, gc, mapping_path, flux_names,
+                model=network)
 
             n_draws = int(n_bootstrap)
             reps_by_tracer = df_L.groupby('Tracer Name')['Sample'].nunique()

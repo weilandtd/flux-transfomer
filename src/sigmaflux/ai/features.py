@@ -8,7 +8,7 @@ from cobra.io.json import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
 from sigmaflux.ai import fisher_selection
-from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.ai.utils import compute_sparse_nullspace, split_constant_directions
 
 
 def build_theta_and_token_states(
@@ -47,10 +47,20 @@ def build_theta_and_token_states(
     reaction_ids = [r.id for r in model.reactions]
     S = create_stoichiometric_matrix(model)
     Z = np.asarray(compute_sparse_nullspace(S), dtype=np.float64)  # (n_rxn, d)
-    d = Z.shape[1]
 
     n = min(n_samples, flux_df.shape[1], labeling_df.shape[1])
     V = flux_df.loc[reaction_ids].iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
+
+    # Drop the directions no sample moves along -- a pinned reaction such as a
+    # measurement pool's drain. Their coordinate is constant, so a token carries no
+    # information about it, but pinv over theta reads numerical noise out of the column
+    # and inflates the permutation null floor; on iAF1260 that took the floor to 32.7
+    # nats and selected zero tokens.
+    Z, Z_const, _ = split_constant_directions(Z, V)
+    if Z_const.shape[1]:
+        print(f"Dropped {Z_const.shape[1]} constant free-flux direction(s) "
+              f"(pinned reactions) from theta")
+    d = Z.shape[1]
     theta = V @ Z  # (n, d)
 
     if reversibility_df is not None:
@@ -85,8 +95,7 @@ def apply_mapping_filter(token_states: dict, mapping_csv_path: str) -> dict:
         token_states: dict of ``(tracer, met_id, isotopomer)`` -> MID array, to filter.
         mapping_csv_path: CSV path with experimental_id/model_id columns.
     """
-    mapping = pd.read_csv(mapping_csv_path)
-    allowed = set(mapping["model_id"].unique())
+    allowed = set(pd.read_csv(mapping_csv_path)["model_id"].unique())
     before = len(token_states)
     filtered = {k: v for k, v in token_states.items() if k[1] in allowed}
     print(f"Mapping filter: {before} → {len(filtered)} tokens "

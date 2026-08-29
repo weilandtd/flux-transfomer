@@ -84,7 +84,8 @@ def prepared_network(cfg, root, checkpoint, out_dir):
         if os.path.isfile(os.path.join(run_dir, "model_prepared_for_mfa.json")):
             return load_prepared_model(run_dir, cfg, root)
     print("Prepared network: rebuilding from config (no model_prepared_for_mfa.json found)")
-    return prepared_model(cfg, root, out_dir), measurable_metabolites(cfg, root)
+    model = prepared_model(cfg, root, out_dir)
+    return model, measurable_metabolites(cfg, root)
 
 
 # ── Prediction -> flux state ──────────────────────────────────────────────────
@@ -436,7 +437,8 @@ def main(args):
             # Inputs, draws and prediction all go through run_inference_workflow's own
             # helpers, so this validates the pipeline rather than a parallel copy of it.
             df_L, df_Vm, df_err = load_condition_inputs(
-                mid_file, ext_file, condition, gc, mapping_path, flux_names)
+                mid_file, ext_file, condition, gc, mapping_path, flux_names,
+                model=cobra_model)
 
             reps = df_L.groupby("Tracer Name")["Sample"].nunique()
             print(f"\n-- growth condition {gc} --")

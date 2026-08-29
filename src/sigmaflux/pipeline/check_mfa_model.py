@@ -85,9 +85,9 @@ def measurable_metabolites(cfg, root):
 def prepared_model(cfg, root, out_dir):
     """The MFA-ready cobra model, prepared exactly as ``sample_flux`` prepares it.
 
-    Applies media, dilution inputs, reaction-bound overrides, the growth window, FVA
-    tightening and skip-constraint drops in that order, matching the sampler's order
-    so this validates the network training will actually see.
+    Shares :func:`~sigmaflux.pipeline.sample_flux.prepare_for_mfa` with the sampler
+    rather than repeating the sequence, so this validates the network training will
+    actually see.
 
     Args:
         cfg: organism config, supplying sampling/media/growth settings.
@@ -96,41 +96,13 @@ def prepared_model(cfg, root, out_dir):
     """
     import cobra
     from cobra.io.json import load_json_model
-    from cobra.util.solver import Zero
 
-    from ..core.utils import add_dilution_inputs, media_dilution_targets
     from ._paths import resolve_path
-    from .sample_flux import (
-        apply_media, apply_reaction_bounds, constrain_by_fva, constrain_growth,
-        drop_skip_constraints,
-    )
+    from .sample_flux import prepare_for_mfa
 
-    s = cfg["sampling"]
     model = load_json_model(resolve_path(cfg["model_file"], root))
     model.solver.configuration.tolerances.feasibility = 1e-9
-
-    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
-    # Before dilution-target detection: a reversible-transporter override (e.g.
-    # ALAt_c_e lb 0 -> -20) only makes its metabolite internally-producible once
-    # applied. Detecting on the pre-override bounds silently skipped dilution for
-    # any medium component whose only internal route was such an override.
-    apply_reaction_bounds(model, s.get("reaction_bounds"))
-    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
-    if diluted:
-        print(f"  {len(diluted)} unlabeled media dilution input(s): {diluted}")
-    if s.get("growth"):
-        constrain_growth(model, s["growth"])
-
-    solution = model.optimize()
-    if solution.status != "optimal":
-        raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
-    print(f"  feasible, objective={solution.objective_value:.6g}")
-
-    model.objective = Zero
-    n_zero, n_orphan, _ = constrain_by_fva(model)
-    print(f"  FVA: removed {n_zero} zero-flux reactions, {n_orphan} orphan metabolites")
-    if cfg.get("skip_constraints"):
-        drop_skip_constraints(model, cfg["skip_constraints"])
+    prepare_for_mfa(model, cfg)
 
     path = os.path.join(out_dir, "model_prepared_for_mfa.json")
     cobra.io.save_json_model(model, path)
@@ -194,6 +166,8 @@ def check_build(facts, mfa_model, labeling_to, labeling_index, v, r, noise_std=0
     """
     import x3cflux as x
 
+    import numpy as np
+
     from ..x3cflux.build_config import build_configurations
     from ..x3cflux.check_network import check_network
     from ..x3cflux.convert import convert
@@ -219,7 +193,8 @@ def check_build(facts, mfa_model, labeling_to, labeling_index, v, r, noise_std=0
     flux_values = [v[rid] for rid in flux_ids]
     flux_sigma = [max(0.05 * abs(val), 1e-9) for val in flux_values]
     configs = build_configurations(
-        facts, conv, labeling_index, flux_ids, ours, flux_values, flux_sigma, noise_std)
+        facts, conv, labeling_index, flux_ids, np.zeros(len(labeling_index)),
+        flux_values, flux_sigma, noise_std)
     simulator = x.create_simulator_from_data(conv.network_data, configs)
     fluxmap = FluxMap(facts, conv, simulator.parameter_space)
 
@@ -398,6 +373,8 @@ def check_model(cfg, root, out_dir, tol=DEFAULT_LABELING_TOL,
 
     print("\nPreparing the model")
     model = prepared_model(cfg, root, out_dir)
+    # After preparation, so a compound the platform reports as one whole-cell pool
+    # targets that pool. Its compartments are still expanded -- they are its origins.
     keep = measurable_metabolites(cfg, root)
 
     print("\nComputing an interior flux")
