@@ -3,72 +3,12 @@ Training utilities for flux prediction models.
 """
 
 import copy
-import re
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-
-
-def reduce_compartment_tokens(labeling_df: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
-    """Merge tokens differing only by compartment suffix (_c, _m, …), mixing their
-    labeling fractions with per-sample Dirichlet weights (U(0,1) for two
-    compartments, Dirichlet(1,…,1) for more). Returns a DataFrame with the same
-    columns but fewer rows.
-
-    Args:
-        labeling_df: labeling fractions indexed by (Tracer, Metabolite, Isotopomer).
-        seed: RNG seed for the Dirichlet mixing weights.
-    """
-    rng = np.random.default_rng(seed)
-
-    tracers     = labeling_df.index.get_level_values('Tracer')
-    metabolites = labeling_df.index.get_level_values('Metabolite')
-    isotopomers = labeling_df.index.get_level_values('Isotopomer')
-
-    base_metabolites = [re.sub(r'_[a-z]$', '', m) for m in metabolites]
-
-    groups = {}
-    for i, (t, bm, iso) in enumerate(zip(tracers, base_metabolites, isotopomers)):
-        groups.setdefault((t, bm, iso), []).append(i)
-
-    values = labeling_df.to_numpy()  # (n_tokens, n_samples)
-    n_samples = values.shape[1]
-
-    # Draw one weight vector per (tracer, base_metabolite) so all isotopomers
-    # of the same metabolite are mixed with the same compartment fractions.
-    comp_counts = {}
-    for (t, bm, iso), idxs in groups.items():
-        comp_counts.setdefault((t, bm), len(idxs))
-
-    metabolite_weights = {
-        (t, bm): rng.dirichlet(np.ones(n_comp), size=n_samples)
-        for (t, bm), n_comp in comp_counts.items()
-        if n_comp > 1
-    }
-
-    new_rows = []
-    new_index = []
-
-    for (tracer, base_met, iso), indices in groups.items():
-        if len(indices) == 1:
-            row = values[indices[0]]
-        else:
-            weights = metabolite_weights[(tracer, base_met)]  # (n_samples, n_comp)
-            compartment_vals = values[indices]                 # (n_comp, n_samples)
-            row = (weights * compartment_vals.T).sum(axis=1)  # (n_samples,)
-        new_rows.append(row)
-        new_index.append((tracer, base_met, iso))
-
-    new_index = pd.MultiIndex.from_tuples(new_index, names=['Tracer', 'Metabolite', 'Isotopomer'])
-    return pd.DataFrame(
-        np.array(new_rows, dtype=np.float32),
-        index=new_index,
-        columns=labeling_df.columns,
-    )
 
 
 class FluxNorm:
