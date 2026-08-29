@@ -1,5 +1,4 @@
 import torch
-from sigmaflux.expansion.emu import get_metabolite
 
 
 def get_subnets(model, subnets, device = None, dtype = torch.float64):
@@ -38,24 +37,20 @@ def get_subnets(model, subnets, device = None, dtype = torch.float64):
             edge_weight = data['weight']
             if direction == 'fwd':
                 reaction_indices[ix] = model._flux_hash[reaction.id]
-                direction_factor = 1
             elif  direction == 'rvs':
                 reaction_indices[ix] = model._flux_hash[reaction.id] + model.num_reactions
-                direction_factor = -1
             else:
                 raise RuntimeError("Expansion contains woring direction annotation!")
 
-            origin_id, target_id = get_metabolite(edge[0])[0], get_metabolite(edge[1])[0]
-            weight = edge_weight * direction_factor
-
             # Multiplicity is carried by the edge weight -- how many copies of the
-            # target this origin set makes, see AtomMapping.get_origin_emus -- so
-            # only the sign differs between the consumed origin and the produced
-            # target.
-            for node, met_id in ((edge[0], origin_id), (edge[1], target_id)):
-                coefficient = reaction.get_coefficient(met_id)
-                Sg[emu_hash_emu_index[node], ix] = weight * coefficient / abs(coefficient)
-
+            # target this origin set makes, see AtomMapping.get_origin_emus -- so only
+            # the sign differs between the consumed origin and the produced target, and
+            # it is the edge's own direction that fixes it. Reading it back off
+            # get_coefficient took the sign from the *first* component of a
+            # multi-element OriginSet, and divided 0/0 for an educt the reaction moves
+            # no mass of.
+            Sg[emu_hash_emu_index[edge[0]], ix] = -edge_weight
+            Sg[emu_hash_emu_index[edge[1]], ix] = +edge_weight
 
         # Set up the mapping dicts used later in calculation
         emu_hashes[size] = emu_hash_index_emu
