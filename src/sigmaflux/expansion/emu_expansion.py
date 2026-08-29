@@ -3,8 +3,8 @@ import warnings
 import cobra
 import networkx as nx
 from sigmaflux.expansion.atom_mapping import AtomMapping, MissingAtomMappingError
-from sigmaflux.expansion.emu import EMU, OriginSet
-from sigmaflux.expansion.utils import can_make_met
+from sigmaflux.expansion.emu import OriginSet
+from sigmaflux.expansion.utils import can_make_met, labeling_educts, labeling_products
 
 
 
@@ -84,7 +84,8 @@ class EMUExpansion(object):
                 # that does move carbon is a hole in the network and is worth
                 # separating from the noise -- SK_accoa_c sat in this list
                 # unnoticed among 26 legitimately carbon-free reactions.
-                if any(m.annotation.get('atom_pattern') for m in rxn.metabolites):
+                if any(m.annotation.get('atom_pattern')
+                       for m in labeling_educts(rxn) + labeling_products(rxn)):
                     unmapped_with_carbon.append(rxn.id)
 
         if unmapped_with_carbon:
