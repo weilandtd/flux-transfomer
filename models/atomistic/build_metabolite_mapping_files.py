@@ -17,6 +17,17 @@ run_inference.py via --mapping-csv.
 An entry whose GEM xlsx carries no metabolite names (E_coli, E_coli_core) supplies
 `name_fallback`, a BiGG-id -> name table from _bigg_name_fallback.py, used to fill
 the gap before matching.
+
+**The `*_fragment_mapping.csv` files are NOT built here, and need rebuilding.** GC/MS
+measures TBDMS-derivatised *fragments* -- Ala260, Glu432, a named ion carrying a known
+subset of a molecule's carbons -- not whole molecules, so they cannot be matched against
+`data/HILIC_LCMS_knowns.csv` the way this script matches everything else. The equivalent
+GC/MS fragment knowns list, giving each ion its parent metabolite and the carbon
+positions it retains, **does not exist in this repo yet**. Until it does, the two
+fragment CSVs (E_coli, E_coli_core) stay hand-written and carry no carbon-coverage or
+measurement-token filtering: their rows were only pruned of `_e`/`_p` compartments by
+hand. Anything reading them is measuring whole molecules that the platform actually
+resolves as fragments.
 """
 
 import os
