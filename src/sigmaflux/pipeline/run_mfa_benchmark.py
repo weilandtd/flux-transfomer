@@ -876,8 +876,12 @@ def main(args):
                 # Put the fitted flux into the model, so everything downstream --
                 # scoring, acceptance, the snapshot, the HDF5 -- is the native path.
                 forward_labeling(mfa_model, v_fit, r_fit, labeling_to)
+                # cyipopt's info carries no iteration count, so there is none to
+                # report for this backend. It was reported as 0, which reads as "Ipopt
+                # did nothing" and was once diagnosed as exactly that -- None says
+                # "not measured" instead.
                 res = native_shaped_result(
-                    mfa_model, info.get("n_iter", 0), info.get("status", 1) in (0, 1))
+                    mfa_model, info.get("n_iter"), info.get("status", 1) in (0, 1))
             # Mean reduced chi-square, the legacy accept statistic. Reported only for
             # comparison: it is measured against the declared sigma, which overstates
             # the true noise, so it reads low and passes fits that never converged.
@@ -897,12 +901,13 @@ def main(args):
                     best_lab = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
                     best_flux = mfa_model.fluxes.detach().cpu().numpy().copy()
                 best = {"ssr_fit": ssr_fit, "ratio": ratio, "start": start + 1,
-                        "converged": bool(res["converged"]), "n_iter": int(res["n_iter"]),
+                        "converged": bool(res["converged"]),
+                        "n_iter": res["n_iter"],
                         "labeling": best_lab, "fluxes": best_flux}
             print(f"  start {start + 1}/{args.max_starts}: SSR={ssr_fit:.2f} "
                   f"(χ² accept≤{chi2_bound:.1f}, dof={chi2_dof}) ratio={ratio:.3f} "
                   f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
-                  f"iter={res['n_iter']}")
+                  f"iter={res['n_iter'] if res['n_iter'] is not None else 'n/a'}")
             if args.accept_rule == "chi2":
                 accepted = ssr_fit <= chi2_bound
             else:
@@ -937,7 +942,7 @@ def main(args):
             "reached_optimum": bool(accepted),
             "starts_used": int(best["start"]) if best else args.max_starts,
             "converged": bool(best["converged"]) if best else False,
-            "n_iter": int(best["n_iter"]) if best else 0,
+            "n_iter": best["n_iter"] if best else None,
             # Always written, 0 for the native arm, so both backends share one schema.
             "crashed_starts": int(crashed_starts),
             "backend": args.backend,
