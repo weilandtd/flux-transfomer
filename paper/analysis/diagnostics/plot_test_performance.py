@@ -108,6 +108,31 @@ def _sample_columns(pred_df):
             yield int(ix), pred_df[ix]
 
 
+def drop_pool_reactions(flux_df: pd.DataFrame, run_dir: pathlib.Path) -> pd.DataFrame:
+    """Drop measurement-pool reactions from a flux frame before it is scored.
+
+    A pool's drain is pinned at 1 and its mixing legs sum to 1, so they are trivially
+    predictable and are compartment fractions rather than rates. Scoring them would
+    inflate every aggregate against a reference MFA fit that has no such reactions.
+
+    Args:
+        flux_df: fluxes indexed by reaction id.
+        run_dir: training run directory holding ``model_prepared_for_mfa.json``.
+    """
+    prepared = pathlib.Path(run_dir) / "model_prepared_for_mfa.json"
+    if not prepared.is_file():
+        return flux_df
+    from cobra.io.json import load_json_model
+
+    from sigmaflux.core.measurement_pools import pool_reaction_ids
+    pool_ids = set(pool_reaction_ids(load_json_model(str(prepared))))
+    keep = [r for r in flux_df.index if r not in pool_ids]
+    if len(keep) < flux_df.shape[0]:
+        print(f"Excluded {flux_df.shape[0] - len(keep)} measurement-pool reactions "
+              f"from scoring")
+    return flux_df.loc[keep]
+
+
 def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
                    require_converged: bool = True) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
@@ -356,6 +381,7 @@ def main():
 
     print(f"Loading ground-truth data from: {run_dir}")
     labeling_df, flux_df, _ = load_data(str(run_dir))
+    flux_df = drop_pool_reactions(flux_df, run_dir)
     flux_df.columns     = range(flux_df.shape[1])
     labeling_df.columns = range(labeling_df.shape[1])
     print(f"  {flux_df.shape[0]} reactions × {flux_df.shape[1]} samples")
