@@ -26,6 +26,9 @@ from .check_network import assert_network
 from .convert import convert
 from .fluxmap import FluxMap
 
+#: What Ipopt reads as "no bound" on a variable.
+_IPOPT_INF = 2e19
+
 #: Ipopt options. ``hessian_approximation`` is dropped when a Gauss-Newton Hessian
 #: is supplied, since "exact" is then the default.
 IPOPT_DEFAULTS = {
@@ -93,7 +96,9 @@ def optimize(simulator, start, max_iter=5000, bounds=None, gauss_newton=True,
         simulator: x3cflux simulator built from the model's configurations.
         start: initial free parameter vector.
         max_iter: Ipopt iteration cap.
-        bounds: extra ``{parameter: (lo, hi)}`` inequality bounds, if any.
+        bounds: extra ``{parameter: (lo, hi)}`` flux bounds, if any. Bounds on free
+            parameters become Ipopt *variable* bounds, which every iterate respects;
+            the rest can only be inequality rows, which iterates may cross.
         gauss_newton: supply an exact Gauss-Newton Hessian instead of L-BFGS.
         **kwargs: extra Ipopt options, overriding :data:`IPOPT_DEFAULTS`.
     """
@@ -103,14 +108,30 @@ def optimize(simulator, start, max_iter=5000, bounds=None, gauss_newton=True,
 
     ineq = simulator.parameter_space.inequality_system
     matrix, bound = ineq.matrix, ineq.bound
-    if bounds:
-        lhs, rhs = x.utilities.get_inequalities_from_bounds(simulator, bounds)
+
+    # These bounds exist to keep Ipopt out of configurations the simulator cannot
+    # evaluate -- it aborts inside x3cflux rather than raising. A general inequality
+    # row does not do that: Ipopt satisfies those only at the solution and is free to
+    # cross them on the way. A *variable* bound holds at every iterate, so whatever can
+    # be expressed as one is, and only bounds on dependent parameters stay as rows.
+    free_index = {n: i for i, n in enumerate(simulator.parameter_space.free_parameter_names)}
+    lower = np.full(len(free_index), -_IPOPT_INF)
+    upper = np.full(len(free_index), _IPOPT_INF)
+    dependent = {}
+    for name, (lo, hi) in (bounds or {}).items():
+        slot = free_index.get(name)
+        if slot is None:
+            dependent[name] = (lo, hi)
+        else:
+            lower[slot], upper[slot] = max(lower[slot], lo), min(upper[slot], hi)
+    if dependent:
+        lhs, rhs = x.utilities.get_inequalities_from_bounds(simulator, dependent)
         matrix = np.vstack((matrix, lhs))
         bound = np.concatenate((bound, rhs))
     cls = _gauss_newton_problem(x) if gauss_newton else x.IpoptOptimizationProblem
     problem = cyipopt.Problem(
         n=matrix.shape[1], m=matrix.shape[0],
-        problem_obj=cls(simulator, matrix), cu=bound)
+        problem_obj=cls(simulator, matrix), lb=lower, ub=upper, cu=bound)
     options = dict(IPOPT_DEFAULTS, max_iter=max_iter, **kwargs)
     if gauss_newton:
         options.pop("hessian_approximation", None)
