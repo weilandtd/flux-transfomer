@@ -72,6 +72,12 @@ def build_substrates(facts, conv, tracer):
     # supply inert 1001-block carbon (amp_c), which is M+0 regardless.
     for src, n in conv.extra_sources.items():
         subs.append(x.ConstantSubstrate(f"sub_{src}", src, 0.0, {"0" * n: 1.0}))
+    # Measurement-pool carriers. Their labeling is numerically irrelevant -- the only
+    # place a carrier's atoms go is the member copy on the tap's product side, and that
+    # reaction is omitted from the member's balance -- but x3cflux still needs every
+    # unproduced labeled pool defined, so they are declared unlabeled.
+    for carrier, n in conv.pool_carriers.items():
+        subs.append(x.ConstantSubstrate(f"sub_{carrier}", carrier, 0.0, {"0" * n: 1.0}))
     return subs
 
 
@@ -86,6 +92,19 @@ def build_constraints(facts, conv):
         conv: :class:`~sigmaflux.x3cflux.convert.Converted` for the model.
     """
     net_eq, xch_eq, xch_def = [], [], []
+
+    # 0. Pin every measurement pool's drain at 1. The pool's own balance then reads
+    #    sum(taps) = 1, so each tap's net flux *is* its compartment fraction -- read
+    #    directly, no transformation -- and a k-member pool costs k-1 free parameters
+    #    rather than k. It also makes a flux-starved pool unreachable: the taps cannot
+    #    all be zero, so the pool's EMU row cannot go singular.
+    #
+    #    An equality, not a DefinitionConstraint: a definition removes the parameter
+    #    from x3cflux's own pre-selection of unknowns, which it rejects outright
+    #    ("pre-selection of unknowns is invalid") for anything the network already
+    #    determines. An equality is just another row, so a redundant one reduces away.
+    for drain in conv.pool_drains:
+        net_eq.append(x.LinearConstraint(f"pin_{drain}", [drain], [1.0], -1.0))
 
     # 1. Tie the pieces of every split/symmetry-halved reaction back together. For
     #    subs (s_i, c_i) of one parent, u_i / c_i is the same for all i, so

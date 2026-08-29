@@ -13,6 +13,9 @@ as the boundary nodes of the expansion, not inferred from stoichiometry.
 
 import json
 
+from ..core.measurement_pools import (POOL_DRAIN_PREFIX, POOL_PREFIX,
+                                      pool_members)
+
 
 def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
     """Reaction/metabolite facts plus the EMU network's input set, as a dict.
@@ -32,6 +35,10 @@ def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
         "reversible": bool(r.reversibility),
         "atom_mapping": r.annotation.get("atom_mapping", ""),
         "terminal": bool(r.annotation.get("terminal", False)),
+        # A measurement pool's mixing leg moves no mass of the compartment it observes,
+        # so that compartment is absent from the stoichiometry by design and is named
+        # here instead. See sigmaflux.core.measurement_pools.
+        "zero_stoichiometry": list(r.annotation.get("zero_stoichiometry", ())),
         "stoichiometry": {m.id: c for m, c in r.metabolites.items()},
     } for r in cobra_model.reactions]
 
@@ -66,8 +73,19 @@ def model_facts(cobra_model, mfa_model, mapped_met_ids, cfg):
                        f"{float(t.get('enrichment', 1.0))}"}
                for t in cfg["labeling"]["tracers"]]
 
+    # {pool: {members, atom_pattern, taps: {leg id: member}, drain: id}}. The reaction
+    # ids follow from the pool prefix, so they are spelled out once here rather than
+    # rebuilt from string concatenation everywhere downstream.
+    pools = {pool: {"members": members,
+                    "atom_pattern": cobra_model.metabolites.get_by_id(pool)
+                                               .annotation.get("atom_pattern", ""),
+                    "taps": {f"{POOL_PREFIX}{member}": member for member in members},
+                    "drain": f"{POOL_DRAIN_PREFIX}{pool}"}
+             for pool, members in pool_members(cobra_model).items()}
+
     return {
         "reactions": reactions,
+        "measurement_pools": pools,
         "metabolites": metabolites,
         "input_emus": inputs,
         "input_metabolites": sorted({b["metabolite"] for b in inputs}),
