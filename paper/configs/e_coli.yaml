@@ -34,8 +34,7 @@ sampling:
   processes: 8
   method: optgp       # hopsy | optgp | achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 50          # required when ko is random/uncorrelated
+  ko: false
 
   stratified_sampling:
     enabled: true

@@ -18,14 +18,7 @@ experiment:
   data_dir: data/E_coli_LC_MS
   gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
   mapping_csv: data/E_coli_LC_MS/E_coli_core_mapping.csv
-  # The published MFA fit is the GC-MS study's; both arms quote the same reference,
-  # so it is named by path rather than duplicated into this data directory.
   reference_flux: data/E_coli_GC_MS/E_coli_core_reference_flux.xlsx
-  # Synthetic replicates, each pairing one independently drawn replicate per tracer.
-  # The three tracers are separate cultures on separate sheets with 4/2/2 replicates, so
-  # index-pairing reached 2 of the 4x2x2 = 16 legitimate combinations and left the
-  # under-replicated tracers with no data at all on samples 3 and 4. The t-interval still
-  # uses the pooled replicate dof, sum(R_t - 1) = 5, not the draw count.
   n_bootstrap: 200
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
@@ -40,8 +33,7 @@ sampling:
   processes: 8
   method: achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 25          # required when ko is random/uncorrelated
+  ko: false         # false | all | random | uncorrelated
 
   stratified_sampling:
     enabled: true

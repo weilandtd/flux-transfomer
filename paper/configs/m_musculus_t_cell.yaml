@@ -20,9 +20,6 @@ experiment:
   reference_flux: Shen_et_al_flux_data_MM.xlsx
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
   mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
-  # Bootstrapped cross-tracer replicate combinations used to propagate measurement
-  # uncertainty. The reported interval's width still follows the pooled replicate
-  # dof, sum(R_t - 1), not this count.
   n_bootstrap: 200
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
@@ -38,8 +35,7 @@ sampling:
   processes: 8
   method: optgp       # hopsy | optgp | achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 50          # required when ko is random/uncorrelated
+  ko: false
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.

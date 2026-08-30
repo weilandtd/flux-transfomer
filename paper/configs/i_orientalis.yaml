@@ -12,9 +12,6 @@ experiment:
   reference_flux: Shen_et_al_flux_data_IO.xlsx
   mapping_csv:    models/atomistic/I_orientalis/I_orientalis_experiment_mapping.csv
   gem_xlsx:       models/atomistic/I_orientalis/imIsor_GEM.xlsx
-  # Bootstrapped cross-tracer replicate combinations used to propagate measurement
-  # uncertainty. The reported interval's width still follows the pooled replicate
-  # dof, sum(R_t - 1), not this count.
   n_bootstrap: 200
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
@@ -31,8 +28,6 @@ sampling:
   method: optgp # hopsy | optgp | achr
   fva: true
   ko: false
-  # ko: uncorrelated  # false | all | random | uncorrelated
-  # n_ko: 50          # required when ko is random/uncorrelated
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
