@@ -379,13 +379,11 @@ class SigmaFlux:
         self._cfg_dict = spec.model_config
         self._nsd      = spec.null_space_data
 
-        # Bound projection: the reaction bounds, plus the origin of the ray predictions
-        # are pulled along. The origin is the training flux mean, which needs no separate
-        # storage -- y_mean is the training mean of the basis coordinates, so
-        # y_mean @ Z_free.T is that same mean reconstructed in flux space. It is in the
-        # null space (a combination of basis columns) and strictly inside the bounds (a
-        # mean of feasible samples, over a convex box), which is exactly what the ray
-        # needs; both are asserted here rather than assumed.
+        # Bound projection: the reaction bounds, plus the origin the rays are cast from.
+        # The origin is the training flux mean rebuilt through the decoder's own map,
+        # v = y @ Z_free.T + flux_offset. The offset holds the directions
+        # split_constant_directions() pinned, whose Z_free rows are zero; without it
+        # those reactions rebuild as 0 and the origin falls outside the box.
         if not spec.flux_bounds:
             raise ValueError(
                 "This model carries no flux_bounds, so its predictions cannot be "
@@ -395,8 +393,13 @@ class SigmaFlux:
             )
         self._flux_lb = np.asarray(spec.flux_bounds['lb'], dtype=np.float64)
         self._flux_ub = np.asarray(spec.flux_bounds['ub'], dtype=np.float64)
+        _Z_free = np.asarray(self._nsd['Z_free'], dtype=np.float64)
+        # Absent on pre-offset checkpoints and regenerated exports; zeros matches them.
+        _offset = self._nsd.get('flux_offset')
+        _offset = (np.zeros(_Z_free.shape[0]) if _offset is None
+                   else np.asarray(_offset, dtype=np.float64))
         self._flux_origin = (np.asarray(self._nsd['y_mean'], dtype=np.float64)
-                             @ np.asarray(self._nsd['Z_free'], dtype=np.float64).T)
+                             @ _Z_free.T) + _offset
         slack = np.minimum(self._flux_origin - self._flux_lb,
                            self._flux_ub - self._flux_origin)
         if slack.min() <= 0:
