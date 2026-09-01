@@ -25,7 +25,8 @@ from sigmaflux.utils import (
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import (  # noqa: E402
-    LABEL, R2_THRESHOLD, load_benchmark, per_flux_r2, per_flux_rmse)
+    LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_r2,
+    per_flux_rmse)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
 
@@ -135,6 +136,10 @@ def benchmark_metrics(model, run_suffix=None):
 
     _, flux_df, _ = load_data(str(run))
     flux_df.columns = range(flux_df.shape[1])
+    # A pool's drain is pinned and its legs sum to it, so they are compartment fractions
+    # rather than rates -- and the MFA arm has no such reactions to be compared against.
+    # plot_test_performance.py already drops them; this is the same population.
+    flux_df = drop_pool_reactions(flux_df, run)
     out = {}
     for method, sub in (("mfa", "mfa_benchmark"), ("ai", "ai_benchmark")):
         df, n_failed = load_benchmark(run / sub, flux_df)
