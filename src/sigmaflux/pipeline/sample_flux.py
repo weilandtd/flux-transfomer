@@ -207,7 +207,7 @@ def constrain_by_fva(model):
 POOL_RELAXED_UB = 100.0
 
 
-def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB):
+def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB, legs=False):
     """Reopen each pool *drain*, after the samples have been drawn.
 
     Sampling needs each pool's drain pinned at 1: that is what puts its mixing fluxes on
@@ -219,21 +219,26 @@ def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB):
     work with at all: the ray projection in inference needs its origin strictly inside
     the box, which no pinned reaction can be.
 
-    Only the drain is reopened. That is the one zero-width interval, and reopening it is
-    what frees the block to scale; the mixing legs already sit in ``[0, 1]``, which has
-    an interior and is what they actually mean -- a compartment fraction. Widening them
-    to ``[0, upper]`` as well used to assert they could carry a hundred times their own
-    meaning, and handed the MFA fit a search box 100x larger than the simplex the fluxes
-    are confined to.
+    By default only the drain is reopened, and the saved model keeps its mixing legs in
+    ``[0, 1]``. That is what a compartment fraction means, and widening them there once
+    handed the MFA fit a search box 100x larger than the simplex the fluxes are confined
+    to -- ``model_prepared_for_mfa.json`` is read by both arms, so the legs stay put in it.
+
+    ``legs=True`` is for the *predictor's* copy of the bounds. Once the drain is free the
+    block can scale, so a leg above 1 is not an over-claim any more, it is the same
+    fraction at a larger scale -- and with the legs pinned at 1 the box asserts otherwise.
+    A leg is bounded by its drain, so the two share ``upper``.
 
     Args:
         model: prepared cobra model, modified in place.
-        upper: upper bound to reopen each drain to.
+        upper: upper bound to reopen the block to.
+        legs: also reopen the mixing legs. Off for the shared prepared model.
 
     Returns the ids of the reactions reopened.
     """
     reopened = [r.id for r in model.reactions
-                if r.id.startswith(POOL_DRAIN_PREFIX)]
+                if r.id.startswith(POOL_DRAIN_PREFIX)
+                or (legs and is_pool_reaction(r))]
     for rxn_id in reopened:
         model.reactions.get_by_id(rxn_id).bounds = (0.0, upper)
     return reopened
