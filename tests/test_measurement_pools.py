@@ -292,6 +292,56 @@ def test_pinned_directions_are_split_out_of_the_predicted_basis():
     np.testing.assert_allclose(reconstructed, V, atol=1e-10, rtol=0)
 
 
+def test_the_split_leaves_a_targeted_identity_block_alone():
+    """Rotating the whole basis is what broke the measured fluxes when pools arrived.
+
+    A targeted basis gives each measured reaction its own coordinate. The rotation that
+    finds constant directions must not touch those columns: when it did, every measured
+    flux went from owning a coordinate to being spread across the basis, and on
+    I. orientalis ``DNA_c`` -- a measured *input* -- fell from validation R2 +0.996 to
+    -0.225 while the non-pool median went 0.994 -> 0.595. Pools only supplied the first
+    pinned directions, so the rotation fired for the first time; they were not the cause.
+    """
+    from sigmaflux.ai.utils import split_constant_directions
+    rng = np.random.default_rng(0)
+    n_targets = 3
+    Q, _ = np.linalg.qr(rng.normal(size=(12, 6)))
+    targeted = Q[:, :n_targets] @ rng.normal(size=(n_targets, n_targets))
+    free = Q[:, n_targets:]
+    Z = np.hstack([targeted, free])                 # non-orthonormal, as targeted_ica ships
+
+    y_free = rng.normal(size=(400, 3))
+    y_free[:, 2] = 2.5                              # one pinned direction, in the free block
+    V = rng.normal(size=(400, n_targets)) @ targeted.T + y_free @ free.T
+
+    Z_var, Z_const, y_const = split_constant_directions(Z, V, n_protected=n_targets)
+
+    assert Z_const.shape[1] == 1                    # the pinned direction still comes out
+    np.testing.assert_allclose(Z_var[:, :n_targets], targeted, atol=1e-12, rtol=0)
+    reconstructed = (V @ (Z_var @ np.linalg.inv(Z_var.T @ Z_var))) @ Z_var.T \
+        + y_const @ Z_const.T
+    np.testing.assert_allclose(reconstructed, V, atol=1e-9, rtol=0)
+
+
+def test_the_whole_basis_rotation_is_what_destroys_the_targeted_block():
+    """The same split with no protection smears every target across the basis.
+
+    Kept as the counter-case: it is why ``n_protected`` exists, and it reproduces the
+    2026-08-29 regression in three lines.
+    """
+    from sigmaflux.ai.utils import split_constant_directions
+    rng = np.random.default_rng(0)
+    Q, _ = np.linalg.qr(rng.normal(size=(12, 6)))
+    targeted = Q[:, :3] @ rng.normal(size=(3, 3))
+    Z = np.hstack([targeted, Q[:, 3:]])
+    y_free = rng.normal(size=(400, 3))
+    y_free[:, 2] = 2.5
+    V = rng.normal(size=(400, 3)) @ targeted.T + y_free @ Q[:, 3:].T
+
+    unprotected, _, _ = split_constant_directions(Z, V, n_protected=0)
+    assert not np.allclose(unprotected[:, :3], targeted, atol=1e-8)
+
+
 def test_split_is_skipped_when_there_are_too_few_samples():
     """A rank-deficient covariance means too little data, not a pinned reaction.
 
@@ -359,6 +409,25 @@ def test_only_the_pool_drain_reopens_after_sampling(two_compartment_model):
     assert np.minimum(x - lb, ub - x)[pool].min() > 0
 
     # Nothing outside the block moved.
+    assert model.reactions.get_by_id("TC").bounds == (0, 1000)
+
+
+def test_the_predictor_copy_also_reopens_the_mixing_legs(two_compartment_model):
+    """A leg capped at 1 asserts a ceiling the drain no longer has.
+
+    Once the drain is free the whole block can scale, so a leg above 1 is the same
+    compartment fraction at a larger scale, not a larger fraction. The shared prepared
+    model still keeps the legs at [0, 1] -- MFA reads it and its search box should stay
+    the size of the simplex -- so only the predictor's copy opens them.
+    """
+    from sigmaflux.pipeline.sample_flux import (POOL_RELAXED_UB,
+                                                relax_measurement_pool_bounds)
+
+    model = two_compartment_model
+    reopened = relax_measurement_pool_bounds(model, legs=True)
+    assert set(reopened) == {"POOL_SK_A", "POOL_A_c", "POOL_A_m"}
+    for rxn_id in reopened:
+        assert model.reactions.get_by_id(rxn_id).bounds == (0.0, POOL_RELAXED_UB)
     assert model.reactions.get_by_id("TC").bounds == (0, 1000)
 
 
