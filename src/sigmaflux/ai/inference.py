@@ -38,11 +38,6 @@ from .data import (
 from .model import FluxDecoder
 
 
-#: A predicted flux this close to the projection origin carries no direction, so it
-#: cannot bind the ratio test. Well below any real flux; only guards a 0/0.
-_RAY_TOL = 1e-12
-
-
 def bounds_from_cobra(model, flux_names, source="model"):
     """Reaction bounds read off a prepared COBRA model, aligned to *flux_names*.
 
@@ -249,6 +244,32 @@ class ModelSpec:
         internal = {t: t for t in self.vocabs.get('tracer_vocab', [])}
         return {**internal, **self.tracer_display_names}
 
+    def _gauge_null_space_data(self):
+        """``null_space_data``, with what a gauge layer needs filled in.
+
+        The bounds live at the top level of a checkpoint, not inside ``null_space_data``,
+        and ``gauge_x_p`` is absent from anything trained before it was persisted. Both
+        are recoverable: the interior point is the Chebyshev centre of the polytope the
+        basis already defines, so it is derived rather than stored, exactly as
+        ``flux_offset`` defaults to zeros for checkpoints that predate it.
+        """
+        nsd = self.null_space_data
+        if not self.model_config.get('gauge_radial'):
+            return nsd
+        nsd = dict(nsd)
+        nsd.setdefault('flux_bounds', self.flux_bounds)
+        nsd.setdefault('gauge_tau', 0.0)
+        if nsd.get('gauge_x_p') is None:
+            from .box_nullspace import chebyshev_center
+            Z = np.asarray(nsd['Z_free'], dtype=np.float64)
+            offset = nsd.get('flux_offset')
+            offset = (np.zeros(Z.shape[0]) if offset is None
+                      else np.asarray(offset, dtype=np.float64))
+            nsd['gauge_x_p'], _ = chebyshev_center(
+                Z, np.asarray(nsd['flux_bounds']['lb'], dtype=np.float64),
+                np.asarray(nsd['flux_bounds']['ub'], dtype=np.float64), offset=offset)
+        return nsd
+
     def build_decoder(self, state_dict, *, device=None, strict=True):
         """Rebuild a :class:`FluxDecoder` and load *state_dict* into it. Frozen
         embedding tables are regenerated from the vocabularies and harmonics
@@ -274,7 +295,7 @@ class ModelSpec:
             tracer_emb_table=self.tracer_combo_emb_table(),
             reaction_emb_table=radial_embedding_table(n_reactions, self.h_reaction),
             type_emb_table=radial_embedding_table(2, self.h_type),
-            null_space_data=self.null_space_data,
+            null_space_data=self._gauge_null_space_data(),
             flux_norm_stats=self.flux_norm_stats,
         )
         model.load_state_dict(state_dict, strict=strict)
@@ -393,11 +414,23 @@ class SigmaFlux:
             )
         self._flux_lb = np.asarray(spec.flux_bounds['lb'], dtype=np.float64)
         self._flux_ub = np.asarray(spec.flux_bounds['ub'], dtype=np.float64)
+        # A model with a gauge latent emits feasible states already, so there is nothing
+        # to repair and no ray to cast -- the origin and its slack check below belong to
+        # the affine map only.
+        self._gauge = bool(self._cfg_dict.get('gauge_radial'))
+        if self._gauge:
+            return
         _Z_free = np.asarray(self._nsd['Z_free'], dtype=np.float64)
+        # Projector onto range(Z_free), factored through the Gram matrix rather than
+        # formed as an (n_fluxes, n_fluxes) dense matrix. targeted_ica's basis is not
+        # orthonormal -- Gram condition 5.5e3 on I. orientalis -- so Z @ Z.T is not it.
+        self._null_basis = _Z_free
+        self._null_dual = np.linalg.solve(_Z_free.T @ _Z_free, _Z_free.T).T
         # Absent on pre-offset checkpoints and regenerated exports; zeros matches them.
         _offset = self._nsd.get('flux_offset')
         _offset = (np.zeros(_Z_free.shape[0]) if _offset is None
                    else np.asarray(_offset, dtype=np.float64))
+        self._null_offset = _offset
         self._flux_origin = (np.asarray(self._nsd['y_mean'], dtype=np.float64)
                              @ _Z_free.T) + _offset
         slack = np.minimum(self._flux_origin - self._flux_lb,
@@ -587,8 +620,10 @@ class SigmaFlux:
         # (basis coefficients → physical mmol/gDW/h via Z_full.T). The reconstruction
         # guarantees S v = 0 but not the reaction bounds, so every state is projected
         # back inside them before it leaves the predictor -- unconditionally, since a
-        # prediction that is not a flux state is not a usable answer.
-        flux_arr = self._project_into_bounds(flux_arr)
+        # prediction that is not a flux state is not a usable answer. A gauge latent has
+        # already done this in the forward pass, where it costs no accuracy.
+        if not self._gauge:
+            flux_arr = self._project_into_bounds(flux_arr)
 
         # Reversibility: decode from z-scored log1p space → physical values.
         # model.forward() returns raw z-score logits when rev_norm_mean is set.
@@ -601,40 +636,41 @@ class SigmaFlux:
         return self._format_output(flux_arr, rev_arr, samples)
 
     def _project_into_bounds(self, flux_arr):
-        """Pull each predicted flux state back inside the reaction bounds.
+        """Pull each predicted flux state back toward the reaction bounds.
 
-        The decoder reconstructs ``v = y @ Z_full.T``, which satisfies ``S v = 0`` by
-        construction -- but nothing constrains it to the bounds, and measured on E. coli
-        core 106 of 120 per-member predictions fell outside them, the worst by 19.4
-        mmol/gDW/h against a glucose uptake of 8.6. That is not a cosmetic violation: an
-        EMU forward pass on an infeasible state returns values that are not MIDs at all.
-        At the infeasibility rate the real ensemble shows, only 32% of simulations came
-        back valid and one metabolite group summed to 1395 where it must be <= 1.
+        The decoder reconstructs ``v = y @ Z_full.T + flux_offset``, which satisfies
+        ``S v = 0`` by construction but nothing keeps inside the box. Unprojected states
+        are not merely inaccurate: measured on I. orientalis, every one of 1000 validation
+        states sat outside, 35 reactions out apiece, and the EMU forward pass on them
+        returned a largest "fraction" of 9.9e+39 -- not a MID at all.
 
-        Each state is scaled along the ray from ``x0``, the training flux mean, until it
-        is inside: ``x = x0 + min(1, alpha) * (v - x0)``, with ``alpha`` the ratio-test
-        step to the first binding bound. Both ends of the ray are in the null space, so
-        ``S x = 0`` survives, and ``min(1, .)`` makes this exactly the identity whenever
-        ``v`` is already feasible -- a correct prediction is never moved. Because the map
-        is a convex combination, a mean over members stays feasible too.
+        Clip into ``[lb, ub]``, then project back onto the affine null space. The second
+        step is exact, so ``S v = 0`` is restored to 5.8e-10 while the clip has already
+        removed the gross excursions the forward pass cannot survive. It does not reach
+        exact box feasibility -- the two sets meet at too shallow an angle near these
+        predictions for that to be cheap, and iterating toward it (Dykstra) makes the
+        predictions monotonically *worse*, R2 0.267 at one sweep against 0.190 at fifty.
 
-        A Euclidean-nearest projection (a QP per state) is more accurate in *flux* space,
-        0.094 against 0.176 relative error. Measured in labeling space, which is what the
-        pipeline is judged on, the two land within 2% of each other (MID RMSE 0.056 vs
-        0.057) -- not enough to put a solver in the inference path.
+        This replaced a single ray from the training flux mean,
+        ``x = x0 + min(1, alpha) * (v - x0)``, whose ``alpha`` was one ratio-test scalar
+        for the whole vector -- so the reaction with the narrowest interval relative to the
+        error on it set the step for every other flux. Measured on I. orientalis,
+        ``alpha < 1`` on **100%** of predictions (median 0.0046), gated 99.6% of the time
+        by ``AHSERL2_c``, ``METB1_c``, ``SADT_c`` and ``SLFAT_c`` -- sulfur assimilation,
+        boxes ~0.027 wide against a glucose uptake of 8.6. Every state came back on the
+        training mean: per-reaction R2 -0.005 against 0.592 unprojected, while Spearman rho
+        barely moved (0.771 vs 0.781), a positive scalar preserving rank and erasing scale.
+
+        Bound violation is not itself a symptom of a bad model -- the pre-pool run that
+        scored 0.986 violated harder (worst 275 mmol/gDW/h, 27.7% of its largest flux) and
+        was simply never projected. Only the operator matters.
 
         Args:
             flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
         """
-        lb, ub, x0 = self._flux_lb, self._flux_ub, self._flux_origin
-        d = flux_arr.astype(np.float64) - x0
-        # Both branches of each `where` are evaluated, so the unselected one can divide
-        # by zero; it is discarded, and errstate keeps it from warning.
-        with np.errstate(divide='ignore', invalid='ignore'):
-            to_ub = np.where(d > _RAY_TOL, (ub - x0) / d, np.inf)
-            to_lb = np.where(d < -_RAY_TOL, (x0 - lb) / (-d), np.inf)
-        alpha = np.minimum(to_ub, to_lb).min(axis=1)
-        return x0 + np.minimum(1.0, alpha)[:, None] * d
+        clipped = np.clip(flux_arr.astype(np.float64), self._flux_lb, self._flux_ub)
+        r = clipped - self._null_offset
+        return self._null_offset + (r @ self._null_basis) @ self._null_dual.T
 
     def _report_coverage(self, wide):
         """Print how much of the trained token set the experiment actually measured.
