@@ -353,6 +353,9 @@ def main(args):
     free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
     fixed_idx = fixed_flux_indices or []
 
+    # Leading columns of a targeted basis are the identity block, one per measured
+    # reaction; split_constant_directions must not rotate them away.
+    n_targets = 0
     use_targeted = (
         args.null_space_type == 'targeted'
         and args.measured_fluxes
@@ -375,7 +378,7 @@ def main(args):
                 f"Choose a different null_space_type explicitly, or fix measured_fluxes."
             )
         else:
-            n_t = len(basis_status['targets_kept'])
+            n_t = n_targets = len(basis_status['targets_kept'])
             print(f"Targeted basis: {n_t} measured reaction DOF(s) at cols 0–{n_t - 1}, "
                   f"cond(S_D)={basis_status['cond_SD']:.2e}")
             if basis_status['targets_dropped']:
@@ -404,7 +407,7 @@ def main(args):
             target_reactions=args.measured_fluxes,
             **args.ica_nullspace_params,
         )
-        n_t = len(basis_status['targets_kept'])
+        n_t = n_targets = len(basis_status['targets_kept'])
         print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
               f"{basis_status['n_ica_free']} ICA free modes, "
               f"{basis_status['n_complement_free']} complement "
@@ -445,16 +448,83 @@ def main(args):
     # takes maximum loss weight (variance_min_cutoff) on a target that is identically
     # zero once standardised, and inflates every basis-space metric.
     _V_all = flux_df.loc[[r for r in flux_df.index]].to_numpy(np.float64).T
-    Z_full, Z_const, y_const = split_constant_directions(Z_full, _V_all)
+    Z_full, Z_const, y_const = split_constant_directions(Z_full, _V_all,
+                                                        n_protected=n_targets)
     flux_offset = (y_const @ Z_const.T).astype(np.float32)
     if Z_const.shape[1]:
         print(f"Constant basis directions (pinned reactions): {Z_const.shape[1]} held "
               f"fixed, predicting {Z_full.shape[1]} of "
               f"{Z_full.shape[1] + Z_const.shape[1]}")
 
-    n_free_basis = Z_full.shape[1]
+    # Orthonormalising here rather than inside the gauge layer keeps one basis in play:
+    # Z_full is what the checkpoint stores and what the model, inference and export all
+    # rebuild from, so a layer-local copy would silently disagree with all of them.
+    # Targets go first, so each measured flux keeps a coordinate -- but only triangularly,
+    # since orthogonalising cannot preserve the identity row when two targets are nearly
+    # parallel (RNA_c and DNA_c sit at |G_ij| 0.9892). That trade is what this flag tests:
+    # it buys an isometric latent (6.4x direction anisotropy on E. coli core, ~74x on
+    # I. orientalis) at the cost of the clean one-coordinate-one-flux reading.
+    if getattr(args, 'gauge_orthonormal', False):
+        from sigmaflux.ai.box_nullspace import orthonormalize
+        _cond_before = np.linalg.cond(Z_full.T @ Z_full)
+        Z_full = orthonormalize(Z_full, n_targets)
+        print(f"Orthonormalised the basis: cond(Z'Z) {_cond_before:.3g} -> "
+              f"{np.linalg.cond(Z_full.T @ Z_full):.3g} "
+              f"({n_targets} target column(s) ordered first)")
 
-    print(f"Full null-space basis dimension: {n_free_basis}")
+    flux_names = flux_df.index.tolist()
+
+    # Built here rather than at checkpoint time: the gauge latent trains against them.
+    #
+    # The predictor's copy of the bounds reopens the pool mixing legs, which the shared
+    # prepared model leaves at [0, 1] so the MFA fit keeps a simplex-sized search box.
+    # Sampling drew the fractions with the drain pinned, so it is unaffected either way;
+    # what the legs must not do here is assert a ceiling of 1 on a block whose drain is
+    # already free to scale. On I. orientalis this frees 72 of the 144 facets that
+    # otherwise cap the polytope's inscribed radius.
+    from sigmaflux.pipeline.sample_flux import relax_measurement_pool_bounds
+    _reopened = relax_measurement_pool_bounds(cobra_model, legs=True)
+    if _reopened:
+        print(f"Reopened {len(_reopened)} measurement-pool reaction(s) for prediction; "
+              f"model_prepared_for_mfa.json keeps the legs at [0, 1]")
+    _bounds = {r.id: (r.lower_bound, r.upper_bound) for r in cobra_model.reactions}
+    _missing = [n for n in flux_names if n not in _bounds]
+    if _missing:
+        raise ValueError(
+            f"{len(_missing)} predicted reaction(s) are absent from the prepared model, "
+            f"so their bounds cannot be stored: {_missing[:5]}"
+        )
+    flux_bounds = {
+        "lb": np.array([_bounds[n][0] for n in flux_names], dtype=np.float64),
+        "ub": np.array([_bounds[n][1] for n in flux_names], dtype=np.float64),
+    }
+
+    # A gauge latent maps an unconstrained head straight into the polytope, so the head
+    # emits z rather than basis coordinates and the sigmoid law needs one extra output for
+    # its radial coordinate. It runs *before* the basis statistics below because whitening
+    # replaces the basis: y_mean/y_std, Z_proj and the basis-space loss all have to be
+    # computed on the same matrix the decoder reconstructs with, or the loss projects
+    # through one basis while the model predicts through another.
+    config.gauge_radial = args.gauge_radial
+    gauge_x_p = None
+    if args.gauge_radial:
+        from sigmaflux.ai.box_nullspace import prepare_box_nullspace
+        _box = prepare_box_nullspace(
+            Z_full, stoichiometric_matrix, flux_bounds['lb'], flux_bounds['ub'],
+            offset=flux_offset, radial=args.gauge_radial, tau=args.gauge_tau,
+            n_targets=n_targets, center=args.gauge_center, whiten=args.gauge_whiten,
+            samples=_V_all,
+        )
+        Z_full = _box.N.numpy()
+        gauge_x_p = _box.x_p.numpy()
+
+    n_free_basis = Z_full.shape[1]
+    # A gauge head emits z, not basis coordinates, and the sigmoid law spends one extra
+    # output on its radial coordinate -- so the head width is the layer's, not the basis'.
+    config.n_free = _box.latent_dim if args.gauge_radial else n_free_basis
+
+    print(f"Full null-space basis dimension: {n_free_basis} "
+          f"(head width {config.n_free})")
 
     # Z_proj: recovers true null-space coordinates  y = v @ Z_proj  (v = y @ Z_full.T).
     # For orthonormal Z (Varimax fallback): G = I → Z_proj = Z_full (no change).
@@ -534,8 +604,9 @@ def main(args):
         rev_log_mean     = rev_log_mean_np,      # per-reaction log1p mean for rev denormalization
         rev_log_std      = rev_log_std_np,       # per-reaction log1p std for rev denormalization
     )
-
-    config.n_free = n_free_basis
+    if args.gauge_radial:
+        null_space_data.update(gauge_x_p=gauge_x_p, gauge_tau=args.gauge_tau,
+                               flux_bounds=flux_bounds)
 
     # Per-reaction flux normalization — computed from full dataset (all samples)
     flux_norm = FluxNorm(flux_df.values)  # (n_reactions, n_samples)
@@ -603,7 +674,6 @@ def main(args):
         early_stopping_patience    = getattr(args, 'early_stopping_patience', None),
     )
 
-    flux_names = flux_df.index.tolist()
     val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=flux_names)
 
     # === Diagnostic: Reaction Learning Asymmetry Analysis ===
@@ -687,18 +757,6 @@ def main(args):
     # can reconstruct the token structure without needing the training HDF5 data.
     token_index = list(labeling_df.index)   # list of (Tracer, Metabolite, Isotopomer)
 
-    _bounds = {r.id: (r.lower_bound, r.upper_bound) for r in cobra_model.reactions}
-    _missing = [n for n in flux_names if n not in _bounds]
-    if _missing:
-        raise ValueError(
-            f"{len(_missing)} predicted reaction(s) are absent from the prepared model, "
-            f"so their bounds cannot be stored: {_missing[:5]}"
-        )
-    flux_bounds = {
-        "lb": np.array([_bounds[n][0] for n in flux_names], dtype=np.float64),
-        "ub": np.array([_bounds[n][1] for n in flux_names], dtype=np.float64),
-    }
-
     checkpoint = {
         "model_state_dict":     model.state_dict(),
         "model_config":         model_config,
@@ -732,6 +790,13 @@ def main(args):
             "y_std":             y_std,
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
+            # A gauge model cannot be rebuilt without its interior point and the bounds
+            # the polytope is defined by -- the layer is reconstructed at load time, not
+            # carried in the state dict.
+            **({"gauge_x_p":     null_space_data["gauge_x_p"],
+                "gauge_tau":     null_space_data["gauge_tau"],
+                "flux_bounds":   null_space_data["flux_bounds"]}
+               if args.gauge_radial else {}),
         },
         "token_information":      token_information.numpy() if token_information is not None else None,
         "token_selection_method": args.token_selection_method,
@@ -831,6 +896,11 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
+        gauge_radial              = t.get("gauge_radial", ""),
+        gauge_tau                 = t.get("gauge_tau", 0.0),
+        gauge_orthonormal         = t.get("gauge_orthonormal", False),
+        gauge_center              = t.get("gauge_center", "chebyshev"),
+        gauge_whiten              = t.get("gauge_whiten", False),
         # Feature selection (from features: config section)
         token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
