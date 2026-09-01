@@ -235,3 +235,7 @@ training:
   null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
   flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  # Feasible-by-construction latent; whitening keeps the gauge well-conditioned.
+  gauge_radial: sigmoid           # rho = sigmoid(s), y = rho * d / g(d)
+  gauge_center: mean              # cast the gauge from the data centre
+  gauge_whiten: true              # one latent unit = one standard deviation of the data
