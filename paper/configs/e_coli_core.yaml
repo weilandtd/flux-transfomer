@@ -18,7 +18,7 @@ experiment:
   data_dir: data/E_coli_LC_MS
   gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
   mapping_csv: data/E_coli_LC_MS/E_coli_core_mapping.csv
-  reference_flux: data/E_coli_GC_MS/E_coli_core_reference_flux.xlsx
+  reference_flux: data/E_coli_LC_MS/E_coli_core_park_reference_flux.xlsx
   n_bootstrap: 200
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
