@@ -44,6 +44,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 from scipy import stats
 
 from _figure_common import (
@@ -223,6 +224,59 @@ def report_sets(records, out_dir):
     print(f"\nSaved: {path}")
 
 
+def _venn_union_bbox(venn, region_ids):
+    """Display-coordinate bounding box of every drawn Venn patch."""
+    boxes = [v.get_path().transformed(v.get_transform()).get_extents()
+             for v in (venn.get_patch_by_id(i) for i in region_ids) if v is not None]
+    return mtransforms.Bbox.union(boxes)
+
+
+def _move_label_out(ax, label, centre, bounds, pad=20.0):
+    """Redraw one region count outside the diagram, with a leader line back to it.
+
+    Placed along the ray from the diagram's centre through the label, at the point that
+    ray leaves ``bounds`` plus ``pad`` points, so the two crescents' labels move apart
+    rather than crossing.
+    """
+    anchor = label.get_position()
+    direction = ax.transData.transform(anchor) - centre
+    norm = np.hypot(*direction)
+    direction = direction / norm if norm > 1.0 else np.array([0.0, -1.0])
+    # How far along the ray the diagram's own bounding box ends.
+    with np.errstate(divide="ignore", invalid="ignore"):
+        reach = np.nanmin(np.abs(np.where(
+            direction == 0, np.inf,
+            np.array([bounds.width, bounds.height]) / 2.0 / direction)))
+    outside = ax.transData.inverted().transform(centre + direction * (reach + pad))
+
+    label.set_visible(False)
+    ax.annotate(label.get_text(), xy=anchor, xytext=outside, textcoords="data",
+                fontsize=label.get_fontsize(), fontweight=label.get_fontweight(),
+                color=label.get_color(), ha="center", va="center", annotation_clip=False,
+                arrowprops=dict(arrowstyle="-", lw=0.8, color=COLORS["reference"],
+                                shrinkA=3, shrinkB=1))
+
+
+def _relocate_overflowing_labels(fig, ax, venn, region_ids):
+    """Move every region count whose glyphs do not fit inside their own region outside it.
+
+    Measured, not estimated: the rendered text box is tested corner by corner against
+    the region's own path, so this fires exactly when the number overflows.
+    """
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    bounds = _venn_union_bbox(venn, region_ids)
+    centre = np.array([bounds.x0 + bounds.width / 2, bounds.y0 + bounds.height / 2])
+    for region in region_ids:
+        label, patch = venn.get_label_by_id(region), venn.get_patch_by_id(region)
+        if label is None or patch is None or not label.get_text():
+            continue
+        box = label.get_window_extent(renderer)
+        path = patch.get_path().transformed(patch.get_transform())
+        if not path.contains_points(box.corners()).all():
+            _move_label_out(ax, label, centre, bounds)
+
+
 def plot_venn(model, counts, out_dir):
     """2-set Venn of reactions each method resolves (R² >= R2_THRESHOLD), drawn as an
     oval (short figure height + aspect='auto' -- venn2 otherwise forces a circular
@@ -232,13 +286,21 @@ def plot_venn(model, counts, out_dir):
     recomputed. MFA-only and SigmaFlux-only regions use the same colours as the
     R² panels (``METHOD_COLORS``); the overlap is grey (``COLORS["reference"]``),
     matching the threshold/identity lines used elsewhere in this figure set.
+
+    An empty region carries no label at all -- a "0" printed in a sliver reads as a
+    region that exists but is small -- and a count too big for the region it belongs to
+    moves outside on a leader line rather than spilling over its neighbours.
+    ``n_reactions`` and ``neither`` live in mfa_benchmark_identifiable_sets.csv and the
+    printed report, so nothing is lost by having no title here.
     """
     from matplotlib_venn import venn2
 
-    fig, ax = plt.subplots(figsize=(3.2, 2.0))
+    regions = ("10", "01", "11")
+    fig, ax = plt.subplots(figsize=(3.2 / 1.2, 2.0))
     v = venn2(subsets=(counts["mfa_only"], counts["sf_only"], counts["both"]),
               set_labels=("", ""), ax=ax,
-              set_colors=(METHOD_COLORS["mfa"], METHOD_COLORS["ai"]))
+              set_colors=(METHOD_COLORS["mfa"], METHOD_COLORS["ai"]),
+              subset_label_formatter=lambda n: f"{int(n)}" if n else "")
     ax.set_aspect("auto")   # squash the (otherwise forced-circular) venn into an oval
     overlap = v.get_patch_by_id("11")
     if overlap is not None:
@@ -251,8 +313,7 @@ def plot_venn(model, counts, out_dir):
         if label is not None:
             label.set_fontsize(16)
             label.set_fontweight("bold")
-    ax.set_title(f"{model['label']}\n(n = {counts['n_reactions']} reactions, "
-                 f"{counts['neither']} neither)", fontsize=8)
+    _relocate_overflowing_labels(fig, ax, v, regions)
     save_figure(fig, out_dir / f"mfa_benchmark_venn_{model['key']}.svg")
 
 
