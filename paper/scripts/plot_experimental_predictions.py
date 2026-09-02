@@ -5,7 +5,7 @@ Per model:
   experimental_flux_<key>.svg      SigmaFlux vs reference, log-log, one point per
                                     (condition, growth condition, reaction)
 Across all models:
-  experimental_flux_summary.csv    per-(model, condition) interval overlap and R²,
+  experimental_flux_summary.csv    per-(model, condition) R², interval overlap,
                                     point count, reaction count
 
 By default (``--reactions mfa``) each model is restricted to reactions **MFA** resolves
@@ -15,20 +15,21 @@ determine a flux the reference value is itself unreliable and agreement with it 
 mean nothing. ``--reactions all`` skips this filter (and the benchmark HDF5s it needs)
 entirely, for a model that has predictions but no mfa_benchmark/ run yet.
 
-Each panel reports how many reactions have a predicted 95% interval that **overlaps**
-the reference MFA's own (``_interval_overlap``), not R². Both sides publish an
-uncertainty, and asking whether they are compatible uses it; R² compares two point
-estimates and is dominated by whichever reactions carry the largest flux. On E. coli
-core that difference is stark -- five of 64 reactions produce 97% of the squared error,
-and two of them are ones MFA cannot determine either (its own interval for R2x spans
-0.05 to 39.85), so squaring a deviation from its point estimate measures nothing there.
-R² is still written to the summary CSV.
+Each panel reports R² per condition (``_r2_linear``), on signed fluxes in linear space.
+That is the same definition as ``per_flux_r2`` and ``R2_THRESHOLD`` in the simulation
+benchmark, so R² means one thing across the paper.
+
+Read it knowing what it weights: squared error in linear space is carried by whichever
+reactions run fastest, and on these panels the five largest terms are 40-90% of it. The
+interval-overlap count -- how many reactions have a predicted 95% interval compatible
+with the reference MFA's own, which is the question both sides' published uncertainty
+can answer -- stays in the summary CSV alongside it.
 
 Axes are log-log for display -- fluxes span ~8 orders of magnitude across these
-organisms -- while the overlap test is computed on signed, linear fluxes. Error bars are
-drawn identically on both axes: an interval that spans zero has no positive floor on a
-log magnitude axis, so its bar is truncated to one decade rather than run to the axis
-edge, with no caret marking the open end.
+organisms -- while both R² and the overlap test are computed on signed, linear fluxes.
+Error bars are drawn identically on both axes: an interval that spans zero has no
+positive floor on a log magnitude axis, so its bar is truncated to one decade rather
+than run to the axis edge, with no caret marking the open end.
 
 A model whose predictions or (for --reactions mfa) benchmark data is missing is skipped
 with a warning rather than failing the run, so the figure set fills itself in as runs
@@ -126,11 +127,11 @@ def _interval_overlap(df):
     into the model's convention upstream (``pair_fluxes``), so a surviving sign
     disagreement is real.
 
-    This is the honest question to ask of this figure. R² in linear space is dominated by
-    whichever reactions carry the largest flux, and where MFA itself cannot determine a
-    flux -- on E. coli core its own 95% interval for R2x spans 0.05 to 39.85 -- a squared
-    deviation from its point estimate measures nothing. Asking whether the two intervals
-    are compatible uses the uncertainty both sides actually report.
+    Reported in the summary CSV rather than on the panel, which shows R². It answers a
+    question R² cannot: where MFA itself cannot determine a flux -- on E. coli core its
+    own 95% interval for R2x spans 0.05 to 39.85 -- a squared deviation from its point
+    estimate measures nothing, while asking whether the two intervals are compatible uses
+    the uncertainty both sides actually report.
     """
     lo_p, hi_p = df["pred_lo"].to_numpy(), df["pred_hi"].to_numpy()
     lo_r, hi_r = df["ref_lo"].to_numpy(), df["ref_hi"].to_numpy()
@@ -199,13 +200,14 @@ def plot_experimental_flux(model, df, out_dir):
     for cond, grp in df.groupby("condition", sort=False):
         label = names.get(cond, cond)
         n_ov, n_cmp = _interval_overlap(grp)
-        lines.append(f"{label}: {n_ov}/{n_cmp} overlap")
-        # R² stays in the CSV -- it is no longer what the panel reports, but dropping it
-        # from the machine-readable record would lose a number already published.
+        r2 = _r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy())
+        lines.append(f"{label}: $R^2$ = {r2:.2f}")
+        # The overlap count stays in the CSV -- it is no longer what the panel reports,
+        # but it is the only statistic here that uses both sides' published uncertainty.
         summary_rows.append(dict(model=model["label"], key=model["key"], condition=cond,
-                                 label=label, n_overlap=n_ov, n_compared=n_cmp,
+                                 label=label, r2=r2,
+                                 n_overlap=n_ov, n_compared=n_cmp,
                                  frac_overlap=(n_ov / n_cmp if n_cmp else float("nan")),
-                                 r2=_r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy()),
                                  n_points=len(grp),
                                  n_reactions=grp["reaction"].nunique(),
                                  n_sign_opposed=int((~grp["sign_agrees"]).sum())))
