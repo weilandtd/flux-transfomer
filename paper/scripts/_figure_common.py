@@ -16,6 +16,7 @@ import sys
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from sigmaflux.pipeline._paths import load_config, resolve_path
@@ -74,6 +75,28 @@ CONDITION_COLORS = {
     "P": "#2c9c8f",   # teal
     "A": "#c17429",   # burnt orange -- activated T cell
     "B": "#9b7fb3",   # muted purple -- batch
+}
+
+
+# Which conditions and growth condition go into each model's experimental panel.
+# "max_D" keeps only the highest dilution rate per condition; "wt" keeps only the
+# wild-type strain (gc=1, condition B); "all" keeps every one. Shared by the flux and
+# the MID panels so both describe the same set of measured states.
+PREDICTION_SPECS = {
+    # The Long & Antoniewicz reference is a 21-strain knockout panel (condition 'B',
+    # gc 1..21 per data/E_coli/strain_index.csv); reindexed onto our own reaction ids
+    # by models/atomistic/build_e_coli_reference_flux.py. Wild type only, not the
+    # knockouts, is the like-for-like comparison the other models make.
+    "e_coli_core":       dict(conditions=["B"],           select="wt"),
+    "s_cerevisiae":      dict(conditions=["C", "N", "P"], select="max_D"),
+    "i_orientalis":      dict(conditions=["C", "N", "P"], select="max_D"),
+    "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
+}
+
+# The condition letter means different things per organism: N is nitrogen-limited for
+# the yeasts and naive for the T cell, so the legend cannot be derived from the letter.
+CONDITION_LABEL = {
+    "m_musculus_t_cell": {"N": "naive", "A": "activated"},
 }
 
 
@@ -185,7 +208,31 @@ def resolve_organism(run_dir, config=None):
         gem_xlsx  = exp.get("gem_xlsx"),
         media     = cfg.get("sampling", {}).get("media", {}),
         root      = root,
+        cfg       = cfg,
     )
+
+
+def reference_path(org):
+    """Absolute path to a run's published reference-flux workbook.
+
+    A bare filename sits next to the experimental data; anything with a directory in it
+    is resolved against the project root instead, so a reference one organism borrows
+    from another's data directory (the genome-scale E. coli arm quotes the GC-MS
+    workbook's published fit) does not have to be duplicated into both.
+    """
+    reference = org["reference"]
+    rel = reference if os.path.dirname(reference) else os.path.join(org["data"], reference)
+    path = pathlib.Path(resolve_path(rel, org["root"]))
+    if not path.exists():
+        raise FileNotFoundError(f"reference_flux not found: {path}")
+    return path
+
+
+def growth_rates(ref_value):
+    """Growth condition -> dilution rate (h⁻¹), the reference's own BIOMASS row."""
+    if ref_value is None or "BIOMASS" not in ref_value.index:
+        return {}
+    return ref_value.loc["BIOMASS"].abs().round(2).to_dict()
 
 
 def build_reference_comparison(run_dir, org, panel_rxns):
@@ -194,15 +241,7 @@ def build_reference_comparison(run_dir, org, panel_rxns):
     Locates this project's files and hands them to :mod:`sigmaflux.utils.read_reference_flux`,
     which does the reading and pairing but knows nothing about where they live.
     """
-    # A bare filename sits next to the experimental data; anything with a directory in
-    # it is resolved against the project root instead, so a reference shared between two
-    # platforms (the E. coli LC-MS and GC-MS arms quote the same published MFA fit) does
-    # not have to be duplicated into both data directories.
-    reference = org["reference"]
-    rel = reference if os.path.dirname(reference) else os.path.join(org["data"], reference)
-    ref_path = pathlib.Path(resolve_path(rel, org["root"]))
-    if not ref_path.exists():
-        raise FileNotFoundError(f"reference_flux not found: {ref_path}")
+    ref_path = reference_path(org)
     orientation = reference_orientation(org.get("media"))
     parts = []
 
@@ -224,15 +263,50 @@ def build_reference_comparison(run_dir, org, panel_rxns):
             "lo": read_reference_fluxes(ref_path, cond, "_mfaLB", unbounded=UNBOUNDED_FLUX),
             "hi": read_reference_fluxes(ref_path, cond, "_mfaUB", unbounded=UNBOUNDED_FLUX),
         }
-        # Growth rate D = the biomass reaction flux per growth condition (h⁻¹).
-        rates = (ref_value.loc["BIOMASS"].abs().round(2).to_dict()
-                 if "BIOMASS" in ref_value.index else {})
-
         parts.append(pair_fluxes(pred, ref, condition=cond, orientation=orientation,
-                                 reactions=panel_rxns, growth_rates=rates,
+                                 reactions=panel_rxns,
+                                 growth_rates=growth_rates(ref_value),
                                  min_abs=FLUX_MIN_ABS))
 
     return pd.concat(parts, ignore_index=True)
+
+
+def error_offsets(value, lo, hi, lim_lo, lim_hi):
+    """Per-point (lower, upper) error-bar lengths on a log magnitude axis.
+
+    A NaN lower bound means the interval has no positive floor -- it spans zero, or the
+    published fit never bounded it -- so the bar is drawn all the way to the axis edge,
+    because that is where it actually reaches. Cutting it to a fixed stub instead makes it
+    indistinguishable from a genuinely tight interval, which is the worse failure. The
+    axis floor comes from the data (:func:`axis_floor`), so a truthful bar spans the
+    decades actually in play rather than every decade the shared floor allows.
+
+    A bound of zero on a log axis is the same situation and clips to the same place; a
+    missing bound contributes no bar at all.
+    """
+    value = np.asarray(value, dtype=float)
+    lo = np.where(np.isnan(lo) & np.isfinite(hi), lim_lo, lo)
+    lower = np.where(np.isfinite(lo), value - np.clip(lo, lim_lo, value), 0.0)
+    upper = np.where(np.isfinite(hi), np.clip(hi, value, lim_hi) - value, 0.0)
+    # A point outside the axis limits clips to the wrong side and yields a negative
+    # length, which matplotlib rejects outright. Floor both: the point is off-axis, so
+    # the honest bar is no bar.
+    return np.vstack([np.maximum(lower, 0.0), np.maximum(upper, 0.0)])
+
+
+def axis_floor(*series, decades=0.5, floor=FLUX_MIN_ABS):
+    """Lower axis limit: half a decade below the smallest positive plotted magnitude.
+
+    Set from the data rather than from the shared ``floor``, which sits decades below
+    anything some panels plot and would leave most of them empty. Non-positive values are
+    ignored -- they have no place on a log axis and the caller drops them -- and the
+    result never goes below ``floor``.
+    """
+    values = np.concatenate([np.abs(np.asarray(s, dtype=float)).ravel() for s in series])
+    positive = values[np.isfinite(values) & (values > 0)]
+    if not positive.size:
+        return floor
+    return max(floor, float(positive.min()) / 10.0 ** decades)
 
 
 def save_figure(fig, path):

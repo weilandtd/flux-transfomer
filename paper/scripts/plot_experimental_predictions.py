@@ -51,31 +51,13 @@ import matplotlib.pyplot as plt
 from sigmaflux.utils import magnitude_bounds
 
 from _figure_common import (
-    COLORS, CONDITION_COLORS, FLUX_MIN_ABS, R2_THRESHOLD, add_common_args, apply_style,
-    benchmark_metrics, build_reference_comparison, resolve_organism, run_dir_for,
+    COLORS, CONDITION_COLORS, CONDITION_LABEL, PREDICTION_SPECS, R2_THRESHOLD,
+    add_common_args, apply_style, axis_floor, benchmark_metrics,
+    build_reference_comparison, error_offsets, resolve_organism, run_dir_for,
     save_figure, selected_models)
 
 apply_style()
 
-# Which conditions and growth condition go into each model's panel.
-# "max_D" keeps only the highest dilution rate per condition; "wt" keeps only the
-# wild-type strain (gc=1, condition B); "all" keeps every one.
-PREDICTION_SPECS = {
-    # The Long & Antoniewicz reference is a 21-strain knockout panel (condition 'B',
-    # gc 1..21 per data/E_coli/strain_index.csv); reindexed onto our own reaction ids
-    # by models/atomistic/build_e_coli_reference_flux.py. Wild type only, not the
-    # knockouts, is the like-for-like comparison the other models make.
-    "e_coli_core":       dict(conditions=["B"],           select="wt"),
-    "s_cerevisiae":      dict(conditions=["C", "N", "P"], select="max_D"),
-    "i_orientalis":      dict(conditions=["C", "N", "P"], select="max_D"),
-    "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
-}
-
-# The condition letter means different things per organism: N is nitrogen-limited for
-# the yeasts and naive for the T cell, so the legend cannot be derived from the letter.
-CONDITION_LABEL = {
-    "m_musculus_t_cell": {"N": "naive", "A": "activated"},
-}
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
@@ -170,38 +152,6 @@ def _r2_linear(pred, ref):
     return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
 
 
-def _error_offsets(value, lo, hi, lim_lo, lim_hi):
-    """Per-point (lower, upper) error-bar lengths on a log magnitude axis.
-
-    A NaN lower bound means the interval spans zero, so on a magnitude axis it has no
-    positive floor: the bar is drawn all the way to the axis edge, because that is where
-    it actually reaches. It used to be cut to a fixed one decade and tagged with a caret;
-    with the caret gone that stub was indistinguishable from a genuinely tight interval,
-    which is a worse failure than a busy panel -- on E. coli core it understated 19 of 64
-    bars by a median of 6.3 decades. The axis floor is set from the data
-    (:func:`_axis_floor`) rather than from FLUX_MIN_ABS, so a truthful bar spans the
-    couple of decades that are actually in play instead of six mostly-empty ones.
-
-    A missing bound contributes no bar at all.
-    """
-    value = np.asarray(value, dtype=float)
-    lo = np.where(np.isnan(lo) & np.isfinite(hi), lim_lo, lo)
-    lower = np.where(np.isfinite(lo), value - np.clip(lo, lim_lo, value), 0.0)
-    upper = np.where(np.isfinite(hi), np.clip(hi, value, lim_hi) - value, 0.0)
-    return np.vstack([lower, upper])
-
-
-def _axis_floor(*series, decades=0.5):
-    """Lower axis limit: half a decade below the smallest plotted magnitude.
-
-    The shared FLUX_MIN_ABS floor is 1e-6, four decades below anything E. coli core
-    predicts, which left most of the panel empty and made every open-ended bar six
-    decades long. Never goes below FLUX_MIN_ABS.
-    """
-    smallest = np.nanmin([np.nanmin(np.abs(s)) for s in series])
-    return max(FLUX_MIN_ABS, float(smallest) / 10.0 ** decades)
-
-
 def plot_experimental_flux(model, df, out_dir):
     """SigmaFlux vs the published MFA reference, log-log, one figure per model."""
     names = CONDITION_LABEL.get(model["key"], {})
@@ -216,7 +166,7 @@ def plot_experimental_flux(model, df, out_dir):
         "ref_lo": ref_lo, "ref_hi": ref_hi, "pred_lo": pred_lo, "pred_hi": pred_hi,
     })
 
-    lim_lo = _axis_floor(tidy["reference"], tidy["sigmaflux"])
+    lim_lo = axis_floor(tidy["reference"], tidy["sigmaflux"])
     lim_hi = float(np.nanmax([tidy["reference"].max(), tidy["sigmaflux"].max()])) * 2.0
 
     fig, ax = plt.subplots(figsize=(3.5, 3.5))
@@ -228,9 +178,9 @@ def plot_experimental_flux(model, df, out_dir):
     for key, grp in tidy.groupby("key", sort=False):
         x, y = grp["reference"].to_numpy(), grp["sigmaflux"].to_numpy()
         color = CONDITION_COLORS.get(key, "#777777")
-        xerr = _error_offsets(x, grp["ref_lo"].to_numpy(), grp["ref_hi"].to_numpy(),
+        xerr = error_offsets(x, grp["ref_lo"].to_numpy(), grp["ref_hi"].to_numpy(),
                               lim_lo, lim_hi)
-        yerr = _error_offsets(y, grp["pred_lo"].to_numpy(), grp["pred_hi"].to_numpy(),
+        yerr = error_offsets(y, grp["pred_lo"].to_numpy(), grp["pred_hi"].to_numpy(),
                               lim_lo, lim_hi)
         ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="none", ecolor=color,
                     elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
