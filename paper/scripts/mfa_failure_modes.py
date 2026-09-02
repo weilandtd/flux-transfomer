@@ -73,7 +73,7 @@ from sklearn.manifold import TSNE
 
 from _figure_common import (
     CONFIG_DIR, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
-from sigmaflux.ai.data import load_data
+from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
 from sigmaflux.pipeline._paths import load_config
 
 apply_style()
@@ -118,7 +118,7 @@ def load_convergence(bench_dir):
 
     None when no convergence records exist yet. Deduplicated by sample, keeping
     the last file found -- defensive against a rerun SLURM shard overlapping an
-    earlier one; none of the four current organism runs actually have duplicates.
+    earlier one.
     """
     records = sorted(bench_dir.glob("pred_*_convergence.csv"))
     if not records:
@@ -134,6 +134,44 @@ def load_convergence(bench_dir):
     df["crashed_starts"] = df["crashed_starts"].astype(int)
     df["reached_optimum"] = df["reached_optimum"].astype(bool)
     return df
+
+
+def expected_samples(run, n_total):
+    """The benchmark's intended sample set: the AI model's held-out validation split.
+
+    Read off the run's own checkpoint so it is the split the model was actually
+    trained against, not a re-derived guess. Returns None when the run carries no
+    checkpoint -- the coverage check then has nothing to compare against and says so
+    rather than inventing a denominator.
+    """
+    for directory in (run, run / "ensemble"):
+        try:
+            checkpoint = find_checkpoint(str(directory))
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        return set(split_sample_indices("val", checkpoint, n_total))
+    return None
+
+
+def report_coverage(model, conv, run, n_total):
+    """How much of the intended split the MFA benchmark has actually fitted.
+
+    The solved fraction this script reports is a ratio over whatever samples happen to
+    have landed, so a half-finished array reads as a complete result unless the
+    shortfall is stated. Returns ``(n_expected, n_missing)``, either possibly NaN when
+    no checkpoint pins the split.
+    """
+    expected = expected_samples(run, n_total)
+    if expected is None:
+        print(f"  {model['label']}: no checkpoint in {run.name} or its ensemble/ — "
+              f"cannot check split coverage")
+        return np.nan, np.nan
+    missing = expected - set(conv["sample"])
+    if missing:
+        print(f"  {model['label']}: INCOMPLETE — {len(missing)} of {len(expected)} "
+              f"val samples have no MFA fit yet; every fraction below is over the "
+              f"{len(expected) - len(missing)} that do")
+    return len(expected), len(missing)
 
 
 def zscore_columns(df):
@@ -247,10 +285,12 @@ def plot_resolved_vs_known_ratio(summary_df, out_dir):
     save_figure(fig, out_dir / "mfa_failure_resolved_vs_known_ratio.svg")
 
 
-def summarize_model(model, n_samples, n_solved, n_unsolved, n_known, n_total, known_ratio):
+def summarize_model(model, n_samples, n_solved, n_unsolved, n_known, n_total, known_ratio,
+                    n_expected, n_missing):
     return dict(
         model=model["key"], label=model["label"],
         n_samples=n_samples, n_solved=n_solved, n_unsolved=n_unsolved,
+        n_expected_samples=n_expected, n_missing_samples=n_missing,
         unsolved_fraction=n_unsolved / n_samples if n_samples else np.nan,
         resolved_fraction=n_solved / n_samples if n_samples else np.nan,
         n_known_fluxes=n_known, n_total_fluxes=n_total, known_flux_ratio=known_ratio,
@@ -280,6 +320,7 @@ def main():
         n_unsolved = n_samples - n_solved
         print(f"\n{model['label']}: {n_samples} benchmarked of {flux_df.shape[1]} "
               f"total samples ({n_unsolved} unsolved)")
+        n_expected, n_missing = report_coverage(model, conv, run, flux_df.shape[1])
 
         # t-SNE is fit on the FULL population so the embedding reflects the whole
         # landscape, not just the samples that happened to be benchmarked -- the
@@ -306,7 +347,8 @@ def main():
         print(f"  known/total fluxes: {n_known}/{n_total} = {known_ratio:.3f}")
 
         summaries.append(summarize_model(model, n_samples, n_solved, n_unsolved,
-                                         n_known, n_total, known_ratio))
+                                         n_known, n_total, known_ratio,
+                                         n_expected, n_missing))
 
     if summaries:
         summary_df = pd.DataFrame(summaries)
