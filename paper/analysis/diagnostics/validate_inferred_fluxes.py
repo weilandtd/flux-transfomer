@@ -21,7 +21,10 @@ Three families of check, in the order they can invalidate each other:
    (``core/calc_labeling``), so a group summing above one is a genuine defect, not noise.
 
 3. **Agreement with the data** -- simulated vs measured MID per token: RMSE, worst offender,
-   and a z-score against the measured replicate spread.
+   and a z-score against the measured replicate spread, written to
+   ``simulated_vs_measured_<organism>.csv``. The parity scatter this used to draw is now
+   paper/scripts/plot_experimental_mid.py, which builds the paper figure from the same
+   primitives.
 
 Only the maximum-likelihood input (the replicate mean) is forward-simulated by default --
 one EMU pass per ensemble member plus one each for the mean and median states. The
@@ -97,7 +100,7 @@ def split_predictions(raw, sf, reaction_ids):
     appear as both, so the name alone does not identify a quantity.
     ``reversibility_names`` is a strict subset of the reactions (15 of 79 on E. coli core),
     so reindexing leaves NaN at every reaction the model predicts no reversibility for.
-    Those fill with zero, which is inert downstream because ``net_to_reversible_fluxes``
+    Those fill with zero, which is inert downstream because ``MFAModel.reversible_fluxes``
     multiplies by the reversibility mask first -- but they are *not* predictions, so
     :func:`feasibility` is told which positions are real via the returned mask rather than
     scoring a fill value as if the model had produced it.
@@ -261,7 +264,7 @@ def report_feasibility(feas, label):
     """Summarize a feasibility frame; returns True when every state is a valid flux state.
 
     A reversibility below ``min_rev_flux`` is reported but does not fail the check:
-    ``core.mfa.net_to_reversible_fluxes`` floors it before the EMU pass, so the forward
+    ``MFAModel.reversible_fluxes`` floors it before the EMU pass, so the forward
     simulation never sees the under-floor value. The other four are real defects -- a
     state outside the box, pointing the wrong way, carrying exchange on an irreversible
     reaction, or off the null space is not a flux state at all.
@@ -332,31 +335,6 @@ def report_member_spread(sims, measured, label):
     print(f"  members               : {len(vals)}")
     print(f"  RMSE best / median / worst : {vals.min():.4f} / "
           f"{np.median(vals):.4f} / {vals.max():.4f}   (best: {best})")
-
-
-def parity_plots(df, out_dir, tag):
-    """Simulated vs measured parity scatter, one panel per tracer."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    tracers = sorted(df["Tracer"].unique())
-    fig, axes = plt.subplots(1, len(tracers), figsize=(4.2 * len(tracers), 4.2), squeeze=False)
-    for ax, tracer in zip(axes[0], tracers):
-        sub = df[df["Tracer"] == tracer]
-        ax.scatter(sub["measured"], sub["sim"], s=14, alpha=0.7)
-        ax.plot([0, 1], [0, 1], lw=0.8, color="k")
-        ax.set_xlim(-0.02, 1.02)
-        ax.set_ylim(-0.02, 1.02)
-        ax.set_xlabel("measured")
-        ax.set_ylabel("simulated")
-        rmse = np.sqrt((sub["error"] ** 2).mean())
-        ax.set_title(f"{tracer}\nn={len(sub)}  RMSE={rmse:.3f}", fontsize=8)
-    fig.tight_layout()
-    path = os.path.join(out_dir, f"parity_{tag}.png")
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
-    print(f"  plot -> {path}")
 
 
 # ── Driver ────────────────────────────────────────────────────────────────────
@@ -519,8 +497,6 @@ def main(args):
             joined.insert(0, "GrowthCondition", gc)
             joined.insert(0, "Condition", condition)
             per_token.append(joined)
-            if not joined.empty:
-                parity_plots(joined, out_dir, f"{organism}_{condition}{gc}")
 
     tok_path = os.path.join(out_dir, f"simulated_vs_measured_{organism}.csv")
     pd.concat(per_token, ignore_index=True).to_csv(tok_path, index=False)
