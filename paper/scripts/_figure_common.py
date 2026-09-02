@@ -48,7 +48,6 @@ MODELS_BY_KEY = {m["key"]: m for m in MODELS}
 R2_FLOOR = -0.2          # R² at or below this piles up on the axis floor
 COLORS = {
     "reference": "#AAAAAA",   # threshold and identity lines
-    "box":       "#cccccc",   # annotation box edge
 }
 
 # ── This project's data conventions ───────────────────────────────────────────

@@ -213,9 +213,7 @@ def plot_experimental_flux(model, df, out_dir):
                                  n_sign_opposed=int((~grp["sign_agrees"]).sum())))
 
     ax.text(0.97, 0.04, "\n".join(lines), transform=ax.transAxes,
-            fontsize=9, va="bottom", ha="right",
-            bbox=dict(facecolor="white", alpha=0.85, edgecolor=COLORS["box"],
-                      boxstyle="round,pad=0.25"))
+            fontsize=9, va="bottom", ha="right")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -226,7 +224,12 @@ def plot_experimental_flux(model, df, out_dir):
     # silently falls back to a "Last Resort" placeholder box in the saved SVG.
     ax.set_xlabel("Reference MFA\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
     ax.set_ylabel("SigmaFlux\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
-    ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.4)
+    # A one-condition panel already names it in the R² label; a legend there is one
+    # stray marker in the corner saying nothing.
+    if len(palette) > 1:
+        ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.4)
+    else:
+        ax.legend_.remove()
     sns.despine(ax=ax)
     save_figure(fig, out_dir / f"experimental_flux_{model['key']}.svg")
     return summary_rows
