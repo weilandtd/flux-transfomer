@@ -9,10 +9,13 @@ whether that failure looks structural (unsolved samples occupy a distinct region
 the flux landscape) or scattered, and checks a simple structural predictor directly:
 how many fluxes are actually measured relative to the size of the network.
 
-  1. A t-SNE embedding of ground-truth flux vectors for the FULL sample population
+  1. A t-SNE embedding of ground-truth flux states for the FULL sample population
      (not just the benchmarked subset), colored by attempts-to-solve, so the
-     benchmarked samples are seen in the context of the whole flux landscape rather
-     than in isolation.
+     benchmarked samples are seen in the context of the whole landscape rather
+     than in isolation. A state is net flux AND exchange: the embedding stacks the
+     z-scored net fluxes with the z-scored exchange degrees (see ``exchange_degree``),
+     so two samples that share a net flux distribution but differ in how reversible
+     they are do not land on top of each other.
   2. Resolved fraction vs. known/total flux ratio across organisms -- "known"
      fluxes are the ones directly measured (extracellular exchange rates, biomass
      components; ``training.measured_fluxes`` in the organism config) rather than
@@ -133,18 +136,43 @@ def load_convergence(bench_dir):
     return df
 
 
-def zscore_flux(flux_df):
+def zscore_columns(df):
     """(n_samples, n_reactions) population z-score of a reactions x samples frame.
 
     Same zero-variance guard as sigmaflux.ai.data.prepare_dataset: a constant
     reaction has (value - mean) == 0 for every sample, so flooring the divisor to
     1.0 rather than dropping the reaction is exact, not an approximation.
     """
-    mat = flux_df.to_numpy(dtype=float).T
+    mat = df.to_numpy(dtype=float).T
     mu = mat.mean(axis=0)
     std = mat.std(axis=0)
     std = np.where(std < 1e-6, 1.0, std)
     return (mat - mu) / std
+
+
+def exchange_degree(flux_df, rev_df):
+    """r / (r + |v|) per reaction and sample, the dimensionless exchange coordinate.
+
+    The stored reversibility ``r`` is an exchange *rate* -- MFAModel splits it as
+    vf + vb = |v| + r -- so it carries the reaction's units and is unbounded above.
+    Z-scoring it directly would let the few reactions that run at thousands of units
+    of exchange set every distance in the embedding. The ratio is bounded by the
+    sampler's own ``max_reversibility_ratio`` and is the coordinate 13C labeling data
+    actually constrains.
+
+    Irreversible reactions have r == 0 and stay at 0.
+    """
+    rev = rev_df.reindex(flux_df.index).to_numpy(dtype=float)
+    total = rev + flux_df.to_numpy(dtype=float).__abs__()
+    with np.errstate(divide="ignore", invalid="ignore"):
+        zeta = np.where(total > 0, rev / total, 0.0)
+    return pd.DataFrame(zeta, index=flux_df.index, columns=flux_df.columns)
+
+
+def state_features(flux_df, rev_df):
+    """(n_samples, 2 * n_reactions) embedding input: z-scored net flux and exchange."""
+    return np.hstack([zscore_columns(flux_df),
+                      zscore_columns(exchange_degree(flux_df, rev_df))])
 
 
 def embed_tsne(z, perplexity, random_state):
@@ -243,8 +271,9 @@ def main():
             print(f"  {model['label']}: skipped — no MFA convergence records in {bench_dir}")
             continue
 
-        _, flux_df, _ = load_data(str(run))
+        _, flux_df, rev_df = load_data(str(run))
         flux_df.columns = range(flux_df.shape[1])
+        rev_df.columns = range(rev_df.shape[1])
 
         n_samples = len(conv)
         n_solved = int(conv["reached_optimum"].sum())
@@ -253,9 +282,9 @@ def main():
               f"total samples ({n_unsolved} unsolved)")
 
         # t-SNE is fit on the FULL population so the embedding reflects the whole
-        # flux landscape, not just the samples that happened to be benchmarked --
-        # the benchmarked subset is then colored on top of that shared geometry.
-        z = zscore_flux(flux_df)
+        # landscape, not just the samples that happened to be benchmarked -- the
+        # benchmarked subset is then colored on top of that shared geometry.
+        z = state_features(flux_df, rev_df)
         tsne_2d = embed_tsne(z, args.perplexity, args.random_state)
 
         sample_df = pd.DataFrame({
