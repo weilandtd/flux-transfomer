@@ -25,8 +25,8 @@ from sigmaflux.utils import (
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import (  # noqa: E402
-    LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_r2,
-    per_flux_rmse)
+    LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_max_abs,
+    per_flux_nrmse, per_flux_r2, per_flux_rmse)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
 
@@ -115,17 +115,20 @@ def run_dir_for(model, run_suffix=None):
 
 
 def benchmark_metrics(model, run_suffix=None):
-    """Per-reaction R² and RMSE for both methods, or None when the model has no
+    """Per-reaction R², RMSE and NRMSE for both methods, or None when the model has no
     benchmark yet.
 
     Computed from the benchmark HDF5s rather than read from ``output/identifiability.csv``
     so the figure has one source of truth and does not silently depend on
     plot_test_performance.py having been run first -- and on the same run directory.
 
-    Both metrics come from the same ``load_benchmark()`` call per method, so they share
+    Every metric comes from the same ``load_benchmark()`` call per method, so they share
     the identical chi2-accepted sample set -- no second, differently-filtered pass. The
-    final ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also
-    dropped from RMSE here, keeping one reaction population across all four columns.
+    NRMSE denominator is the exception: it is each reaction's max |ground-truth flux|
+    over the *whole* population, shared by both methods, because the two arms accept
+    different sample sets and a per-method denominator would not be one scale. The final
+    ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also dropped from
+    the RMSE columns, keeping one reaction population across every column.
     """
     run = run_dir_for(model, run_suffix)
     missing = [d for d in ("mfa_benchmark", "ai_benchmark")
@@ -140,6 +143,7 @@ def benchmark_metrics(model, run_suffix=None):
     # rather than rates -- and the MFA arm has no such reactions to be compared against.
     # plot_test_performance.py already drops them; this is the same population.
     flux_df = drop_pool_reactions(flux_df, run)
+    denom = per_flux_max_abs(flux_df)
     out = {}
     for method, sub in (("mfa", "mfa_benchmark"), ("ai", "ai_benchmark")):
         df, n_failed = load_benchmark(run / sub, flux_df)
@@ -148,6 +152,7 @@ def benchmark_metrics(model, run_suffix=None):
               f"{n} samples ({n_failed} unsolved), {df['reaction'].nunique()} reactions")
         out[f"r2_{method}"] = per_flux_r2(df)
         out[f"rmse_{method}"] = per_flux_rmse(df)
+        out[f"nrmse_{method}"] = per_flux_nrmse(df, denom)
     return pd.DataFrame(out).dropna()
 
 

@@ -1,31 +1,36 @@
 """
-MFA-vs-SigmaFlux simulation benchmark — per-reaction R²/RMSE distributions and Venn
+MFA-vs-SigmaFlux simulation benchmark — per-reaction R²/NRMSE distributions and Venn
 diagrams.
 
 Per model:
   mfa_benchmark_r2_<key>.svg               R² against the cumulative fraction of reactions
-  mfa_benchmark_rmse_hist_<key>.svg        Per-reaction RMSE distribution, log-x histogram
   mfa_benchmark_venn_<key>.svg             2-set Venn of reactions each method resolves
-  mfa_benchmark_r2_per_reaction_<key>.csv  the R²/RMSE table behind all three plots
+  mfa_benchmark_r2_per_reaction_<key>.csv  the R²/RMSE/NRMSE table behind both plots
 
 Across all models:
   mfa_benchmark_identifiable_sets.csv      Venn set sizes for every model
-  mfa_benchmark_rmse_violin.svg            RMSE distribution, all models side by side
-  mfa_benchmark_rmse_paired_tests.csv      Per-organism Wilcoxon signed-rank test, AI vs
-                                            MFA per-reaction RMSE, paired by reaction
+  mfa_benchmark_nrmse_violin.svg           NRMSE distribution, all models side by side
+  mfa_benchmark_nrmse_paired_tests.csv     Per-organism Wilcoxon signed-rank test, AI vs
+                                            MFA per-reaction NRMSE, paired by reaction
 
-R² curves and the RMSE histogram/violin all plot both methods on the same axis
-(SigmaFlux vs MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or
-above a given R², sorted descending. A model whose benchmark data is missing is skipped
-with a warning rather than failing the run, so the figure set fills itself in as runs land.
+R² curves and the NRMSE violin both plot the two methods on the same axis (SigmaFlux vs
+MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or above a given
+R², sorted descending. A model whose benchmark data is missing is skipped with a warning
+rather than failing the run, so the figure set fills itself in as runs land.
 
-Every R²/RMSE here (``per_flux_r2``/``per_flux_rmse`` in plot_test_performance.py) is
-computed in plain linear space over the benchmark HDF5s directly -- not read from
-output/identifiability.csv -- so this script has one source of truth and does not depend
-on plot_test_performance.py having been run first against the same run directory. Both
-metrics share the same chi2-accepted ("statistically acceptable") sample set -- see
-``_figure_common.benchmark_metrics`` -- so the R² and RMSE panels for one model describe
-the identical reaction population.
+The violin reports NRMSE, RMSE over each reaction's largest |ground-truth flux|, because
+raw RMSE carries the reaction's units: the median across organisms spans two and a half
+orders of magnitude on flux magnitude alone, so four models cannot be read side by side
+in it. The absolute RMSE stays in the per-reaction CSV. NRMSE = 1 is marked on the violin:
+above it a reaction's error exceeds the entire span of its ground truth.
+
+Every metric here (``per_flux_r2``/``per_flux_rmse``/``per_flux_nrmse`` in
+plot_test_performance.py) is computed in plain linear space over the benchmark HDF5s
+directly -- not read from output/identifiability.csv -- so this script has one source of
+truth and does not depend on plot_test_performance.py having been run first against the
+same run directory. They share the same chi2-accepted ("statistically acceptable") sample
+set -- see ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for one
+model describe the identical reaction population.
 
 Usage:
     python paper/scripts/plot_mfa_benchmark.py
@@ -42,8 +47,8 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 from _figure_common import (
-    COLORS, FLUX_MIN_ABS, LABEL, METHOD_COLORS, R2_FLOOR, R2_THRESHOLD, add_common_args,
-    apply_style, benchmark_metrics, save_figure, selected_models)
+    COLORS, LABEL, METHOD_COLORS, R2_FLOOR, R2_THRESHOLD, add_common_args, apply_style,
+    benchmark_metrics, save_figure, selected_models)
 
 apply_style()
 
@@ -91,72 +96,65 @@ def plot_r2_quantiles(model, tbl, out_dir):
     save_figure(fig, out_dir / f"mfa_benchmark_r2_{model['key']}.svg")
 
 
-def _rmse_long(model, tbl):
-    """Tidy (Model, Method, rmse) frame from tbl's rmse_mfa/rmse_ai columns.
-
-    Floored at FLUX_MIN_ABS -- same idiom as R2_FLOOR for R2 -- so the log-x histogram
-    and the log10-transformed violin never see an exact zero.
-    """
-    long = (tbl[["rmse_mfa", "rmse_ai"]]
-            .rename(columns={"rmse_mfa": "mfa", "rmse_ai": "ai"})
-            .melt(var_name="method", value_name="rmse"))
-    long["rmse"] = np.clip(long["rmse"].to_numpy(), FLUX_MIN_ABS, None)
+def _nrmse_long(model, tbl):
+    """Tidy (Model, Method, nrmse) frame from tbl's nrmse_mfa/nrmse_ai columns."""
+    long = (tbl[["nrmse_mfa", "nrmse_ai"]]
+            .rename(columns={"nrmse_mfa": "mfa", "nrmse_ai": "ai"})
+            .melt(var_name="method", value_name="nrmse"))
     long["Method"] = long["method"].map(LABEL)
     long["Model"] = model["label"]
-    return long[["Model", "Method", "rmse"]]
+    return long[["Model", "Method", "nrmse"]]
 
 
-def plot_rmse_histogram(model, long, out_dir):
-    """Per-reaction flux RMSE, SigmaFlux vs MFA, one model, log-x histogram."""
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    sns.histplot(data=long, x="rmse", hue="Method", hue_order=[LABEL["ai"], LABEL["mfa"]],
-                palette=METHOD_PALETTE, log_scale=True, element="step", alpha=0.55, ax=ax)
-    ax.set_xlabel(r"Per-reaction flux RMSE (mmol gDW$^{-1}$ h$^{-1}$)")
-    ax.set_ylabel("Number of reactions")
-    sns.move_legend(ax, "upper right", frameon=False, title=None)
-    sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"mfa_benchmark_rmse_hist_{model['key']}.svg")
-
-
-def plot_rmse_violin(df, model_order, out_dir):
-    """Cross-model RMSE violins: 4 models x 2 methods = 8 violins, log-y.
+def plot_nrmse_violin(df, model_order, out_dir):
+    """Cross-model NRMSE violins: 4 models x 2 methods = 8 violins, log-y.
 
     Width is the one explicit, user-approved exception to the 3.5x3.5 default
     (3.5 * 1.8 = 6.3in); height is unchanged.
 
-    Drawn on log10(rmse), not on rmse with ax.set_yscale('log') after the fact:
-    seaborn's KDE is fit in whatever coordinates it's given, so fitting on raw RMSE and
+    Normalising removes the *units* that made the absolute-RMSE violin incomparable
+    across organisms, but not the dynamic range -- the per-reaction population still
+    spans several decades -- so the log axis stays.
+
+    Drawn on log10(nrmse), not on nrmse with ax.set_yscale('log') after the fact:
+    seaborn's KDE is fit in whatever coordinates it's given, so fitting on raw NRMSE and
     rescaling the axis afterwards would still smooth with a linear-space bandwidth and
     distort the shape wherever the (roughly log-normal) density isn't uniform on that
-    scale. Fitting on log10(rmse) directly makes the displayed shape the actual density
+    scale. Fitting on log10(nrmse) directly makes the displayed shape the actual density
     in the space it's drawn in; ticks are relabelled as 10^n.
     """
     df = df.copy()
-    df["log10_rmse"] = np.log10(df["rmse"])
+    df["log10_nrmse"] = np.log10(df["nrmse"])
     fig, ax = plt.subplots(figsize=(3.5 * 1.8, 3.5))
-    sns.violinplot(data=df, x="Model", y="log10_rmse", hue="Method", order=model_order,
+    sns.violinplot(data=df, x="Model", y="log10_nrmse", hue="Method", order=model_order,
                    hue_order=[LABEL["ai"], LABEL["mfa"]], palette=METHOD_PALETTE,
                    cut=0, linewidth=0.8, ax=ax)
-    lo, hi = np.floor(df["log10_rmse"].min()), np.ceil(df["log10_rmse"].max())
+    lo, hi = np.floor(df["log10_nrmse"].min()), np.ceil(df["log10_nrmse"].max())
     ax.set_yticks(np.arange(lo, hi + 1))
     ax.set_yticklabels([f"$10^{{{int(t)}}}$" for t in np.arange(lo, hi + 1)])
+    # Above this line a reaction's RMSE exceeds the whole span of its ground truth.
+    ax.axhline(0.0, color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
     ax.set_xlabel("")
-    ax.set_ylabel(r"Per-reaction flux RMSE (mmol gDW$^{-1}$ h$^{-1}$)")
+    ax.set_ylabel(r"Per-reaction flux NRMSE (RMSE / max$|v|$)")
     sns.move_legend(ax, "upper right", frameon=False, title=None)
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / "mfa_benchmark_rmse_violin.svg")
+    save_figure(fig, out_dir / "mfa_benchmark_nrmse_violin.svg")
 
 
-def paired_rmse_test(model, tbl):
-    """Wilcoxon signed-rank test, AI vs MFA per-reaction RMSE, paired by reaction.
+def paired_nrmse_test(model, tbl):
+    """Wilcoxon signed-rank test, AI vs MFA per-reaction NRMSE, paired by reaction.
 
-    ``tbl``'s rmse_mfa/rmse_ai columns already share one reaction index --
+    Run on the same quantity the violin draws: the signed-rank statistic ranks the
+    absolute differences, and normalising per reaction reorders them, so a test on
+    absolute RMSE would not be the test of what is plotted.
+
+    ``tbl``'s nrmse_mfa/nrmse_ai columns already share one reaction index --
     ``benchmark_metrics``'s trailing ``dropna()`` keeps only reactions both methods
-    have a value for -- so reaction r's MFA RMSE and AI RMSE are a genuine matched
-    pair, not an independent-groups comparison. Returns None when there are too few
-    reactions for scipy's own practical floor, or every pair ties exactly.
+    have a value for -- so reaction r's MFA and AI NRMSE are a genuine matched pair,
+    not an independent-groups comparison. Returns None when there are too few reactions
+    for scipy's own practical floor, or every pair ties exactly.
     """
-    mfa, ai = tbl["rmse_mfa"].to_numpy(), tbl["rmse_ai"].to_numpy()
+    mfa, ai = tbl["nrmse_mfa"].to_numpy(), tbl["nrmse_ai"].to_numpy()
     diff = ai - mfa
     diff = diff[np.isfinite(diff)]
     if len(diff) < 6 or np.allclose(diff, 0):
@@ -165,25 +163,27 @@ def paired_rmse_test(model, tbl):
     return {
         "model": model["label"],
         "n_reactions": len(diff),
-        "median_rmse_mfa": float(np.median(mfa)),
-        "median_rmse_ai": float(np.median(ai)),
-        "lower_rmse": LABEL["ai"] if np.median(diff) < 0 else LABEL["mfa"],
+        "median_nrmse_mfa": float(np.median(mfa)),
+        "median_nrmse_ai": float(np.median(ai)),
+        "median_rmse_mfa": float(tbl["rmse_mfa"].median()),
+        "median_rmse_ai": float(tbl["rmse_ai"].median()),
+        "lower_nrmse": LABEL["ai"] if np.median(diff) < 0 else LABEL["mfa"],
         "wilcoxon_stat": float(stat),
         "wilcoxon_p": float(p),
     }
 
 
 def report_paired_tests(records, out_dir):
-    """Print the per-organism paired RMSE test and write it next to the figures."""
-    print(f"\n── Paired RMSE test (Wilcoxon signed-rank, {LABEL['ai']} vs {LABEL['mfa']}, "
+    """Print the per-organism paired NRMSE test and write it next to the figures."""
+    print(f"\n── Paired NRMSE test (Wilcoxon signed-rank, {LABEL['ai']} vs {LABEL['mfa']}, "
           f"per reaction) ──")
     for r in records:
         print(f"\n{r['model']}   (n = {r['n_reactions']} reactions)")
-        print(f"   median RMSE — MFA {r['median_rmse_mfa']:.4g}, "
-              f"SigmaFlux {r['median_rmse_ai']:.4g}")
-        print(f"   lower RMSE : {r['lower_rmse']}"
+        print(f"   median NRMSE — MFA {r['median_nrmse_mfa']:.4g}, "
+              f"SigmaFlux {r['median_nrmse_ai']:.4g}")
+        print(f"   lower NRMSE: {r['lower_nrmse']}"
               f"   (p = {r['wilcoxon_p']:.3g}, W = {r['wilcoxon_stat']:.1f})")
-    path = out_dir / "mfa_benchmark_rmse_paired_tests.csv"
+    path = out_dir / "mfa_benchmark_nrmse_paired_tests.csv"
     pd.DataFrame(records).to_csv(path, index=False)
     print(f"\nSaved: {path}")
 
@@ -256,34 +256,48 @@ def plot_venn(model, counts, out_dir):
     save_figure(fig, out_dir / f"mfa_benchmark_venn_{model['key']}.svg")
 
 
+def drop_superseded(out_dir):
+    """Remove the absolute-RMSE outputs this script no longer writes.
+
+    A rename that leaves the old file in place leaves two figures in paper/figures/
+    claiming to be the same panel, one of them silently stale.
+    """
+    stale = [out_dir / "mfa_benchmark_rmse_violin.svg",
+             out_dir / "mfa_benchmark_rmse_paired_tests.csv",
+             *out_dir.glob("mfa_benchmark_rmse_hist_*.svg")]
+    for path in stale:
+        if path.exists():
+            path.unlink()
+            print(f"Removed superseded: {path}")
+
+
 def main():
     args = parse_args()
     out_dir = args.out_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    drop_superseded(out_dir)
 
     models = selected_models(args)
 
-    print("── Per-reaction R²/RMSE ──")
-    records, rmse_frames, model_order, paired_records = [], [], [], []
+    print("── Per-reaction R²/NRMSE ──")
+    records, nrmse_frames, model_order, paired_records = [], [], [], []
     for model in models:
         tbl = benchmark_metrics(model, args.run_suffix)
         if tbl is None:
             continue
         tbl.to_csv(out_dir / f"mfa_benchmark_r2_per_reaction_{model['key']}.csv")
         plot_r2_quantiles(model, tbl, out_dir)
-        long = _rmse_long(model, tbl)
-        plot_rmse_histogram(model, long, out_dir)
-        rmse_frames.append(long)
+        nrmse_frames.append(_nrmse_long(model, tbl))
         model_order.append(model["label"])
         counts = set_counts(model, tbl)
         records.append(counts)
         plot_venn(model, counts, out_dir)
-        paired = paired_rmse_test(model, tbl)
+        paired = paired_nrmse_test(model, tbl)
         if paired is not None:
             paired_records.append(paired)
 
-    if rmse_frames:
-        plot_rmse_violin(pd.concat(rmse_frames, ignore_index=True), model_order, out_dir)
+    if nrmse_frames:
+        plot_nrmse_violin(pd.concat(nrmse_frames, ignore_index=True), model_order, out_dir)
 
     if paired_records:
         report_paired_tests(paired_records, out_dir)

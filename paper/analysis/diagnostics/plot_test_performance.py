@@ -223,6 +223,33 @@ def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
     return df.groupby("reaction").apply(_rmse, include_groups=False)
 
 
+def per_flux_max_abs(flux_df: pd.DataFrame) -> pd.Series:
+    """Largest |flux| each reaction reaches anywhere in the ground-truth population.
+
+    The denominator of :func:`per_flux_nrmse`. Taken over the whole population rather
+    than over the samples one method solved: the MFA arm is chi2-gated to a fraction of
+    the split while the AI arm keeps all of it, and a per-method denominator would put
+    the two on different scales.
+    """
+    return flux_df.abs().max(axis=1)
+
+
+def per_flux_nrmse(df: pd.DataFrame, denom: pd.Series) -> pd.Series:
+    """:func:`per_flux_rmse` divided by each reaction's own ``denom`` entry.
+
+    Dimensionless, so reactions and organisms spanning orders of magnitude in flux are
+    on one scale. Reactions missing from ``denom``, or whose denominator is zero, drop
+    out.
+
+    Args:
+        df: paired long frame from :func:`load_benchmark`.
+        denom: per-reaction normalizer, e.g. :func:`per_flux_max_abs`.
+    """
+    rmse = per_flux_rmse(df)
+    scale = denom.reindex(rmse.index).replace(0.0, np.nan)
+    return (rmse / scale).dropna()
+
+
 def overall_r2(df: pd.DataFrame) -> float:
     ss_res = float(((df["pred"] - df["gt"]) ** 2).sum())
     ss_tot = float(((df["gt"] - df["gt"].mean()) ** 2).sum())
