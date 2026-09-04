@@ -247,10 +247,25 @@ def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB, legs=False):
 def prepare_for_mfa(model, cfg):
     """Bring a loaded organism model to the state sampling and MFA both need.
 
-    Media, reaction-bound overrides, unlabeled dilution inputs, the growth window, a
-    feasibility check, FVA tightening, then skip-constraint drops -- in that order,
-    because each step's input is the one before it: dilution targets are only detectable
-    once the bound overrides are applied.
+    Media, reaction-bound overrides, the growth window, a feasibility check, FVA
+    tightening, *then* unlabeled dilution inputs, then skip-constraint drops -- in
+    that order, because each step's input is the one before it, and FVA has to run
+    on the real network alone.
+
+    Dilution inputs (``EX_<met>_env``/``DILUT_<met>``) give the EMU network an
+    unlabeled source for a medium component the cell also produces, but their own
+    bounds are a generous, unconditional ``(0, 1000)`` -- they carry no information
+    about what the real network can actually support. Added before FVA, they are a
+    second, glucose-free route into the exchange they feed: FVA sees the exchange
+    reachable via the free backdoor regardless of what the real network can supply,
+    and leaves its bound at the raw media value instead of tightening it (an exchange
+    bounded ``(0, 100)`` in the media block stayed at 100 even when the network can
+    derive at most ~40 of it from the sampled glucose uptake). Adding them *after*
+    FVA has already tightened every real reaction's bounds from the stoichiometry
+    alone means the exchange's own bound is fixed at what the network can really
+    support before the backdoor exists to loosen it -- the backdoor still gives the
+    EMU network its unlabeled source afterward, it just can no longer widen an
+    exchange bound FVA already set.
 
     The sampler and the MFA model checker each kept a hand-maintained copy of this
     sequence, which is how they drifted; they now both call this.
@@ -268,14 +283,6 @@ def prepare_for_mfa(model, cfg):
     # applied. Detecting on the pre-override bounds silently skipped dilution for
     # any medium component whose only internal route was such an override.
     apply_reaction_bounds(model, s.get("reaction_bounds"))
-
-    # Medium components the cell also produces are mixing nodes whose exchange
-    # carries no label, so they cannot be diluted by the medium. Give each one an
-    # explicit unlabeled input. Done here rather than in the model files because
-    # the medium is a property of the experiment, not of the organism.
-    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
-    if diluted:
-        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
     if s.get("growth"):
         constrain_growth(model, s["growth"])
 
@@ -288,6 +295,13 @@ def prepare_for_mfa(model, cfg):
     n_zero, n_orphan, fva = constrain_by_fva(model)
     print(f"  Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; "
           f"tightened remaining bounds with ±1e-6")
+
+    # After FVA: see the docstring above -- added earlier, this is a second,
+    # glucose-free route into whatever exchange it feeds, and FVA would leave that
+    # exchange at its raw media bound instead of tightening it.
+    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
+    if diluted:
+        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
 
     if cfg.get("skip_constraints"):
         drop_skip_constraints(model, cfg["skip_constraints"])
