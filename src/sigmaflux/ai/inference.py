@@ -16,6 +16,7 @@ A predictor can be built three ways, all ending at the same
 
 import glob
 import os
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -331,6 +332,9 @@ class SigmaFlux:
         spec = ModelSpec.from_checkpoint(self.ckpt, config=config, data_dir=data_dir)
         self._init_from_spec(spec, self.ckpt['model_state_dict'], device=device,
                              strict=False)
+        # Only :meth:`mfa_context` needs these -- it has to locate the run's prepared
+        # model, which the checkpoint itself does not carry.
+        self._config_path, self._checkpoint, self._data_dir = config, checkpoint, data_dir
 
     @classmethod
     def from_spec(cls, spec, state_dict, *, device=None, strict=True):
@@ -371,6 +375,10 @@ class SigmaFlux:
         """
         self.spec = spec
         self.device = resolve_device(device)
+        # Set by __init__ when the model came from a run directory; a from_spec or .sfx
+        # predictor has no run to find a prepared model in, and mfa_context() says so.
+        self._config_path = self._checkpoint = self._data_dir = None
+        self._mfa = None
 
         # Tracer name → internal tracer string mapping. The internal string is
         # Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}", which is what
@@ -446,7 +454,7 @@ class SigmaFlux:
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def predict(self, df_L, df_Vm=None, *, verbose=True):
+    def predict(self, df_L, df_Vm=None, *, verbose=True, with_mid=False):
         """Predict fluxes from labeling data and measured exchange fluxes.
 
         Tokens the experiment does not measure are *excluded* rather than fed as a
@@ -466,6 +474,10 @@ class SigmaFlux:
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes, columns 'Flux Name', 'Value' (optional 'Sample'
             matching df_L); names must match expected_measured_fluxes().
+        with_mid : bool
+            Also simulate the labeling each predicted flux state implies, and return
+            ``(predictions, mids)`` instead of just the predictions. One EMU forward
+            pass per sample, so it is off by default; see :meth:`simulate_mid`.
         verbose : bool
             Print the input-coverage report. An ensemble sets this only for its first
             member, since every member sees identical inputs.
@@ -633,7 +645,10 @@ class SigmaFlux:
             _rev_log_std  = np.array(self._nsd['rev_log_std'], dtype=np.float32)
             rev_arr = np.expm1(rev_arr * _rev_log_std + _rev_log_mean).clip(0)
 
-        return self._format_output(flux_arr, rev_arr, samples)
+        out = self._format_output(flux_arr, rev_arr, samples)
+        if with_mid:
+            return out, self.simulate_mid(flux_arr, rev_arr, samples)
+        return out
 
     def _project_into_bounds(self, flux_arr):
         """Pull each predicted flux state back toward the reaction bounds.
@@ -745,6 +760,108 @@ class SigmaFlux:
                     if rxn in flux_df.index:
                         flux_df.loc[rxn, col_idx] = np.float32(row['Value'])
         return flux_df, rev_df
+
+    def mfa_context(self):
+        """The prepared EMU network this model's fluxes are simulated through (memoized).
+
+        Built from the run's own ``model_prepared_for_mfa.json`` rather than re-derived:
+        rebuilding re-solves FVA and depends on the solver still behaving as it did, so
+        the saved model is the one training and sampling actually saw. Expansion targets
+        are restricted to the metabolites the measurement platform maps, which is what
+        keeps the network small enough to simulate thousands of states through.
+
+        Returns ``(mfa_model, reaction_ids, labeling_to, labeling_index)``.
+        """
+        if self._mfa is not None:
+            return self._mfa
+        # Imported here rather than at module scope: the EMU machinery pulls in cobra and
+        # the expansion code, which a predictor that never simulates should not pay for.
+        from ..pipeline._benchmark import build_mfa_context, load_prepared_model
+        from ..pipeline._paths import load_config
+
+        if self._checkpoint is None and self._data_dir is None:
+            raise ValueError("this predictor was built without a run directory, so the "
+                             "prepared model it would simulate through cannot be located")
+        roots = [d for d in (self._data_dir,
+                             os.path.dirname(os.path.abspath(self._checkpoint))
+                             if self._checkpoint else None,
+                             os.path.dirname(os.path.dirname(os.path.abspath(
+                                 self._checkpoint))) if self._checkpoint else None)
+                 if d]
+        run_dir = next((d for d in roots
+                        if os.path.isfile(os.path.join(d, "model_prepared_for_mfa.json"))),
+                       None)
+        if run_dir is None:
+            raise FileNotFoundError(
+                f"no model_prepared_for_mfa.json in any of {roots}; labeling cannot be "
+                f"simulated without the prepared model")
+        cfg, root = load_config(self._config_path) if self._config_path else (self.cfg, None)
+        cobra_model, mapped = load_prepared_model(run_dir, cfg, root)
+        mfa_model, reaction_ids, _, labeling_to, labeling_index = build_mfa_context(
+            cobra_model, cfg["labeling"]["tracers"],
+            pd.Series(0.0, index=[r.id for r in cobra_model.reactions]),
+            "predict_mid", with_backward=False, restrict_targets_to=mapped)
+        self._mfa = (mfa_model, reaction_ids, labeling_to, labeling_index)
+        return self._mfa
+
+    def simulate_mid(self, flux_arr, rev_arr, samples, context=None):
+        """Labeling each predicted flux state implies, in this predictor's input schema.
+
+        One EMU forward pass per row, so the cost is linear in the number of states --
+        the reason :meth:`predict` only does this when asked. Reversibility is predicted
+        for a subset of the reactions and fills with zero elsewhere, which is inert:
+        MFAModel multiplies it by the reversibility mask before simulating.
+
+        Args:
+            flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
+            rev_arr: matching reversibilities, in reversibility_names order.
+            samples: sample ids, in row order.
+            context: an ``mfa_context()`` to reuse, so an ensemble builds one network
+                rather than one per member.
+
+        Returns a long frame with the same columns the measured labeling arrives in:
+        'Sample', 'Tracer Name', 'Metabolite ID', 'Isotopomer', 'Fraction'.
+        """
+        from ..pipeline._benchmark import forward_labeling
+
+        mfa_model, reaction_ids, labeling_to, labeling_index = context or self.mfa_context()
+        flux_pos = {n: i for i, n in enumerate(self.flux_names)}
+        rev_pos = {n: i for i, n in enumerate(self.reversibility_names)}
+        take_flux = [flux_pos.get(r) for r in reaction_ids]
+        take_rev = [rev_pos.get(r) for r in reaction_ids]
+
+        def _align(row, take):
+            return np.array([0.0 if i is None else float(row[i]) for i in take])
+
+        values = np.empty((len(samples), len(labeling_index)), dtype=float)
+        failed = 0
+        for i in range(len(samples)):
+            try:
+                values[i] = forward_labeling(mfa_model, _align(flux_arr[i], take_flux),
+                                             _align(rev_arr[i], take_rev), labeling_to)
+            except Exception:
+                # A predicted state can be one whose EMU system is singular -- a subnet
+                # with near-zero row sums has no labeling to solve for. That state has no
+                # labeling, which is a fact about it, not a reason to lose every other
+                # state in the call.
+                values[i] = np.nan
+                failed += 1
+        if failed:
+            warnings.warn(f"{failed}/{len(samples)} predicted flux state(s) have no "
+                          f"solvable labeling; their fractions are NaN")
+        # Report the tracer under the name the caller supplied it as, not the internal
+        # repr, so the result lines up with the df_L it was predicted from.
+        display = {v: k for k, v in self._tracer_name_to_id.items()}
+        levels = {lvl: labeling_index.get_level_values(lvl).to_numpy()
+                  for lvl in ("Tracer", "Metabolite", "Isotopomer")}
+        out = pd.DataFrame({
+            "Sample": np.repeat(np.asarray(samples), len(labeling_index)),
+            "Tracer Name": np.tile([display.get(t, t) for t in levels["Tracer"]], len(samples)),
+            "Metabolite ID": np.tile(levels["Metabolite"], len(samples)),
+            "Isotopomer": np.tile(levels["Isotopomer"], len(samples)),
+            "Fraction": values.ravel(),
+        })
+        return out
 
     def _format_output(self, flux_arr, rev_arr, samples):
         """Assemble the long-format 'Sample'/'Flux Name'/'Value' output DataFrame.
@@ -868,7 +985,7 @@ class EnsembleSigmaFlux:
         self.model_version       = None
         self.source_path         = None
 
-    def predict(self, df_L, df_Vm=None, *, aggregate=True):
+    def predict(self, df_L, df_Vm=None, *, aggregate=True, with_mid=False):
         """Ensemble prediction. Members share inputs, so per-member outputs have
         identical row order and are combined positionally.
 
@@ -883,10 +1000,34 @@ class EnsembleSigmaFlux:
             ``False``: every member's own raw prediction, long-format with an added
             'Member' column (one row per Sample x Member x Flux Name) -- no mean
             collapse, no other post-processing.
+        with_mid
+            Also simulate each member's labeling, returning ``(predictions, mids)``.
+            The mids carry a 'Member' column whether or not the predictions are
+            aggregated: the EMU pass is nonlinear, so the labeling of the mean flux
+            state is not the mean labeling, and collapsing members here would decide
+            that question for the caller. Every member simulates through member 0's
+            network -- they share a model, and building one per member would prepare
+            the same EMU expansion twenty times.
         """
         # Members see identical inputs, so only the first reports coverage.
-        preds = [m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0))
-                 for i, m in enumerate(self.members)]
+        preds, mids = [], []
+        if with_mid:
+            # Members share one model, so they share one network: seed every member's
+            # memo with member 0's rather than preparing the same EMU expansion once
+            # per member.
+            context = self.members[0].mfa_context()
+            for m in self.members:
+                m._mfa = context
+        for i, m in enumerate(self.members):
+            if with_mid:
+                pred, mid = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0), with_mid=True)
+                mids.append(mid.assign(Member=i))
+                print(f"     simulated labeling for member {i + 1}/{len(self.members)}",
+                      flush=True)
+            else:
+                pred = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0))
+            preds.append(pred)
+        mid_out = pd.concat(mids, ignore_index=True) if with_mid else None
         if not aggregate:
             raw = []
             for midx, p in enumerate(preds):
@@ -895,7 +1036,8 @@ class EnsembleSigmaFlux:
                     p.insert(0, 'Sample', 0)
                 p.insert(1, 'Member', midx)
                 raw.append(p)
-            return pd.concat(raw, ignore_index=True)
+            combined = pd.concat(raw, ignore_index=True)
+            return (combined, mid_out) if with_mid else combined
         # Mean, not median: every member predicts v = y @ Z_full.T and so lies in the
         # stoichiometric null space, and a mean is a convex combination of those -- it
         # stays a flux state. A per-reaction median is not a convex combination and can
@@ -905,7 +1047,7 @@ class EnsembleSigmaFlux:
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
         out['Value'] = values.mean(axis=0)
-        return out
+        return (out, mid_out) if with_mid else out
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
