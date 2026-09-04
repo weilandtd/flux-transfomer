@@ -12,7 +12,10 @@ features: section must set
 or
   token_selection_method: fisher_fast  # approximate, single-shot Gram
 -- both run the identical significance test, differing only in how the
-sensitivity Gram is estimated.
+sensitivity Gram is estimated -- or
+  token_selection_method: all          # no significance test: every token that
+                                        # survives restrict_to_mapped/exclude_extracellular
+                                        # is included. The no-feature-selection ablation.
 
 Usage:
     sigmaflux-select-features --config paper/configs/i_orientalis.yaml --data-dir <run_dir>
@@ -27,7 +30,7 @@ from sigmaflux.pipeline._paths import (
     add_root_argument, load_config, mapping_csv_for, resolve_path,
 )
 
-_METHODS = {"fisher", "fisher_fast"}
+_METHODS = feat_lib.TOKEN_SELECTION_METHODS
 
 
 def main(args):
@@ -94,17 +97,21 @@ def main(args):
         else:
             print("WARNING: restrict_to_mapped=true but mapping_csv not found — skipping filter")
 
-    print(f"\nToken selection: {method} "
-          f"({'exact cross-fit' if method == 'fisher' else 'approximate single-shot'} "
-          f"sensitivity Gram) ...")
-    df, summary = feat_lib.select_significant_tokens(
-        theta, token_states,
-        noise_std=noise_std,
-        n_permutations=n_permutations,
-        seed=seed,
-        exact=(method != "fisher_fast"),
-        run_mi_audit=run_mi_audit,
-    )
+    if method == "all":
+        print("\nToken selection: all (no significance test -- every measurable token) ...")
+        df, summary = feat_lib.select_all_tokens(token_states)
+    else:
+        print(f"\nToken selection: {method} "
+              f"({'exact cross-fit' if method == 'fisher' else 'approximate single-shot'} "
+              f"sensitivity Gram) ...")
+        df, summary = feat_lib.select_significant_tokens(
+            theta, token_states,
+            noise_std=noise_std,
+            n_permutations=n_permutations,
+            seed=seed,
+            exact=(method != "fisher_fast"),
+            run_mi_audit=run_mi_audit,
+        )
 
     df.to_csv(output_path, index=False)
 
@@ -116,10 +123,13 @@ def main(args):
     if eff_rank is not None:
         print(f"Effective rank                           : {eff_rank:.2f}")
     print(f"Noise std (σ)                            : {noise_std}")
-    print(f"Null floor (nats, {n_permutations} permutations)      : {summary.get('null_floor_nats', 0.0):.4f}")
+    null_floor = summary.get("null_floor_nats")
+    if null_floor is not None:
+        print(f"Null floor (nats, {n_permutations} permutations)      : {null_floor:.4f}")
     print("-" * 74)
     print(f"TOTAL candidate tokens                   : {len(df)}")
-    print(f"  ... INCLUDED in training (significant)  : {n_included}")
+    print(f"  ... INCLUDED in training ({'all' if method == 'all' else 'significant'})"
+          f"{'  ' if method == 'all' else ''} : {n_included}")
     if n_included > 0:
         print(f"  unique metabolites included            : "
               f"{df.loc[df['included'], 'metabolite_id'].nunique()}")

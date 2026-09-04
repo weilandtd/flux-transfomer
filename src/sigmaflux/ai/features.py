@@ -10,6 +10,13 @@ from cobra.util.array import create_stoichiometric_matrix
 from sigmaflux.ai import fisher_selection
 from sigmaflux.ai.utils import compute_sparse_nullspace, split_constant_directions
 
+# The only valid features.token_selection_method values -- shared by
+# extract_informative_features.py (which selects tokens) and train_ai_model.py (which
+# re-validates the config's own method field before trusting the resulting features.csv).
+# One set here instead of two hardcoded copies: those drifted before -- train_ai_model.py
+# rejected "all" the moment it existed elsewhere -- and would drift again silently.
+TOKEN_SELECTION_METHODS = {"fisher", "fisher_fast", "all"}
+
 
 def build_theta_and_token_states(
     labeling_df: pd.DataFrame,
@@ -115,6 +122,37 @@ def drop_extracellular_tokens(labeling_df: pd.DataFrame) -> pd.DataFrame:
     filtered = labeling_df.loc[mask]
     print(f"Excluded extracellular tokens: {n_before} → {filtered.shape[0]}")
     return filtered
+
+
+def select_all_tokens(token_states: dict) -> tuple[pd.DataFrame, dict]:
+    """Every candidate token included -- the no-feature-selection ablation.
+
+    Same output schema as select_significant_tokens (tracer, metabolite_id,
+    isotopomer, included, significant, rank, standalone_nats), skipping the
+    Fisher/permutation compute entirely: included=True for every token that
+    survived the mapping/extracellular filters upstream, so "all measurable
+    tokens" still means measurable, not literally every isotopologue.
+
+    Args:
+        token_states: dict of ``(tracer, metabolite, isotopomer)`` -> per-sample MID array.
+
+    Returns ``(df, summary)`` with the diagnostic fields select_significant_tokens
+    fills from the Fisher computation (null_floor_nats, eigenvalues, ...) absent,
+    since no such computation runs here.
+    """
+    df = pd.DataFrame(
+        {
+            "tracer": [k[0] for k in token_states],
+            "metabolite_id": [k[1] for k in token_states],
+            "isotopomer": [k[2] for k in token_states],
+            "included": True,
+            "significant": True,
+            "rank": range(len(token_states)),
+            "standalone_nats": np.nan,
+        }
+    )
+    summary = {"n_free_flux_directions": None, "null_floor_nats": None, "eigenvalues": []}
+    return df, summary
 
 
 def select_significant_tokens(
