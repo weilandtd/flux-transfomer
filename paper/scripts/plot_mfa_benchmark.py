@@ -18,11 +18,11 @@ MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or above
 R², sorted descending. A model whose benchmark data is missing is skipped with a warning
 rather than failing the run, so the figure set fills itself in as runs land.
 
-The violin reports NRMSE, RMSE over each reaction's largest |ground-truth flux|, because
-raw RMSE carries the reaction's units: the median across organisms spans two and a half
-orders of magnitude on flux magnitude alone, so four models cannot be read side by side
-in it. The absolute RMSE stays in the per-reaction CSV. NRMSE = 1 is marked on the violin:
-above it a reaction's error exceeds the entire span of its ground truth.
+The violin reports NRMSE, RMSE over each reaction's root-mean-square ground-truth flux,
+because raw RMSE carries the reaction's units: the median across organisms spans two and
+a half orders of magnitude on flux magnitude alone, so four models cannot be read side by
+side in it. The absolute RMSE stays in the per-reaction CSV. NRMSE = 1 is marked on the
+violin: above it a reaction's error is as large as the flux it carries.
 
 Every metric here (``per_flux_r2``/``per_flux_rmse``/``per_flux_nrmse`` in
 plot_test_performance.py) is computed in plain linear space over the benchmark HDF5s
@@ -133,10 +133,10 @@ def plot_nrmse_violin(df, model_order, out_dir):
     lo, hi = np.floor(df["log10_nrmse"].min()), np.ceil(df["log10_nrmse"].max())
     ax.set_yticks(np.arange(lo, hi + 1))
     ax.set_yticklabels([f"$10^{{{int(t)}}}$" for t in np.arange(lo, hi + 1)])
-    # Above this line a reaction's RMSE exceeds the whole span of its ground truth.
+    # Above this line a reaction's RMSE is as large as the flux it typically carries.
     ax.axhline(0.0, color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
     ax.set_xlabel("")
-    ax.set_ylabel(r"Per-reaction flux NRMSE (RMSE / max$|v|$)")
+    ax.set_ylabel(r"Per-reaction flux NRMSE (RMSE / rms$(v)$)")
     sns.move_legend(ax, "upper right", frameon=False, title=None)
     sns.despine(ax=ax)
     save_figure(fig, out_dir / "mfa_benchmark_nrmse_violin.svg")

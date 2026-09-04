@@ -26,8 +26,8 @@ from sigmaflux.utils import (
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import (  # noqa: E402
-    LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_max_abs,
-    per_flux_nrmse, per_flux_r2, per_flux_rmse)
+    LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_nrmse,
+    per_flux_r2, per_flux_rms, per_flux_rmse)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
 from sigmaflux.ai.data import load_data  # noqa: E402
 
@@ -146,9 +146,9 @@ def benchmark_metrics(model, run_suffix=None):
 
     Every metric comes from the same ``load_benchmark()`` call per method, so they share
     the identical chi2-accepted sample set -- no second, differently-filtered pass. The
-    NRMSE denominator is the exception: it is each reaction's max |ground-truth flux|
-    over the *whole* population, shared by both methods, because the two arms accept
-    different sample sets and a per-method denominator would not be one scale. The final
+    NRMSE denominator is the exception: it is each reaction's root-mean-square flux over
+    the *whole* population, shared by both methods, because the two arms accept different
+    sample sets and a per-method denominator would not be one scale. The final
     ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also dropped from
     the RMSE columns, keeping one reaction population across every column.
     """
@@ -165,7 +165,7 @@ def benchmark_metrics(model, run_suffix=None):
     # rather than rates -- and the MFA arm has no such reactions to be compared against.
     # plot_test_performance.py already drops them; this is the same population.
     flux_df = drop_pool_reactions(flux_df, run)
-    denom = per_flux_max_abs(flux_df)
+    denom = per_flux_rms(flux_df)
     out = {}
     for method, sub in (("mfa", "mfa_benchmark"), ("ai", "ai_benchmark")):
         df, n_failed = load_benchmark(run / sub, flux_df)
@@ -206,6 +206,10 @@ def resolve_organism(run_dir, config=None):
         reference = exp["reference_flux"],
         gem_xlsx  = exp.get("gem_xlsx"),
         media     = cfg.get("sampling", {}).get("media", {}),
+        # Most Shen-et-al workbooks report uptake as an unsigned magnitude, needing
+        # reference_orientation()'s model-bounds-derived flip. A workbook that already
+        # reports signed values sets this so build_reference_comparison() skips it.
+        reference_signed = exp.get("reference_signed", False),
         root      = root,
         cfg       = cfg,
     )
@@ -241,7 +245,7 @@ def build_reference_comparison(run_dir, org, panel_rxns):
     which does the reading and pairing but knows nothing about where they live.
     """
     ref_path = reference_path(org)
-    orientation = reference_orientation(org.get("media"))
+    orientation = {} if org.get("reference_signed") else reference_orientation(org.get("media"))
     parts = []
 
     for cond in CONDITIONS:

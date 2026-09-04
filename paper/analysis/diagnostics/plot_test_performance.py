@@ -223,15 +223,20 @@ def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
     return df.groupby("reaction").apply(_rmse, include_groups=False)
 
 
-def per_flux_max_abs(flux_df: pd.DataFrame) -> pd.Series:
-    """Largest |flux| each reaction reaches anywhere in the ground-truth population.
+def per_flux_rms(flux_df: pd.DataFrame) -> pd.Series:
+    """Root-mean-square flux of each reaction over the ground-truth population.
 
-    The denominator of :func:`per_flux_nrmse`. Taken over the whole population rather
-    than over the samples one method solved: the MFA arm is chi2-gated to a fraction of
-    the split while the AI arm keeps all of it, and a per-method denominator would put
-    the two on different scales.
+    The denominator of :func:`per_flux_nrmse`, so the reported error is a fraction of the
+    flux the reaction typically carries rather than of the one extreme sample it reaches.
+
+    Taken over the whole population rather than over the samples one method solved: the
+    MFA arm is chi2-gated to a fraction of the split while the AI arm keeps all of it, and
+    a per-method denominator would put the two violins on different scales.
+
+    Not ``std(gt)``, which would make the result exactly ``sqrt(1 - R2)`` and so a
+    reparametrisation of the R2 panel; the mean is deliberately not subtracted.
     """
-    return flux_df.abs().max(axis=1)
+    return np.sqrt((flux_df.astype(float) ** 2).mean(axis=1))
 
 
 def per_flux_nrmse(df: pd.DataFrame, denom: pd.Series) -> pd.Series:
@@ -243,7 +248,7 @@ def per_flux_nrmse(df: pd.DataFrame, denom: pd.Series) -> pd.Series:
 
     Args:
         df: paired long frame from :func:`load_benchmark`.
-        denom: per-reaction normalizer, e.g. :func:`per_flux_max_abs`.
+        denom: per-reaction normalizer, e.g. :func:`per_flux_rms`.
     """
     rmse = per_flux_rmse(df)
     scale = denom.reindex(rmse.index).replace(0.0, np.nan)
