@@ -21,6 +21,7 @@ experiment:
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
   mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
   n_bootstrap: 200
+  reference_signed: true
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
@@ -153,12 +154,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true       # drop _e tokens (the LC/MS extract is intracellular)
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-
-  # Fisher significance-test parameters:
-  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  n_permutations: 10              # null-calibration permutations used to set significance floor
-  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:

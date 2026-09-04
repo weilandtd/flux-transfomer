@@ -94,12 +94,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true       # drop _e tokens (extracellular pools not measured intracellularly in yeast)
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-
-  # Fisher significance-test parameters:
-  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  n_permutations: 10              # null-calibration permutations used to set significance floor
-  include_reversibilities: true    # append log1p-z-scored reversibilities to θ for feature selection
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:

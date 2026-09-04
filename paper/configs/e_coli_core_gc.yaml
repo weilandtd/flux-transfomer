@@ -80,10 +80,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  noise_std: 0.01
-  n_permutations: 10
-  include_reversibilities: true
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
