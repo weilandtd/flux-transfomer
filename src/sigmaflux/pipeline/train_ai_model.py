@@ -34,6 +34,7 @@ from sigmaflux.ai.data import (
     prepare_id_dataset,
     radial_embedding_table,
 )
+from sigmaflux.ai.features import TOKEN_SELECTION_METHODS
 from sigmaflux.ai.utils import load_fisher_token_scores
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
@@ -168,7 +169,7 @@ def _print_token_selection(labeling_df, fixed_idx, method, features_csv, n_origi
     Args:
         labeling_df: labeling (MID) token table, used for the pool size.
         fixed_idx: indices of the fixed (measured) flux tokens.
-        method: token selection method name ('fisher' or 'fisher_fast').
+        method: token selection method name ('fisher', 'fisher_fast', or 'all').
         features_csv: pre-computed Fisher significance features file.
         n_original: token count before any filtering, for reporting.
     """
@@ -905,9 +906,9 @@ def cli(argv=None):
         token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
-    if args.token_selection_method not in ("fisher", "fisher_fast"):
+    if args.token_selection_method not in TOKEN_SELECTION_METHODS:
         raise ValueError(
-            "features.token_selection_method must be 'fisher' or 'fisher_fast', "
+            f"features.token_selection_method must be one of {sorted(TOKEN_SELECTION_METHODS)}, "
             f"got {args.token_selection_method!r}"
         )
 
