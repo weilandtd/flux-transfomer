@@ -13,12 +13,17 @@ def load_fisher_token_scores(
     produced by extract_informative_features.py) aligned to labeling_df row order.
     Tokens absent from the CSV get score 0.0 and included=False.
 
+    A features.csv carrying a ``tracer`` column is matched per tracer, so one tracer may
+    select a token another leaves out. An older, tracer-less CSV is matched on
+    (metabolite, isotopomer) and therefore applies identically to every tracer, exactly as
+    it did when it was written — so existing run directories keep reproducing.
+
     Parameters
     ----------
     features_csv
         Path to the features.csv produced by extract_informative_features.py.
     labeling_df
-        Labeling DataFrame whose (Metabolite, Isotopomer) row order the output
+        Labeling DataFrame whose (Tracer, Metabolite, Isotopomer) row order the output
         is aligned to.
 
     Returns
@@ -27,30 +32,45 @@ def load_fisher_token_scores(
         labeling_df row order.
     """
     feat = pd.read_csv(features_csv)
-    score_map: dict = {}
-    included_set: set = set()
-    for _, row in feat.iterrows():
-        key = (row["metabolite_id"], row["isotopomer"])
-        v = row["standalone_nats"]
-        score_map[key] = 0.0 if v != v else float(v)
-        if row.get("included", False):
-            included_set.add(key)
+    per_tracer = "tracer" in feat.columns
 
-    mets = labeling_df.index.get_level_values('Metabolite')
-    isos = labeling_df.index.get_level_values('Isotopomer')
-    scores = torch.tensor(
-        [score_map.get((m, i), 0.0) for m, i in zip(mets, isos)],
-        dtype=torch.float32,
-    )
-    included_mask = torch.tensor(
-        [(m, i) in included_set for m, i in zip(mets, isos)],
-        dtype=torch.bool,
-    )
-    n_matched = sum(1 for m, i in zip(mets, isos) if (m, i) in score_map)
+    tracers = labeling_df.index.get_level_values("Tracer")
+    mets    = labeling_df.index.get_level_values("Metabolite")
+    isos    = labeling_df.index.get_level_values("Isotopomer")
+    cols    = ["metabolite_id", "isotopomer"]
+    keys    = list(zip(mets, isos))
+    if per_tracer:
+        cols = ["tracer"] + cols
+        keys = list(zip(tracers, mets, isos))
+
+    csv_keys = list(zip(*(feat[c] for c in cols)))
+    scores_in = feat["standalone_nats"]
+    included_in = feat["included"].astype(bool) if "included" in feat else [False] * len(feat)
+
+    score_map = {k: (0.0 if v != v else float(v)) for k, v in zip(csv_keys, scores_in)}
+    included_set = {k for k, inc in zip(csv_keys, included_in) if inc}
+
+    scores = torch.tensor([score_map.get(k, 0.0) for k in keys], dtype=torch.float32)
+    included_mask = torch.tensor([k in included_set for k in keys], dtype=torch.bool)
+
+    n_matched = sum(1 for k in keys if k in score_map)
     n_inc = int(included_mask.sum().item())
-    print(f"Fisher scores loaded from {features_csv}: "
-          f"{n_matched}/{len(scores)} tokens matched, "
-          f"{n_inc} included")
+    print(f"Fisher scores loaded from {features_csv} "
+          f"({'per tracer' if per_tracer else 'shared across tracers'}): "
+          f"{n_matched}/{len(scores)} tokens matched, {n_inc} included")
+    for tracer in pd.unique(tracers):
+        rows = tracers == tracer
+        print(f"  {tracer}: {int(included_mask.numpy()[rows].sum())}/{int(rows.sum())} included")
+
+    # An empty selection is not a degenerate-but-workable case: training would proceed on a
+    # zero-row labeling_df and only fail much later, with nothing pointing back to here.
+    if n_inc == 0:
+        raise ValueError(
+            f"{features_csv} selects none of the {len(scores)} labeling tokens "
+            f"({n_matched} matched by key). A stale features.csv from a run with different "
+            f"tracers or metabolite ids is the usual cause -- delete it and re-run "
+            f"sigmaflux-select-features."
+        )
     return scores, included_mask
 
 
@@ -644,3 +664,83 @@ def compute_targeted_ica_nullspace(
         'n_active_free': n_active,
         'fallback': False,
     }
+
+
+def split_constant_directions(Z, flux_samples, n_protected=0, rel_tol=1e-9):
+    """Partition a null-space basis into the directions the samples move along and those they do not.
+
+    A pinned reaction -- a measurement pool's drain fixed at 1, an FVA-fixed route -- still
+    has to be *representable*, so its direction must stay in the basis for ``v = y @ Z.T``
+    to reconstruct a real flux vector. But no sample varies along it, and a constant
+    coordinate is not something the labeling data can speak about: Fisher selection's
+    ``pinv`` over theta reads numerical noise out of such a column, and the training loss
+    gives it maximum weight (``variance_min_cutoff``) on a target that is identically zero
+    once standardised. On iAF1260 eleven such directions took the permutation null floor to
+    32.7 nats and selected zero tokens.
+
+    **The rotation is restricted to the free block.** Until 2026-08-31 it ran over the whole
+    basis, which smears a targeted identity block across every column: each measured flux
+    went from owning its own coordinate (top-direction share 1.000) to being spread over
+    twenty (0.367). On I. orientalis that took ``DNA_c`` -- a measured *input* -- from
+    validation R2 +0.996 to **-0.225**, ``LIPID_c`` 0.997 -> 0.595 and the non-pool median
+    0.994 -> 0.595, which looked like the cost of introducing measurement pools and was not:
+    the pools merely supplied the first pinned directions, so the rotation fired for the
+    first time. Confining it restores 0.9928 with the pools still in place.
+
+    Rotating at all is what makes this general. Removing instead the directions that move a
+    *pinned reaction* is exact, needs no eigendecomposition, and agrees with this to a
+    principal angle of 3.7e-8 on I. orientalis -- but it cannot see a constant direction
+    that is a combination of varying reactions, which the covariance can.
+
+    The split is exact -- ``v == y_var @ Z_var.T + y_const @ Z_const.T`` for every sample --
+    which needs the *dual* coordinate ``y = V @ Z (Z.T Z)^-1``, not the projection
+    ``V @ Z``; the two agree only for an orthonormal basis, and ``targeted_ica`` ships one
+    with Gram condition 5.5e3 where the projection form left a 74% reconstruction error.
+
+    Args:
+        Z: null-space basis, shape (n_reactions, k).
+        flux_samples: sampled flux vectors, shape (n_samples, n_reactions).
+        n_protected: leading columns kept verbatim -- a targeted identity block. They
+            cannot be constant anyway: a measured reaction that never varies carries no
+            information to target.
+        rel_tol: a direction counts as constant when its coordinate's spread is below this
+            fraction of the largest spread.
+
+    Returns ``(Z_var, Z_const, y_const)``: the varying basis, the constant basis, and the
+    constant coordinates' shared value, shape (k_const,).
+    """
+    Z = np.asarray(Z, dtype=np.float64)
+    V = np.asarray(flux_samples, dtype=np.float64)
+    k, n = Z.shape[1], V.shape[0]
+
+    # With fewer samples than basis directions the covariance is rank-deficient for want of
+    # data, not because anything is pinned, and its null eigenvectors are arbitrary.
+    # Splitting there would discard directions the model must still predict.
+    if n < k + 2:
+        return Z, np.zeros((Z.shape[0], 0)), np.zeros(0)
+
+    protected, free = Z[:, :n_protected], Z[:, n_protected:]
+    if free.shape[1] == 0:
+        return Z, np.zeros((Z.shape[0], 0)), np.zeros(0)
+
+    def _dual(B):
+        """Coordinates y with y @ B.T reproducing the part of V that lies in range(B)."""
+        return V @ (B @ np.linalg.inv(B.T @ B))
+
+    # Rotate within the free block so the constant directions are exactly the null
+    # eigenvectors of cov(y); picking columns by their own variance alone would miss a
+    # constant direction that is a *combination* of two varying columns.
+    eigvals, eigvecs = np.linalg.eigh(np.cov(_dual(free), rowvar=False, ddof=1))
+    Z_rot = free @ eigvecs[:, np.argsort(eigvals)[::-1]]   # varying first
+
+    # Confirm on the coordinates themselves rather than trusting the eigenvalue: a tiny
+    # eigenvalue is a claim about the sample covariance, whereas "no sample moves along
+    # this direction" is the property actually being relied on.
+    y_rot = _dual(Z_rot)
+    spread = np.abs(y_rot - y_rot.mean(axis=0)).max(axis=0)
+    k_var = int((spread > rel_tol * max(spread.max(), 1.0)).sum())
+
+    Z_var = np.hstack([protected, Z_rot[:, :k_var]])
+    Z_const = Z_rot[:, k_var:]
+    y_const = _dual(Z_const).mean(axis=0) if Z_const.shape[1] else np.zeros(0)
+    return Z_var, Z_const, y_const

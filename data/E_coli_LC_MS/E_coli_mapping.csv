@@ -1,0 +1,41 @@
+experimental_id,model_id
+"1,3-bisphosphoglycerate",13dpg_c
+2-isopropylmalic acid,3c2hmp_c
+3-phospho-serine,pser-L_c
+3-phosphoglycerate,3pg_c
+5-phosphoribosyl-1-pyrophosphate,prpp_c
+6-phospho-D-gluconate,6pgc_c
+N-acetyl-glutamate,acglu_c
+N-carbamoyl-L-aspartate,cbasp_c
+acetyl-group in acetyl-CoA,accoa_c
+adenosine triphosphate,atp_c
+alanine,ala-L_c
+aminoimidazole carboxamide ribonucleotide,aicar_c
+asparagine,asn-L_c
+aspartate,asp-L_c
+citrulline,citr-L_c
+deoxythymidine triphosphate,dttp_c
+dihydroxyacetone phosphate,dhap_c
+"fructose-1,6-bisphosphate",fdp_c
+glucose-6-phosphate,g6p_c
+glutamate,glu-L_c
+glutamine,gln-L_c
+glycine,gly_c
+malate,mal-L_c
+methionine,met-L_c
+ornithine,orn_c
+phosphoenolpyruvate,pep_c
+proline,pro-L_c
+pyruvate,pyr_c
+ribose-5-phosphate,r5p_c
+sedoheptulose-7-phosphate,s7p_c
+serine,ser-L_c
+sn-glycerol-3-phosphate,glyc3p_c
+threonine,thr-L_c
+tryptophan,trp-L_c
+tyrosine,tyr-L_c
+uridine monophosphate,ump_c
+valine,val-L_c
+xylulose-5-phosphate,xu5p-D_c
+α-keto-isovalerate,3mob_c
+α-ketoglutarate,akg_c

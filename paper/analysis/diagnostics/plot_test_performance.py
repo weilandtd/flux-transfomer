@@ -39,7 +39,7 @@ from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
 
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
-R2_THRESHOLD = 0.8
+R2_THRESHOLD = 0.9
 # Clip floor sits on the 0.2 tick grid so every interval on the axis is 0.2 wide and the
 # ticks are at their true data positions. The earlier −0.1 floor labelled "≤0" made the
 # first interval 0.3 against 0.2 for the rest, and mislabelled its own position.
@@ -108,8 +108,33 @@ def _sample_columns(pred_df):
             yield int(ix), pred_df[ix]
 
 
-def load_benchmark(bench_dir: pathlib.Path,
-                   flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def drop_pool_reactions(flux_df: pd.DataFrame, run_dir: pathlib.Path) -> pd.DataFrame:
+    """Drop measurement-pool reactions from a flux frame before it is scored.
+
+    A pool's drain is pinned at 1 and its mixing legs sum to 1, so they are trivially
+    predictable and are compartment fractions rather than rates. Scoring them would
+    inflate every aggregate against a reference MFA fit that has no such reactions.
+
+    Args:
+        flux_df: fluxes indexed by reaction id.
+        run_dir: training run directory holding ``model_prepared_for_mfa.json``.
+    """
+    prepared = pathlib.Path(run_dir) / "model_prepared_for_mfa.json"
+    if not prepared.is_file():
+        return flux_df
+    from cobra.io.json import load_json_model
+
+    from sigmaflux.core.measurement_pools import pool_reaction_ids
+    pool_ids = set(pool_reaction_ids(load_json_model(str(prepared))))
+    keep = [r for r in flux_df.index if r not in pool_ids]
+    if len(keep) < flux_df.shape[0]:
+        print(f"Excluded {flux_df.shape[0] - len(keep)} measurement-pool reactions "
+              f"from scoring")
+    return flux_df.loc[keep]
+
+
+def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
+                   require_converged: bool = True) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
     An ensemble AI benchmark's predictions are *raw* (unprojected): every member's
@@ -124,9 +149,18 @@ def load_benchmark(bench_dir: pathlib.Path,
     (``reached_optimum`` is False, see :func:`converged_samples`) or every column's
     value for it was unusable. Either way it is excluded from R² and reported
     alongside it, so a method is never credited for samples it did not actually solve.
+
+    Args:
+        require_converged: when False, skip the χ²-acceptance filter and score every
+            fit the MFA arm wrote (still dropping samples with no usable value at
+            all). Used by the uncertainty benchmark, where a 100-sample condition
+            can leave too few χ²-accepted fits to say anything (some organisms
+            accept under 10% of their fits at the default noise level) — the
+            resulting R² is therefore not comparable to this function's default,
+            accepted-only numbers; report the χ²-acceptance rate alongside it.
     """
     bench_dir = pathlib.Path(bench_dir)
-    converged = converged_samples(bench_dir)
+    converged = converged_samples(bench_dir) if require_converged else None
 
     by_sample = {}
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
@@ -175,6 +209,50 @@ def per_flux_r2(df: pd.DataFrame) -> pd.Series:
         ss_tot = ((gt - gt.mean()) ** 2).sum()
         return 1.0 - ss_res / ss_tot if ss_tot > 0 else np.nan
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
+
+
+def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
+    """RMSE for each reaction across every sample the method solved.
+
+    Unlike per_flux_r2, well-defined for any n >= 1 (no variance term needed), so a
+    reaction with too little spread for R2 (dropped there) can still carry an RMSE here.
+    """
+    def _rmse(g):
+        gt, pred = g["gt"].to_numpy(), g["pred"].to_numpy()
+        return float(np.sqrt(np.mean((pred - gt) ** 2)))
+    return df.groupby("reaction").apply(_rmse, include_groups=False)
+
+
+def per_flux_rms(flux_df: pd.DataFrame) -> pd.Series:
+    """Root-mean-square flux of each reaction over the ground-truth population.
+
+    The denominator of :func:`per_flux_nrmse`, so the reported error is a fraction of the
+    flux the reaction typically carries rather than of the one extreme sample it reaches.
+
+    Taken over the whole population rather than over the samples one method solved: the
+    MFA arm is chi2-gated to a fraction of the split while the AI arm keeps all of it, and
+    a per-method denominator would put the two violins on different scales.
+
+    Not ``std(gt)``, which would make the result exactly ``sqrt(1 - R2)`` and so a
+    reparametrisation of the R2 panel; the mean is deliberately not subtracted.
+    """
+    return np.sqrt((flux_df.astype(float) ** 2).mean(axis=1))
+
+
+def per_flux_nrmse(df: pd.DataFrame, denom: pd.Series) -> pd.Series:
+    """:func:`per_flux_rmse` divided by each reaction's own ``denom`` entry.
+
+    Dimensionless, so reactions and organisms spanning orders of magnitude in flux are
+    on one scale. Reactions missing from ``denom``, or whose denominator is zero, drop
+    out.
+
+    Args:
+        df: paired long frame from :func:`load_benchmark`.
+        denom: per-reaction normalizer, e.g. :func:`per_flux_rms`.
+    """
+    rmse = per_flux_rmse(df)
+    scale = denom.reindex(rmse.index).replace(0.0, np.nan)
+    return (rmse / scale).dropna()
 
 
 def overall_r2(df: pd.DataFrame) -> float:
@@ -335,6 +413,7 @@ def main():
 
     print(f"Loading ground-truth data from: {run_dir}")
     labeling_df, flux_df, _ = load_data(str(run_dir))
+    flux_df = drop_pool_reactions(flux_df, run_dir)
     flux_df.columns     = range(flux_df.shape[1])
     labeling_df.columns = range(labeling_df.shape[1])
     print(f"  {flux_df.shape[0]} reactions × {flux_df.shape[1]} samples")

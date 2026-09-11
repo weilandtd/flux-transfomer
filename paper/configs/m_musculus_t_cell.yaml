@@ -19,6 +19,9 @@ experiment:
   data_dir:       data/M_musculus_T_Cell
   reference_flux: Shen_et_al_flux_data_MM.xlsx
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
+  mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
+  n_bootstrap: 200
+  reference_signed: true
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
@@ -33,8 +36,7 @@ sampling:
   processes: 8
   method: optgp       # hopsy | optgp | achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 50          # required when ko is random/uncorrelated
+  ko: false
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
@@ -152,12 +154,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true       # drop _e tokens (the LC/MS extract is intracellular)
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-
-  # Fisher significance-test parameters:
-  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  n_permutations: 10              # null-calibration permutations used to set significance floor
-  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -192,7 +189,6 @@ training:
   flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
   labeling_token_dropout: 0.2   # per-token labeling dropout during training
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
-  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
 
   # Measured fluxes fed as soft inputs through the fusion layer, and the strata for
   # stratified sampling. This is every flux the curated ExtFlux carries — all 22.
@@ -235,3 +231,7 @@ training:
   null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
   flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  # Feasible-by-construction latent; whitening keeps the gauge well-conditioned.
+  gauge_radial: sigmoid           # rho = sigmoid(s), y = rho * d / g(d)
+  gauge_center: mean              # cast the gauge from the data centre
+  gauge_whiten: true              # one latent unit = one standard deviation of the data

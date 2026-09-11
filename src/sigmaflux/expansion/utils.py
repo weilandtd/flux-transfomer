@@ -77,3 +77,52 @@ def intersection(lst1, lst2):
     """
     lst3 = [value for value in lst1 if value in lst2]
     return lst3
+
+#: Reaction annotation listing educts the reaction draws label from at coefficient 0.
+ZERO_STOICHIOMETRY = 'zero_stoichiometry'
+
+
+def zero_stoichiometry_educts(rxn):
+    """Ids of educts *rxn* draws label from at a stoichiometric coefficient of zero.
+
+    COBRA cannot store a zero coefficient -- ``add_metabolites`` drops the entry
+    outright -- so a measurement pool's educt is carried in the annotation instead of the
+    stoichiometry. Its absence from S is the point: the pool observes the compartment it
+    measures without depleting it.
+    """
+    return tuple(rxn.annotation.get(ZERO_STOICHIOMETRY, ()) or ())
+
+
+def labeling_metabolite(rxn, met_id):
+    """The ``cobra.Metabolite`` named *met_id*, whether or not *rxn*'s stoichiometry moves it."""
+    for met in rxn.metabolites:
+        if met.id == met_id:
+            return met
+    return rxn.model.metabolites.get_by_id(met_id)
+
+
+def labeling_educts(rxn):
+    """Metabolites on *rxn*'s educt side for labeling purposes.
+
+    The stoichiometric reactants plus any zero-stoichiometry educt. Every walk of a
+    reaction's participants that exists to follow *carbon* rather than mass must go
+    through this, or a measurement pool's mixing leg reads as having no educt at all --
+    which builds no EMU edge and silently pins the pool to M+0.
+    """
+    return list(rxn.reactants) + [labeling_metabolite(rxn, met_id)
+                                  for met_id in zero_stoichiometry_educts(rxn)]
+
+
+def labeling_products(rxn):
+    """Metabolites on *rxn*'s product side for labeling purposes."""
+    return list(rxn.products)
+
+
+def labeling_multiplicity(rxn, met_id):
+    """Copies of *met_id* the reaction moves, for the atom map's multiplicity check.
+
+    A zero-stoichiometry educt moves no mass but exactly one labeling copy.
+    """
+    if met_id in zero_stoichiometry_educts(rxn):
+        return 1.0
+    return abs(rxn.get_coefficient(met_id))

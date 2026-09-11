@@ -368,7 +368,7 @@ def apply_terminal_annotations(model, path_to_atom_map_xls, created_later=frozen
 
 
 def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None, atom_type='C',
-                        drop_subsystems=(), biomass_id=None):
+                        drop_subsystems=(), biomass_id=None, measurement_pools=False):
     """Load a Maranas-lab GEM xlsx + AMM xlsx and return a COBRApy model annotated with SigmaFlux atom_mapping strings, ready for MFAModel().
 
     Converts the Maranas AMM format (one row per metabolite per reaction, atoms as
@@ -383,6 +383,11 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
         drop_subsystems: subsystems to exclude (dropped before parsing, since some
             carry zero-coefficient reactants COBRA would silently discard).
         biomass_id: non-canonical biomass reaction id to rename to 'BIOMASS' on load.
+        measurement_pools: declare a whole-cell pool for every metabolite the model holds
+            in more than one compartment. Whether an LC/MS extract sees the compartments
+            as one species is a property of the organism model, so it is stated here
+            rather than assembled per run; see
+            :mod:`sigmaflux.core.measurement_pools`.
     """
     import cobra
 
@@ -519,6 +524,15 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
     _remove_out_metabolites(model)
     _standardize_exchange_directions(model)
     audit_carbon_balance(model)
+
+    # After the atom patterns, since a pool member has to carry one, and after the
+    # exchange/out cleanup, since those decide which compartments survive.
+    if measurement_pools:
+        from .measurement_pools import add_measurement_pools, pool_members
+        added = add_measurement_pools(model)
+        pools = pool_members(model)
+        print(f"Added {len(pools)} whole-cell measurement pools ({len(added)} reactions): "
+              f"{', '.join(sorted(pools))}")
 
     if path_to_output is not None:
         cobra.io.save_json_model(model, str(path_to_output))

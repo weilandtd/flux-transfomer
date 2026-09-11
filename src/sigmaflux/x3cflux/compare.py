@@ -44,6 +44,11 @@ def measurement_slots(simulator, facts):
 def x3cflux_labeling(simulator, fluxmap, facts, v, r):
     """``{(tracer, metabolite, 'M+k'): value}`` simulated by x3cflux at ``(v, r)``.
 
+    Measurement pools are simulated like any other metabolite. The carrier-shape tap
+    reproduces the zero coefficient exactly, so the pool's MID comes out of x3cflux's
+    own solve rather than being recombined here -- which is what lets the check compare
+    pools head-on instead of carrying an approximation of its own.
+
     Args:
         simulator: x3cflux simulator built from *facts*'s configurations.
         fluxmap: :class:`~sigmaflux.x3cflux.fluxmap.FluxMap` for the model.

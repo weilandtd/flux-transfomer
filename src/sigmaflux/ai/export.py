@@ -8,7 +8,7 @@ model**: inference-only, self-describing, and loadable with nothing but the file
     from sigmaflux.ai import export_model, load_model
 
     export_model("run/ensemble", name="i_orientalis", model_version="1.0.0")
-    sf = load_model("i_orientalis-v1.0.0.sfx")
+    sf = load_model("i_orientalis-v1.2.0.sfx")
     sf.predict(df_L, df_Vm)
 
 What is stored
@@ -98,10 +98,16 @@ _FP16_SAFE_MAX = 6.0e4
 _REGENERATED = (
     "compound_emb.weight", "label_emb.weight", "tracer_emb.weight",
     "reaction_emb.weight", "_token_type_emb.weight",
-    "Z_full", "token_experiment_ids", "fixed_idx_t",
+    "Z_full", "flux_offset", "token_experiment_ids", "fixed_idx_t",
     "flux_norm_mean", "flux_norm_std",
     "y_norm_mean", "y_norm_std", "rev_norm_mean", "rev_norm_std",
 )
+
+#: Regenerated buffers added after the shipped bundles were written. Each defaults to a
+#: neutral value -- ``flux_offset`` to zeros, which is exactly what a model trained with
+#: no pinned basis directions had implicitly -- so a manifest that predates one is still
+#: a match. Only these are forgiven, so a *renamed* key is still caught.
+_OPTIONAL_REGENERATED = frozenset({"flux_offset"})
 
 #: Keys that must agree across ensemble members.
 _SHARED_KEYS = (
@@ -109,7 +115,8 @@ _SHARED_KEYS = (
     "token_index", "h_reaction", "h_type", "val_indices",
 )
 
-_NULL_SPACE_FLOAT = ("Z_free", "y_mean", "y_std", "rev_log_mean", "rev_log_std", "obs_weights")
+_NULL_SPACE_FLOAT = ("Z_free", "flux_offset", "y_mean", "y_std", "rev_log_mean",
+                     "rev_log_std", "obs_weights")
 _NULL_SPACE_INT = ("free_idx", "fixed_idx", "rev_variable_idx")
 
 
@@ -595,6 +602,13 @@ def export_model(source, out_path=None, *, name=None, model_version,
             if nsd.get(key) is not None:
                 w.write_array(f"shared/null_space/{key}.npy",
                               np.asarray(nsd[key], dtype=np.int32))
+        if spec.flux_bounds:
+            # float64: the projection's ratio test divides by the slack to a bound, and
+            # float32 rounding there can put a state marginally outside the bound it was
+            # just projected onto.
+            for key in ("lb", "ub"):
+                w.write_array(f"shared/flux_bounds/{key}.npy",
+                              np.asarray(spec.flux_bounds[key], dtype=np.float64))
         if spec.flux_norm_stats:
             for key in ("mean", "std"):
                 w.write_array(f"shared/flux_norm/{key}.npy",
@@ -705,6 +719,21 @@ def load_model(path, *, device=None):
             flux_norm_stats = {"mean": r.read_array("shared/flux_norm/mean.npy"),
                                "std": r.read_array("shared/flux_norm/std.npy")}
 
+        # Bounds are required to predict. An export written before they were stored can
+        # still supply them from the prepared network it embeds, which is the same file
+        # they were read off in the first place.
+        flux_bounds = None
+        if r.has("shared/flux_bounds/lb.npy"):
+            flux_bounds = {"lb": r.read_array("shared/flux_bounds/lb.npy"),
+                           "ub": r.read_array("shared/flux_bounds/ub.npy")}
+        elif r.has(NETWORK_ENTRY):
+            from cobra.io.json import from_json
+
+            from .inference import bounds_from_cobra
+            flux_bounds = bounds_from_cobra(
+                from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8")),
+                names["flux_names"], source=f"{path}'s embedded network")
+
         spec = ModelSpec(
             model_config         = m["model"]["model_config"],
             vocabs               = {k: vocabs[k] for k in
@@ -717,6 +746,7 @@ def load_model(path, *, device=None):
             reversibility_names  = names["reversibility_names"],
             measured_fluxes      = names["measured_fluxes"],
             null_space_data      = nsd,
+            flux_bounds          = flux_bounds,
             flux_norm_stats      = flux_norm_stats,
             norm_stats           = r.read_json("shared/norm_stats.json", default={}),
             h_reaction           = m["model"]["h_reaction"],
@@ -748,7 +778,7 @@ def load_model(path, *, device=None):
     model._adopt(members, split_source=None)
     # strict=False would also hide a renamed key, so check the difference exactly.
     expected = set(model.members[0]._model.state_dict()) - set(state_dicts[0])
-    if expected != regenerated:
+    if expected - _OPTIONAL_REGENERATED != regenerated - _OPTIONAL_REGENERATED:
         raise SfxFormatError(
             f"{path}: weights do not match the model. Missing but not listed as "
             f"regenerated: {sorted(expected - regenerated)}; listed but present: "

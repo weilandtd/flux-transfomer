@@ -16,6 +16,7 @@ A predictor can be built three ways, all ending at the same
 
 import glob
 import os
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -39,6 +40,37 @@ from .model import FluxDecoder
 from ..core.fbapro import fbapro
 
 
+def bounds_from_cobra(model, flux_names, source="model"):
+    """Reaction bounds read off a prepared COBRA model, aligned to *flux_names*.
+
+    No FVA is run -- a prepared model already carries the bounds sampling and training
+    saw, and re-deriving them would re-solve against whatever the solver does today.
+
+    Args:
+        model: a prepared :class:`cobra.Model`.
+        flux_names: predicted reaction ids, defining the output order.
+        source: what to name in the error when a reaction is missing.
+
+    Returns ``{'lb', 'ub'}`` as float64 arrays, or None if the model does not cover
+    every predicted reaction.
+    """
+    by_id = {r.id: (r.lower_bound, r.upper_bound) for r in model.reactions}
+    missing = [n for n in flux_names if n not in by_id]
+    if missing:
+        print(f"WARNING: {source} is missing {len(missing)} predicted reaction(s), so it "
+              f"cannot supply their bounds: {missing[:5]}")
+        return None
+    return {"lb": np.array([by_id[n][0] for n in flux_names], dtype=np.float64),
+            "ub": np.array([by_id[n][1] for n in flux_names], dtype=np.float64)}
+
+
+def bounds_from_model_json(model_json, flux_names):
+    """:func:`bounds_from_cobra` for a ``model_prepared_for_mfa.json`` on disk."""
+    from cobra.io.json import load_json_model
+
+    return bounds_from_cobra(load_json_model(model_json), flux_names, source=model_json)
+
+
 @dataclass
 class ModelSpec:
     """Everything a predictor needs except the trained weights — config-free,
@@ -54,6 +86,7 @@ class ModelSpec:
     reversibility_names:  list
     measured_fluxes:      list
     null_space_data:      dict          # y_*/rev_log_* already promoted
+    flux_bounds:          dict = None   # {'lb', 'ub'}, aligned to flux_names
     flux_norm_stats:      dict = None   # {'mean', 'std'}
     norm_stats:           dict = field(default_factory=dict)
     h_reaction:           int = 0
@@ -128,6 +161,24 @@ class ModelSpec:
             )
 
         flux_names = list(ckpt.get('flux_names', []))
+
+        # Bounds are mandatory at prediction time. Older checkpoints predate them, so
+        # fall back to the prepared model the run was trained against -- the same
+        # legacy-recovery pattern token_index and vocabs use above.
+        flux_bounds = ckpt.get('flux_bounds')
+        if flux_bounds is None and flux_names:
+            from .export import _find_network_json
+            network = _find_network_json(ckpt, model_json=model_json, data_dir=data_dir,
+                                         config=config)
+            if network is None:
+                raise ValueError(
+                    "Checkpoint stores no flux_bounds and its prepared model "
+                    "(model_prepared_for_mfa.json) could not be found, so predictions "
+                    "cannot be constrained to the reaction bounds. Pass data_dir=<run "
+                    "directory>, or re-export the model with sigmaflux-export."
+                )
+            flux_bounds = bounds_from_model_json(network, flux_names)
+
         tracers = {
             t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
             for t in cfg.get('labeling', {}).get('tracers', [])
@@ -149,6 +200,7 @@ class ModelSpec:
                                         or cfg.get('training', {}).get('measured_fluxes')
                                         or []),
             null_space_data      = null_space_data,
+            flux_bounds          = flux_bounds,
             flux_norm_stats      = ckpt.get('flux_norm_stats'),
             norm_stats           = ckpt.get('norm_stats') or {},
             h_reaction           = int(ckpt.get('h_reaction', 0)),
@@ -194,6 +246,32 @@ class ModelSpec:
         internal = {t: t for t in self.vocabs.get('tracer_vocab', [])}
         return {**internal, **self.tracer_display_names}
 
+    def _gauge_null_space_data(self):
+        """``null_space_data``, with what a gauge layer needs filled in.
+
+        The bounds live at the top level of a checkpoint, not inside ``null_space_data``,
+        and ``gauge_x_p`` is absent from anything trained before it was persisted. Both
+        are recoverable: the interior point is the Chebyshev centre of the polytope the
+        basis already defines, so it is derived rather than stored, exactly as
+        ``flux_offset`` defaults to zeros for checkpoints that predate it.
+        """
+        nsd = self.null_space_data
+        if not self.model_config.get('gauge_radial'):
+            return nsd
+        nsd = dict(nsd)
+        nsd.setdefault('flux_bounds', self.flux_bounds)
+        nsd.setdefault('gauge_tau', 0.0)
+        if nsd.get('gauge_x_p') is None:
+            from .box_nullspace import chebyshev_center
+            Z = np.asarray(nsd['Z_free'], dtype=np.float64)
+            offset = nsd.get('flux_offset')
+            offset = (np.zeros(Z.shape[0]) if offset is None
+                      else np.asarray(offset, dtype=np.float64))
+            nsd['gauge_x_p'], _ = chebyshev_center(
+                Z, np.asarray(nsd['flux_bounds']['lb'], dtype=np.float64),
+                np.asarray(nsd['flux_bounds']['ub'], dtype=np.float64), offset=offset)
+        return nsd
+
     def build_decoder(self, state_dict, *, device=None, strict=True):
         """Rebuild a :class:`FluxDecoder` and load *state_dict* into it. Frozen
         embedding tables are regenerated from the vocabularies and harmonics
@@ -219,7 +297,7 @@ class ModelSpec:
             tracer_emb_table=self.tracer_combo_emb_table(),
             reaction_emb_table=radial_embedding_table(n_reactions, self.h_reaction),
             type_emb_table=radial_embedding_table(2, self.h_type),
-            null_space_data=self.null_space_data,
+            null_space_data=self._gauge_null_space_data(),
             flux_norm_stats=self.flux_norm_stats,
         )
         model.load_state_dict(state_dict, strict=strict)
@@ -281,6 +359,9 @@ class SigmaFlux:
         spec = ModelSpec.from_checkpoint(self.ckpt, config=config, data_dir=data_dir)
         self._init_from_spec(spec, self.ckpt['model_state_dict'], device=device,
                              strict=False)
+        # Only :meth:`mfa_context` needs these -- it has to locate the run's prepared
+        # model, which the checkpoint itself does not carry.
+        self._config_path, self._checkpoint, self._data_dir = config, checkpoint, data_dir
 
     @classmethod
     def from_spec(cls, spec, state_dict, *, device=None, strict=True):
@@ -321,6 +402,10 @@ class SigmaFlux:
         """
         self.spec = spec
         self.device = resolve_device(device)
+        # Set by __init__ when the model came from a run directory; a from_spec or .sfx
+        # predictor has no run to find a prepared model in, and mfa_context() says so.
+        self._config_path = self._checkpoint = self._data_dir = None
+        self._mfa = None
 
         # Tracer name → internal tracer string mapping. The internal string is
         # Tracer.__repr__ = f"{tracer_id}_{labeling}_{enrichment}", which is what
@@ -350,10 +435,61 @@ class SigmaFlux:
         self._cfg_dict = spec.model_config
         self._nsd      = spec.null_space_data
 
+        # Bound projection: the reaction bounds, plus the origin the rays are cast from.
+        # The origin is the training flux mean rebuilt through the decoder's own map,
+        # v = y @ Z_free.T + flux_offset. The offset holds the directions
+        # split_constant_directions() pinned, whose Z_free rows are zero; without it
+        # those reactions rebuild as 0 and the origin falls outside the box.
+        if not spec.flux_bounds:
+            raise ValueError(
+                "This model carries no flux_bounds, so its predictions cannot be "
+                "constrained to the reaction bounds. Re-export it with sigmaflux-export, "
+                "or build the predictor with data_dir=<run directory> so the bounds can "
+                "be read from model_prepared_for_mfa.json."
+            )
+        self._flux_lb = np.asarray(spec.flux_bounds['lb'], dtype=np.float64)
+        self._flux_ub = np.asarray(spec.flux_bounds['ub'], dtype=np.float64)
+        # A model with a gauge latent emits feasible states already, so there is nothing
+        # to repair and no ray to cast -- the origin and its slack check below belong to
+        # the affine map only.
+        self._gauge = bool(self._cfg_dict.get('gauge_radial'))
+        if self._gauge:
+            return
+        _Z_free = np.asarray(self._nsd['Z_free'], dtype=np.float64)
+        # Projector onto range(Z_free), factored through the Gram matrix rather than
+        # formed as an (n_fluxes, n_fluxes) dense matrix. targeted_ica's basis is not
+        # orthonormal -- Gram condition 5.5e3 on I. orientalis -- so Z @ Z.T is not it.
+        self._null_basis = _Z_free
+        self._null_dual = np.linalg.solve(_Z_free.T @ _Z_free, _Z_free.T).T
+        # Absent on pre-offset checkpoints and regenerated exports; zeros matches them.
+        _offset = self._nsd.get('flux_offset')
+        _offset = (np.zeros(_Z_free.shape[0]) if _offset is None
+                   else np.asarray(_offset, dtype=np.float64))
+        self._null_offset = _offset
+        self._flux_origin = (np.asarray(self._nsd['y_mean'], dtype=np.float64)
+                             @ _Z_free.T) + _offset
+        slack = np.minimum(self._flux_origin - self._flux_lb,
+                           self._flux_ub - self._flux_origin)
+        if slack.min() <= 0:
+            worst = int(np.argmin(slack))
+            raise ValueError(
+                f"The projection origin (training flux mean) is not strictly inside the "
+                f"reaction bounds: {self.flux_names[worst]} has slack {slack.min():.3g}. "
+                f"Every ray from it would have zero length there, collapsing predictions "
+                f"onto the origin. The bounds and the checkpoint likely disagree."
+            )
+
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def predict(self, df_L, df_Vm=None):
+    def predict(self, df_L, df_Vm=None, *, verbose=True, with_mid=False):
         """Predict fluxes from labeling data and measured exchange fluxes.
+
+        Tokens the experiment does not measure are *excluded* rather than fed as a
+        fraction of zero: they are hidden from both attention stages via the decoder's
+        ``labeling_mask``. A zero fraction is a real measurement -- "this isotopomer is
+        absent" -- so filling missing tokens with it told the model something the data
+        never said, for every metabolite the platform cannot resolve and for every tracer
+        the experiment did not run.
 
         Parameters
         ----------
@@ -365,6 +501,13 @@ class SigmaFlux:
         df_Vm : pd.DataFrame or None
             Measured exchange fluxes, columns 'Flux Name', 'Value' (optional 'Sample'
             matching df_L); names must match expected_measured_fluxes().
+        with_mid : bool
+            Also simulate the labeling each predicted flux state implies, and return
+            ``(predictions, mids)`` instead of just the predictions. One EMU forward
+            pass per sample, so it is off by default; see :meth:`simulate_mid`.
+        verbose : bool
+            Print the input-coverage report. An ensemble sets this only for its first
+            member, since every member sees identical inputs.
 
         Returns
         -------
@@ -386,13 +529,14 @@ class SigmaFlux:
         # so M+0 is fully determined by M+1…M+N and was excluded at generation time).
         m0_rows = (df_L['Isotopomer'] == 'M+0').sum()
         if m0_rows > 0:
-            print(f"Dropping {m0_rows} M+0 row(s) — M+0 is not used by the model.")
+            if verbose:
+                print(f"Dropping {m0_rows} M+0 row(s) — M+0 is not used by the model.")
             df_L = df_L[df_L['Isotopomer'] != 'M+0'].copy()
 
         # Convert human-readable tracer names → internal tracer IDs
         user_tracers = set(df_L['Tracer Name'].unique())
         unknown = user_tracers - set(self.tracer_names)
-        if unknown:
+        if unknown and verbose:
             print(f"WARNING: unknown tracer name(s): {unknown}")
             print(f"  Expected: {self.tracer_names}")
         df_L = df_L.copy()
@@ -405,31 +549,40 @@ class SigmaFlux:
         # absent from training data). Report once as a summary, not per-token.
         unknown_mets = user_metabolites - self._known_metabolites
         if unknown_mets:
-            print(f"Ignoring {len(unknown_mets)} metabolite(s) not in training set: "
-                  f"{', '.join(sorted(unknown_mets))}")
+            if verbose:
+                print(f"Ignoring {len(unknown_mets)} metabolite(s) not in training set: "
+                      f"{', '.join(sorted(unknown_mets))}")
             df_L = df_L[~df_L['Metabolite ID'].isin(unknown_mets)].copy()
             user_metabolites -= unknown_mets
 
-        # ── Build full-skeleton labeling_df ───────────────────────────────────
-        # One column per sample; ALL training tokens present; zero where user
-        # has no measurement.
+        # ── Build the labeling frame on the training token skeleton ───────────
+        # Rows stay in token_index order rather than being lexicographically sorted:
+        # norm_stats' mid_mean/mid_std are *positional* arrays in training order, so a
+        # re-sorted frame would z-score every token against another token's statistics.
+        # One pivot instead of a row-by-row assignment loop -- bootstrapped inputs push
+        # the sample count into the hundreds, and the loop was O(rows x samples) in Python.
         skeleton_index = pd.MultiIndex.from_tuples(
             self._token_index, names=['Tracer', 'Metabolite', 'Isotopomer']
         )
-        labeling_df = pd.DataFrame(
-            0.0,
-            index   = skeleton_index,
-            columns = list(range(n_samples)),
-            dtype   = np.float32,
-        ).sort_index()   # sort MultiIndex for efficient .loc access
+        col_of = {s: i for i, s in enumerate(samples)}
+        if df_L.empty:
+            # Nothing survived the tracer/metabolite filters. An all-NaN frame keeps the
+            # shape contract so this fails as "no coverage" below rather than on a pivot
+            # over an empty frame, which produces no index levels to reindex against.
+            wide = pd.DataFrame(np.nan, index=skeleton_index, columns=range(n_samples))
+        else:
+            wide = (df_L.assign(_col=df_L['Sample'].map(col_of))
+                        .pivot_table(index=['Tracer Name', 'Metabolite ID', 'Isotopomer'],
+                                     columns='_col', values='Fraction', aggfunc='mean')
+                        .reindex(index=skeleton_index, columns=range(n_samples)))
 
-        # Fill in user's values (Tracer Name already converted to internal ID)
-        for col_idx, s in enumerate(samples):
-            sub = df_L[df_L['Sample'] == s]
-            for _, row in sub.iterrows():
-                key = (row['Tracer Name'], row['Metabolite ID'], row['Isotopomer'])
-                if key in labeling_df.index:
-                    labeling_df.loc[key, col_idx] = np.float32(row['Fraction'])
+        # NaN is "no measurement for this token in this sample" and becomes a mask entry;
+        # the value underneath it is never read, so the fill is arbitrary.
+        absent = wide.isna().to_numpy().T                     # (n_samples, n_tokens)
+        labeling_df = wide.fillna(0.0).astype(np.float32)
+
+        if verbose:
+            self._report_coverage(wide)
 
         # ── Flux DataFrames ───────────────────────────────────────────────────
         flux_df, rev_df = self._build_flux_dfs(df_Vm, n_samples, samples)
@@ -446,6 +599,9 @@ class SigmaFlux:
             norm_stats_input= self.spec.norm_stats,  # applies MID z-score if model trained with it
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
+
+        # Which labeling tokens to hide, sliced per batch alongside the flux tokens below.
+        absent_t = torch.tensor(absent, dtype=torch.bool)
 
         # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
         # Normalize to match training if checkpoint used normalize_targets.
@@ -480,8 +636,18 @@ class SigmaFlux:
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
+                labeling_mask = absent_t[batch_offset:batch_offset + B].to(self.device)
+                # An all-hidden row makes attention softmax over nothing and returns NaN.
+                # The flux tokens are never masked, so the sequence still has visible keys
+                # whenever they exist; without them, keep one labeling token visible.
+                if fixed_fluxes is None:
+                    all_hidden = labeling_mask.all(dim=1)
+                    if all_hidden.any():
+                        labeling_mask[all_hidden, 0] = False
+
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     measured_fluxes=fixed_fluxes)
+                                     measured_fluxes=fixed_fluxes,
+                                     labeling_mask=labeling_mask)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
                 batch_offset += B
@@ -490,7 +656,13 @@ class SigmaFlux:
         rev_arr  = torch.cat(all_rev).numpy()
 
         # Flux: already denormalized inside model.forward() via y_norm_mean/std
-        # (basis coefficients → physical mmol/gDW/h via Z_full.T).
+        # (basis coefficients → physical mmol/gDW/h via Z_full.T). The reconstruction
+        # guarantees S v = 0 but not the reaction bounds, so every state is projected
+        # back inside them before it leaves the predictor -- unconditionally, since a
+        # prediction that is not a flux state is not a usable answer. A gauge latent has
+        # already done this in the forward pass, where it costs no accuracy.
+        if not self._gauge:
+            flux_arr = self._project_into_bounds(flux_arr)
 
         # Reversibility: decode from z-scored log1p space → physical values.
         # model.forward() returns raw z-score logits when rev_norm_mean is set.
@@ -500,7 +672,65 @@ class SigmaFlux:
             _rev_log_std  = np.array(self._nsd['rev_log_std'], dtype=np.float32)
             rev_arr = np.expm1(rev_arr * _rev_log_std + _rev_log_mean).clip(0)
 
-        return self._format_output(flux_arr, rev_arr, samples)
+        out = self._format_output(flux_arr, rev_arr, samples)
+        if with_mid:
+            return out, self.simulate_mid(flux_arr, rev_arr, samples)
+        return out
+
+    def _project_into_bounds(self, flux_arr):
+        """Pull each predicted flux state back toward the reaction bounds.
+
+        The decoder reconstructs ``v = y @ Z_full.T + flux_offset``, which satisfies
+        ``S v = 0`` by construction but nothing keeps inside the box. Unprojected states
+        are not merely inaccurate: measured on I. orientalis, every one of 1000 validation
+        states sat outside, 35 reactions out apiece, and the EMU forward pass on them
+        returned a largest "fraction" of 9.9e+39 -- not a MID at all.
+
+        Clip into ``[lb, ub]``, then project back onto the affine null space. The second
+        step is exact, so ``S v = 0`` is restored to 5.8e-10 while the clip has already
+        removed the gross excursions the forward pass cannot survive. It does not reach
+        exact box feasibility -- the two sets meet at too shallow an angle near these
+        predictions for that to be cheap, and iterating toward it (Dykstra) makes the
+        predictions monotonically *worse*, R2 0.267 at one sweep against 0.190 at fifty.
+
+        This replaced a single ray from the training flux mean,
+        ``x = x0 + min(1, alpha) * (v - x0)``, whose ``alpha`` was one ratio-test scalar
+        for the whole vector -- so the reaction with the narrowest interval relative to the
+        error on it set the step for every other flux. Measured on I. orientalis,
+        ``alpha < 1`` on **100%** of predictions (median 0.0046), gated 99.6% of the time
+        by ``AHSERL2_c``, ``METB1_c``, ``SADT_c`` and ``SLFAT_c`` -- sulfur assimilation,
+        boxes ~0.027 wide against a glucose uptake of 8.6. Every state came back on the
+        training mean: per-reaction R2 -0.005 against 0.592 unprojected, while Spearman rho
+        barely moved (0.771 vs 0.781), a positive scalar preserving rank and erasing scale.
+
+        Bound violation is not itself a symptom of a bad model -- the pre-pool run that
+        scored 0.986 violated harder (worst 275 mmol/gDW/h, 27.7% of its largest flux) and
+        was simply never projected. Only the operator matters.
+
+        Args:
+            flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
+        """
+        clipped = np.clip(flux_arr.astype(np.float64), self._flux_lb, self._flux_ub)
+        r = clipped - self._null_offset
+        return self._null_offset + (r @ self._null_basis) @ self._null_dual.T
+
+    def _report_coverage(self, wide):
+        """Print how much of the trained token set the experiment actually measured.
+
+        A tracer the model was trained on but the experiment never ran used to vanish
+        silently -- only *unknown* tracer names warned -- while contributing a full block
+        of zero-valued tokens. Reporting per tracer makes that visible at the point it
+        happens.
+
+        Args:
+            wide: the token skeleton frame, NaN wherever there is no measurement.
+        """
+        measured = wide.notna().any(axis=1).groupby(level='Tracer').agg(['sum', 'count'])
+        print(f"Input coverage: {int(measured['sum'].sum())}/{len(wide)} "
+              f"trained tokens measured (the rest are masked out, not zero-filled)")
+        for tracer, row in measured.iterrows():
+            note = "  <-- tracer not measured at all" if row['sum'] == 0 else ""
+            print(f"  {tracer}: {int(row['sum'])}/{int(row['count'])}{note}")
 
     def predict_knockout(self, df_L, knockout_rxn_ids, df_Vm=None, weights=None):
         """Predict fluxes for a knockout, forcing the knocked-out reactions to exactly zero.
@@ -549,6 +779,15 @@ class SigmaFlux:
         """Tracer experiment names from the config."""
         return list(self.tracer_names)
 
+    def tracer_ids(self):
+        """Display tracer name -> internal tracer id, as used in the token index.
+
+        Anything that has to line measured data up against the token index (or against a
+        simulated labeling vector, whose tracer level is the same internal id) needs this
+        map; rebuilding it from the config at each call site is how the two drift apart.
+        """
+        return dict(self._tracer_name_to_id)
+
     def expected_measured_fluxes(self):
         """Reaction IDs to provide in df_Vm."""
         return list(self.measured_flux_ids)
@@ -585,6 +824,108 @@ class SigmaFlux:
                     if rxn in flux_df.index:
                         flux_df.loc[rxn, col_idx] = np.float32(row['Value'])
         return flux_df, rev_df
+
+    def mfa_context(self):
+        """The prepared EMU network this model's fluxes are simulated through (memoized).
+
+        Built from the run's own ``model_prepared_for_mfa.json`` rather than re-derived:
+        rebuilding re-solves FVA and depends on the solver still behaving as it did, so
+        the saved model is the one training and sampling actually saw. Expansion targets
+        are restricted to the metabolites the measurement platform maps, which is what
+        keeps the network small enough to simulate thousands of states through.
+
+        Returns ``(mfa_model, reaction_ids, labeling_to, labeling_index)``.
+        """
+        if self._mfa is not None:
+            return self._mfa
+        # Imported here rather than at module scope: the EMU machinery pulls in cobra and
+        # the expansion code, which a predictor that never simulates should not pay for.
+        from ..pipeline._benchmark import build_mfa_context, load_prepared_model
+        from ..pipeline._paths import load_config
+
+        if self._checkpoint is None and self._data_dir is None:
+            raise ValueError("this predictor was built without a run directory, so the "
+                             "prepared model it would simulate through cannot be located")
+        roots = [d for d in (self._data_dir,
+                             os.path.dirname(os.path.abspath(self._checkpoint))
+                             if self._checkpoint else None,
+                             os.path.dirname(os.path.dirname(os.path.abspath(
+                                 self._checkpoint))) if self._checkpoint else None)
+                 if d]
+        run_dir = next((d for d in roots
+                        if os.path.isfile(os.path.join(d, "model_prepared_for_mfa.json"))),
+                       None)
+        if run_dir is None:
+            raise FileNotFoundError(
+                f"no model_prepared_for_mfa.json in any of {roots}; labeling cannot be "
+                f"simulated without the prepared model")
+        cfg, root = load_config(self._config_path) if self._config_path else (self.cfg, None)
+        cobra_model, mapped = load_prepared_model(run_dir, cfg, root)
+        mfa_model, reaction_ids, _, labeling_to, labeling_index = build_mfa_context(
+            cobra_model, cfg["labeling"]["tracers"],
+            pd.Series(0.0, index=[r.id for r in cobra_model.reactions]),
+            "predict_mid", with_backward=False, restrict_targets_to=mapped)
+        self._mfa = (mfa_model, reaction_ids, labeling_to, labeling_index)
+        return self._mfa
+
+    def simulate_mid(self, flux_arr, rev_arr, samples, context=None):
+        """Labeling each predicted flux state implies, in this predictor's input schema.
+
+        One EMU forward pass per row, so the cost is linear in the number of states --
+        the reason :meth:`predict` only does this when asked. Reversibility is predicted
+        for a subset of the reactions and fills with zero elsewhere, which is inert:
+        MFAModel multiplies it by the reversibility mask before simulating.
+
+        Args:
+            flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
+            rev_arr: matching reversibilities, in reversibility_names order.
+            samples: sample ids, in row order.
+            context: an ``mfa_context()`` to reuse, so an ensemble builds one network
+                rather than one per member.
+
+        Returns a long frame with the same columns the measured labeling arrives in:
+        'Sample', 'Tracer Name', 'Metabolite ID', 'Isotopomer', 'Fraction'.
+        """
+        from ..pipeline._benchmark import forward_labeling
+
+        mfa_model, reaction_ids, labeling_to, labeling_index = context or self.mfa_context()
+        flux_pos = {n: i for i, n in enumerate(self.flux_names)}
+        rev_pos = {n: i for i, n in enumerate(self.reversibility_names)}
+        take_flux = [flux_pos.get(r) for r in reaction_ids]
+        take_rev = [rev_pos.get(r) for r in reaction_ids]
+
+        def _align(row, take):
+            return np.array([0.0 if i is None else float(row[i]) for i in take])
+
+        values = np.empty((len(samples), len(labeling_index)), dtype=float)
+        failed = 0
+        for i in range(len(samples)):
+            try:
+                values[i] = forward_labeling(mfa_model, _align(flux_arr[i], take_flux),
+                                             _align(rev_arr[i], take_rev), labeling_to)
+            except Exception:
+                # A predicted state can be one whose EMU system is singular -- a subnet
+                # with near-zero row sums has no labeling to solve for. That state has no
+                # labeling, which is a fact about it, not a reason to lose every other
+                # state in the call.
+                values[i] = np.nan
+                failed += 1
+        if failed:
+            warnings.warn(f"{failed}/{len(samples)} predicted flux state(s) have no "
+                          f"solvable labeling; their fractions are NaN")
+        # Report the tracer under the name the caller supplied it as, not the internal
+        # repr, so the result lines up with the df_L it was predicted from.
+        display = {v: k for k, v in self._tracer_name_to_id.items()}
+        levels = {lvl: labeling_index.get_level_values(lvl).to_numpy()
+                  for lvl in ("Tracer", "Metabolite", "Isotopomer")}
+        out = pd.DataFrame({
+            "Sample": np.repeat(np.asarray(samples), len(labeling_index)),
+            "Tracer Name": np.tile([display.get(t, t) for t in levels["Tracer"]], len(samples)),
+            "Metabolite ID": np.tile(levels["Metabolite"], len(samples)),
+            "Isotopomer": np.tile(levels["Isotopomer"], len(samples)),
+            "Fraction": values.ravel(),
+        })
+        return out
 
     def _format_output(self, flux_arr, rev_arr, samples):
         """Assemble the long-format 'Sample'/'Flux Name'/'Value' output DataFrame.
@@ -625,9 +966,7 @@ class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
-    interface, returning the per-reaction median over members, re-projected onto
-    the null-space basis since the median (unlike any single member) does not
-    satisfy ``S v = 0`` — see :meth:`_project_flux_blocks`.
+    interface, returning the per-reaction mean over members.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -709,11 +1048,10 @@ class EnsembleSigmaFlux:
         self.name                = None
         self.model_version       = None
         self.source_path         = None
-        self._projector          = None   # built lazily by _null_space_projector()
 
-    def predict(self, df_L, df_Vm=None):
-        """Ensemble-median prediction. Members share inputs, so per-member outputs
-        have identical row order and are combined positionally.
+    def predict(self, df_L, df_Vm=None, *, aggregate=True, with_mid=False):
+        """Ensemble prediction. Members share inputs, so per-member outputs have
+        identical row order and are combined positionally.
 
         Parameters
         ----------
@@ -721,17 +1059,64 @@ class EnsembleSigmaFlux:
             Labeling data; see :meth:`SigmaFlux.predict`.
         df_Vm
             Measured exchange fluxes, or None.
+        aggregate
+            ``True`` (default): per-reaction mean over members, unchanged schema.
+            ``False``: every member's own raw prediction, long-format with an added
+            'Member' column (one row per Sample x Member x Flux Name) -- no mean
+            collapse, no other post-processing.
+        with_mid
+            Also simulate each member's labeling, returning ``(predictions, mids)``.
+            The mids carry a 'Member' column whether or not the predictions are
+            aggregated: the EMU pass is nonlinear, so the labeling of the mean flux
+            state is not the mean labeling, and collapsing members here would decide
+            that question for the caller. Every member simulates through member 0's
+            network -- they share a model, and building one per member would prepare
+            the same EMU expansion twenty times.
         """
-        preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        # Members see identical inputs, so only the first reports coverage.
+        preds, mids = [], []
+        if with_mid:
+            # Members share one model, so they share one network: seed every member's
+            # memo with member 0's rather than preparing the same EMU expansion once
+            # per member.
+            context = self.members[0].mfa_context()
+            for m in self.members:
+                m._mfa = context
+        for i, m in enumerate(self.members):
+            if with_mid:
+                pred, mid = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0), with_mid=True)
+                mids.append(mid.assign(Member=i))
+                print(f"     simulated labeling for member {i + 1}/{len(self.members)}",
+                      flush=True)
+            else:
+                pred = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0))
+            preds.append(pred)
+        mid_out = pd.concat(mids, ignore_index=True) if with_mid else None
+        if not aggregate:
+            raw = []
+            for midx, p in enumerate(preds):
+                p = p.copy()
+                if 'Sample' not in p.columns:      # single-sample call dropped it
+                    p.insert(0, 'Sample', 0)
+                p.insert(1, 'Member', midx)
+                raw.append(p)
+            combined = pd.concat(raw, ignore_index=True)
+            return (combined, mid_out) if with_mid else combined
+        # Mean, not median: every member predicts v = y @ Z_full.T and so lies in the
+        # stoichiometric null space, and a mean is a convex combination of those -- it
+        # stays a flux state. A per-reaction median is not a convex combination and can
+        # leave the null space entirely (measured: max|S.v| = 5.74 on E. coli core LC-MS,
+        # versus 2e-6 for the mean), which makes it unusable for anything that forward-
+        # simulates or mass-balances the reported value.
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
         out = preds[0].copy()
-        out['Value'] = self._project_flux_blocks(np.median(values, axis=0))
-        return out
+        out['Value'] = values.mean(axis=0)
+        return (out, mid_out) if with_mid else out
 
     def predict_knockout(self, df_L, knockout_rxn_ids, df_Vm=None):
         """Ensemble prediction with the knocked-out reactions forced to exactly zero.
 
-        Projects the ensemble-median flux onto ``{S x = 0} ∩ {x[ko] = 0}`` weighted by the
+        Projects the ensemble-mean flux onto ``{S x = 0}∩{x[ko] = 0}`` weighted by the
         inverse variance across members: the rerouting needed to zero the knockout is
         absorbed by the reactions the ensemble is least certain about, keeping the confident
         ones close to their predicted values. Returns the same long DataFrame as
@@ -759,45 +1144,13 @@ class EnsembleSigmaFlux:
         ko_idx = _knockout_indices(self.flux_names, knockout_rxn_ids)
         Z = self.members[0]._model.Z_full.detach().cpu().numpy().astype(np.float64)
         return _cleaned_knockout_df(
-            preds[0], np.median(values, axis=0), n_flux, n_rev, Z, ko_idx, weights)
-
-    def _null_space_projector(self):
-        """``Z (Z^T Z)^-1 Z^T`` for the members' shared basis, or None if absent.
-        Varimax bases are orthonormal (Gram = I, so this collapses to ``Z Z^T``),
-        but a column-normalised ``targeted_ica`` basis is not, hence the Gram solve."""
-        if self._projector is not None:
-            return self._projector
-        inner = getattr(self.members[0], '_model', None)
-        Z = getattr(inner, 'Z_full', None)
-        if Z is None:
-            return None
-        Z = Z.detach().cpu().numpy().astype(np.float64)
-        gram = Z.T @ Z
-        if np.allclose(gram, np.eye(gram.shape[0]), atol=1e-6):
-            self._projector = Z @ Z.T
-        else:
-            self._projector = Z @ np.linalg.solve(gram, Z.T)
-        return self._projector
-
-    def _project_flux_blocks(self, values):
-        """Return ``values`` with every sample's flux block re-projected onto the null
-        space: each member's prediction satisfies ``S v = 0`` by construction, but a
-        per-reaction median across members is a non-linear combination and does not.
-        Only the flux block moves; reversibilities are not null-space coordinates."""
-        P = self._null_space_projector()
-        n_flux = len(self.flux_names or [])
-        if P is None or not n_flux:
-            return values
-        stride = n_flux + len(self.reversibility_names or [])
-        out = np.asarray(values, dtype=np.float64).copy()
-        for start in range(0, len(out), stride):        # one block per sample
-            out[start:start + n_flux] = P @ out[start:start + n_flux]
-        return out
+            preds[0], values.mean(axis=0), n_flux, n_rev, Z, ko_idx, weights)
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
     def expected_tracers(self):         return self.members[0].expected_tracers()
     def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
+    def tracer_ids(self):               return self.members[0].tracer_ids()
 
 
 def load_predictor(config, checkpoint, data_dir=None, device=None):

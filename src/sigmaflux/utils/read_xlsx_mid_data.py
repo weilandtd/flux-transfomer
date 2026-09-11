@@ -10,12 +10,23 @@ Output df_L columns: Tracer Name, Sample, Metabolite ID, Isotopomer, Fraction
 """
 
 import re
+import warnings
+
 import pandas as pd
 
 _GC_REP_PAT = re.compile(r'^([A-Z]+)(\d+)_Rep(\d+)$')
 
 
 def _load_mapping(mapping_csv: str) -> dict:
+    """``{experimental_id: [token ids]}`` for the workbook's compound names.
+
+    The CSV already names the token the platform reports -- a whole-cell pool where the
+    compartments cannot be resolved, a plain compartment id where they can -- so this is
+    a straight read with no reinterpretation.
+
+    Args:
+        mapping_csv: experimental-id -> model-id CSV.
+    """
     df = pd.read_csv(mapping_csv)
     return df.groupby('experimental_id')['model_id'].apply(list).to_dict()
 
@@ -33,6 +44,7 @@ def read_xlsx_mid_data(
         growth_condition: if given, restricts to columns matching that GrowthCondition number.
     """
     met_map = _load_mapping(mapping_csv)
+    _warn_on_unresolved_compartments(met_map, mapping_csv)
     xl      = pd.ExcelFile(xlsx_path)
     records = []
 
@@ -69,3 +81,25 @@ def read_xlsx_mid_data(
         records,
         columns=['Tracer Name', 'Sample', 'Metabolite ID', 'Isotopomer', 'Fraction'],
     )
+
+
+def _warn_on_unresolved_compartments(met_map, mapping_csv):
+    """Flag compounds that still land in more than one model metabolite.
+
+    Writing one measured MID into several compartments does not model a mixture, it
+    asserts the compartments are identically labeled. A compound whose model carries a
+    whole-cell pool should name that pool here instead, so this firing means the mapping
+    file has fallen behind the model.
+    """
+    split = {k: v for k, v in met_map.items() if len(v) > 1}
+    if not split:
+        return
+    detail = ", ".join(f"{k} -> {v}" for k, v in sorted(split.items())[:5])
+    if len(split) > 5:
+        detail += ", ..."
+    warnings.warn(
+        f"{mapping_csv}: {len(split)} compound(s) map to several model metabolites and "
+        f"are written into each one, which asserts the compartments are identically "
+        f"labeled rather than mixing them ({detail}). Name the whole-cell pool "
+        f"instead, or confirm the model has no pool for them.",
+        RuntimeWarning, stacklevel=3)

@@ -48,17 +48,21 @@ def pin_threads():
     return n_threads
 
 
-def load_benchmark_inputs(data_dir, cfg=None, root=None):
-    """Load the run directory's model, observable metabolites and training data.
+def load_prepared_model(data_dir, cfg=None, root=None):
+    """The run directory's MFA-prepared model and the metabolites the platform can see.
+
+    Reads the ``model_prepared_for_mfa.json`` the run already holds rather than
+    re-deriving it: rebuilding re-solves FVA (bounds drift at ~1e-13) and depends on the
+    solver still behaving as it did then, so the saved model is the one training and
+    sampling actually saw.
 
     Args:
-        data_dir: run directory holding the prepared model and training HDF5 files.
-        cfg: organism config; supplies ``mapping_csv`` when given.
+        data_dir: run directory holding ``model_prepared_for_mfa.json``.
+        cfg: organism config; supplies the mapping CSV when given.
         root: project root for resolving config-relative paths.
 
-    Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
-    ``mapped_met_ids`` comes from the config's ``mapping_csv`` when given, else
-    every metabolite id in the run's ``features.csv``.
+    Returns ``(cobra_model, mapped_met_ids)``. ``mapped_met_ids`` comes from the config's
+    mapping CSV when given, else every metabolite id in the run's ``features.csv``.
     """
     model_path = os.path.join(data_dir, "model_prepared_for_mfa.json")
     print(f"Loading model: {model_path}")
@@ -76,12 +80,27 @@ def load_benchmark_inputs(data_dir, cfg=None, root=None):
         mapped_met_ids = set(pd.read_csv(os.path.join(data_dir, "features.csv"))
                                ["metabolite_id"].dropna())
         print(f"  {len(mapped_met_ids)} metabolite IDs from features.csv")
+    return cobra_model, mapped_met_ids
+
+
+def load_benchmark_inputs(data_dir, cfg=None, root=None):
+    """Load the run directory's model, observable metabolites and training data.
+
+    Args:
+        data_dir: run directory holding the prepared model and training HDF5 files.
+        cfg: organism config; supplies ``mapping_csv`` when given.
+        root: project root for resolving config-relative paths.
+
+    Returns ``(cobra_model, mapped_met_ids, labeling_df, flux_df, rev_df)``.
+    """
+    cobra_model, mapped_met_ids = load_prepared_model(data_dir, cfg, root)
 
     print(f"Loading training data from: {data_dir}")
     return (cobra_model, mapped_met_ids, *load_data(data_dir))
 
 
-def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
+def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks,
+                   subsample=None, sample_ids=None):
     """Sample columns for this task, as an offset window into *split*.
 
     Args:
@@ -91,21 +110,71 @@ def select_samples(split, split_source, n_total, cfg, start_ix, n_benchmarks):
         cfg: organism config, for the val_fraction/seed fallback when recomputing the split.
         start_ix: offset of the first sample within the split.
         n_benchmarks: number of samples to select from that offset.
+        subsample: when given, first draw this many indices out of the full split
+            (seeded at 0, independent of any run's ``--seed``, so every condition of
+            a sensitivity study draws the identical subset regardless of what noise
+            seed it runs with), sorted back into split order, then windowed by
+            ``start_ix``/``n_benchmarks`` as usual. ``None`` uses the whole split.
+            Ignored when ``sample_ids`` is given.
+        sample_ids: explicit absolute HDF5 column indices to use as the pool,
+            bypassing both the split lookup and ``subsample`` -- for a caller (e.g.
+            a sensitivity study's solved-sample pool) that has already decided
+            exactly which columns every condition and method must share. Sorted,
+            then windowed by ``start_ix``/``n_benchmarks`` exactly like the other
+            two paths, so the offset-window/tiling contract is identical either way.
 
-    ``start_ix``/``n_benchmarks`` index the sorted split, not raw HDF5 columns, so a
-    SLURM array tiles it deterministically. Returns ``(sel, tag)``; ``sel`` is empty
-    when the offset window falls past the end of the split.
+    ``start_ix``/``n_benchmarks`` index the sorted split (post-subsampling, when
+    given), not raw HDF5 columns, so a SLURM array tiles it deterministically.
+    Returns ``(sel, tag)``; ``sel`` is empty when the offset window falls past the
+    end of the split.
     """
-    split_cols = split_sample_indices(
-        split, split_source, n_total,
-        cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
-    )
+    if sample_ids is not None:
+        split_cols = np.sort(np.asarray(sample_ids, dtype=int))
+        note = " (explicit sample pool)"
+    else:
+        split_cols = split_sample_indices(
+            split, split_source, n_total,
+            cfg.get("training", {}).get("val_fraction"), cfg.get("seed"),
+        )
+        note = ""
+        if subsample is not None and subsample < len(split_cols):
+            split_cols = np.sort(
+                np.random.default_rng(0).choice(split_cols, size=subsample, replace=False)
+            )
+            note = " (subsampled)"
     sel = split_cols[start_ix:start_ix + n_benchmarks]
     n_runs = len(sel)
-    print(f"  split={split}: {len(split_cols)} samples; this task evaluates "
+    print(f"  split={split}: {len(split_cols)} samples{note}; this task evaluates "
           f"offsets {start_ix}–{start_ix + n_runs - 1} → columns "
           f"{sel[0] if n_runs else '-'}..{sel[-1] if n_runs else '-'} of {n_total} total")
     return sel, f"{start_ix:05d}_{start_ix + max(n_runs - 1, 0):05d}"
+
+
+def metabolite_subset(mapped_met_ids, frac, seed=0):
+    """Nested random subset of *mapped_met_ids*, keeping a fixed fraction of it.
+
+    One permutation of the sorted ids is drawn from *seed*; level ``frac`` keeps its
+    first ``max(1, round(frac * n))`` entries (matching the floor
+    ``paper/analysis/diagnostics/test_missing_metabolites.py`` already uses for its
+    masking rate), so subsets at different fractions nest (frac=0.25 ⊂ frac=0.5 ⊂
+    frac=0.75 ⊂ frac=1.0) rather than being independent draws — the reading is "this
+    platform resolves these metabolites", and degradation is monotone in how much of
+    that set is dropped. The floor keeps a positive ``frac`` from ever rounding to
+    an empty set on a small metabolite count (e.g. a toy/test model): a restriction
+    that quietly reverted to "no restriction" downstream would be a worse bug than a
+    slightly generous smallest subset.
+
+    Args:
+        mapped_met_ids: full set of metabolite ids the measurement platform can see.
+        frac: fraction of them to keep, in [0, 1]. ``frac <= 0`` keeps nothing.
+        seed: RNG seed for the permutation. Fixed by default (0) so independent
+            callers — the AI and MFA arms of a sensitivity study — drop the
+            identical metabolites without having to share any other state.
+    """
+    ids = np.array(sorted(mapped_met_ids))
+    order = np.random.default_rng(seed).permutation(len(ids))
+    n_keep = max(1, round(frac * len(ids))) if frac > 0 else 0
+    return set(ids[order[:n_keep]].tolist())
 
 
 def resolve_split_source(checkpoint, data_dir, split):

@@ -97,3 +97,70 @@ def test_fixed_fluxes_affect_prediction(toy_run):
         "Predictions are identical with and without measured fluxes — "
         "fixed_fluxes may not be reaching rotation_fusion."
     )
+
+
+def test_absent_tokens_are_masked_out_not_read_as_zero(toy_run):
+    """A token the experiment does not measure must be excluded from attention, not fed
+    as a fraction of 0.0 -- a zero fraction is a real measurement ("this isotopomer is
+    absent"), so zero-filling told the model something the data never said.
+
+    The check: drop Glycine's tokens entirely, then re-run with those same tokens present
+    but carrying wildly different values. If they were being read, the prediction would
+    move; masked, it cannot.
+    """
+    sf = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    df_L = make_toy_df_L(n_samples=1)
+
+    without_gly = df_L[df_L['Metabolite ID'] != 'Gly']
+    base = sf.predict(without_gly)['Value'].to_numpy()
+
+    for filler in (0.0, 0.9):
+        spiked = df_L.copy()
+        spiked.loc[spiked['Metabolite ID'] == 'Gly', 'Fraction'] = filler
+        moved = sf.predict(spiked)['Value'].to_numpy()
+        # Present-but-different values must change the prediction ...
+        assert not np.allclose(base, moved), f"Gly tokens ignored when present ({filler})"
+
+    # ... while their absence gives the same answer every time, whatever would have
+    # occupied those positions.
+    again = sf.predict(without_gly.copy())['Value'].to_numpy()
+    assert np.allclose(base, again)
+
+
+def test_labeling_mask_hides_exactly_the_unmeasured_tokens(toy_run):
+    """White-box: the mask handed to the decoder must be True at every trained token the
+    experiment did not measure, and False at every one it did -- per sample, since a
+    replicate can be missing a metabolite the others have."""
+    sf = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    df_L = make_toy_df_L(n_samples=2)
+    # Sample 1 loses Glycine; sample 0 keeps everything.
+    partial = df_L[(df_L['Sample'] == 0) | (df_L['Metabolite ID'] != 'Gly')]
+
+    seen = []
+    inner = sf._model.forward
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs['labeling_mask'].cpu().numpy().copy())
+        return inner(*args, **kwargs)
+
+    sf._model.forward = spy          # nn.Module.__call__ dispatches through self.forward
+    try:
+        sf.predict(partial)
+    finally:
+        del sf._model.forward
+
+    mask = np.concatenate(seen, axis=0)                     # (n_samples, n_tokens)
+    tokens = list(sf._token_index)
+    assert mask.shape == (2, len(tokens))
+
+    measured = {(r['Tracer Name'], r['Metabolite ID'], r['Isotopomer'], r['Sample'])
+                for _, r in partial.iterrows()}
+    tracer_id = sf._tracer_name_to_id['labeled-Ser']
+    for sample in (0, 1):
+        for pos, (tracer, met, iso) in enumerate(tokens):
+            was_measured = (tracer == tracer_id
+                            and ('labeled-Ser', met, iso, sample) in measured)
+            assert bool(mask[sample, pos]) is not was_measured
+
+    # Sample 1 must hide strictly more than sample 0 -- that is the Glycine block.
+    assert mask[1].sum() > mask[0].sum()

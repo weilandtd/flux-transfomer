@@ -5,13 +5,21 @@
 # predictions are not comparable with the other organisms.
 name: E_coli_core
 model_file: models/atomistic/E_coli_core/e_coli_core_annotated.json
+# Fallback only: experiment.mapping_csv below overrides this everywhere the measurable
+# metabolite set is needed -- feature selection, the EMU expansion targets and inference
+# alike -- so the model is only ever trained on tokens this platform can supply.
 mapping_csv: models/atomistic/E_coli_core/E_coli_core_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
-# No `experiment:` block — the ¹³C data in data/E_coli is mapped onto iAF1260, not
-# onto this network. That block is read only by the paper analyses and by
-# sigmaflux-infer; training needs none of it.
+# LC-MS (HILIC) data: 2 tracers x 5 biological replicates, one growth condition.
+# The GC-MS arm of the same study lives in data/E_coli_GC_MS, driven by e_coli_core_gc.yaml.
+experiment:
+  data_dir: data/E_coli_LC_MS
+  gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
+  mapping_csv: data/E_coli_LC_MS/E_coli_core_mapping.csv
+  reference_flux: data/E_coli_LC_MS/E_coli_core_park_reference_flux.xlsx
+  n_bootstrap: 200
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
 # biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
@@ -23,10 +31,9 @@ sampling:
   n_samples: 10000
   thinning: 100
   processes: 8
-  method: achr
+  method: optgp        # hopsy | optgp | achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 25          # required when ko is random/uncorrelated
+  ko: false         # false | all | random | uncorrelated
 
   stratified_sampling:
     enabled: true
@@ -64,17 +71,18 @@ labeling:
       name: "1,2-13C glucose"
     - tracer_id: Gluc_e
       labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: Gluc_e
+      labeling: [0, 0, 1, 0, 0, 0]
       enrichment: 1.0
-      name: "U-13C glucose"
+      name: "3-13C glucose"
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  noise_std: 0.01
-  n_permutations: 10
-  include_reversibilities: true
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -105,7 +113,6 @@ training:
   flux_token_dropout: 0.2
   labeling_token_dropout: 0.2
   normalize_mids: false
-  compartment_mix: false
 
   # What the published MFA constrains: glucose uptake (its basis) and acetate yield.
   # O2 and CO2 are deliberately absent — off-gas rates are hard to measure and were
@@ -121,3 +128,7 @@ training:
   null_space_type: targeted_ica
   flux_loss_space: basis
   variance_min_cutoff: 0.1
+  # Feasible-by-construction latent; whitening keeps the gauge well-conditioned.
+  gauge_radial: sigmoid           # rho = sigmoid(s), y = rho * d / g(d)
+  gauge_center: mean              # cast the gauge from the data centre
+  gauge_whiten: true              # one latent unit = one standard deviation of the data

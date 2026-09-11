@@ -144,14 +144,17 @@ packages them into one self-contained file:
 sigmaflux-export \
     --source <run_dir>/ensemble \
     --config paper/configs/i_orientalis.yaml \
-    --model-version 1.0.0
+    --model-version 1.2.0
 ```
 
 | | |
 |---|---|
-| 20 `.pt` members | 252.1 MB |
-| `i_orientalis-v1.0.0.sfx` (fp16) | **34.4 MB — 7.3×** |
-| `--precision fp32` | 64 MB, predictions bit-identical to the source |
+| 20 `.pt` members | 376.2 MB |
+| `i_orientalis-v1.2.0.sfx` (fp16) | **129.5 MB — 2.9×** |
+| `--precision fp32` | predictions bit-identical to the source, ~2x the fp16 size |
+
+Most of what remains is the stored validation split (1000 samples with their inputs, so
+R² is recomputable from the artifact alone); `--no-val-inputs` drops it.
 
 The export also carries the run's prepared COBRA network (~30 KB packed), so a
 consumer can rebuild the stoichiometry the predictions belong to:
@@ -159,7 +162,7 @@ consumer can rebuild the stoichiometry the predictions belong to:
 ```python
 from sigmaflux.ai import load_model, read_stoichiometry
 
-S, metabolite_ids, cobra_model = read_stoichiometry("i_orientalis-v1.0.0.sfx")
+S, metabolite_ids, cobra_model = read_stoichiometry("i_orientalis-v1.2.0.sfx")
 S @ predicted_fluxes      # ≈ 0 — columns are already in flux_names order
 ```
 
@@ -174,8 +177,8 @@ were already unidentifiable move, and the null-space basis stays float32 so
 Inspect one without loading any weights — or without torch installed:
 
 ```bash
-sigmaflux-inspect i_orientalis-v1.0.0.sfx           # name, version, provenance
-sigmaflux-inspect i_orientalis-v1.0.0.sfx --verify  # checksums for every entry
+sigmaflux-inspect i_orientalis-v1.2.0.sfx           # name, version, provenance
+sigmaflux-inspect i_orientalis-v1.2.0.sfx --verify  # checksums for every entry
 ```
 
 An export is **always an ensemble** (a single model is an ensemble of one), and
@@ -183,7 +186,7 @@ anything that accepts a checkpoint accepts it:
 
 ```bash
 sigmaflux-infer --config paper/configs/i_orientalis.yaml \
-                --checkpoint i_orientalis-v1.0.0.sfx \
+                --checkpoint i_orientalis-v1.2.0.sfx \
                 --data-dir data/I_orientalis --out-dir <run_dir>/predictions
 ```
 

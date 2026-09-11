@@ -1,16 +1,30 @@
 # SigmaFlux training configuration — Escherichia coli, genome-scale iAF1260
 #
-# The ¹³C data in data/E_coli is Long & Antoniewicz (2019): wild type plus 20 single
-# knockouts of glycolysis and the pentose phosphate pathway, on a glucose = 100 basis.
+# The ¹³C data in data/E_coli_LC_MS is the HILIC/LC-MS wild-type batch: three separate
+# cultures, one per tracer sheet. The external rates still come from the Long &
+# Antoniewicz (2019) GC-MS workbook, which reports them on a glucose = 100 basis.
 name: E_coli
 model_file: models/atomistic/E_coli/iAF1260_annotated.json
 mapping_csv: models/atomistic/E_coli/E_coli_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
-# The MID workbook is keyed by strain (wt, glk, pgm, ...) rather than by the
-# `<Condition><n>_Rep<n>` columns read_xlsx_mid_data expects, so it does not load
-# yet. Left out until that is curated; training needs none of it.
+# MIDs come from the LC-MS directory, which e_coli_core also reads; the mapping there
+# is the core model's, so this one gets its own name->iAF1260 map. ExtFlux and the
+# reference fluxes stay in the GC-MS directory, which is where they were published.
+experiment:
+  data_dir: data/E_coli_LC_MS
+  gem_xlsx: models/atomistic/E_coli/iAF1260_GEM.xlsx
+  # 40 of the 44 compounds in E_coli_B.xlsx, all carbon-mapped in the annotated model.
+  # Left out: sedoheptulose-1,7-bisphosphate (iAF1260 has no SBPase, so no such
+  # metabolite) and the three peaks that cover an isomer pair the measurement cannot
+  # resolve to one species -- D-glucosamine-1/6-phosphate,
+  # N-acetyl-glucosamine-1/6-phosphate, shikimate(-3-phosphate).
+  mapping_csv: data/E_coli_LC_MS/E_coli_mapping.csv
+  ext_flux: data/E_coli_GC_MS/EColi_ExtFlux_genomescale.xlsx
+  reference_flux: data/E_coli_GC_MS/E_coli_core_reference_flux.xlsx
+  n_bootstrap: 200
+
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
 # biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
@@ -24,8 +38,7 @@ sampling:
   processes: 8
   method: optgp       # hopsy | optgp | achr
   fva: true
-  ko: uncorrelated  # false | all | random | uncorrelated
-  n_ko: 50          # required when ko is random/uncorrelated
+  ko: false
 
   stratified_sampling:
     enabled: true
@@ -96,8 +109,8 @@ sampling:
 # ── Isotope labeling simulation (generate_training_data.py) ─────────────────
 labeling:
   batch_size: 512
-  # The two tracers used across all 21 strains. The third in the workbook,
-  # 1+4,5,6-13C glucose, was run for tpiA only and is left out.
+  # One per sheet of data/E_coli_LC_MS/E_coli_B.xlsx — three separate cultures, so the
+  # enrichments are the cultures' own. The U-13C feed was 50% labelled, not 100%.
   tracers:
     - tracer_id: glc-D_e
       labeling: [1, 1, 0, 0, 0, 0]
@@ -105,17 +118,18 @@ labeling:
       name: "1,2-13C glucose"
     - tracer_id: glc-D_e
       labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: glc-D_e
+      labeling: [0, 0, 1, 0, 0, 0]
       enrichment: 1.0
-      name: "U-13C glucose"
+      name: "3-13C glucose"
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-  noise_std: 0.01
-  n_permutations: 10
-  include_reversibilities: true
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -147,7 +161,6 @@ training:
   flux_token_dropout: 0.2
   labeling_token_dropout: 0.2
   normalize_mids: false
-  compartment_mix: false
 
   # iAF1260 has a single lumped biomass, so there is no PROTEIN/RNA/DNA/CARB/LIPID
   # split to measure. What the published MFA constrains is glucose uptake (its
@@ -165,3 +178,7 @@ training:
   null_space_type: targeted_ica
   flux_loss_space: basis
   variance_min_cutoff: 0.1
+  # Feasible-by-construction latent; whitening keeps the gauge well-conditioned.
+  gauge_radial: sigmoid           # rho = sigmoid(s), y = rho * d / g(d)
+  gauge_center: mean              # cast the gauge from the data centre
+  gauge_whiten: true              # one latent unit = one standard deviation of the data

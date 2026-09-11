@@ -1,6 +1,8 @@
 import re
 from collections import Counter
-from sigmaflux.expansion.utils import atom_pattern_regex, emu_to_bin
+from sigmaflux.expansion.utils import (atom_pattern_regex, emu_to_bin,
+                                       labeling_educts, labeling_metabolite,
+                                       labeling_multiplicity, labeling_products)
 from sigmaflux.expansion.emu import EMU, OriginSet
 
 
@@ -40,7 +42,7 @@ class AtomMapping(object):
         for side in (self.product_mappings, self.educt_mappings):
             counts = Counter(met_id for met_id, _ in dict.fromkeys(side))
             for met_id, mapped in counts.items():
-                moved = abs(self.rxn.get_coefficient(met_id))
+                moved = labeling_multiplicity(self.rxn, met_id)
                 if abs(moved - mapped) > 1e-9:
                     raise InconsistentAtomMappingError(
                         f"{self.rxn.id}: atom map names {met_id} {mapped} time(s) but the "
@@ -128,15 +130,18 @@ def parse_mapping_string(map_str, rxn):
     educts_atom_mappings = list()
     products_atom_mappings = list()
 
-    # Reactants
-    for met in rxn.reactants:
+    # Reactants -- labeling_educts, not rxn.reactants: a measurement pool's mixing leg
+    # moves no mass of the compartment it observes, so the compartment is absent from the
+    # stoichiometry. Missing it here yields an empty origin set, which the expansion
+    # legitimately skips, leaving the pool with no incoming edge and pinned to M+0.
+    for met in labeling_educts(rxn):
         pattern = atom_pattern_regex(met.id)
         mappings = re.findall(pattern, map_str)
         for the_mapping in mappings:
             educts_atom_mappings.append((met.id, the_mapping))
 
     # Products
-    for met in rxn.products:
+    for met in labeling_products(rxn):
         pattern = atom_pattern_regex(met.id)
         mappings = re.findall(pattern, map_str)
         for the_mapping in mappings:
@@ -216,9 +221,7 @@ def compute_origin_emu_set(target_emu, product_mappings, educt_mappings, reactio
             if max(mids)-1  > len(educt_mapping):
                 raise ValueError(f"Error in atom mapping for reaction {educt} {educt_mapping} with target {target_emu} {target_mapping}")
 
-            # Find the metabolite object%debug
-            educt_metabolite = next(m for m in reaction.metabolites if m.id == educt)
-            new = EMU(educt_metabolite, mids)
+            new = EMU(labeling_metabolite(reaction, educt), mids)
             the_orign_emu.append(new)
 
     # Convert to origin set type 

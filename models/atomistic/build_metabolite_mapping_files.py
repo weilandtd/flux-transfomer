@@ -17,6 +17,17 @@ run_inference.py via --mapping-csv.
 An entry whose GEM xlsx carries no metabolite names (E_coli, E_coli_core) supplies
 `name_fallback`, a BiGG-id -> name table from _bigg_name_fallback.py, used to fill
 the gap before matching.
+
+**The `*_fragment_mapping.csv` files are NOT built here, and need rebuilding.** GC/MS
+measures TBDMS-derivatised *fragments* -- Ala260, Glu432, a named ion carrying a known
+subset of a molecule's carbons -- not whole molecules, so they cannot be matched against
+`data/HILIC_LCMS_knowns.csv` the way this script matches everything else. The equivalent
+GC/MS fragment knowns list, giving each ion its parent metabolite and the carbon
+positions it retains, **does not exist in this repo yet**. Until it does, the two
+fragment CSVs (E_coli, E_coli_core) stay hand-written and carry no carbon-coverage or
+measurement-token filtering: their rows were only pruned of `_e`/`_p` compartments by
+hand. Anything reading them is measuring whole molecules that the platform actually
+resolves as fragments.
 """
 
 import os
@@ -140,10 +151,38 @@ def _filter_carbon_coverage(org, root):
     print(f"  Carbon coverage: {len(mapping)} -> {len(filtered)} mappings")
 
 
+def _collapse_to_measurement_tokens(org, root):
+    """Rewrite ``model_id`` to the id the platform actually reports.
+
+    A metabolite the model pools is reported as its pool -- naming one compartment would
+    assert a labeling the extract cannot distinguish -- and a metabolite in an excluded
+    compartment is not in the extract at all. Doing it here is what keeps a re-run of
+    this script from reverting the mapping files to per-compartment ids.
+
+    Args:
+        org: this organism's config dict from ORGANISMS.
+        root: project root, for resolving org's relative paths.
+    """
+    from cobra.io import load_json_model
+
+    from sigmaflux.core.measurement_pools import measurement_token
+
+    model = load_json_model(os.path.join(root, org["model_json"]))
+    output = os.path.join(root, org["output_csv"])
+    mapping = pd.read_csv(output)
+    mapping["model_id"] = [measurement_token(model, m) for m in mapping["model_id"]]
+    collapsed = (mapping.dropna(subset=["model_id"])
+                        .drop_duplicates(["experimental_id", "model_id"])
+                        .sort_values(["experimental_id", "model_id"]))
+    collapsed.to_csv(output, index=False)
+    print(f"  Measurement tokens: {len(mapping)} -> {len(collapsed)} mappings")
+
+
 if __name__ == "__main__":
     _root = os.path.join(os.path.dirname(__file__), '..', '..')
     for org in ORGANISMS:
         print(f"\n=== {org['name']} ===")
         _build_platform_mapping(org, _root)
         _filter_carbon_coverage(org, _root)
+        _collapse_to_measurement_tokens(org, _root)
     print("\nDone.")

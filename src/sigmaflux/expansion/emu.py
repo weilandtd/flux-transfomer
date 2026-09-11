@@ -4,21 +4,25 @@
 from collections.abc import Iterable
 import cobra
 
-from sigmaflux.expansion.utils import can_make_met
+from sigmaflux.expansion.utils import can_make_met, labeling_educts, labeling_products
 
 
 def _produces_from_nothing(rxn, metabolite):
     """Whether rxn produces metabolite "from nothing" (no educt on the producing side), marking it as a network input (boundary).
+
+    "No educt" has to be read in labeling terms, not stoichiometric ones: a measurement
+    pool's mixing leg moves no mass of the compartment it observes, so `rxn.reactants` is
+    empty for it and the pool would be mistaken for a tracer input and pinned to M+0.
 
     Args:
         rxn: reaction to check.
         metabolite: metabolite to check for boundary production of.
     """
     # forward production: metabolite is a product, educts are the reactants
-    if rxn.upper_bound > 0 and metabolite in rxn.products and len(rxn.reactants) == 0:
+    if rxn.upper_bound > 0 and metabolite in rxn.products and not labeling_educts(rxn):
         return True
     # reverse production: metabolite is a reactant, educts are the products
-    if rxn.lower_bound < 0 and metabolite in rxn.reactants and len(rxn.products) == 0:
+    if rxn.lower_bound < 0 and metabolite in rxn.reactants and not labeling_products(rxn):
         return True
     return False
 

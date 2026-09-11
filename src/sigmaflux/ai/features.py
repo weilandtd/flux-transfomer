@@ -8,7 +8,14 @@ from cobra.io.json import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
 from sigmaflux.ai import fisher_selection
-from sigmaflux.ai.utils import compute_sparse_nullspace
+from sigmaflux.ai.utils import compute_sparse_nullspace, split_constant_directions
+
+# The only valid features.token_selection_method values -- shared by
+# extract_informative_features.py (which selects tokens) and train_ai_model.py (which
+# re-validates the config's own method field before trusting the resulting features.csv).
+# One set here instead of two hardcoded copies: those drifted before -- train_ai_model.py
+# rejected "all" the moment it existed elsewhere -- and would drift again silently.
+TOKEN_SELECTION_METHODS = {"fisher", "fisher_fast", "all"}
 
 
 def build_theta_and_token_states(
@@ -34,16 +41,33 @@ def build_theta_and_token_states(
     When *reversibility_df* is given, variable reversibilities are log1p-z-scored and appended
     to theta so Fisher selection also captures tokens informative about reversibility.
     Returns ``(theta, token_states, d)`` — free-flux (+ reversibility) coordinates, a dict
-    keyed ``"met_id|M+k"`` of ``(n, n_tracers)`` arrays, and the null-space dimension.
+    keyed ``(tracer, met_id, "M+k")`` of ``(n, 1)`` arrays, and the null-space dimension.
+
+    One candidate token per *tracer*, not one per (metabolite, isotopomer) pooled over all of
+    them. Pooling summed each token's Fisher Gram across the tracer axis, so a metabolite was
+    included or excluded for every tracer at once and no single tracer could be scored on its
+    own merit — which is exactly what a one-tracer experiment needs. Per-tracer tokens each
+    contribute a rank-1 Gram instead; the permutation null floor is calibrated on the same
+    shapes, so the significance threshold stays comparable rather than simply admitting less.
     """
     model = load_json_model(model_json)
     reaction_ids = [r.id for r in model.reactions]
     S = create_stoichiometric_matrix(model)
     Z = np.asarray(compute_sparse_nullspace(S), dtype=np.float64)  # (n_rxn, d)
-    d = Z.shape[1]
 
     n = min(n_samples, flux_df.shape[1], labeling_df.shape[1])
     V = flux_df.loc[reaction_ids].iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
+
+    # Drop the directions no sample moves along -- a pinned reaction such as a
+    # measurement pool's drain. Their coordinate is constant, so a token carries no
+    # information about it, but pinv over theta reads numerical noise out of the column
+    # and inflates the permutation null floor; on iAF1260 that took the floor to 32.7
+    # nats and selected zero tokens.
+    Z, Z_const, _ = split_constant_directions(Z, V)
+    if Z_const.shape[1]:
+        print(f"Dropped {Z_const.shape[1]} constant free-flux direction(s) "
+              f"(pinned reactions) from theta")
+    d = Z.shape[1]
     theta = V @ Z  # (n, d)
 
     if reversibility_df is not None:
@@ -57,8 +81,8 @@ def build_theta_and_token_states(
 
     lab = labeling_df.iloc[:, :n]
     token_states = {}
-    for (met_id, iso), sub in lab.groupby(level=["Metabolite", "Isotopomer"]):
-        token_states[f"{met_id}|{iso}"] = sub.to_numpy(np.float64).T  # (n, n_tracers)
+    for key, sub in lab.groupby(level=["Tracer", "Metabolite", "Isotopomer"]):
+        token_states[key] = sub.to_numpy(np.float64).T  # (n, 1)
 
     if subsample_n is not None and subsample_n < n:
         rng = np.random.default_rng(seed)
@@ -75,13 +99,12 @@ def apply_mapping_filter(token_states: dict, mapping_csv_path: str) -> dict:
     experimental_id, model_id); returns the filtered ``token_states``.
 
     Args:
-        token_states: dict of token id -> MID array, to filter.
+        token_states: dict of ``(tracer, met_id, isotopomer)`` -> MID array, to filter.
         mapping_csv_path: CSV path with experimental_id/model_id columns.
     """
-    mapping = pd.read_csv(mapping_csv_path)
-    allowed = set(mapping["model_id"].unique())
+    allowed = set(pd.read_csv(mapping_csv_path)["model_id"].unique())
     before = len(token_states)
-    filtered = {k: v for k, v in token_states.items() if k.split("|")[0] in allowed}
+    filtered = {k: v for k, v in token_states.items() if k[1] in allowed}
     print(f"Mapping filter: {before} → {len(filtered)} tokens "
           f"({before - len(filtered)} dropped, {len(allowed)} allowed model IDs)")
     return filtered
@@ -99,6 +122,37 @@ def drop_extracellular_tokens(labeling_df: pd.DataFrame) -> pd.DataFrame:
     filtered = labeling_df.loc[mask]
     print(f"Excluded extracellular tokens: {n_before} → {filtered.shape[0]}")
     return filtered
+
+
+def select_all_tokens(token_states: dict) -> tuple[pd.DataFrame, dict]:
+    """Every candidate token included -- the no-feature-selection ablation.
+
+    Same output schema as select_significant_tokens (tracer, metabolite_id,
+    isotopomer, included, significant, rank, standalone_nats), skipping the
+    Fisher/permutation compute entirely: included=True for every token that
+    survived the mapping/extracellular filters upstream, so "all measurable
+    tokens" still means measurable, not literally every isotopologue.
+
+    Args:
+        token_states: dict of ``(tracer, metabolite, isotopomer)`` -> per-sample MID array.
+
+    Returns ``(df, summary)`` with the diagnostic fields select_significant_tokens
+    fills from the Fisher computation (null_floor_nats, eigenvalues, ...) absent,
+    since no such computation runs here.
+    """
+    df = pd.DataFrame(
+        {
+            "tracer": [k[0] for k in token_states],
+            "metabolite_id": [k[1] for k in token_states],
+            "isotopomer": [k[2] for k in token_states],
+            "included": True,
+            "significant": True,
+            "rank": range(len(token_states)),
+            "standalone_nats": np.nan,
+        }
+    )
+    summary = {"n_free_flux_directions": None, "null_floor_nats": None, "eigenvalues": []}
+    return df, summary
 
 
 def select_significant_tokens(
@@ -127,7 +181,7 @@ def select_significant_tokens(
             (cheaper, biased, ``fisher_fast``); everything else is identical.
         run_mi_audit: also compute the mutual-information nonlinearity audit.
 
-    Returns ``(df, summary)``; *df* has columns metabolite_id, isotopomer, included,
+    Returns ``(df, summary)``; *df* has columns tracer, metabolite_id, isotopomer, included,
     significant, rank, standalone_nats (plus MI columns if *run_mi_audit*).
     """
     df, summary = fisher_selection.rank_from_samples(
@@ -138,10 +192,14 @@ def select_significant_tokens(
         exact=exact,
         run_mi_audit=run_mi_audit,
     )
-    df[["metabolite_id", "isotopomer"]] = df["metabolite"].str.split("|", expand=True)
+    # The key is a (tracer, metabolite, isotopomer) tuple rather than a delimited string:
+    # a multi-tracer token is itself named "A|B", so splitting on a delimiter is ambiguous.
+    df[["tracer", "metabolite_id", "isotopomer"]] = pd.DataFrame(
+        df["metabolite"].tolist(), index=df.index)
     df = df.drop(columns=["metabolite"])
     df = df.rename(columns={"standalone_gain_nats": "standalone_nats"})
     df["included"] = df["significant"]
-    front = ["metabolite_id", "isotopomer", "included", "significant", "rank", "standalone_nats"]
+    front = ["tracer", "metabolite_id", "isotopomer", "included", "significant",
+             "rank", "standalone_nats"]
     df = df[front + [c for c in df.columns if c not in front]]
     return df, summary

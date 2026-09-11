@@ -39,6 +39,7 @@ multi-start hyperparameters before committing to the full array benchmark:
 """
 
 import argparse
+import json
 import os
 import time
 from collections import defaultdict
@@ -61,6 +62,7 @@ from ._benchmark import (
     forward_labeling,
     labeling_chi2_scale,
     load_benchmark_inputs,
+    metabolite_subset,
     noisy_measurements,
     pin_threads,
     resolve_split_source,
@@ -92,6 +94,27 @@ def build_parser():
     p.add_argument("--start-ix", type=int, default=0,
                    help="Offset of the first sample within the split (for SLURM array "
                         "parallelism); indexes the sorted split, not raw HDF5 columns")
+    p.add_argument("--subsample", type=int, default=None,
+                   help="Draw this many samples out of the full split before applying "
+                        "--start-ix/--n-benchmarks (seeded at 0, independent of --seed, "
+                        "so a sensitivity study's conditions all score the identical "
+                        "subset). Default: use the whole split, as today. Ignored when "
+                        "--samples is given.")
+    p.add_argument("--samples", default=None,
+                   help="JSON file holding a list of explicit absolute HDF5 sample "
+                        "columns to use as the pool (e.g. a sensitivity study's "
+                        "solved-sample pool), bypassing --subsample entirely so every "
+                        "condition and method shares exactly this pool. Default: derive "
+                        "the pool from --split/--subsample, as today.")
+    p.add_argument("--keep-met-frac", type=float, default=None,
+                   help="Restrict the mapped metabolites to this fraction (nested "
+                        "subset — see sigmaflux.pipeline._benchmark.metabolite_subset), "
+                        "simulating a measurement platform that resolves only some of "
+                        "them. Default: use every mapped metabolite, as today.")
+    p.add_argument("--keep-met-seed", type=int, default=0,
+                   help="Seed for --keep-met-frac's metabolite draw (default: 0, "
+                        "matching metabolite_subset's own default). Vary this to draw "
+                        "an independent replicate of the same fraction.")
     p.add_argument("--backend", choices=["native", "native-ipopt", "x3cflux"], default="native",
                    help="Which optimiser fits the flux. 'native' is the in-house "
                         "null-space L-BFGS-B (S·v=0 satisfied by construction, no "
@@ -163,9 +186,44 @@ def build_parser():
                    help="Fit a single sample (the one at --start-ix) with step-by-step "
                         "diagnostics and recovery metrics, writing no HDF5. Ignores "
                         "--max-starts / --accept-z: exactly one fit is run.")
+    p.add_argument("--ipopt-option", action="append", default=[], metavar="KEY=VALUE",
+                   help="Extra Ipopt option, native-ipopt backend only (e.g. "
+                        "--ipopt-option limited_memory_max_history=20). Repeatable; "
+                        "overrides mfa_ipopt.IPOPT_DEFAULTS.")
+    p.add_argument("--hessian-mode", choices=["limited-memory", "gauss-newton"],
+                   default="limited-memory",
+                   help="native-ipopt backend only. 'limited-memory' (default) uses "
+                        "Ipopt's own L-BFGS approximation. 'gauss-newton' uses the real "
+                        "J^T.J of the residual (J via one backward pass per residual) -- "
+                        "genome-scale timing puts a fresh one at roughly 1-2 hours, so it "
+                        "is cached and only rebuilt every --gn-refresh-every iterations.")
+    p.add_argument("--gn-refresh-every", type=int, default=50,
+                   help="Outer-iteration cadence for rebuilding the Gauss-Newton Hessian "
+                        "(only with --hessian-mode gauss-newton).")
     p.add_argument("--seed", type=int, default=42)
     add_root_argument(p)
     return p
+
+
+def _parse_ipopt_options(pairs):
+    """Turn ``--ipopt-option`` KEY=VALUE strings into a typed dict.
+
+    cyipopt.Problem.add_option infers the Ipopt option type from the Python
+    type of the value passed in, so a numeric-looking string has to become an
+    int or float rather than stay a str (e.g. limited_memory_max_history needs
+    an int; limited_memory_update_type stays the string "sr1"/"bfgs").
+    """
+    options = {}
+    for pair in pairs:
+        key, _, value = pair.partition("=")
+        try:
+            options[key] = int(value)
+        except ValueError:
+            try:
+                options[key] = float(value)
+            except ValueError:
+                options[key] = value
+    return options
 
 
 def measured_flux_ids(measured_rxn_ids, gt_flux_series):
@@ -176,6 +234,20 @@ def measured_flux_ids(measured_rxn_ids, gt_flux_series):
         gt_flux_series: this sample's ground-truth flux values, indexed by reaction id.
     """
     return [r for r in measured_rxn_ids if r in gt_flux_series.index]
+
+
+#: Absolute floor under the relative flux σ (`max(flux_noise_std·|v_true|, FLOOR)`),
+#: shared by the native and x3cflux fitters so a measured flux near zero can never
+#: get a vanishing std and the 1/σ² weight it implies. mmol/gDW/h — far below any
+#: real biological signal, so it only ever binds when |v_true| is itself near zero.
+#: Was 1e-9, which at the production default (flux_noise_std=0.05) only bites below
+#: |v_true|=2e-8 and is invisible; at the smaller σ a sensitivity study needs
+#: (flux_noise_std=0.001) it bites below |v_true|=1e-6 -- measured, real for several
+#: models' measured fluxes (RNA_c, some amino-acid exchanges) in a few percent of
+#: samples -- and gives a weight of ~1e18 on that one measurement, the same 1/σ
+#: pathology that makes a literal 0% noise level unusable (see run_uncertainty_
+#: benchmark's module docstring). 1e-3 keeps the worst case at ~1e6 instead.
+FLUX_SIGMA_FLOOR = 1e-3
 
 
 def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, noisy_values):
@@ -192,7 +264,7 @@ def make_measured_flux_data(mfa_model, rxn_ids, gt_flux_series, flux_noise_std, 
         noisy_values: already-noised measured flux values.
     """
     rows = [{"reaction": rxn_id, "mean": float(meas),
-             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), 1e-9)}
+             "std": max(flux_noise_std * abs(float(gt_flux_series[rxn_id])), FLUX_SIGMA_FLOOR)}
             for rxn_id, meas in zip(rxn_ids, noisy_values)]
     return FluxData(mfa_model, pd.DataFrame(rows)) if rows else None
 
@@ -231,16 +303,46 @@ def make_init_fluxes(all_flux_df, all_rev_df, gt_flux, sample_ix, reaction_ids, 
     return v_init, r_init, {"j": j, "dev": dev}
 
 
-def fitted_parameter_count(model):
+def fitted_parameter_count(model, observed=None):
     """Free parameters the fit spends: null-space net-flux coordinates + exchanges.
 
     ``fit_mfa_model`` optimises ``v_net = T·p`` with ``T = null(S)`` plus one
     reversibility per reversible reaction; this ``p`` is what the χ² test subtracts
     from the measurement count, and applies to both the native and x3cflux backends.
+
+    **Measurement pools are counted by what they can be identified from, not by how
+    much they widen the null space.** A k-member pool puts k+1 columns and one balance
+    row into S, so ``null(S)`` grows by k. What the data can actually constrain is:
+
+    * an **observed** pool -- k-1, the compartment ratios. Its block scale leaves the
+      pool's EMU balance ``sum_i(v_i X_i) / sum_i(v_i)`` unchanged, so no fit can spend
+      it. x3cflux pins exactly that direction with the drain equality and reports the
+      same reduced count as ``num_free_parameters``;
+      :func:`~sigmaflux.ai.utils.split_constant_directions` removes it on the AI side.
+    * an **unobserved** pool -- zero. Nothing measures it, so every one of its k
+      directions is flat in the objective. It is a parameter with no matching
+      measurement: counting it shrinks dof without ever adding to the measurement count.
+
+    Both corrections are *structural* -- they depend only on the model and on which
+    metabolites the platform reports, never on a flux state. That matters, because the
+    χ² test is the only thing computable on real data where the true fluxes are unknown;
+    a parameter count read off a Jacobian at some flux solution would make the
+    acceptance threshold depend on the answer it is meant to judge.
+
+    On I. orientalis this is 94, against 152 uncorrected: 36 pools cost 58 phantom
+    directions (14 observed × 1 scale + 22 unobserved × 2), worth 58 dof.
+
+    Args:
+        model: the prepared :class:`~sigmaflux.core.model.MFAModel`.
+        observed: metabolite ids the measurement platform reports. Omit to treat every
+            pool as observed, which only removes the scale directions.
     """
     from ..core.mfa import gen_SVD_kernel
+    from ..core.measurement_pools import pool_members
 
     k = gen_SVD_kernel(model.stoichiometry.cpu().numpy()).shape[1]
+    for pool, members in pool_members(model).items():
+        k -= 1 if observed is None or pool in observed else len(members)
     return int(k + int(model._reversibility_mask.sum().item()))
 
 
@@ -574,10 +676,21 @@ def main(args):
 
     cobra_model, mapped_met_ids, _, all_flux_df, all_rev_df = load_benchmark_inputs(
         data_dir, cfg, root)
+    if args.keep_met_frac is not None and mapped_met_ids:
+        mapped_met_ids = metabolite_subset(mapped_met_ids, args.keep_met_frac,
+                                           seed=args.keep_met_seed)
+        print(f"  Restricted to {len(mapped_met_ids)} metabolites "
+              f"({args.keep_met_frac:.0%} of the mapped set, seed={args.keep_met_seed})")
+
+    sample_ids = None
+    if args.samples:
+        with open(_p(args.samples)) as fh:
+            sample_ids = json.load(fh)
 
     split_source = resolve_split_source(_p(args.checkpoint), data_dir, args.split)
     sel, tag = select_samples(args.split, split_source, all_flux_df.shape[1], cfg,
-                              args.start_ix, 1 if args.diagnose else args.n_benchmarks)
+                              args.start_ix, 1 if args.diagnose else args.n_benchmarks,
+                              subsample=args.subsample, sample_ids=sample_ids)
     n_runs = len(sel)
     if n_runs == 0:
         print("  No samples for this offset range — nothing to do.")
@@ -673,7 +786,8 @@ def main(args):
                 )
             # Same sigmas make_measured_flux_data gives the native arm.
             flux_sigma = np.maximum(
-                flux_noise_std * np.abs(gt_flux.reindex(flux_ids).to_numpy(float)), 1e-9)
+                flux_noise_std * np.abs(gt_flux.reindex(flux_ids).to_numpy(float)),
+                FLUX_SIGMA_FLOOR)
             simulator, fluxmap = backend.simulator_for(
                 noisy_series.to_numpy(float), noisy_flux, flux_sigma)
 
@@ -689,7 +803,7 @@ def main(args):
         # count, neither of which varies across samples, so it is built once and reused.
         if chi2_bound is None:
             n_L, n_F = _block_counts(mfa_model)
-            n_params = fitted_parameter_count(mfa_model)
+            n_params = fitted_parameter_count(mfa_model, mapped_met_ids)
             scale_L = (args.chi2_scale if args.chi2_scale is not None
                        else labeling_chi2_scale(noisy_series, args.noise_std,
                                                 np.random.default_rng(args.seed)))
@@ -741,7 +855,10 @@ def main(args):
                 if args.backend == "native-ipopt":
                     from ..core.mfa_ipopt import fit_mfa_model_ipopt
                     res = fit_mfa_model_ipopt(mfa_model, max_iter=args.max_iter, tol=args.tol,
-                                              disp=1 if (args.diagnose or args.verbose) else 0)
+                                              disp=1 if (args.diagnose or args.verbose) else 0,
+                                              ipopt_options=_parse_ipopt_options(args.ipopt_option),
+                                              hessian_mode=args.hessian_mode,
+                                              gn_refresh_every=args.gn_refresh_every)
                 else:
                     res = fit_mfa_model(mfa_model, max_iter=args.max_iter, tol=args.tol,
                                         disp=1 if (args.diagnose or args.verbose) else 0)
@@ -759,8 +876,12 @@ def main(args):
                 # Put the fitted flux into the model, so everything downstream --
                 # scoring, acceptance, the snapshot, the HDF5 -- is the native path.
                 forward_labeling(mfa_model, v_fit, r_fit, labeling_to)
+                # cyipopt's info carries no iteration count, so there is none to
+                # report for this backend. It was reported as 0, which reads as "Ipopt
+                # did nothing" and was once diagnosed as exactly that -- None says
+                # "not measured" instead.
                 res = native_shaped_result(
-                    mfa_model, info.get("n_iter", 0), info.get("status", 1) in (0, 1))
+                    mfa_model, info.get("n_iter"), info.get("status", 1) in (0, 1))
             # Mean reduced chi-square, the legacy accept statistic. Reported only for
             # comparison: it is measured against the declared sigma, which overstates
             # the true noise, so it reads low and passes fits that never converged.
@@ -780,12 +901,13 @@ def main(args):
                     best_lab = torch.take(mfa_model().reshape(-1), labeling_to).cpu().numpy()
                     best_flux = mfa_model.fluxes.detach().cpu().numpy().copy()
                 best = {"ssr_fit": ssr_fit, "ratio": ratio, "start": start + 1,
-                        "converged": bool(res["converged"]), "n_iter": int(res["n_iter"]),
+                        "converged": bool(res["converged"]),
+                        "n_iter": res["n_iter"],
                         "labeling": best_lab, "fluxes": best_flux}
             print(f"  start {start + 1}/{args.max_starts}: SSR={ssr_fit:.2f} "
                   f"(χ² accept≤{chi2_bound:.1f}, dof={chi2_dof}) ratio={ratio:.3f} "
                   f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
-                  f"iter={res['n_iter']}")
+                  f"iter={res['n_iter'] if res['n_iter'] is not None else 'n/a'}")
             if args.accept_rule == "chi2":
                 accepted = ssr_fit <= chi2_bound
             else:
@@ -820,7 +942,7 @@ def main(args):
             "reached_optimum": bool(accepted),
             "starts_used": int(best["start"]) if best else args.max_starts,
             "converged": bool(best["converged"]) if best else False,
-            "n_iter": int(best["n_iter"]) if best else 0,
+            "n_iter": best["n_iter"] if best else None,
             # Always written, 0 for the native arm, so both backends share one schema.
             "crashed_starts": int(crashed_starts),
             "backend": args.backend,

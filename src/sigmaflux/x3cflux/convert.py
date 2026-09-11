@@ -31,6 +31,37 @@ match our EMU forward model rather than to satisfy x3cflux:
     expansion adds both the natural and the reversed origin set, each weighted
     ``1/(1+len(symmetries))`` = 1/2, so every reaction producing such a pool is
     split into two half-flux copies, one per orientation.
+
+  * **Measurement pools** (``pyr`` from ``pyr_c`` + ``pyr_m``) are written in cobra with
+    a *zero* stoichiometric coefficient on the compartment they observe, which x3cflux
+    cannot express: multiplicity there is name repetition, and zero copies means absent.
+    But x3cflux has a rule nobody wrote down -- it announces it and then obeys it::
+
+        Reaction "POOL_pyr_c" both requires and produces metabolite "pyr_c". This is
+        not yet supported. Thus, the reaction is omitted from the balance equations
+        of the metabolic pool.
+
+    Omitted from **mass and label**. That is a coefficient of zero, and it needs only
+    the right reaction shape::
+
+        member(abc) + carrier(def)  ->  pool(abc) + member(def)
+
+    Read it right to left: the pool takes the member's atoms, and the member -- being on
+    both sides -- vanishes from its own balance, neither consumed nor perturbed. The
+    carrier is a dummy substrate that exists only because ``Reaction`` carries one atom
+    count for both sides and the permutation must be a bijection, so the atoms the pool
+    took need a partner. Its labeling, its flux, and whether pools share one carrier are
+    all numerically irrelevant, and it never appears in S. With the products ordered
+    ``[pool, member]`` the permutation is the identity over ``2n``.
+
+    The drain is then emitted plainly and **pinned at 1** (see
+    :func:`~sigmaflux.x3cflux.build_config.build_constraints`), so the taps sum to one
+    and each tap's *net* flux is its compartment fraction, read directly with no
+    transformation. It also fixes the counting -- a k-member pool has k-1 free
+    parameters, not k -- and makes flux-starvation unreachable: the earlier encoding
+    pinned each leg's net flux to zero and carried the weight on the exchange, so a start
+    with the exchanges at zero left the pool with no inflow and a singular EMU row, which
+    is what killed every Ipopt start at ``iter = 0``.
 """
 
 import json
@@ -40,6 +71,7 @@ from collections import OrderedDict
 
 import x3cflux as x
 
+from sigmaflux.core.measurement_pools import POOL_DRAIN_PREFIX, POOL_PREFIX
 from sigmaflux.expansion.utils import atom_pattern_regex
 
 CARBON = x.TracerElement.Carbon
@@ -193,7 +225,8 @@ class Converted:
     """
 
     def __init__(self, network_data, scale, parents, reversible, x3c_reactions,
-                 void_pools, symmetric, sources, atom_free_reverse, extra_sources):
+                 void_pools, symmetric, sources, atom_free_reverse, extra_sources,
+                 pool_drains=None, pool_carriers=None):
         """Store the conversion outputs; see the class docstring for the mapping.
 
         Parameters
@@ -220,6 +253,13 @@ class Converted:
             no atoms.
         extra_sources : dict[str, int]
             unlabeled source pool -> atom count, for from-nothing influxes.
+        pool_drains : dict[str, str]
+            measurement-pool drain -> its pool. build_config pins each one at 1, which
+            is what puts the taps on the unit simplex and makes each tap's net flux its
+            compartment fraction.
+        pool_carriers : dict[str, int]
+            dummy carrier pool -> atom count, one per distinct member carbon count. It
+            only balances the atom ledger of a tap; see the module docstring.
         """
         self.network_data = network_data
         self.scale = scale
@@ -231,6 +271,8 @@ class Converted:
         self.sources = sources
         self.atom_free_reverse = atom_free_reverse
         self.extra_sources = extra_sources
+        self.pool_drains = pool_drains or {}
+        self.pool_carriers = pool_carriers or {}
 
 
 def input_source_pools(facts):
@@ -259,8 +301,15 @@ def input_source_pools(facts):
     # disqualified 1-10 metabolites per organism (found across every cached
     # model) from a legitimate source classification via a reaction that could
     # never have traced their label anyway.
+    # A measurement pool's mixing leg is not a network input, but it looks exactly like
+    # one: its only *stoichiometric* participant is the pool it produces, since the
+    # compartment it draws label from is carried at coefficient zero. Left in, every
+    # pool would be handed a __src substrate that nothing then consumes -- 50 orphan
+    # pools on I. orientalis, which check_network rejects.
+    real = [r for r in facts["reactions"] if not r["id"].startswith(POOL_PREFIX)]
+
     producers = {}
-    for r in facts["reactions"]:
+    for r in real:
         if not r.get("atom_mapping"):
             continue
         for met, coef in r["stoichiometry"].items():
@@ -268,7 +317,7 @@ def input_source_pools(facts):
                 producers.setdefault(met, []).append(r["id"])
 
     sources = {}
-    for r in facts["reactions"]:
+    for r in real:
         stoich = r["stoichiometry"]
         if len(stoich) != 1:
             continue
@@ -328,9 +377,39 @@ def convert(facts, symmetry=True, allow_void=None):
     reactions, scale, parents, reversible = [], {}, OrderedDict(), {}
     void_pools, void_effluxes, atom_free_reverse = {}, [], []
     extra_sources = {}
+    pool_drains, pool_carriers = {}, {}
 
     for r in facts["reactions"]:
         rid, stoich = r["id"], dict(r["stoichiometry"])
+
+        # Measurement pools. Both reactions are ordinary irreversible net-flux
+        # reactions at scale 1, so nothing downstream needs a special case for them.
+        if rid.startswith(POOL_DRAIN_PREFIX):
+            (pool,) = stoich                         # POOL_SK_<pool>: {pool: -1}
+            n = atoms[pool]
+            reactions.append(x.Reaction(rid, n, False, x.Permutation(n), [pool], []))
+            scale[rid] = 1.0
+            reversible[rid] = False
+            pool_drains[rid] = pool
+            continue
+        if rid.startswith(POOL_PREFIX):
+            # The zero coefficient cobra cannot store, expressed as reaction shape:
+            #   member(abc) + carrier(def) -> pool(abc) + member(def)
+            # member is on both sides, so x3cflux drops this reaction from its balance
+            # entirely -- mass and label alike. The carrier only balances the atom
+            # ledger; its own labeling never reaches anything. Identity permutation
+            # over 2n: educt block [member | carrier] -> product block [pool | member].
+            (pool,) = stoich                         # POOL_<member>: {pool: +1}
+            (member,) = r["zero_stoichiometry"]
+            n = atoms[member]
+            carrier = f"__pool_carrier_{n}"
+            pool_carriers.setdefault(carrier, n)
+            reactions.append(x.Reaction(rid, 2 * n, False, x.Permutation(2 * n),
+                                        [member, carrier], [pool, member]))
+            scale[rid] = 1.0
+            reversible[rid] = False
+            continue
+
         lb, ub = r["lower_bound"], r["upper_bound"]
         rev = r["reversible"]
         reversible[rid] = rev
@@ -537,6 +616,8 @@ def convert(facts, symmetry=True, allow_void=None):
         metabolites.append(x.Metabolite(src, n, {CARBON: n}))
     for void, n in void_pools.items():
         metabolites.append(x.Metabolite(void, n, {CARBON: n}))
+    for carrier, n in pool_carriers.items():
+        metabolites.append(x.Metabolite(carrier, n, {CARBON: n}))
     for void, n in void_effluxes:
         drain = f"{void}__drain"
         reactions.append(x.Reaction(drain, n, False, x.Permutation(n), [void], []))
@@ -562,7 +643,8 @@ def convert(facts, symmetry=True, allow_void=None):
     return Converted(x.NetworkData(metabolites, reactions), scale, parents,
                      reversible, [rr.name for rr in reactions],
                      sorted(void_pools), list(symmetric), sources,
-                     atom_free_reverse, extra_sources)
+                     atom_free_reverse, extra_sources,
+                     pool_drains=pool_drains, pool_carriers=pool_carriers)
 
 
 def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, drop_unpaired=False):

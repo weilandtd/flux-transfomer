@@ -10,8 +10,13 @@ device: auto  # auto | cpu | cuda
 # The data directory really is spelled "S_cervesiae" on disk.
 experiment:
   data_dir:       data/S_cervesiae
+  mapping_csv:    models/atomistic/S_cerevisiae/S_cerevisiae_experiment_mapping.csv
   reference_flux: Shen_et_al_flux_data_SC.xlsx
   gem_xlsx:       models/atomistic/S_cerevisiae/scGEM.xlsx
+  # Bootstrapped cross-tracer replicate combinations used to propagate measurement
+  # uncertainty. The reported interval's width still follows the pooled replicate
+  # dof, sum(R_t - 1), not this count.
+  n_bootstrap: 200
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
@@ -22,13 +27,11 @@ skip_constraints:
 # ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
 sampling:
   n_samples: 10000    # final output written to flux_samples.csv
-  thinning: 100       
-  processes: 8        
-  method: achr        # hopsy | optgp | achr
-  fva: true           
-  ko: uncorrelated    # false | all | random | uncorrelated
-  n_ko: 50            # required when ko is random/uncorrelated
-
+  thinning: 100
+  processes: 8
+  method: optgp        # hopsy | optgp | achr
+  fva: true
+  ko: false
 
   # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
   # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
@@ -90,12 +93,7 @@ labeling:
 features:
   restrict_to_mapped: true          # only metabolites the HILIC platform can see
   exclude_extracellular: true       # drop _e tokens (extracellular pools not measured intracellularly in yeast)
-  token_selection_method: fisher    # fisher (exact) | fisher_fast (approximate)
-
-  # Fisher significance-test parameters:
-  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  n_permutations: 10         # null-calibration permutations used to set significance floor
-  include_reversibilities: true  # append log1p-z-scored reversibilities to θ for feature selection
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -129,7 +127,6 @@ training:
   flux_token_dropout: 0.2
   labeling_token_dropout: 0.2   # per-token labeling dropout during training
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
-  compartment_mix: false       # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
 
   # Measured fluxes fed as soft inputs through the fusion layer.
   # Hierarchical model: PROTEIN_c etc. are stoichiometrically coupled to BIOMASS
@@ -150,5 +147,8 @@ training:
   loss: variance                  # variance | mse
   null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
   flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
-  #mixed_flux_weight: 0.5          # weight for flux-space loss when flux_loss_space=mixed (0.35 = 35% flux, 65% basis)
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
+  # Feasible-by-construction latent; whitening keeps the gauge well-conditioned.
+  gauge_radial: sigmoid           # rho = sigmoid(s), y = rho * d / g(d)
+  gauge_center: mean              # cast the gauge from the data centre
+  gauge_whiten: true              # one latent unit = one standard deviation of the data
