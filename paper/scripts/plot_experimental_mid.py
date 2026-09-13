@@ -4,7 +4,8 @@ SigmaFlux's predicted labeling against the measured ¹³C data it was inferred f
 Per model:
   experimental_mid_<key>.svg      predicted vs measured isotopologue fraction, log-log,
                                    one point per (condition, growth condition, tracer,
-                                   metabolite, isotopomer), with error bars on both axes
+                                   metabolite, isotopomer), with error bars on both axes;
+                                   no R² text on the panel -- it lives in the summary CSV
 Across all models:
   experimental_mid_summary.csv    per-(model, condition, growth condition) R², RMSE, MAE,
                                    worst error, median |z| against replicate spread, the
@@ -57,8 +58,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from _figure_common import (
-    CONDITION_COLORS, CONDITION_LABEL, COLORS, PREDICTION_SPECS, add_common_args,
-    apply_style, axis_floor, error_offsets, run_dir_for, save_figure, selected_models)
+    CONDITION_COLORS, CONDITION_LABEL, COLORS, PREDICTION_SPECS, TRACER_MARKERS,
+    add_common_args, apply_style, axis_floor, error_offsets, run_dir_for, save_figure,
+    selected_models, tracer_label)
 from experimental_mid import tokens_path
 
 #: Hard floor for the log axes. Only a backstop: the limit is set from the data
@@ -131,11 +133,21 @@ def summarize(model, df):
 
 
 def plot_experimental_mid(model, df, summary_rows, out_dir):
-    """Predicted vs measured MID fraction, log-log, one figure per model."""
+    """Predicted vs measured MID fraction, log-log, one figure per model.
+
+    Color encodes condition (as before); marker shape encodes tracer, so a mixed-tracer
+    panel (e.g. S. cerevisiae's U-13C + 1,2-13C glucose) distinguishes the two without a
+    second color scale. Tracer names are rewritten into literature notation
+    (:func:`_figure_common.tracer_label`) rather than the internal
+    ``<met>_[<pattern>]_<enrichment>`` id.
+    """
     names = CONDITION_LABEL.get(model["key"], {})
-    tidy = df.assign(label=[names.get(c, c) for c in df["condition"]])
+    tidy = df.assign(label=[names.get(c, c) for c in df["condition"]],
+                     tracer_disp=df["Tracer"].map(tracer_label))
     palette = {names.get(c, c): CONDITION_COLORS.get(c, "#777777")
                for c in tidy["condition"].unique()}
+    tracers = sorted(tidy["tracer_disp"].unique())
+    marker_map = {t: TRACER_MARKERS[i % len(TRACER_MARKERS)] for i, t in enumerate(tracers)}
 
     lim_lo = axis_floor(tidy["measured"], tidy["sim"], floor=MID_FLOOR)
     # A simulated fraction above 1 is not a MID -- the flux state that produced it is
@@ -164,17 +176,12 @@ def plot_experimental_mid(model, df, summary_rows, out_dir):
                     alpha=0.35, capsize=0, zorder=1.5)
 
     sns.scatterplot(data=tidy, x="measured", y="sim", hue="label", palette=palette,
-                    s=14, linewidth=0, alpha=0.8, ax=ax, zorder=2)
+                    style="tracer_disp", markers=marker_map,
+                    s=14, linewidth=0, alpha=0.8, ax=ax, zorder=2, legend=False)
 
     # Pooled per condition, not per growth condition: a panel legend with one line per
     # (condition, growth condition) would not fit, and the CSV keeps the finer split.
-    lines = []
-    for cond, grp in tidy.groupby("condition", sort=False):
-        r2 = _r2(grp["sim"].to_numpy(), grp["measured"].to_numpy())
-        lines.append(f"{names.get(cond, cond)}: $R^2$ = {r2:.2f}")
-    ax.text(0.97, 0.04, "\n".join(lines), transform=ax.transAxes,
-            fontsize=8, va="bottom", ha="right")
-
+    # R² stays in the CSV, not on the panel.
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim(lim_lo, lim_hi)
@@ -182,12 +189,21 @@ def plot_experimental_mid(model, df, summary_rows, out_dir):
     ax.set_aspect("equal")
     ax.set_xlabel("Measured isotopologue fraction")
     ax.set_ylabel("SigmaFlux simulated isotopologue fraction")
-    # A one-condition panel already names it in the RMSE label; a legend there is one
-    # stray marker in the corner saying nothing.
-    if len(palette) > 1:
-        ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.6)
-    else:
-        ax.legend_.remove()
+
+    # Two legends -- color (condition) and marker shape (tracer) -- since seaborn's
+    # combined hue+style legend gets cluttered once both vary; built manually from
+    # scratch (not read off the (legend=False) scatter) so their handles show a flat
+    # color/shape swatch each, with no accidental cross-encoding.
+    cond_handles = [plt.Line2D([], [], marker="o", linestyle="", color=color, label=label)
+                    for label, color in palette.items()]
+    cond_legend = ax.legend(handles=cond_handles, frameon=False, fontsize=7,
+                            loc="upper left", markerscale=1.6, title=None)
+    ax.add_artist(cond_legend)
+    if len(tracers) > 1:
+        tracer_handles = [plt.Line2D([], [], marker=marker_map[t], linestyle="",
+                                     color="#555555", label=t) for t in tracers]
+        ax.legend(handles=tracer_handles, frameon=False, fontsize=6,
+                 loc="lower right", markerscale=1.3, title=None)
     sns.despine(ax=ax)
     save_figure(fig, out_dir / f"experimental_mid_{model['key']}.svg")
     return summary_rows

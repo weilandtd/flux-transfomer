@@ -12,6 +12,7 @@ against the same run directory.
 import glob
 import os
 import pathlib
+import re
 import sys
 
 import matplotlib as mpl
@@ -89,7 +90,10 @@ PREDICTION_SPECS = {
     "e_coli_core":       dict(conditions=["B"],           select="wt"),
     "s_cerevisiae":      dict(conditions=["C", "N", "P"], select="max_D"),
     "i_orientalis":      dict(conditions=["C", "N", "P"], select="max_D"),
-    "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
+    # Naive (N) dropped: its measured glucose/lactate/gln are rejected by both MFA
+    # fits (see the tcell_naive_extflux_unreliable note), so the reference itself is
+    # unreliable there -- activated is the only condition worth plotting against.
+    "m_musculus_t_cell": dict(conditions=["A"],           select="all"),
 }
 
 # The condition letter means different things per organism: N is nitrogen-limited for
@@ -97,6 +101,35 @@ PREDICTION_SPECS = {
 CONDITION_LABEL = {
     "m_musculus_t_cell": {"N": "naive", "A": "activated"},
 }
+
+# Literature-style names for the tracer metabolite ids seen in tracer strings below.
+_TRACER_METABOLITE_NAMES = {
+    "glc__D_e": "glucose", "Gluc_e": "glucose", "gln__L_e": "glutamine",
+}
+
+#: Marker shapes cycled by distinct tracer within a panel, so tracer is visually
+#: distinguishable from condition (which is colored) without a second color scale.
+TRACER_MARKERS = ["o", "^", "s", "D", "P", "X"]
+
+
+def tracer_label(tracer_str):
+    """Literature-style label for an internal tracer id.
+
+    ``'glc__D_e_[1, 1, 0, 0, 0, 0]_0.5'`` -> ``'1,2-¹³C-glucose (50%)'``;
+    ``'glc__D_e_[1, 1, 1, 1, 1, 1]_0.5'`` -> ``'U-¹³C-glucose (50%)'``.
+    Falls back to the raw string for anything that doesn't match the
+    ``<metabolite>_[<pattern>]_<enrichment>`` shape this codebase generates tracer ids in.
+    """
+    m = re.match(r"^(.+?)_\[([\d,\s]+)\]_([\d.]+)$", str(tracer_str))
+    if not m:
+        return str(tracer_str)
+    met_id, pattern_str, enrichment = m.groups()
+    pattern = [int(x) for x in pattern_str.split(",")]
+    positions = [i + 1 for i, v in enumerate(pattern) if v == 1]
+    name = _TRACER_METABOLITE_NAMES.get(met_id, met_id)
+    pct = f"{float(enrichment) * 100:.0f}%"
+    tag = "U" if len(positions) == len(pattern) else ",".join(str(p) for p in positions)
+    return f"{tag}-¹³C-{name} ({pct})"
 
 
 def apply_style():
