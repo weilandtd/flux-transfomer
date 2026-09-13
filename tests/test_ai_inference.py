@@ -9,9 +9,11 @@ fixed-flux propagation.
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from sigmaflux.ai.data import load_stoichiometric_matrix
 from sigmaflux.ai.inference import SigmaFlux
+from sigmaflux.ai.model import MISSING_LABEL_VALUE
 
 from conftest import TOY_CONFIG_YAML as _TOY_CONFIG_YAML
 from conftest import TOY_MODEL_JSON as _TOY_MODEL_JSON
@@ -127,10 +129,11 @@ def test_absent_tokens_are_masked_out_not_read_as_zero(toy_run):
     assert np.allclose(base, again)
 
 
-def test_labeling_mask_hides_exactly_the_unmeasured_tokens(toy_run):
-    """White-box: the mask handed to the decoder must be True at every trained token the
-    experiment did not measure, and False at every one it did -- per sample, since a
-    replicate can be missing a metabolite the others have."""
+def test_missing_label_value_fills_exactly_the_unmeasured_tokens(toy_run):
+    """White-box: the fractions handed to the decoder must carry MISSING_LABEL_VALUE at
+    every trained token the experiment did not measure, and the real fraction at every
+    one it did -- per sample, since a replicate can be missing a metabolite the others
+    have. Tokens stay attended either way (no mask kwarg) -- only the value changes."""
     sf = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L = make_toy_df_L(n_samples=2)
     # Sample 1 loses Glycine; sample 0 keeps everything.
@@ -140,7 +143,8 @@ def test_labeling_mask_hides_exactly_the_unmeasured_tokens(toy_run):
     inner = sf._model.forward
 
     def spy(*args, **kwargs):
-        seen.append(kwargs['labeling_mask'].cpu().numpy().copy())
+        assert 'labeling_mask' not in kwargs
+        seen.append(args[3].cpu().numpy().copy())            # fractions, (B, N_lab, 1)
         return inner(*args, **kwargs)
 
     sf._model.forward = spy          # nn.Module.__call__ dispatches through self.forward
@@ -149,18 +153,23 @@ def test_labeling_mask_hides_exactly_the_unmeasured_tokens(toy_run):
     finally:
         del sf._model.forward
 
-    mask = np.concatenate(seen, axis=0)                     # (n_samples, n_tokens)
+    fracs = np.concatenate(seen, axis=0)[..., 0]             # (n_samples, n_tokens)
     tokens = list(sf._token_index)
-    assert mask.shape == (2, len(tokens))
+    assert fracs.shape == (2, len(tokens))
 
-    measured = {(r['Tracer Name'], r['Metabolite ID'], r['Isotopomer'], r['Sample'])
+    measured = {(r['Tracer Name'], r['Metabolite ID'], r['Isotopomer'], r['Sample']): r['Fraction']
                 for _, r in partial.iterrows()}
     tracer_id = sf._tracer_name_to_id['labeled-Ser']
+    n_missing = [0, 0]
     for sample in (0, 1):
         for pos, (tracer, met, iso) in enumerate(tokens):
-            was_measured = (tracer == tracer_id
-                            and ('labeled-Ser', met, iso, sample) in measured)
-            assert bool(mask[sample, pos]) is not was_measured
+            key = ('labeled-Ser', met, iso, sample)
+            was_measured = tracer == tracer_id and key in measured
+            if was_measured:
+                assert fracs[sample, pos] == pytest.approx(measured[key])
+            else:
+                assert fracs[sample, pos] == MISSING_LABEL_VALUE
+                n_missing[sample] += 1
 
-    # Sample 1 must hide strictly more than sample 0 -- that is the Glycine block.
-    assert mask[1].sum() > mask[0].sum()
+    # Sample 1 must be missing strictly more than sample 0 -- that is the Glycine block.
+    assert n_missing[1] > n_missing[0]
