@@ -3,10 +3,11 @@ SigmaFlux predictions vs published MFA fits, on real experimental ¹³C data.
 
 Per model:
   experimental_flux_<key>.svg      SigmaFlux vs reference, log-log, one point per
-                                    (condition, growth condition, reaction)
+                                    (condition, growth condition, reaction); no R² text
+                                    on the panel -- it lives in the summary CSV instead
 Across all models:
-  experimental_flux_summary.csv    per-(model, condition) R², interval overlap,
-                                    point count, reaction count
+  experimental_flux_summary.csv    per-(model, condition) R², interval overlap, point
+                                    count, reaction count
 
 By default (``--reactions mfa``) each model is restricted to reactions **MFA** resolves
 on held-out simulations (R² >= R2_THRESHOLD in the simulation benchmark — see
@@ -196,12 +197,11 @@ def plot_experimental_flux(model, df, out_dir):
 
     # One figure per condition, not a single value pooled across them -- conditions can
     # differ a lot in agreement, and pooling would hide that.
-    summary_rows, lines = [], []
+    summary_rows = []
     for cond, grp in df.groupby("condition", sort=False):
         label = names.get(cond, cond)
         n_ov, n_cmp = _interval_overlap(grp)
         r2 = _r2_linear(grp["pred"].to_numpy(), grp["ref"].to_numpy())
-        lines.append(f"{label}: $R^2$ = {r2:.2f}")
         # The overlap count stays in the CSV -- it is no longer what the panel reports,
         # but it is the only statistic here that uses both sides' published uncertainty.
         summary_rows.append(dict(model=model["label"], key=model["key"], condition=cond,
@@ -212,9 +212,6 @@ def plot_experimental_flux(model, df, out_dir):
                                  n_reactions=grp["reaction"].nunique(),
                                  n_sign_opposed=int((~grp["sign_agrees"]).sum())))
 
-    ax.text(0.97, 0.04, "\n".join(lines), transform=ax.transAxes,
-            fontsize=9, va="bottom", ha="right")
-
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim(lim_lo, lim_hi)
@@ -224,12 +221,9 @@ def plot_experimental_flux(model, df, out_dir):
     # silently falls back to a "Last Resort" placeholder box in the saved SVG.
     ax.set_xlabel("Reference MFA\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
     ax.set_ylabel("SigmaFlux\n" + r"[mmol gDW$^{-1}$ h$^{-1}$]")
-    # A one-condition panel already names it in the R² label; a legend there is one
-    # stray marker in the corner saying nothing.
-    if len(palette) > 1:
-        ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.4)
-    else:
-        ax.legend_.remove()
+    # Always shown, including one-condition panels: with no R² text on the panel
+    # any more, the legend is the only thing naming which condition it is.
+    ax.legend(frameon=False, fontsize=7, loc="upper left", markerscale=1.4)
     sns.despine(ax=ax)
     save_figure(fig, out_dir / f"experimental_flux_{model['key']}.svg")
     return summary_rows

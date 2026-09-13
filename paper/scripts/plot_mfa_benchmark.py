@@ -124,7 +124,12 @@ def plot_nrmse_violin(df, model_order, out_dir):
     scale. Fitting on log10(nrmse) directly makes the displayed shape the actual density
     in the space it's drawn in; ticks are relabelled as 10^n.
     """
+    # Shorter x-axis labels, local to this panel only -- model["label"] elsewhere
+    # (R²/Venn titles, CSVs, printed text) stays the full name.
+    axis_label = {"M. musculus T cell": "M. musculus\n(T cell)", "E. coli core": "E. coli"}
     df = df.copy()
+    df["Model"] = df["Model"].replace(axis_label)
+    model_order = [axis_label.get(m, m) for m in model_order]
     df["log10_nrmse"] = np.log10(df["nrmse"])
     fig, ax = plt.subplots(figsize=(3.5 * 1.8, 3.5))
     sns.violinplot(data=df, x="Model", y="log10_nrmse", hue="Method", order=model_order,
@@ -136,7 +141,7 @@ def plot_nrmse_violin(df, model_order, out_dir):
     # Above this line a reaction's RMSE is as large as the flux it typically carries.
     ax.axhline(0.0, color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
     ax.set_xlabel("")
-    ax.set_ylabel(r"Per-reaction flux NRMSE (RMSE / rms$(v)$)")
+    ax.set_ylabel("Per reaction flux NRMSE")
     sns.move_legend(ax, "upper right", frameon=False, title=None)
     sns.despine(ax=ax)
     save_figure(fig, out_dir / "mfa_benchmark_nrmse_violin.svg")
@@ -296,7 +301,7 @@ def plot_venn(model, counts, out_dir):
     from matplotlib_venn import venn2
 
     regions = ("10", "01", "11")
-    fig, ax = plt.subplots(figsize=(3.2 / 1.2, 2.0))
+    fig, ax = plt.subplots(figsize=(3.2 / 1.2 / 2, 2.0 / 2))
     v = venn2(subsets=(counts["mfa_only"], counts["sf_only"], counts["both"]),
               set_labels=("", ""), ax=ax,
               set_colors=(METHOD_COLORS["mfa"], METHOD_COLORS["ai"]),
