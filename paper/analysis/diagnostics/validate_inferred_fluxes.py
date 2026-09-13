@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs
+from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, _medoid_weights
 from sigmaflux.pipeline._benchmark import (
     build_mfa_context, forward_labeling, load_prepared_model,
 )
@@ -136,17 +136,27 @@ def aggregate_state(flux_wide, rev_wide, sample, how):
     inside the (convex) bounding box whenever every member is -- which is why it is what
     ``EnsembleSigmaFlux.predict`` and the predictions CSV report. ``how="median"`` was the
     previous aggregate; a per-reaction median is not a convex combination, so it can leave
-    the null space entirely. Both are kept so the difference stays measured, not assumed.
+    the null space entirely. ``how="medoid"``/``"medoid_convex"`` (see
+    :func:`sigmaflux.ai.uncertainty._medoid_weights`) are candidate replacements for the
+    mean that stay closer to the "typical" member instead of blending uniformly across all
+    of them. All are kept so the differences stay measured, not assumed.
 
     Args:
         flux_wide: per-(Sample, Member) fluxes, columns in model reaction order.
         rev_wide: matching reversibilities.
         sample: the input draw to aggregate over.
-        how: "mean" or "median".
+        how: "mean", "median", "medoid" or "medoid_convex".
     """
-    agg = {"mean": "mean", "median": "median"}[how]
-    return (getattr(flux_wide.xs(sample, level="Sample"), agg)(axis=0),
-            getattr(rev_wide.xs(sample, level="Sample"), agg)(axis=0))
+    if how in ("mean", "median"):
+        return (getattr(flux_wide.xs(sample, level="Sample"), how)(axis=0),
+                getattr(rev_wide.xs(sample, level="Sample"), how)(axis=0))
+    if how in ("medoid", "medoid_convex"):
+        fw = flux_wide.xs(sample, level="Sample")
+        rw = rev_wide.xs(sample, level="Sample")
+        w = _medoid_weights(fw.to_numpy(float), how=how)
+        return (pd.Series(w @ fw.to_numpy(float), index=fw.columns),
+                pd.Series(w @ rw.to_numpy(float), index=rw.columns))
+    raise ValueError(f"Unknown how={how!r}")
 
 
 def as_state_frames(flux_series, rev_series, sample):

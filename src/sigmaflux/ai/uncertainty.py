@@ -44,6 +44,7 @@ would make it true by construction.
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.optimize import minimize
 from scipy.stats import truncnorm
 
 #: Bootstrap draws when the config's ``experiment`` block does not say. Large enough for a
@@ -288,6 +289,55 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
     out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(
         drawn, keys, out['Value'], alpha)
     return out.reset_index()
+
+
+def _medoid_weights(members: np.ndarray, how: str = "medoid") -> np.ndarray:
+    """Aggregation weights picking (or blending) the member(s) closest to the
+    coordinatewise median, as an alternative to the plain per-reaction mean.
+
+    The mean is a convex combination of null-space vectors, so it stays a valid flux
+    state (S.v=0, and inside any convex box every member satisfies) -- see the comment
+    on ``EnsembleSigmaFlux.predict``. But it is a *blend*, and may not correspond to any
+    single coherent flux state if the ensemble disagrees at a branch point. This offers
+    two alternatives that stay closer to the "typical" member:
+
+    Args:
+        members: (n_members, n_reactions) raw per-member values, one row each.
+        how: ``"medoid"`` -- one-hot at the single member closest (z-scored L2) to the
+            coordinatewise median. Exactly one real member's own output, so it is on the
+            null-space manifold by construction, but -- unlike the mean -- is not
+            guaranteed to lie inside the FVA box (individual members frequently do not).
+            ``"medoid_convex"`` -- simplex weights minimizing distance to the median.
+            Still a convex combination, so it keeps the mean's box-feasibility guarantee,
+            while concentrating weight near the median rather than spreading uniformly.
+
+    Distances are scaled per reaction by the median absolute deviation across members,
+    not raw L2, so the largest-magnitude reactions (glucose uptake, biomass) don't dominate
+    the distance and "closest member" doesn't collapse to "closest on one big flux".
+    """
+    median = np.median(members, axis=0)
+    scale = np.median(np.abs(members - median), axis=0)
+    scale = np.where(scale > 1e-9, scale, 1.0)
+    z = (members - median) / scale
+
+    n = len(members)
+    if how == "medoid":
+        i = int(np.argmin(np.linalg.norm(z, axis=1)))
+        w = np.zeros(n)
+        w[i] = 1.0
+        return w
+    if how == "medoid_convex":
+        a = z.T  # (n_reactions, n_members)
+        w0 = np.full(n, 1.0 / n)
+        res = minimize(
+            lambda w: float(np.sum((a @ w) ** 2)), w0,
+            jac=lambda w: 2 * a.T @ (a @ w),
+            bounds=[(0.0, 1.0)] * n,
+            constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
+            method="SLSQP",
+        )
+        return res.x
+    raise ValueError(f"Unknown how={how!r}")
 
 
 def coverage_by_reaction(pred: pd.DataFrame, truth: pd.DataFrame) -> pd.Series:
