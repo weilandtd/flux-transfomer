@@ -60,9 +60,6 @@ from .data import (
     IDTokenizedDataset,
     prepare_dataset,
     prepare_id_dataset,
-    apply_random_masking,
-    extract_mask_from_data,
-    generate_experiment_mask,
 )
 
 __all__ = [
@@ -121,7 +118,4 @@ __all__ = [
     'IDTokenizedDataset',
     'prepare_dataset',
     'prepare_id_dataset',
-    'apply_random_masking',
-    'extract_mask_from_data',
-    'generate_experiment_mask',
 ]
