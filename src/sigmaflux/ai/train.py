@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
+from sigmaflux.ai.model import MISSING_LABEL_VALUE
+
 
 
 class FluxNorm:
@@ -287,7 +289,9 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
         device: torch device to train on.
         gradient_clip: max gradient norm; <=0 disables clipping (norm still reported).
         flux_token_dropout: per-batch probability each flux token is excluded.
-        labeling_token_dropout: per-batch probability each labeling token's fraction is zeroed.
+        labeling_token_dropout: per-batch probability each labeling token's fraction is
+            replaced with MISSING_LABEL_VALUE, matching how inference represents a token
+            the experiment didn't measure.
         flux_loss_fn: loss on flux outputs (None = MSELoss).
         rev_loss_fn: loss on reversibility outputs (None = MSELoss).
         labeling_noise_std: Gaussian noise std applied to fractions (0 disables).
@@ -329,11 +333,20 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
                 flux_mask = (~keep).unsqueeze(0).expand(compound_ids.shape[0], -1)
             measured_fluxes = all_mf
 
+        # A dropped token used to be zero-filled -- indistinguishable from "measured,
+        # absent" (a real 0 fraction), which real data can genuinely report. Attention-
+        # masking it instead (tried and measured: SC single-member validation flux R²
+        # dropped 0.73-0.75 -> 0.52) fixes the ambiguity but costs real accuracy, and
+        # still leaves the token's identity invisible to the rest of the sequence. A
+        # sentinel value keeps the token attended (identity always visible) while making
+        # "absent" unambiguous: MISSING_LABEL_VALUE is outside a fraction's valid [0, 1]
+        # range, so ScalarFeatureEncoder's sign(x) feature alone separates it from every
+        # real fraction, and NaN-free through log(|x|+1)/|x|/sign(x) (see model.py).
         if labeling_token_dropout > 0.0:
             keep = torch.bernoulli(
                 torch.full(fractions.shape[:2], 1.0 - labeling_token_dropout, device=device)
             ).unsqueeze(-1)
-            fractions = fractions * keep
+            fractions = fractions * keep + MISSING_LABEL_VALUE * (1.0 - keep)
 
         optimizer.zero_grad()
         flux_preds, rev_preds = model(
@@ -427,7 +440,8 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
         verbose:                  print a tqdm progress bar and per-epoch summary.
         warmup_epochs:            linear LR warmup epochs before the plateau scheduler engages.
         flux_token_dropout:      Per-batch probability each flux token is excluded
-        labeling_token_dropout:  Per-batch probability each labeling token's fraction is zeroed
+        labeling_token_dropout:  Per-batch probability each labeling token's fraction is
+            replaced with MISSING_LABEL_VALUE (see _train_epoch)
         token_information:       (n_tokens,) tensor of scores (used for reporting only)
         loss_function:           callable, or dict with 'flux'/'reversibility' keys (None = MSELoss)
         labeling_noise_std:       Gaussian noise std applied to fractions (0 disables).

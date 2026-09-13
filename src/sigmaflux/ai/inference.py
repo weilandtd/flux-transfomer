@@ -36,7 +36,7 @@ from .data import (
     radial_embedding_table,
     radial_vocabs_from_lists,
 )
-from .model import FluxDecoder
+from .model import FluxDecoder, MISSING_LABEL_VALUE
 
 
 def bounds_from_cobra(model, flux_names, source="model"):
@@ -457,12 +457,13 @@ class SigmaFlux:
     def predict(self, df_L, df_Vm=None, *, verbose=True, with_mid=False):
         """Predict fluxes from labeling data and measured exchange fluxes.
 
-        Tokens the experiment does not measure are *excluded* rather than fed as a
-        fraction of zero: they are hidden from both attention stages via the decoder's
-        ``labeling_mask``. A zero fraction is a real measurement -- "this isotopomer is
-        absent" -- so filling missing tokens with it told the model something the data
-        never said, for every metabolite the platform cannot resolve and for every tracer
-        the experiment did not run.
+        Tokens the experiment does not measure are filled with ``MISSING_LABEL_VALUE``
+        rather than a fraction of zero: a zero fraction is a real measurement -- "this
+        isotopomer is absent" -- so filling missing tokens with it told the model
+        something the data never said, for every metabolite the platform cannot resolve
+        and for every tracer the experiment did not run. The sentinel keeps the token
+        attended (its identity still informs the rest of the sequence) while remaining
+        unambiguous, since it lies outside a fraction's valid range.
 
         Parameters
         ----------
@@ -549,10 +550,14 @@ class SigmaFlux:
                                      columns='_col', values='Fraction', aggfunc='mean')
                         .reindex(index=skeleton_index, columns=range(n_samples)))
 
-        # NaN is "no measurement for this token in this sample" and becomes a mask entry;
-        # the value underneath it is never read, so the fill is arbitrary.
-        absent = wide.isna().to_numpy().T                     # (n_samples, n_tokens)
-        labeling_df = wide.fillna(0.0).astype(np.float32)
+        # NaN is "no measurement for this token in this sample". Filled with
+        # MISSING_LABEL_VALUE, not 0 -- a real 0 fraction is itself a measurement ("this
+        # isotopomer is absent"), so zero-filling told the model something the data never
+        # said. The sentinel is outside a fraction's valid [0, 1] range and finite through
+        # the encoder's log(|x|+1)/|x|/sign(x) featurization (model.py), and (unlike the
+        # attention-masking this replaced) keeps the token visible, so its identity still
+        # informs the rest of the sequence.
+        labeling_df = wide.fillna(MISSING_LABEL_VALUE).astype(np.float32)
 
         if verbose:
             self._report_coverage(wide)
@@ -572,9 +577,6 @@ class SigmaFlux:
             norm_stats_input= self.spec.norm_stats,  # applies MID z-score if model trained with it
         )
         loader = DataLoader(dataset, batch_size=self._batch_size, shuffle=False)
-
-        # Which labeling tokens to hide, sliced per batch alongside the flux tokens below.
-        absent_t = torch.tensor(absent, dtype=torch.bool)
 
         # ── Pre-build fixed_fluxes tensor ─────────────────────────────────────
         # Normalize to match training if checkpoint used normalize_targets.
@@ -609,18 +611,8 @@ class SigmaFlux:
                 if _fixed_flux_raw is not None:
                     fixed_fluxes = _fixed_flux_raw[batch_offset:batch_offset + B].to(self.device)
 
-                labeling_mask = absent_t[batch_offset:batch_offset + B].to(self.device)
-                # An all-hidden row makes attention softmax over nothing and returns NaN.
-                # The flux tokens are never masked, so the sequence still has visible keys
-                # whenever they exist; without them, keep one labeling token visible.
-                if fixed_fluxes is None:
-                    all_hidden = labeling_mask.all(dim=1)
-                    if all_hidden.any():
-                        labeling_mask[all_hidden, 0] = False
-
                 fp, rp = self._model(cids, lids, tids, fracs,
-                                     measured_fluxes=fixed_fluxes,
-                                     labeling_mask=labeling_mask)
+                                     measured_fluxes=fixed_fluxes)
                 all_flux.append(fp.cpu())
                 all_rev.append(rp.cpu())
                 batch_offset += B
@@ -700,7 +692,8 @@ class SigmaFlux:
         """
         measured = wide.notna().any(axis=1).groupby(level='Tracer').agg(['sum', 'count'])
         print(f"Input coverage: {int(measured['sum'].sum())}/{len(wide)} "
-              f"trained tokens measured (the rest are masked out, not zero-filled)")
+              f"trained tokens measured (the rest are filled with MISSING_LABEL_VALUE, "
+              f"not a real 0)")
         for tracer, row in measured.iterrows():
             note = "  <-- tracer not measured at all" if row['sum'] == 0 else ""
             print(f"  {tracer}: {int(row['sum'])}/{int(row['count'])}{note}")

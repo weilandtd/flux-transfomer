@@ -9,9 +9,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+#: Fills a dropped/unmeasured labeling token's fraction, distinguishing "not measured"
+#: from a real 0 fraction. Outside a fraction's valid [0, 1] range, so ScalarFeatureEncoder's
+#: sign(x) feature alone separates it from every real value; finite through all of
+#: log(|x|+1)/|x|/sign(x), so it introduces no NaN. The token stays attended (unlike
+#: labeling_mask, since removed), keeping its identity visible to the rest of the sequence.
+MISSING_LABEL_VALUE = -1.0
+
+
 class ScalarFeatureEncoder(nn.Module):
 	"""Encodes a scalar as a d_model embedding: z = W · φ(x), where
-	φ(x) = [x, log(|x|+1), x², sign(x)] and W is a learned projection."""
+	φ(x) = [x, log(|x|+1), |x|, sign(x)] and W is a learned projection."""
 
 	def __init__(self, d_model):
 		super().__init__()
@@ -21,7 +29,7 @@ class ScalarFeatureEncoder(nn.Module):
 		nn.init.xavier_uniform_(self.projection.weight)
 
 	def _featurize(self, x):
-		"""Featurize x into [x, log(|x|+1), x², sign(x)], shape (..., 4)."""
+		"""Featurize x into [x, log(|x|+1), |x|, sign(x)], shape (..., 4)."""
 		log_feat = torch.log(torch.abs(x) + 1)
 		abs_feat = torch.abs(x)
 		sign_feat = torch.sign(x)
@@ -302,7 +310,6 @@ class FluxDecoder(nn.Module):
         label_ids,                # (B, N_lab) long
         tracer_ids,               # (B, N_lab) long
         fractions,                # (B, N_lab, 1) float
-        labeling_mask=None,       # (B, N_lab) bool, True = hidden
         flux_mask=None,           # (B, n_fx)  bool, True = hidden; requires measured_fluxes
         measured_fluxes=None,     # (B, n_fx) float, raw flux values
         measured_flux_ids=None,   # (n_fx,) long; uses self.fixed_idx_t when None
@@ -313,8 +320,9 @@ class FluxDecoder(nn.Module):
             compound_ids: labeling-token compound ids, shape (B, N_lab).
             label_ids: labeling-token isotopomer-label ids, shape (B, N_lab).
             tracer_ids: labeling-token tracer ids, shape (B, N_lab).
-            fractions: labeling-token fractions, shape (B, N_lab, 1).
-            labeling_mask: True hides that labeling token, shape (B, N_lab).
+            fractions: labeling-token fractions, shape (B, N_lab, 1). A token the
+                experiment didn't measure is MISSING_LABEL_VALUE, not hidden from
+                attention -- labeling tokens are always attended; see MISSING_LABEL_VALUE.
             flux_mask: True hides that flux token, shape (B, n_fx); requires measured_fluxes.
             measured_fluxes: raw flux values for flux tokens, shape (B, n_fx).
             measured_flux_ids: reaction indices for measured_fluxes; defaults to self.fixed_idx_t.
@@ -394,18 +402,15 @@ class FluxDecoder(nn.Module):
         else:
             x = x_lab
 
-        # Build encoder mask (None = no masking)
-        if labeling_mask is None and flux_mask is None:
+        # Build encoder mask (None = no masking). Labeling tokens are always attended --
+        # a token the experiment didn't measure is MISSING_LABEL_VALUE in `fractions`,
+        # not hidden from attention -- so only flux tokens can still be masked here
+        # (flux_token_dropout).
+        if flux_mask is None or x_flux is None:
             full_mask = None
         else:
-            lm = labeling_mask if labeling_mask is not None else \
-                 torch.zeros(B, N_lab, dtype=torch.bool, device=device)
-            if x_flux is not None:
-                fm = flux_mask if flux_mask is not None else \
-                     torch.zeros(B, N_fx, dtype=torch.bool, device=device)
-                full_mask = torch.cat([lm, fm], dim=1)
-            else:
-                full_mask = lm
+            lm = torch.zeros(B, N_lab, dtype=torch.bool, device=device)
+            full_mask = torch.cat([lm, flux_mask], dim=1)
 
         x = self.encoder(x, src_key_padding_mask=full_mask)
         x = torch.nan_to_num(x, nan=0.0)
