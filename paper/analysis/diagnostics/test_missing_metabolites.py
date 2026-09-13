@@ -23,11 +23,18 @@ import numpy as np
 import torch
 
 from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from sigmaflux.ai.model import MISSING_LABEL_VALUE
 from sigmaflux.ai.train import per_reaction_r2
 
 
-def run_inference(model, loader, device, labeling_mask_fn=None):
-    """Run model over all batches, return (preds, targets) as numpy arrays."""
+def run_inference(model, loader, device, missing_fn=None):
+    """Run model over all batches, return (preds, targets) as numpy arrays.
+
+    missing_fn, when given, marks a subset of labeling tokens "not measured" the same
+    way real missing data is represented -- MISSING_LABEL_VALUE in `fractions` -- not by
+    hiding them from attention (the model isn't trained with the latter; see
+    MISSING_LABEL_VALUE in ai/model.py).
+    """
     all_preds, all_targets = [], []
     model.eval()
     measured_flux_ids = model.fixed_idx_t.to(device)
@@ -40,16 +47,16 @@ def run_inference(model, loader, device, labeling_mask_fn=None):
             fracs = fracs.to(device)
             B     = cids.shape[0]
 
-            lmask = None
-            if labeling_mask_fn is not None:
-                lmask = labeling_mask_fn(cids[0], B, device)
+            if missing_fn is not None:
+                missing = missing_fn(cids[0], B, device)          # (B, N_lab) bool
+                fracs = fracs.clone()
+                fracs[missing] = MISSING_LABEL_VALUE
 
             measured_fluxes = None
             if len(model.fixed_idx) > 0:
                 measured_fluxes = targets.to(device).index_select(1, measured_flux_ids)
 
             fluxes, _ = model(cids, lids, tids, fracs,
-                              labeling_mask=lmask,
                               measured_fluxes=measured_fluxes,
                               measured_flux_ids=measured_flux_ids)
             all_preds.append(fluxes.cpu().numpy())
@@ -58,17 +65,17 @@ def run_inference(model, loader, device, labeling_mask_fn=None):
     return np.concatenate(all_preds), np.concatenate(all_targets)
 
 
-def make_mask_fn(masked_met_set, token_labels):
-    """Return a labeling_mask_fn that masks tokens belonging to masked_met_set."""
+def make_missing_fn(masked_met_set, token_labels):
+    """Return a missing_fn flagging tokens belonging to masked_met_set as unmeasured."""
     token_mets = [lbl.split(' ')[0] for lbl in token_labels]
-    mask_indices = [j for j, m in enumerate(token_mets) if m in masked_met_set]
+    missing_indices = [j for j, m in enumerate(token_mets) if m in masked_met_set]
 
     def fn(compound_ids_template, batch_size, device):
-        N    = len(token_labels)
-        mask = torch.zeros(batch_size, N, dtype=torch.bool, device=device)
-        if mask_indices:
-            mask[:, mask_indices] = True
-        return mask
+        N       = len(token_labels)
+        missing = torch.zeros(batch_size, N, dtype=torch.bool, device=device)
+        if missing_indices:
+            missing[:, missing_indices] = True
+        return missing
 
     return fn
 
@@ -189,10 +196,10 @@ def main():
         for seed in range(args.seeds):
             rng          = np.random.default_rng(seed)
             masked_mets  = set(rng.choice(unique_mets, size=n_mask, replace=False).tolist())
-            mask_fn      = make_mask_fn(masked_mets, token_labels)
+            missing_fn   = make_missing_fn(masked_mets, token_labels)
 
             preds_m, targets_m = run_inference(model, loader, device,
-                                               labeling_mask_fn=mask_fn)
+                                               missing_fn=missing_fn)
             r2_m = np.nan_to_num(per_reaction_r2(preds_m, targets_m))
 
             # Among the baseline-recoverable set, which are still recovered?
