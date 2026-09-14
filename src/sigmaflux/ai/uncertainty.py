@@ -221,18 +221,28 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
                     alpha: float = 0.05) -> pd.DataFrame:
     """Reduce raw per-(sample, member) predictions to the MLE point and its interval.
 
-    The point estimate is the ensemble *mean* at the unperturbed input -- the same
-    aggregation :meth:`EnsembleSigmaFlux.predict` uses, evaluated at the MLE input rather
-    than averaged over the replicates.
+    The point estimate is the ensemble *medoid_convex* aggregate at the unperturbed
+    input (see :func:`_medoid_weights`) -- the same aggregation
+    :meth:`EnsembleSigmaFlux.predict` uses, evaluated at the MLE input rather than
+    averaged over the replicates. One weight vector is solved from the *full* joint
+    (Member x key) matrix -- simplex weights minimizing distance to the coordinatewise
+    median -- and applied identically across every key, not recomputed key by key,
+    since the weights describe which members' overall flux state to blend, not an
+    independent choice per reaction.
 
-    The mean rather than the median because only the mean is still a flux state. Each
-    member predicts ``v = y @ Z_full.T``, so it lies in the stoichiometric null space; a
-    mean is a convex combination of those and stays there, and stays inside the (convex)
-    bounding box whenever the members do. A per-reaction median is neither, and measurably
-    so -- on E. coli core LC-MS it reported ``max|S.v| = 5.74`` against a glucose uptake of
-    8.6, where the mean gave 2e-6. Fit to the measured labeling is a wash between them, so
-    nothing is traded away for that. What is given up is the median's robustness to a
-    single pathological member; watch ``sigma_model``, which reports exactly that spread.
+    medoid_convex rather than the plain mean or a per-reaction median because it is the
+    only one of the three that is both a flux state and measurably closer to real data.
+    Each member predicts ``v = y @ Z_full.T``, so it lies in the stoichiometric null
+    space; both the mean and medoid_convex are convex combinations of those and stay
+    there, and stay inside the (convex) bounding box whenever the members do. A
+    per-reaction median is neither, and measurably so -- on E. coli core LC-MS it
+    reported ``max|S.v| = 5.74`` against a glucose uptake of 8.6, where the mean gave
+    2e-6. Between the two feasible options, medoid_convex measured better against real
+    SC flux data than the plain mean (pooled R² 0.242 vs 0.228,
+    `paper/analysis/diagnostics/compare_aggregation_sc.py`), because it concentrates
+    weight near the coordinatewise median instead of spreading uniformly across every
+    member. What is given up relative to the mean is nothing measured so far; watch
+    ``sigma_model``, which reports member spread regardless of which aggregate is used.
 
     Two variance sources compose into the interval:
 
@@ -276,8 +286,13 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
     drawn = raw[raw['Sample'] < n_draws]
 
     at_mle = mle.groupby(keys, sort=False)['Value']
+    # One medoid_convex weight vector from the full (Member x key) matrix -- see the
+    # docstring above for why this must be joint, not per-key.
+    wide = mle.pivot_table(index='Member', columns=keys, values='Value', sort=False)
+    weights = _medoid_weights(wide.to_numpy(float), how='medoid_convex')
+    agg_value = pd.Series(weights @ wide.to_numpy(float), index=wide.columns, name='Value')
     out = pd.DataFrame({
-        'Value':       at_mle.mean(),
+        'Value':       agg_value,
         'sigma_model': at_mle.std(ddof=1).fillna(0.0),
     })
     out['sigma_input'] = (drawn.groupby(keys + ['Sample'], sort=False)['Value']

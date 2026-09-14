@@ -36,20 +36,46 @@ class TestSummarizeDraws:
         # Members sit at 5.0, 5.5, 6.0, 6.5, 7.0 on the unperturbed row.
         assert out["Value"].iloc[0] == pytest.approx(6.0)
 
-    def test_point_estimate_is_the_mean_not_the_median(self):
+    def test_point_estimate_is_medoid_convex_not_the_plain_mean(self):
         """The two coincide on a symmetric ensemble, so this skews one member.
 
         The distinction is load-bearing: a member predicts ``v = y @ Z_full.T`` and so
-        lies in the null space, and a mean of those is still a flux state -- a
-        per-reaction median is not, and measurably leaves it.
+        lies in the null space, and a convex combination of those (the plain mean, or
+        medoid_convex's simplex weights) is still a flux state -- a per-reaction median
+        is not, and measurably leaves it. medoid_convex is chosen over the plain mean
+        because it concentrates weight near the coordinatewise median instead of
+        spreading uniformly, so a single outlier member pulls it far less.
         """
         raw = self._raw(n_members=5)
         outlier = (raw["Member"] == 4)
         raw.loc[outlier, "Value"] = raw.loc[outlier, "Value"] + 10.0
 
         out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"]).iloc[0]
-        # Members now sit at 5.0, 5.5, 6.0, 6.5, 17.0: mean 8.0, median 6.0.
-        assert out["Value"] == pytest.approx(8.0)
+        # Members now sit at 5.0, 5.5, 6.0, 6.5, 17.0: mean 8.0, coordinatewise median
+        # 6.0. With a single key, medoid_convex's simplex weights minimize distance to
+        # that median in one dimension, which a convex combination can only do by
+        # concentrating on the member(s) nearest it -- here, sitting exactly on it.
+        assert out["Value"] == pytest.approx(6.0)
+        assert out["Value"] != pytest.approx(8.0)   # not the plain mean
+
+    def test_point_estimate_uses_one_joint_weight_vector_across_keys(self):
+        """medoid_convex solves one set of member weights from the *whole* flux state,
+        not an independent choice per reaction -- so it stays far closer to a non-outlier
+        member's values on every key at once, unlike a per-reaction median would.
+        """
+        rows = []
+        # Three members, two reactions. Member 2 is a severe outlier on R2 only.
+        for s in (0, 1):  # MLE row is sample 1 (n_draws=1)
+            for m, (r1, r2) in enumerate([(0.0, 0.0), (4.0, 4.0), (2.0, 100.0)]):
+                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R1", "Value": r1}))
+                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R2", "Value": r2}))
+        raw = pd.DataFrame(rows)
+
+        out = summarize_draws(raw, n_draws=1, group_cols=["Type", "Flux Name"]).set_index("Flux Name")
+        # The plain mean would put R2 at (0+4+100)/3 = 34.67, dominated by the outlier.
+        # medoid_convex's joint weights keep R2 close to the non-outlier members' range.
+        assert out.loc["R2", "Value"] < 20.0
+        assert out.loc["R1", "Value"] == pytest.approx(2.0, abs=2.5)
 
     def test_interval_brackets_the_point_estimate(self):
         out = summarize_draws(self._raw(), n_draws=3, group_cols=["Type", "Flux Name"])
