@@ -93,6 +93,33 @@ def split_indices(n_samples, val_fraction, seed):
     return indices[:split], indices[split:]
 
 
+def shuffle_targets(flux_df, reversibility_df, seed):
+    """Null-model control: permute (flux, reversibility) samples, independent of labeling.
+
+    ``flux_df`` and ``reversibility_df`` are permuted by the *same* draw, so each target
+    stays the real, internally consistent pair a sampled flux state and its reversibility
+    trace always are -- S.v = 0 is untouched. What breaks is only the association with a
+    labeling sample: metabolite M+i measurements are now paired with an unrelated flux
+    state, so a model trained on this pairing can carry no real metabolite-to-flux
+    attribution. If one still shows attribution structure on this data, that structure is
+    an artifact of the pipeline, not of the biology.
+
+    Args:
+        flux_df: (reactions, samples).
+        reversibility_df: (reactions, samples), same sample axis as flux_df.
+        seed: RNG seed, shared across an ensemble so every member sees one broken pairing.
+
+    Returns (flux_df, reversibility_df), permuted and with sample columns renumbered
+    0..n-1 to match what :func:`sigmaflux.ai.data.load_data` itself produces.
+    """
+    perm = np.random.default_rng(seed).permutation(flux_df.shape[1])
+    flux_df = flux_df.iloc[:, perm]
+    flux_df.columns = range(flux_df.shape[1])
+    reversibility_df = reversibility_df.iloc[:, perm]
+    reversibility_df.columns = range(reversibility_df.shape[1])
+    return flux_df, reversibility_df
+
+
 class MixedFluxLoss:
     """Combines basis-space and flux-space losses."""
 
@@ -198,6 +225,16 @@ def main(args):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     labeling_df, flux_df, reversibility_df = load_data(args.data_dir)
+
+    if getattr(args, "shuffle_targets", False):
+        # shuffle_seed, not args.seed: an ensemble member's args.seed is base_seed + i
+        # (see the ensemble loop in cli()), but every member of a null ensemble must see
+        # the same broken pairing, or cross-seed agreement tests nothing.
+        _shuffle_seed = getattr(args, "shuffle_seed", args.seed)
+        flux_df, reversibility_df = shuffle_targets(flux_df, reversibility_df, _shuffle_seed)
+        print(f"--shuffle-targets: permuted {flux_df.shape[1]} flux/reversibility samples "
+              f"relative to labeling (seed={_shuffle_seed}) -- null-model control")
+
     if args.max_samples is not None and args.max_samples < labeling_df.shape[1]:
         rng = np.random.default_rng(args.seed)
         idx = rng.permutation(labeling_df.shape[1])[:args.max_samples]
@@ -841,6 +878,12 @@ def build_parser():
     parser.add_argument("--seed", type=int, default=None, help="Override config seed")
     parser.add_argument("--ensemble-size", type=int, default=None,
                         help="Number of models to train (override training.ensemble_size). >1 = ensemble.")
+    parser.add_argument("--shuffle-targets", action="store_true",
+                        help="Null-model control: permute flux/reversibility samples relative to "
+                             "labeling samples before training, seeded by --seed. Each target "
+                             "stays a real, internally consistent (flux, reversibility) pair -- "
+                             "S.v = 0 still holds -- it is just paired with the wrong MIDs. Any "
+                             "learned metabolite-to-flux attribution must come out flat under this.")
     return add_root_argument(parser)
 
 
@@ -859,6 +902,7 @@ def cli(argv=None):
     _prepared = os.path.join(output_dir, "model_prepared_for_mfa.json")
     _default  = resolve_path(cfg["model_file"], root)
 
+    _seed = cli.seed if cli.seed is not None else cfg.get("seed", 42)
     args = argparse.Namespace(
         data_dir               = output_dir,
         model_json             = _prepared if os.path.isfile(_prepared) else _default,
@@ -867,7 +911,7 @@ def cli(argv=None):
         split_file             = cli.split_file,
         basis_file             = cli.basis_file,
         device                 = cfg.get("device", "auto"),
-        seed                   = cli.seed if cli.seed is not None else cfg.get("seed", 42),
+        seed                   = _seed,
         max_samples            = t.get("max_samples"),
         epochs                 = t.get("epochs", 100),
         early_stopping_patience = t.get("early_stopping_patience"),
@@ -902,6 +946,13 @@ def cli(argv=None):
         gauge_orthonormal         = t.get("gauge_orthonormal", False),
         gauge_center              = t.get("gauge_center", "chebyshev"),
         gauge_whiten              = t.get("gauge_whiten", False),
+        shuffle_targets           = cli.shuffle_targets,
+        # Fixed here, NOT re-read as args.seed inside main(): the ensemble loop below
+        # sets member.seed = base_seed + i per member, and a null ensemble's whole point
+        # is that every member trains on the identical broken pairing. Using the
+        # per-member seed would give each one its own unrelated shuffle instead, and
+        # cross-seed agreement would test nothing.
+        shuffle_seed              = _seed,
         # Feature selection (from features: config section)
         token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
