@@ -40,6 +40,7 @@ L-Isoleucine,ile__L
 L-Kynurenine,Lkynr_c
 L-Leucine,leu__L_c
 L-Lysine,lys__L_c
+L-Malic acid,mal__L
 L-Methionine,met__L_c
 L-Phenylalanine,phe__L_c
 L-Proline,pro__L
@@ -51,8 +52,10 @@ L-Valine,val__L
 Mannose 6-phosphate,man6p_c
 Ornithine,orn
 Orotic acid,orot_c
+Oxoglutaric acid,akg
 Phosphoenolpyruvic acid,pep_c
 Pyruvic acid,pyr
+Sedoheptulose 7-phosphate,s7p_c
 Shikimic acid,skm_c
 Succinic acid,succ
 Trehalose,tre_c

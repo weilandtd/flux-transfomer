@@ -22,6 +22,7 @@ IPPM,3c3hmp_c
 Ile,ile__L
 Leu,leu__L_c
 Lys,lys__L_c
+Mal,mal__L
 Met,met__L_c
 OROT,orot_c
 Orn,orn
@@ -31,9 +32,11 @@ Phe,phe__L_c
 Pro,pro__L
 Pyr,pyr
 R5P,r5p_c
+S7P,s7p_c
 Ser,ser__L
 Suc,succ
 Thr,thr__L
 Trp,trp__L_c
 Tyr,tyr__L_c
 Val,val__L
+aKG,akg

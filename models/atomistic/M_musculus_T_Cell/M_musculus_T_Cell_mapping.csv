@@ -28,6 +28,7 @@ L-Isoleucine,ile__L_c
 L-Lactic acid,lac__L
 L-Leucine,leu__L_c
 L-Lysine,lys__L_c
+L-Malic acid,mal__L
 L-Methionine,met__L_c
 L-Phenylalanine,phe__L_c
 L-Proline,pro__L
@@ -38,8 +39,10 @@ L-Tyrosine,tyr__L_c
 L-Valine,val__L_c
 Ornithine,orn
 Orotic acid,orot_c
+Oxoglutaric acid,akg
 Phosphoenolpyruvic acid,pep_c
 Pyruvic acid,pyr
+Sedoheptulose 7-phosphate,s7p_c
 Succinic acid,succ_m
 cis-Aconitic acid,acon_C_m
 dCDP,dcdp_c
