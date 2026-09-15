@@ -50,15 +50,14 @@ sampling:
   # Convention (after standardization): met_e →  i.e. positive flux = secretion,
   # negative flux = uptake.
   media:
-    # Carbon source — wider interval than IO (-12) to cover Crabtree range
-    EX_glc__D_e: {lb: -20.0, ub: -1.0}
+    EX_glc__D_e: {lb: -12.0, ub: -0.1}
     # Electron acceptor
     EX_o2_e:     {lb: -100.0, ub: 0.0}
     # Carbon secretion products
     EX_co2_e:    {lb: 0.0,  ub: 100.0}
-    EX_etoh_e:   {lb: 0.0,  ub: 100.0}
-    EX_ac_e:     {lb: 0.0,  ub: 100.0}
-    EX_glyc_e:   {lb: 0.0,  ub: 100.0}
+    EX_etoh_e:   {lb: 0.0,  ub: 15.0}
+    EX_ac_e:     {lb: 0.0,  ub: 5.0}
+    EX_glyc_e:   {lb: 0.0,  ub: 5.0}
     # Essential macronutrients
     EX_nh4_e:    {lb: -100.0, ub: 0.0}
     EX_pi_e:     {lb: -100.0, ub: 0.0}
