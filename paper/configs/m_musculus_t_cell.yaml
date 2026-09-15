@@ -76,39 +76,34 @@ sampling:
   #   glucose  T cells lack glucose-6-phosphatase, so there is no route to release it
   #   O2       consumed only
   media:
-    # Strictly consumed
-    EX_glc__D_e: {lb: -300.0, ub: 0.0}
-    EX_o2_e:     {lb: -250.0, ub: 0.0}
-    # Overflow metabolism — activated cells secrete lactate, naive cells consume it
-    EX_lac__L_e: {lb: -100.0, ub: 600.0}
+    EX_glc__D_e: {lb: -260.0, ub: 0.0}
+    EX_o2_e:     {lb: -160.0, ub: 0.0}
+    EX_lac__L_e: {lb: -10.0,  ub: 460.0}
     EX_co2_e:    {lb: -50.0,  ub: 250.0}
     EX_urea_e:   {lb: -10.0,  ub: 80.0}
-    # Water, proton, phosphate — freely exchangeable
     EX_h2o_e:    {lb: -300.0, ub: 300.0}
     EX_h_e:      {lb: -400.0, ub: 400.0}
     EX_pi_e:     {lb: -20.0,  ub: 20.0}
-    # Amino acids — all bidirectional. Glutamine is the second carbon source and is
-    # consumed heavily, but nothing here forbids the reverse.
-    EX_gln__L_e: {lb: -120.0, ub: 20.0}
-    EX_ala__L_e: {lb: -20.0,  ub: 20.0}
-    EX_arg__L_e: {lb: -20.0,  ub: 20.0}
+    EX_gln__L_e: {lb: -70.0,  ub: 0.0}
+    EX_ala__L_e: {lb: -5.0,   ub: 1.0}
+    EX_arg__L_e: {lb: -3.0,   ub: 0.0}
     EX_asn__L_e: {lb: -20.0,  ub: 20.0}
-    EX_asp__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asp__L_e: {lb: -1.0,   ub: 1.0}
     EX_cys__L_e: {lb: -20.0,  ub: 20.0}
-    EX_glu__L_e: {lb: -20.0,  ub: 20.0}
-    EX_gly_e:    {lb: -20.0,  ub: 20.0}
+    EX_glu__L_e: {lb: 0.0,    ub: 4.0}
+    EX_gly_e:    {lb: -1.0,   ub: 1.0}
     EX_his__L_e: {lb: -20.0,  ub: 20.0}
-    EX_ile__L_e: {lb: -20.0,  ub: 20.0}
-    EX_leu__L_e: {lb: -20.0,  ub: 20.0}
-    EX_lys__L_e: {lb: -20.0,  ub: 20.0}
-    EX_met__L_e: {lb: -20.0,  ub: 20.0}
-    EX_phe__L_e: {lb: -20.0,  ub: 20.0}
-    EX_pro__L_e: {lb: -20.0,  ub: 20.0}
-    EX_ser__L_e: {lb: -20.0,  ub: 20.0}
-    EX_thr__L_e: {lb: -20.0,  ub: 20.0}
+    EX_ile__L_e: {lb: -5.0,   ub: 0.0}
+    EX_leu__L_e: {lb: -8.0,   ub: 0.0}
+    EX_lys__L_e: {lb: -7.0,   ub: 0.0}
+    EX_met__L_e: {lb: -3.0,   ub: 0.0}
+    EX_phe__L_e: {lb: -3.0,   ub: 0.0}
+    EX_pro__L_e: {lb: -3.0,   ub: 0.0}
+    EX_ser__L_e: {lb: -10.0,  ub: 0.0}
+    EX_thr__L_e: {lb: -5.0,   ub: 0.0}
     EX_trp__L_e: {lb: -20.0,  ub: 20.0}
     EX_tyr__L_e: {lb: -20.0,  ub: 20.0}
-    EX_val__L_e: {lb: -20.0,  ub: 20.0}
+    EX_val__L_e: {lb: -5.0,   ub: 0.0}
 
   # Plasma-membrane transporters the GEM writes one-way, which its own published fit
   # then violates: each of these carries flux in opposite directions in the two
