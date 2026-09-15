@@ -170,6 +170,8 @@ E_COLI_CORE_NAMES: dict[str, str] = {
     "LLDAP": "Diaminopimelic acid",
     "NADH": "NADH",
     "NADPH": "NADPH",
+    "Mal": "L-Malic acid",
+    "S7P": "Sedoheptulose 7-phosphate",
 }
 
 _COMPARTMENT_SUFFIX = re.compile(r'_[a-z]$')
