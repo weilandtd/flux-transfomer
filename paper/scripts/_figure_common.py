@@ -36,13 +36,13 @@ from sigmaflux.ai.data import load_data  # noqa: E402
 # `run` is relative to the repo root.
 MODELS = [
     dict(key="e_coli_core", label="E. coli core",
-         run="paper/.results/e_coli_core_20260831"),
+         run="paper/.results/e_coli_core_malatefix_20260914"),
     dict(key="s_cerevisiae", label="S. cerevisiae",
-         run="paper/.results/s_cerevisiae_20260831"),
+         run="paper/.results/s_cerevisiae_malatefix_20260914"),
     dict(key="i_orientalis", label="I. orientalis",
-         run="paper/.results/i_orientalis_20260831"),
+         run="paper/.results/i_orientalis_malatefix_20260914"),
     dict(key="m_musculus_t_cell", label="M. musculus T cell",
-         run="paper/.results/m_musculus_t_cell_20260831"),
+         run="paper/.results/m_musculus_t_cell_malatefix_20260914"),
 ]
 MODELS_BY_KEY = {m["key"]: m for m in MODELS}
 
