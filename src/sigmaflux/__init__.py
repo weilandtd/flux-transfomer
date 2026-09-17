@@ -14,7 +14,7 @@ fix, ``LD_LIBRARY_PATH``, on every caller.
 
 import importlib
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 #: Public name -> module it lives in.
 _EXPORTS = {
