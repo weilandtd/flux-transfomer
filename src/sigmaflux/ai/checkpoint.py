@@ -100,6 +100,23 @@ def promote_norm_buffers(null_space_data, state_dict):
     return nsd
 
 
+def _with_flux_bounds(null_space_data, checkpoint):
+    """Ensure ``flux_bounds`` is reachable from *null_space_data*.
+
+    Training stores the bounds twice, at the checkpoint top level and inside
+    ``null_space_data``, but only the top-level copy is unconditional in older runs.
+    :class:`~sigmaflux.ai.flux_projection.FluxProjection` is built from
+    ``null_space_data`` alone, so the fallback is what lets a projection model be rebuilt
+    against a checkpoint written before the second copy existed.
+    """
+    if null_space_data.get("flux_bounds") is not None:
+        return null_space_data
+    bounds = checkpoint.get("flux_bounds")
+    if bounds is None:
+        return null_space_data
+    return {**null_space_data, "flux_bounds": bounds}
+
+
 def _flux_norm_stats(checkpoint, state_dict):
     """Per-reaction flux normalization, from the checkpoint or else the weights.
 
@@ -304,7 +321,8 @@ def load_eval_context(
     return EvalContext(
         ckpt=ckpt,
         config=flux_decoder_config(cfg_dict),
-        null_space_data=promote_norm_buffers(ckpt["null_space_data"], state_dict),
+        null_space_data=_with_flux_bounds(
+            promote_norm_buffers(ckpt["null_space_data"], state_dict), ckpt),
         flux_names=flux_names,
         reversibility_names=list(ckpt.get("reversibility_names", flux_names)),
         sample_indices=sample_indices,
