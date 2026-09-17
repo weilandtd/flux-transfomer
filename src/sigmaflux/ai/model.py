@@ -70,8 +70,7 @@ class FluxDecoderConfig:
     d_tracer:    int   = 0
     n_fluxes:    int   = 0
     n_rev:       int   = 0
-    n_free:      int   = 0     # head width for the flux latent; the gauge adds one
-    gauge_radial: str  = ''    # '' = affine v = y @ Z.T + offset; 'sigmoid' | 'mobius'
+    n_free:      int   = 0     # head width for the flux latent
     d_reaction:  int   = 0     # frozen reaction radial embedding dim; 0 = no flux tokens
     d_type:      int   = 0     # frozen token-type radial embedding dim (= 2 * h_type)
 
@@ -251,22 +250,6 @@ class FluxDecoder(nn.Module):
             _offset = torch.tensor(_offset, dtype=torch.float32)
         self.register_buffer('flux_offset', _offset)
 
-        # Feasible-by-construction latent. The affine map above satisfies S v = 0 but
-        # not the reaction bounds, and every downstream repair of an infeasible state
-        # trades accuracy for feasibility. When a radial law is configured the head's
-        # output is mapped through the polytope's gauge instead, and no repair is needed.
-        self.box = None
-        if cfg.gauge_radial:
-            from .box_nullspace import BoxNullspace
-            self.box = BoxNullspace(
-                Z_full.detach().cpu().numpy().astype('float64'),
-                null_space_data['gauge_x_p'],
-                null_space_data['flux_bounds']['lb'],
-                null_space_data['flux_bounds']['ub'],
-                radial=cfg.gauge_radial,
-                tau=null_space_data.get('gauge_tau', 0.0),
-            )
-
         # Basis-space normalization statistics (y_mean/y_std from training data)
         # Used to denormalize logits from N(0,1) to actual y-space in forward()
         _y_mean = null_space_data.get('y_mean')
@@ -429,18 +412,12 @@ class FluxDecoder(nn.Module):
 
         n_free = self.cfg.n_free
         x_l_raw = logits[:, :n_free]
-        if self.box is not None:
-            # The gauge consumes the raw head output: z is unconstrained by design, so
-            # there is no y-space scale to denormalize into. flux_offset is already
-            # folded into the layer's interior point.
-            fluxes = self.box(x_l_raw)
+        # Denormalize from standard normal to original y-space scale/offset
+        if self.y_norm_mean is not None:
+            x_l = x_l_raw * self.y_norm_std + self.y_norm_mean
         else:
-            # Denormalize from standard normal to original y-space scale/offset
-            if self.y_norm_mean is not None:
-                x_l = x_l_raw * self.y_norm_std + self.y_norm_mean
-            else:
-                x_l = x_l_raw
-            fluxes = x_l @ self.Z_full.T + self.flux_offset
+            x_l = x_l_raw
+        fluxes = x_l @ self.Z_full.T + self.flux_offset
 
         rev_raw = logits[:, n_free:]
         if self.rev_norm_mean is not None:

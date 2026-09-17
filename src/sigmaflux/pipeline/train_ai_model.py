@@ -494,25 +494,10 @@ def main(args):
               f"fixed, predicting {Z_full.shape[1]} of "
               f"{Z_full.shape[1] + Z_const.shape[1]}")
 
-    # Orthonormalising here rather than inside the gauge layer keeps one basis in play:
-    # Z_full is what the checkpoint stores and what the model, inference and export all
-    # rebuild from, so a layer-local copy would silently disagree with all of them.
-    # Targets go first, so each measured flux keeps a coordinate -- but only triangularly,
-    # since orthogonalising cannot preserve the identity row when two targets are nearly
-    # parallel (RNA_c and DNA_c sit at |G_ij| 0.9892). That trade is what this flag tests:
-    # it buys an isometric latent (6.4x direction anisotropy on E. coli core, ~74x on
-    # I. orientalis) at the cost of the clean one-coordinate-one-flux reading.
-    if getattr(args, 'gauge_orthonormal', False):
-        from sigmaflux.ai.box_nullspace import orthonormalize
-        _cond_before = np.linalg.cond(Z_full.T @ Z_full)
-        Z_full = orthonormalize(Z_full, n_targets)
-        print(f"Orthonormalised the basis: cond(Z'Z) {_cond_before:.3g} -> "
-              f"{np.linalg.cond(Z_full.T @ Z_full):.3g} "
-              f"({n_targets} target column(s) ordered first)")
-
     flux_names = flux_df.index.tolist()
 
-    # Built here rather than at checkpoint time: the gauge latent trains against them.
+    # Stored in the checkpoint so the predictor can clamp its reconstruction into the
+    # box; the affine map gives S v = 0 but nothing keeps a state inside the bounds.
     #
     # The predictor's copy of the bounds reopens the pool mixing legs, which the shared
     # prepared model leaves at [0, 1] so the MFA fit keeps a simplex-sized search box.
@@ -537,29 +522,8 @@ def main(args):
         "ub": np.array([_bounds[n][1] for n in flux_names], dtype=np.float64),
     }
 
-    # A gauge latent maps an unconstrained head straight into the polytope, so the head
-    # emits z rather than basis coordinates and the sigmoid law needs one extra output for
-    # its radial coordinate. It runs *before* the basis statistics below because whitening
-    # replaces the basis: y_mean/y_std, Z_proj and the basis-space loss all have to be
-    # computed on the same matrix the decoder reconstructs with, or the loss projects
-    # through one basis while the model predicts through another.
-    config.gauge_radial = args.gauge_radial
-    gauge_x_p = None
-    if args.gauge_radial:
-        from sigmaflux.ai.box_nullspace import prepare_box_nullspace
-        _box = prepare_box_nullspace(
-            Z_full, stoichiometric_matrix, flux_bounds['lb'], flux_bounds['ub'],
-            offset=flux_offset, radial=args.gauge_radial, tau=args.gauge_tau,
-            n_targets=n_targets, center=args.gauge_center, whiten=args.gauge_whiten,
-            samples=_V_all,
-        )
-        Z_full = _box.N.numpy()
-        gauge_x_p = _box.x_p.numpy()
-
     n_free_basis = Z_full.shape[1]
-    # A gauge head emits z, not basis coordinates, and the sigmoid law spends one extra
-    # output on its radial coordinate -- so the head width is the layer's, not the basis'.
-    config.n_free = _box.latent_dim if args.gauge_radial else n_free_basis
+    config.n_free = n_free_basis
 
     print(f"Full null-space basis dimension: {n_free_basis} "
           f"(head width {config.n_free})")
@@ -642,9 +606,7 @@ def main(args):
         rev_log_mean     = rev_log_mean_np,      # per-reaction log1p mean for rev denormalization
         rev_log_std      = rev_log_std_np,       # per-reaction log1p std for rev denormalization
     )
-    if args.gauge_radial:
-        null_space_data.update(gauge_x_p=gauge_x_p, gauge_tau=args.gauge_tau,
-                               flux_bounds=flux_bounds)
+    null_space_data.update(flux_bounds=flux_bounds)
 
     # Per-reaction flux normalization — computed from full dataset (all samples)
     flux_norm = FluxNorm(flux_df.values)  # (n_reactions, n_samples)
@@ -828,13 +790,8 @@ def main(args):
             "y_std":             y_std,
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
-            # A gauge model cannot be rebuilt without its interior point and the bounds
-            # the polytope is defined by -- the layer is reconstructed at load time, not
-            # carried in the state dict.
-            **({"gauge_x_p":     null_space_data["gauge_x_p"],
-                "gauge_tau":     null_space_data["gauge_tau"],
-                "flux_bounds":   null_space_data["flux_bounds"]}
-               if args.gauge_radial else {}),
+            # The predictor clamps into these, so they travel with the checkpoint.
+            "flux_bounds":       null_space_data["flux_bounds"],
         },
         "token_information":      token_information.numpy() if token_information is not None else None,
         "token_selection_method": args.token_selection_method,
@@ -941,11 +898,6 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
-        gauge_radial              = t.get("gauge_radial", ""),
-        gauge_tau                 = t.get("gauge_tau", 0.0),
-        gauge_orthonormal         = t.get("gauge_orthonormal", False),
-        gauge_center              = t.get("gauge_center", "chebyshev"),
-        gauge_whiten              = t.get("gauge_whiten", False),
         shuffle_targets           = cli.shuffle_targets,
         # Fixed here, NOT re-read as args.seed inside main(): the ensemble loop below
         # sets member.seed = base_seed + i per member, and a null ensemble's whole point
