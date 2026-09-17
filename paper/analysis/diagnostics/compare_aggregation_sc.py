@@ -42,7 +42,7 @@ from _figure_common import (  # noqa: E402
 )
 from plot_experimental_predictions import _r2_linear  # noqa: E402
 
-RUN_DIR = _REPO_ROOT / "paper/.results/s_cerevisiae_sentinelfix_20260912"
+RUN_DIR = _REPO_ROOT / "paper/.results/s_cerevisiae_20260917"
 CONFIG = _REPO_ROOT / "paper/configs/s_cerevisiae.yaml"
 DATA_DIR = _REPO_ROOT / "data/S_cervesiae"
 HOWS = ["mean", "median", "medoid", "medoid_convex"]
