@@ -4,6 +4,7 @@ AI module for metabolic flux prediction from labeling data.
 
 # Model
 from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
+from .flux_projection import FluxProjection, active_set_sizes
 
 # Training
 from .train import (
@@ -70,6 +71,8 @@ __all__ = [
     'CrossAttention',
     'FluxDecoderConfig',
     'FluxDecoder',
+    'FluxProjection',
+    'active_set_sizes',
     # Training
     'train_model',
     'evaluate_validation_correlations',
