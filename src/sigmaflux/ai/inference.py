@@ -71,6 +71,14 @@ def bounds_from_model_json(model_json, flux_names):
     return bounds_from_cobra(load_json_model(model_json), flux_names, source=model_json)
 
 
+#: Moves the inference-time box repair is allowed. Sized by measurement, not taste: on
+#: S. cerevisiae the exact projection of a trained affine model's validation predictions
+#: needs at most 290 moves (p90 17, median 4), and 512 leaves headroom while reaching 0%
+#: of states outside at 9.9e-16 residual. 0 restores the old clip-and-reproject repair.
+#: This is affordable only because it runs once per prediction, not per training step.
+_REPAIR_DEPTH = 512
+
+
 @dataclass
 class ModelSpec:
     """Everything a predictor needs except the trained weights — config-free,
@@ -246,31 +254,6 @@ class ModelSpec:
         internal = {t: t for t in self.vocabs.get('tracer_vocab', [])}
         return {**internal, **self.tracer_display_names}
 
-    def _gauge_null_space_data(self):
-        """``null_space_data``, with what a gauge layer needs filled in.
-
-        The bounds live at the top level of a checkpoint, not inside ``null_space_data``,
-        and ``gauge_x_p`` is absent from anything trained before it was persisted. Both
-        are recoverable: the interior point is the Chebyshev centre of the polytope the
-        basis already defines, so it is derived rather than stored, exactly as
-        ``flux_offset`` defaults to zeros for checkpoints that predate it.
-        """
-        nsd = self.null_space_data
-        if not self.model_config.get('gauge_radial'):
-            return nsd
-        nsd = dict(nsd)
-        nsd.setdefault('flux_bounds', self.flux_bounds)
-        nsd.setdefault('gauge_tau', 0.0)
-        if nsd.get('gauge_x_p') is None:
-            from .box_nullspace import chebyshev_center
-            Z = np.asarray(nsd['Z_free'], dtype=np.float64)
-            offset = nsd.get('flux_offset')
-            offset = (np.zeros(Z.shape[0]) if offset is None
-                      else np.asarray(offset, dtype=np.float64))
-            nsd['gauge_x_p'], _ = chebyshev_center(
-                Z, np.asarray(nsd['flux_bounds']['lb'], dtype=np.float64),
-                np.asarray(nsd['flux_bounds']['ub'], dtype=np.float64), offset=offset)
-        return nsd
 
     def build_decoder(self, state_dict, *, device=None, strict=True):
         """Rebuild a :class:`FluxDecoder` and load *state_dict* into it. Frozen
@@ -297,7 +280,7 @@ class ModelSpec:
             tracer_emb_table=self.tracer_combo_emb_table(),
             reaction_emb_table=radial_embedding_table(n_reactions, self.h_reaction),
             type_emb_table=radial_embedding_table(2, self.h_type),
-            null_space_data=self._gauge_null_space_data(),
+            null_space_data=self.null_space_data,
             flux_norm_stats=self.flux_norm_stats,
         )
         model.load_state_dict(state_dict, strict=strict)
@@ -312,7 +295,8 @@ class SigmaFlux:
     Usage: ``SigmaFlux(config_yaml, checkpoint_pt).predict(df_L, df_Vm)``
     """
 
-    def __init__(self, config, checkpoint, device=None, data_dir=None):
+    def __init__(self, config, checkpoint, device=None, data_dir=None,
+                 repair_depth=None):
         """Load a predictor from a config YAML and a training checkpoint.
 
         Parameters
@@ -326,13 +310,16 @@ class SigmaFlux:
         data_dir
             Training data directory, used only for legacy checkpoints without
             a stored ``token_index``.
+        repair_depth
+            Moves allowed for the box repair; ``None`` uses :data:`_REPAIR_DEPTH`,
+            ``0`` restores the old clip-and-reproject operator.
         """
         with open(config) as f:
             self.cfg = yaml.safe_load(f)
         self.ckpt = torch.load(checkpoint, map_location='cpu', weights_only=False)
         spec = ModelSpec.from_checkpoint(self.ckpt, config=config, data_dir=data_dir)
         self._init_from_spec(spec, self.ckpt['model_state_dict'], device=device,
-                             strict=False)
+                             strict=False, repair_depth=repair_depth)
         # Only :meth:`mfa_context` needs these -- it has to locate the run's prepared
         # model, which the checkpoint itself does not carry.
         self._config_path, self._checkpoint, self._data_dir = config, checkpoint, data_dir
@@ -360,7 +347,8 @@ class SigmaFlux:
         self._init_from_spec(spec, state_dict, device=device, strict=strict)
         return self
 
-    def _init_from_spec(self, spec, state_dict, *, device=None, strict=True):
+    def _init_from_spec(self, spec, state_dict, *, device=None, strict=True,
+                        repair_depth=None):
         """Shared setup core for :meth:`__init__` and :meth:`from_spec`.
 
         Parameters
@@ -421,14 +409,12 @@ class SigmaFlux:
                 "or build the predictor with data_dir=<run directory> so the bounds can "
                 "be read from model_prepared_for_mfa.json."
             )
+        # The box repair runs here, on a trained model's output, and deliberately not
+        # inside the forward pass -- see FluxProjection's docstring for the measurement.
+        self._repair_depth = (_REPAIR_DEPTH if repair_depth is None else int(repair_depth))
+        self._flux_projection = None
         self._flux_lb = np.asarray(spec.flux_bounds['lb'], dtype=np.float64)
         self._flux_ub = np.asarray(spec.flux_bounds['ub'], dtype=np.float64)
-        # A model with a gauge latent emits feasible states already, so there is nothing
-        # to repair and no ray to cast -- the origin and its slack check below belong to
-        # the affine map only.
-        self._gauge = bool(self._cfg_dict.get('gauge_radial'))
-        if self._gauge:
-            return
         _Z_free = np.asarray(self._nsd['Z_free'], dtype=np.float64)
         # Projector onto range(Z_free), factored through the Gram matrix rather than
         # formed as an (n_fluxes, n_fluxes) dense matrix. targeted_ica's basis is not
@@ -624,11 +610,9 @@ class SigmaFlux:
         # Flux: already denormalized inside model.forward() via y_norm_mean/std
         # (basis coefficients → physical mmol/gDW/h via Z_full.T). The reconstruction
         # guarantees S v = 0 but not the reaction bounds, so every state is projected
-        # back inside them before it leaves the predictor -- unconditionally, since a
-        # prediction that is not a flux state is not a usable answer. A gauge latent has
-        # already done this in the forward pass, where it costs no accuracy.
-        if not self._gauge:
-            flux_arr = self._project_into_bounds(flux_arr)
+        # back inside them before it leaves the predictor -- a prediction that is not a
+        # flux state is not a usable answer.
+        flux_arr = self._project_into_bounds(flux_arr)
 
         # Reversibility: decode from z-scored log1p space → physical values.
         # model.forward() returns raw z-score logits when rev_norm_mean is set.
@@ -676,9 +660,38 @@ class SigmaFlux:
         Args:
             flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
         """
+        if self._repair_depth > 0:
+            return self._project_exactly(flux_arr)
         clipped = np.clip(flux_arr.astype(np.float64), self._flux_lb, self._flux_ub)
         r = clipped - self._null_offset
         return self._null_offset + (r @ self._null_basis) @ self._null_dual.T
+
+    def _project_exactly(self, flux_arr):
+        """Euclidean projection of the latent onto the box, so both constraints hold.
+
+        The clip-and-reproject operator this falls back to reaches neither constraint: it
+        restores ``S v = 0`` but leaves the state outside the box, and iterating it toward
+        feasibility makes predictions worse. Projecting the latent instead makes
+        ``S v = 0`` automatic, since the reconstruction never leaves ``range(Z_free)``, and
+        lets the box be satisfied exactly -- which is what the EMU forward pass needs, as
+        it returns non-MIDs on states outside the bounds.
+
+        Args:
+            flux_arr: predicted fluxes, shape (n_samples, n_fluxes), in flux_names order.
+        """
+        if self._flux_projection is None:
+            from .flux_projection import FluxProjection
+            self._flux_projection = FluxProjection(
+                self._null_basis,
+                self._flux_lb - self._null_offset,
+                self._flux_ub - self._null_offset,
+                depth=self._repair_depth,
+            )
+        v = flux_arr.astype(np.float64)
+        y = (v - self._null_offset) @ self._null_dual
+        with torch.no_grad():
+            y = self._flux_projection(torch.from_numpy(y)).numpy()
+        return y @ self._null_basis.T + self._null_offset
 
     def _report_coverage(self, wide):
         """Print how much of the trained token set the experiment actually measured.
