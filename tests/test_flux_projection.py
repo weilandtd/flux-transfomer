@@ -270,6 +270,40 @@ def test_feasibility_improves_with_depth_then_stops(problem):
     assert worst[-1] < TOL
 
 
+def test_min_slack_holds_fluxes_off_their_bounds(problem):
+    """An exactly-feasible state may sit *on* a bound; min_slack keeps it clear.
+
+    Roughly half these reactions have a lower bound of 0, so sitting on it means zero flux,
+    which degenerates the EMU forward pass. The inset is capped per reaction so it can never
+    empty a narrow box.
+    """
+    Z, lb, ub = problem
+    X = _outside(problem, n=64, scale=50.0, seed=14)
+    bare = _layer(problem)
+    held = _layer(problem, min_slack=1e-3)
+    with torch.no_grad():
+        vb = bare(X).numpy() @ Z.T
+        vh = held(X).numpy() @ Z.T
+    assert (vh - lb).min() >= 1e-3 - 1e-9, "min_slack did not hold the lower bounds off"
+    assert (ub - vh).min() >= 1e-3 - 1e-9, "min_slack did not hold the upper bounds off"
+    # and it is still feasible against the true bounds
+    assert (vh - ub).max() < 1e-9 and (lb - vh).max() < 1e-9
+    # the bare layer is the one allowed to touch a bound
+    assert np.minimum(vb - lb, ub - vb).min() <= np.minimum(vh - lb, ub - vh).min()
+
+
+def test_min_slack_cannot_empty_a_narrow_box(dense):
+    """A box narrower than 2*min_slack keeps a valid, if tiny, interval."""
+    Z, lb, ub = dense
+    narrow_ub = ub.copy()
+    narrow_ub[3] = lb[3] + 1e-9          # far narrower than the slack asked for
+    layer = FluxProjection(Z, lb, narrow_ub, depth=DEPTH, min_slack=1.0)
+    with torch.no_grad():
+        v = layer(_outside(dense, scale=10.0)).numpy() @ Z.T
+    assert np.isfinite(v).all()
+    assert (v[:, 3] >= lb[3] - 1e-9).all() and (v[:, 3] <= narrow_ub[3] + 1e-9).all()
+
+
 def test_violation_matches_numpy(problem):
     Z, lb, ub = problem
     layer = _layer(problem)

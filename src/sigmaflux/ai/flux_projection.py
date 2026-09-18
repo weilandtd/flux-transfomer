@@ -84,7 +84,8 @@ class FluxProjection(nn.Module):
     """
 
     def __init__(self, Z, lb, ub, depth=16, eps=1e-12, tol_rank=0.1,
-                 on_rank_deficient="restart", interior_ulps=_INTERIOR_ULPS):
+                 on_rank_deficient="restart", interior_ulps=_INTERIOR_ULPS,
+                 min_slack=0.0):
         """Build the half-space form of the polytope.
 
         Args:
@@ -107,6 +108,13 @@ class FluxProjection(nn.Module):
             on_rank_deficient: ``'restart'`` or ``'noop'``; see the module docstring.
             interior_ulps: interior margin per move, in units of the output dtype's eps.
                 0 lands exactly on the face.
+            min_slack: hold every reaction at least this far, in bound units, from both
+                of its bounds. An exactly-feasible state may sit *on* a bound, and for the
+                many reactions whose lower bound is 0 that means zero flux, which makes the
+                EMU forward pass degenerate. Capped per reaction so a narrow box cannot be
+                emptied. There is real room for this but not much: the largest uniform
+                inset the polytope admits is 1.6e-5 on I. orientalis and 2.4e-5 on
+                S. cerevisiae, against an EMU degeneracy threshold of 5e-7.
         """
         super().__init__()
         if on_rank_deficient not in _MODES:
@@ -134,11 +142,17 @@ class FluxProjection(nn.Module):
                 f"ub < lb at coordinate {i}: lb {lb[i]:.6g} > ub {ub[i]:.6g}, "
                 "so the polytope is empty.")
 
+        if min_slack > 0.0:
+            # Cap at just under half the interval so the inset can never empty a box.
+            room = np.minimum(min_slack, 0.49 * (ub - lb))
+            lb, ub = lb + room, ub - room
+
         self.depth = int(depth)
         self.eps = float(eps)
         self.tol_rank = float(tol_rank)
         self.on_rank_deficient = on_rank_deficient
         self.interior_ulps = float(interior_ulps)
+        self.min_slack = float(min_slack)
         self.n, self.k = Z.shape
 
         # split_constant_directions() pins the reactions no training sample moves along and

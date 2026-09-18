@@ -78,6 +78,15 @@ def bounds_from_model_json(model_json, flux_names):
 #: This is affordable only because it runs once per prediction, not per training step.
 _REPAIR_DEPTH = 512
 
+#: Hold every repaired flux this far off its bounds. An exactly-feasible state may sit *on*
+#: a bound, and roughly half these reactions have a lower bound of 0, so "on it" means zero
+#: flux -- which degenerates the EMU forward pass below its 0.5e-6 row-sum threshold.
+#: Measured per member on I. orientalis: 1000/1000 validation states carried at least one
+#: sub-threshold flux without this, 0/1000 with it, at no cost in R2. The polytope admits a
+#: uniform inset of only ~1.6e-5 before it empties, and 1e-5 already costs R2 (0.93 -> 0.70),
+#: so this is deliberately near the bottom of the usable range.
+_REPAIR_MIN_SLACK = 1e-6
+
 
 @dataclass
 class ModelSpec:
@@ -686,6 +695,7 @@ class SigmaFlux:
                 self._flux_lb - self._null_offset,
                 self._flux_ub - self._null_offset,
                 depth=self._repair_depth,
+                min_slack=_REPAIR_MIN_SLACK,
             )
         v = flux_arr.astype(np.float64)
         y = (v - self._null_offset) @ self._null_dual
