@@ -362,7 +362,14 @@ def axis_floor(*series, decades=0.5, floor=FLUX_MIN_ABS):
     return max(floor, float(positive.min()) / 10.0 ** decades)
 
 
-def save_figure(fig, path):
-    fig.savefig(path, bbox_inches="tight")
+def save_figure(fig, path, extra_artists=()):
+    """Write the figure, trimmed to its content.
+
+    ``extra_artists`` are artists that sit outside the axes and are not the axes' own
+    legend -- a second legend added with ``add_artist`` is not seen by ``bbox_inches="tight"``
+    and gets cropped away silently, which looks exactly like never having drawn it.
+    """
+    fig.savefig(path, bbox_inches="tight",
+                bbox_extra_artists=tuple(extra_artists) or None)
     plt.close(fig)
     print(f"Saved: {path}")
