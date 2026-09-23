@@ -298,6 +298,11 @@ class ModelSpec:
         return model
 
 
+#: A simulated mass fraction may sit this far outside [0, 1] and still be rounding rather
+#: than a failed solve. The real failures overshoot by many orders of magnitude.
+MID_TOL = 1e-6
+
+
 class SigmaFlux:
     """Inference wrapper for a trained FluxDecoder model.
 
@@ -860,11 +865,11 @@ class SigmaFlux:
             return np.array([0.0 if i is None else float(row[i]) for i in take])
 
         values = np.empty((len(samples), len(labeling_index)), dtype=float)
-        failed = 0
+        failed = invalid = 0
         for i in range(len(samples)):
             try:
-                values[i] = forward_labeling(mfa_model, _align(flux_arr[i], take_flux),
-                                             _align(rev_arr[i], take_rev), labeling_to)
+                row = forward_labeling(mfa_model, _align(flux_arr[i], take_flux),
+                                       _align(rev_arr[i], take_rev), labeling_to)
             except Exception:
                 # A predicted state can be one whose EMU system is singular -- a subnet
                 # with near-zero row sums has no labeling to solve for. That state has no
@@ -872,9 +877,26 @@ class SigmaFlux:
                 # state in the call.
                 values[i] = np.nan
                 failed += 1
+                continue
+            # A mass fraction is in [0, 1] for any steady-state flux state with
+            # non-negative exchange, so a row outside it is a failed solve that did not
+            # raise -- an ill-conditioned subnet returning a number rather than an error.
+            # Measured on feasible, in-box states: fractions up to 4.5e10. Passing one on
+            # is worse than losing the state, because nothing downstream can tell it from
+            # a real fraction, and a single one sets a bootstrap percentile.
+            if (not np.all(np.isfinite(row)) or row.min() < -MID_TOL
+                    or row.max() > 1.0 + MID_TOL):
+                values[i] = np.nan
+                invalid += 1
+                continue
+            values[i] = row
         if failed:
             warnings.warn(f"{failed}/{len(samples)} predicted flux state(s) have no "
                           f"solvable labeling; their fractions are NaN")
+        if invalid:
+            warnings.warn(f"{invalid}/{len(samples)} predicted flux state(s) simulated a "
+                          f"fraction outside [0, 1]; the solve failed without raising and "
+                          f"their fractions are NaN")
         # Report the tracer under the name the caller supplied it as, not the internal
         # repr, so the result lines up with the df_L it was predicted from.
         display = {v: k for k, v in self._tracer_name_to_id.items()}
