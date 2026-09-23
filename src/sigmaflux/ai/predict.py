@@ -9,17 +9,14 @@ from tqdm import tqdm
 
 
 def predict_fluxes(model, data_loader, device='cuda', verbose=True):
-    """
-    Generate flux predictions from tokenized labeling data.
+    """Generate flux predictions from tokenized labeling data.
+    Returns a (num_samples, flux_dim + reversibility_dim) tensor.
 
     Args:
-        model: Trained FluxDecoder model
-        data_loader: DataLoader yielding IDTokenizedDataset batches
-        device: Device to run on ('cuda' or 'cpu')
-        verbose: Whether to show progress bar
-
-    Returns:
-        predictions: (num_samples, flux_dim + reversibility_dim) tensor
+        model: trained FluxDecoder.
+        data_loader: yields ((compound_ids, label_ids, tracer_ids, fractions), targets) batches.
+        device: torch device to run inference on.
+        verbose: show a tqdm progress bar.
     """
     model.to(device)
     model.eval()
@@ -55,20 +52,17 @@ def predict_fluxes(model, data_loader, device='cuda', verbose=True):
 def create_ensemble(num_models, config, token_experiment_ids,
                     compound_emb_table=None, label_emb_table=None,
                     tracer_emb_table=None, null_space_data=None):
-    """
-    Create an ensemble of FluxDecoder models for uncertainty estimation.
+    """Create num_models FluxDecoder instances sharing the same config, embedding
+    tables, and null-space data. Returns a list of untrained models.
 
     Args:
-        num_models: Number of models in ensemble
-        config: FluxDecoderConfig
-        token_experiment_ids: (num_tokens,) int64 tensor
-        compound_emb_table: frozen compound embedding weights
-        label_emb_table: frozen label embedding weights
-        tracer_emb_table: frozen tracer embedding weights
-        null_space_data: dict with Z_free, fixed_idx, etc.
-
-    Returns:
-        models: list of FluxDecoder models
+        num_models: number of instances to create.
+        config: FluxDecoderConfig shared by every instance.
+        token_experiment_ids: per-token source-experiment index, -1 for bypass tokens.
+        compound_emb_table: frozen compound embedding table, shared across instances.
+        label_emb_table: frozen label embedding table, shared across instances.
+        tracer_emb_table: frozen tracer embedding table, shared across instances.
+        null_space_data: dict with Z_free, fixed_idx, and optional norm stats.
     """
     from .model import FluxDecoder
 
@@ -89,19 +83,15 @@ def create_ensemble(num_models, config, token_experiment_ids,
 
 
 def ensemble_predict(models, data_loader, device='cuda', verbose=True):
-    """
-    Generate predictions from an ensemble of models with uncertainty estimation.
+    """Run every model in the ensemble and return (mean_predictions, std_predictions,
+    all_predictions) — per-sample ensemble mean, std, and the full
+    (num_models, num_samples, flux_dim + reversibility_dim) stack.
 
     Args:
-        models: List of trained FluxDecoder models
-        data_loader: DataLoader with IDTokenizedDataset batches
-        device: Device to run on ('cuda' or 'cpu')
-        verbose: Whether to show progress
-
-    Returns:
-        mean_predictions: (num_samples, flux_dim + reversibility_dim) — ensemble mean
-        std_predictions:  (num_samples, flux_dim + reversibility_dim) — ensemble std
-        all_predictions:  (num_models, num_samples, flux_dim + reversibility_dim)
+        models: trained FluxDecoder instances.
+        data_loader: yields ((compound_ids, label_ids, tracer_ids, fractions), targets) batches.
+        device: torch device to run inference on.
+        verbose: show progress output.
     """
     all_model_predictions = []
 
@@ -124,23 +114,22 @@ def train_ensemble(models, train_loader, val_loader=None, num_epochs=100,
                   learning_rate=1e-3, device='cuda', loss_function=None,
                   gradient_clip=1.0, use_scheduler=True, verbose=True,
                   mask_prob=0.0, min_experiments=1):
-    """
-    Train an ensemble of FluxDecoder models independently.
+    """Train each model in the ensemble independently via :func:`train_model`.
+    Returns a list of training logs, one per model.
 
     Args:
-        models: List of FluxDecoder models
-        train_loader: DataLoader for training data
-        val_loader: Optional DataLoader for validation data
-        num_epochs: Number of training epochs
-        learning_rate: Learning rate for optimizer
-        device: Device to run training on
-        loss_function: Loss function to use (default: nn.MSELoss())
-        gradient_clip: Max norm for gradient clipping
-        use_scheduler: Whether to use learning rate scheduler
-        verbose: Whether to print training progress
-
-    Returns:
-        logs: List of training logs for each model
+        models: untrained FluxDecoder instances.
+        train_loader: training batches.
+        val_loader: validation batches, or None to skip validation.
+        num_epochs: epochs to train each model for.
+        learning_rate: Adam learning rate.
+        device: torch device to train on.
+        loss_function: callable, or dict with 'flux'/'reversibility' keys (None = MSELoss).
+        gradient_clip: max gradient norm (<=0 disables clipping).
+        use_scheduler: enable ReduceLROnPlateau.
+        verbose: print per-model progress.
+        mask_prob: passed through to :func:`train_model`.
+        min_experiments: passed through to :func:`train_model`.
     """
     from .train import train_model
 

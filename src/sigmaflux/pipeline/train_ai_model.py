@@ -34,31 +34,31 @@ from sigmaflux.ai.data import (
     prepare_id_dataset,
     radial_embedding_table,
 )
-from sigmaflux.ai.utils import compute_token_scores, load_fisher_token_scores
+from sigmaflux.ai.features import TOKEN_SELECTION_METHODS
+from sigmaflux.ai.utils import load_fisher_token_scores
 from sigmaflux.ai.diagnostics import diagnose_signal_bottleneck
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
 from sigmaflux.ai.train import (
-    BasisSpaceLoss, FluxNorm, reduce_compartment_tokens,
+    BasisSpaceLoss, FluxNorm,
     evaluate_validation_correlations, train_model, var_norm_mse_loss,
 )
 from sigmaflux.ai.utils import (
     compute_sparse_nullspace, compute_targeted_nullspace,
     compute_ica_nullspace, compute_targeted_ica_nullspace,
+    split_constant_directions,
 )
 
 
 def share_basis(Z_full, basis_file):
     """Return the null-space basis every ensemble member must use.
 
-    Writes *Z_full* to *basis_file* the first time and loads it thereafter, so a
-    whole ensemble shares one basis. This matters because an ICA basis is **not**
-    bit-reproducible: FastICA's fixed point depends on the sample covariance's
-    last bits, which change with the BLAS thread count, so members trained on
-    differently sized nodes otherwise land on different — equally valid —
-    rotations of the same subspace. Predicted fluxes are unaffected (they are
-    physical), but the members' basis coordinates are then incomparable.
+    Writes *Z_full* to *basis_file* the first time and loads it thereafter (ICA bases
+    aren't bit-reproducible across BLAS thread counts, so members must share one).
 
-    ``basis_file=None`` disables sharing and returns *Z_full* unchanged.
+    Args:
+        Z_full: null-space basis computed by this run.
+        basis_file: path to share the basis across ensemble members; None disables
+            sharing and returns Z_full unchanged.
     """
     if not basis_file:
         return Z_full
@@ -79,6 +79,13 @@ def share_basis(Z_full, basis_file):
 
 
 def split_indices(n_samples, val_fraction, seed):
+    """Return (train_indices, val_indices) from a shuffled split.
+
+    Args:
+        n_samples: total number of samples to split.
+        val_fraction: fraction of samples held out for validation.
+        seed: RNG seed for the shuffle.
+    """
     indices = np.arange(n_samples)
     rng = np.random.default_rng(seed)
     rng.shuffle(indices)
@@ -86,15 +93,41 @@ def split_indices(n_samples, val_fraction, seed):
     return indices[:split], indices[split:]
 
 
+def shuffle_targets(flux_df, reversibility_df, seed):
+    """Null-model control: permute (flux, reversibility) samples, independent of labeling.
+
+    ``flux_df`` and ``reversibility_df`` are permuted by the *same* draw, so each target
+    stays the real, internally consistent pair a sampled flux state and its reversibility
+    trace always are -- S.v = 0 is untouched. What breaks is only the association with a
+    labeling sample: metabolite M+i measurements are now paired with an unrelated flux
+    state, so a model trained on this pairing can carry no real metabolite-to-flux
+    attribution. If one still shows attribution structure on this data, that structure is
+    an artifact of the pipeline, not of the biology.
+
+    Args:
+        flux_df: (reactions, samples).
+        reversibility_df: (reactions, samples), same sample axis as flux_df.
+        seed: RNG seed, shared across an ensemble so every member sees one broken pairing.
+
+    Returns (flux_df, reversibility_df), permuted and with sample columns renumbered
+    0..n-1 to match what :func:`sigmaflux.ai.data.load_data` itself produces.
+    """
+    perm = np.random.default_rng(seed).permutation(flux_df.shape[1])
+    flux_df = flux_df.iloc[:, perm]
+    flux_df.columns = range(flux_df.shape[1])
+    reversibility_df = reversibility_df.iloc[:, perm]
+    reversibility_df.columns = range(reversibility_df.shape[1])
+    return flux_df, reversibility_df
+
+
 class MixedFluxLoss:
     """Combines basis-space and flux-space losses."""
 
     def __init__(self, basis_loss_fn, flux_loss_fn, flux_weight):
-        """
-        Args:
-            basis_loss_fn: loss function in basis space
-            flux_loss_fn:  loss function in flux space
-            flux_weight:   weight for flux-space loss (0-1); basis weight = (1 - flux_weight)
+        """Args:
+            basis_loss_fn: loss computed in null-space basis coordinates.
+            flux_loss_fn: loss computed in reconstructed flux space.
+            flux_weight: weight on flux_loss_fn, in [0, 1]; basis weight is 1 - flux_weight.
         """
         self.basis_loss_fn = basis_loss_fn
         self.flux_loss_fn = flux_loss_fn
@@ -110,19 +143,17 @@ class MixedFluxLoss:
 def build_loss_function(train_dataset, flux_dim, loss_name,
                         flux_loss_space='flux', Z_full=None, y_train=None, mixed_flux_weight=0.1,
                         variance_min_cutoff=0.1):
-    """
-    Build flux and reversibility loss functions.
+    """Build flux and reversibility loss functions.
 
     Args:
-        train_dataset:   training dataset (used to compute per-feature variance)
-        flux_dim:        number of flux targets
-        loss_name:       'mse' or 'variance' (variance-normalized MSE)
-        flux_loss_space: 'flux', 'basis', or 'mixed' — train in reconstructed flux, null-space, or combination
-        Z_full:          (n_fluxes, n_free) null-space basis; required when flux_loss_space in ['basis', 'mixed']
-        y_train:         (n_train, n_free) pre-projected basis targets; used to compute
-                         y-space variance when loss_name='variance' and flux_loss_space='basis'
-        mixed_flux_weight: weight for flux-space loss when flux_loss_space='mixed'
-        variance_min_cutoff: min variance clamp (default 0.1); prevents division by zero and extreme weighting
+        train_dataset: training dataset holding the target tensors.
+        flux_dim: number of flux outputs (targets beyond this are reversibilities).
+        loss_name: 'mse' or 'variance'-normalized MSE.
+        flux_loss_space: 'flux' (reconstructed), 'basis' (null-space), or 'mixed'.
+        Z_full: null-space basis; required when flux_loss_space is 'basis' or 'mixed'.
+        y_train: basis-space training targets, used for variance normalization.
+        mixed_flux_weight: flux-space weight when flux_loss_space is 'mixed'.
+        variance_min_cutoff: floor on per-output variance used for normalization.
     """
     targets = train_dataset.targets
 
@@ -159,26 +190,27 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
     return {'flux': flux_loss_fn, 'reversibility': rev_loss_fn}
 
 
-def _print_token_selection(token_information, labeling_df, fixed_idx, method,
-                           features_csv=None, n_original=None):
-    """Print a summary of the token scoring method and pool size."""
+def _print_token_selection(labeling_df, fixed_idx, method, features_csv, n_original=None):
+    """Print a summary of the token selection method and pool size.
+
+    Args:
+        labeling_df: labeling (MID) token table, used for the pool size.
+        fixed_idx: indices of the fixed (measured) flux tokens.
+        method: token selection method name ('fisher', 'fisher_fast', or 'all').
+        features_csv: pre-computed Fisher significance features file.
+        n_original: token count before any filtering, for reporting.
+    """
     n_fx  = len(fixed_idx) if fixed_idx else 0
     n_all = labeling_df.shape[0]
+    per_tracer = labeling_df.index.get_level_values('Tracer').value_counts()
 
-    if method == 'fisher' and features_csv:
-        method_label = f"Fisher/D-optimal (pre-computed: {features_csv})"
-        pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
-        if n_original is not None and n_original != n_all:
-            pool_str += f"  [filtered from {n_original}]"
-    elif token_information is not None:
-        method_label = method
-        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
-    else:
-        method_label = "all tokens (no scoring)"
-        pool_str = f"{n_fx} flux tokens + {n_all} labeling tokens (all used; dropout applied during training)"
+    pool_str = f"{n_fx} flux tokens + {n_all} selected labeling tokens (dropout applied during training)"
+    if n_original is not None and n_original != n_all:
+        pool_str += f"  [filtered from {n_original}]"
+    pool_str += "\n         " + ", ".join(f"{t}: {n}" for t, n in per_tracer.items())
 
     print(f"\n=== Token Selection ===")
-    print(f"Method:  {method_label}")
+    print(f"Method:  {method} (pre-computed: {features_csv})")
     print(f"Pool:    {pool_str}")
 
 
@@ -193,6 +225,16 @@ def main(args):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
     labeling_df, flux_df, reversibility_df = load_data(args.data_dir)
+
+    if getattr(args, "shuffle_targets", False):
+        # shuffle_seed, not args.seed: an ensemble member's args.seed is base_seed + i
+        # (see the ensemble loop in cli()), but every member of a null ensemble must see
+        # the same broken pairing, or cross-seed agreement tests nothing.
+        _shuffle_seed = getattr(args, "shuffle_seed", args.seed)
+        flux_df, reversibility_df = shuffle_targets(flux_df, reversibility_df, _shuffle_seed)
+        print(f"--shuffle-targets: permuted {flux_df.shape[1]} flux/reversibility samples "
+              f"relative to labeling (seed={_shuffle_seed}) -- null-model control")
+
     if args.max_samples is not None and args.max_samples < labeling_df.shape[1]:
         rng = np.random.default_rng(args.seed)
         idx = rng.permutation(labeling_df.shape[1])[:args.max_samples]
@@ -201,27 +243,14 @@ def main(args):
         reversibility_df = reversibility_df.iloc[:, idx]
         print(f"Randomly subsampled {args.max_samples} samples (seed={args.seed})")
 
-    if getattr(args, 'exclude_extracellular', False):
-        n_before = labeling_df.shape[0]
-        mask = ~labeling_df.index.get_level_values('Metabolite').str.endswith('_e')
-        labeling_df = labeling_df.loc[mask]
-        print(f"Excluded extracellular tokens: {n_before} → {labeling_df.shape[0]}")
-
-    if getattr(args, 'compartment_mix', False):
-        n_before = labeling_df.shape[0]
-        labeling_df = reduce_compartment_tokens(labeling_df, seed=args.seed)
-        print(f"Compartment mixing: reduced tokens {n_before} → {labeling_df.shape[0]}")
-
     n_tokens_all = labeling_df.shape[0]
-    if getattr(args, 'token_selection_method', 'pca') in ('fisher', 'fisher_fast'):
-        if not os.path.isfile(args.features_csv):
-            raise FileNotFoundError(
-                f"token_selection_method='{getattr(args, 'token_selection_method')}' requires "
-                f"features.csv at {args.features_csv}. Run sigmaflux-select-features first."
-            )
-        _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
-        labeling_df = labeling_df[_fisher_mask.numpy()]
-        print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
+    if not os.path.isfile(args.features_csv):
+        raise FileNotFoundError(
+            f"features.csv not found at {args.features_csv}. Run sigmaflux-select-features first."
+        )
+    _, _fisher_mask = load_fisher_token_scores(args.features_csv, labeling_df)
+    labeling_df = labeling_df[_fisher_mask.numpy()]
+    print(f"Fisher selection: {n_tokens_all} → {labeling_df.shape[0]} labeling tokens")
 
     _, base_tracer_names = create_tracer_mapping(labeling_df)
 
@@ -309,13 +338,14 @@ def main(args):
     flux_dim          = flux_df.shape[0]
     reversibility_dim = reversibility_df.shape[0]
 
-    n_tracers           = len(base_tracer_names)
-    n_labeling_per_tracer = labeling_df.shape[0] // max(n_tracers, 1)
-    n_bypass            = len(args.measured_fluxes) if args.measured_fluxes else 0
+    # Per-tracer selection means the tracers no longer carry equal token counts, so this
+    # is counted rather than divided out.
+    per_tracer = labeling_df.index.get_level_values('Tracer').value_counts()
+    n_bypass   = len(args.measured_fluxes) if args.measured_fluxes else 0
     print(f"\n=== Input / Output Summary ===")
     print(f"Samples:       train={len(train_dataset):>6,}  val={len(val_dataset):>6,}")
     print(f"Input tokens:  labeling={labeling_df.shape[0]:>5,}"
-          f"  ({n_labeling_per_tracer} per tracer × {n_tracers} tracers)"
+          f"  ({', '.join(f'{t}: {n}' for t, n in per_tracer.items())})"
           f"  bypass_flux={n_bypass}")
     print(f"Targets:       flux={flux_dim}  reversibility={reversibility_dim}")
     print()
@@ -361,6 +391,9 @@ def main(args):
     free_idx  = [i for i in range(flux_dim) if i not in set(fixed_flux_indices or [])]
     fixed_idx = fixed_flux_indices or []
 
+    # Leading columns of a targeted basis are the identity block, one per measured
+    # reaction; split_constant_directions must not rotate them away.
+    n_targets = 0
     use_targeted = (
         args.null_space_type == 'targeted'
         and args.measured_fluxes
@@ -373,13 +406,23 @@ def main(args):
             target_reactions=args.measured_fluxes,
         )
         if not basis_status['separable']:
-            print(f"WARNING: targeted basis failed ({basis_status['fallback_reason']}); "
-                  f"falling back to Varimax basis")
-            Z_full = compute_sparse_nullspace(stoichiometric_matrix)
+            # No silent substitution. Swapping in a Varimax basis leaves the measured
+            # fluxes without a dedicated coordinate while the run still calls itself
+            # 'targeted', which is how the T cell trained for months against a basis
+            # nobody asked for. Redundant targets are now dropped individually, so
+            # reaching here means something the caller has to decide about.
+            raise RuntimeError(
+                f"targeted basis could not be built: {basis_status['fallback_reason']}. "
+                f"Choose a different null_space_type explicitly, or fix measured_fluxes."
+            )
         else:
-            n_t = len(args.measured_fluxes)
+            n_t = n_targets = len(basis_status['targets_kept'])
             print(f"Targeted basis: {n_t} measured reaction DOF(s) at cols 0–{n_t - 1}, "
                   f"cond(S_D)={basis_status['cond_SD']:.2e}")
+            if basis_status['targets_dropped']:
+                print(f"  {len(basis_status['targets_dropped'])} redundant target(s) share a "
+                      f"DOF with a more connected one: "
+                      f"{', '.join(basis_status['targets_dropped'])}")
     elif args.null_space_type == 'ica_informed':
         flux_matrix = flux_df.values.T   # (n_samples, n_reactions)
         Z_full, basis_status = compute_ica_nullspace(
@@ -391,25 +434,22 @@ def main(args):
         rxn_names = list(flux_df.index)
         flux_matrix = flux_df.values.T
         if not args.measured_fluxes:
-            print("WARNING: targeted_ica with no measured_fluxes; using ica_informed")
-            Z_full, basis_status = compute_ica_nullspace(
-                stoichiometric_matrix, flux_matrix, **args.ica_nullspace_params
+            # targeted_ica without targets is a contradiction, not a default to paper over.
+            raise ValueError(
+                "null_space_type 'targeted_ica' needs training.measured_fluxes. "
+                "Set null_space_type: ica_informed if that is what you meant."
             )
-            if basis_status['fallback']:
-                print(f"ICA-informed basis: FastICA failed; fell back to Varimax (d={Z_full.shape[1]})")
-        else:
-            Z_full, basis_status = compute_targeted_ica_nullspace(
-                stoichiometric_matrix, flux_matrix,
-                reaction_names=rxn_names,
-                target_reactions=args.measured_fluxes,
-                **args.ica_nullspace_params,
-            )
-            if not basis_status.get('fallback', False) and basis_status.get('separable', True):
-                n_t = len(args.measured_fluxes)
-                print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
-                      f"{basis_status['n_ica_free']} ICA free modes, "
-                      f"{basis_status['n_complement_free']} complement "
-                      f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
+        Z_full, basis_status = compute_targeted_ica_nullspace(
+            stoichiometric_matrix, flux_matrix,
+            reaction_names=rxn_names,
+            target_reactions=args.measured_fluxes,
+            **args.ica_nullspace_params,
+        )
+        n_t = n_targets = len(basis_status['targets_kept'])
+        print(f"Targeted-ICA basis: {n_t} identity DOF(s), "
+              f"{basis_status['n_ica_free']} ICA free modes, "
+              f"{basis_status['n_complement_free']} complement "
+              f"(free rank {basis_status['n_active_free']}/{Z_full.shape[1] - n_t})")
     elif args.null_space_type == 'boundary':
         from sigmaflux.ai.boundary_basis import compute_boundary_basis
         boundary_solver = getattr(args, 'boundary_solver', None)
@@ -440,9 +480,53 @@ def main(args):
     # members must share one basis, exactly as they share one train/val split.
     Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
 
-    n_free_basis = Z_full.shape[1]
+    # Directions no sample moves along -- a measurement pool's pinned drain, an
+    # FVA-fixed route -- still have to be representable for v = y @ Z.T to reconstruct a
+    # real flux vector, but there is nothing to predict along them. Left in, each one
+    # takes maximum loss weight (variance_min_cutoff) on a target that is identically
+    # zero once standardised, and inflates every basis-space metric.
+    _V_all = flux_df.loc[[r for r in flux_df.index]].to_numpy(np.float64).T
+    Z_full, Z_const, y_const = split_constant_directions(Z_full, _V_all,
+                                                        n_protected=n_targets)
+    flux_offset = (y_const @ Z_const.T).astype(np.float32)
+    if Z_const.shape[1]:
+        print(f"Constant basis directions (pinned reactions): {Z_const.shape[1]} held "
+              f"fixed, predicting {Z_full.shape[1]} of "
+              f"{Z_full.shape[1] + Z_const.shape[1]}")
 
-    print(f"Full null-space basis dimension: {n_free_basis}")
+    flux_names = flux_df.index.tolist()
+
+    # Stored in the checkpoint so the predictor can clamp its reconstruction into the
+    # box; the affine map gives S v = 0 but nothing keeps a state inside the bounds.
+    #
+    # The predictor's copy of the bounds reopens the pool mixing legs, which the shared
+    # prepared model leaves at [0, 1] so the MFA fit keeps a simplex-sized search box.
+    # Sampling drew the fractions with the drain pinned, so it is unaffected either way;
+    # what the legs must not do here is assert a ceiling of 1 on a block whose drain is
+    # already free to scale. On I. orientalis this frees 72 of the 144 facets that
+    # otherwise cap the polytope's inscribed radius.
+    from sigmaflux.pipeline.sample_flux import relax_measurement_pool_bounds
+    _reopened = relax_measurement_pool_bounds(cobra_model, legs=True)
+    if _reopened:
+        print(f"Reopened {len(_reopened)} measurement-pool reaction(s) for prediction; "
+              f"model_prepared_for_mfa.json keeps the legs at [0, 1]")
+    _bounds = {r.id: (r.lower_bound, r.upper_bound) for r in cobra_model.reactions}
+    _missing = [n for n in flux_names if n not in _bounds]
+    if _missing:
+        raise ValueError(
+            f"{len(_missing)} predicted reaction(s) are absent from the prepared model, "
+            f"so their bounds cannot be stored: {_missing[:5]}"
+        )
+    flux_bounds = {
+        "lb": np.array([_bounds[n][0] for n in flux_names], dtype=np.float64),
+        "ub": np.array([_bounds[n][1] for n in flux_names], dtype=np.float64),
+    }
+
+    n_free_basis = Z_full.shape[1]
+    config.n_free = n_free_basis
+
+    print(f"Full null-space basis dimension: {n_free_basis} "
+          f"(head width {config.n_free})")
 
     # Z_proj: recovers true null-space coordinates  y = v @ Z_proj  (v = y @ Z_full.T).
     # For orthonormal Z (Varimax fallback): G = I → Z_proj = Z_full (no change).
@@ -480,15 +564,7 @@ def main(args):
         corr_yl = cov_yl / y_std_c.unsqueeze(1) / L_std_c.unsqueeze(0)
         obs_weights = corr_yl.abs().max(dim=1).values                   # (38,) from labeling
 
-        token_sel_method = getattr(args, 'token_selection_method', 'pca')
-        if token_sel_method in ('fisher', 'fisher_fast'):
-            token_information = None  # selection already applied via labeling_df filter above
-        else:
-            token_information = compute_token_scores(
-                L_c, method=token_sel_method,
-                n_components=getattr(args, 'n_pca_components', 50),
-                y_c=y_c, y_std_c=y_std_c,
-            )
+        token_information = None  # selection already applied via labeling_df filter above
 
         # Extend observability to include measured fluxes — basis modes that are
         # directly constrained by known fluxes are observable even if labeling alone
@@ -520,6 +596,7 @@ def main(args):
     # in the latent space
     null_space_data = dict(
         Z_free           = Z_full,               # (n_fluxes, 38) — field name kept for compat
+        flux_offset      = flux_offset,          # constant null-space offset for pinned reactions
         free_idx         = free_idx,             # metadata: indices of non-measured reactions
         fixed_idx        = fixed_idx,            # metadata: indices of measured reactions
         obs_weights      = obs_weights_np,
@@ -529,8 +606,7 @@ def main(args):
         rev_log_mean     = rev_log_mean_np,      # per-reaction log1p mean for rev denormalization
         rev_log_std      = rev_log_std_np,       # per-reaction log1p std for rev denormalization
     )
-
-    config.n_free = n_free_basis
+    null_space_data.update(flux_bounds=flux_bounds)
 
     # Per-reaction flux normalization — computed from full dataset (all samples)
     flux_norm = FluxNorm(flux_df.values)  # (n_reactions, n_samples)
@@ -574,9 +650,9 @@ def main(args):
     )
 
     _print_token_selection(
-        token_information, labeling_df, fixed_idx,
-        method=getattr(args, 'token_selection_method', 'pca'),
-        features_csv=getattr(args, 'features_csv', None),
+        labeling_df, fixed_idx,
+        method=args.token_selection_method,
+        features_csv=args.features_csv,
         n_original=n_tokens_all,
     )
 
@@ -595,11 +671,9 @@ def main(args):
         token_information          = token_information,
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
-        measured_flux_loss_weight  = getattr(args, 'measured_flux_loss_weight', 0.0),
         early_stopping_patience    = getattr(args, 'early_stopping_patience', None),
     )
 
-    flux_names = flux_df.index.tolist()
     val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=flux_names)
 
     # === Diagnostic: Reaction Learning Asymmetry Analysis ===
@@ -697,10 +771,17 @@ def main(args):
         "log":                  log,
         "val_correlations":     val_correlations,
         "flux_names":           flux_names,
+        # The prepared model's own reaction bounds, aligned to flux_names. Inference
+        # projects every predicted flux state back inside them (see
+        # SigmaFlux._project_into_bounds); storing them here is what lets it do that
+        # without the COBRA model or a solver. Read off the prepared model as-is -- no
+        # FVA is re-run, these are the bounds sampling and training already saw.
+        "flux_bounds":          flux_bounds,
         "reversibility_names":  reversibility_df.index.tolist(),
         "measured_fluxes":      args.measured_fluxes,
         "null_space_data": {
             "Z_free":            Z_full,
+            "flux_offset":       flux_offset,
             "free_idx":          free_idx,
             "fixed_idx":         fixed_idx,
             "obs_weights":       obs_weights_np,
@@ -709,9 +790,11 @@ def main(args):
             "y_std":             y_std,
             "rev_log_mean":      rev_log_mean_np,
             "rev_log_std":       rev_log_std_np,
+            # The predictor clamps into these, so they travel with the checkpoint.
+            "flux_bounds":       null_space_data["flux_bounds"],
         },
         "token_information":      token_information.numpy() if token_information is not None else None,
-        "token_selection_method": getattr(args, 'token_selection_method', 'pca'),
+        "token_selection_method": args.token_selection_method,
         "h_reaction":           h_reaction,
         "h_type":               h_type,
         "flux_norm_stats":      flux_norm_stats,
@@ -752,6 +835,12 @@ def build_parser():
     parser.add_argument("--seed", type=int, default=None, help="Override config seed")
     parser.add_argument("--ensemble-size", type=int, default=None,
                         help="Number of models to train (override training.ensemble_size). >1 = ensemble.")
+    parser.add_argument("--shuffle-targets", action="store_true",
+                        help="Null-model control: permute flux/reversibility samples relative to "
+                             "labeling samples before training, seeded by --seed. Each target "
+                             "stays a real, internally consistent (flux, reversibility) pair -- "
+                             "S.v = 0 still holds -- it is just paired with the wrong MIDs. Any "
+                             "learned metabolite-to-flux attribution must come out flat under this.")
     return add_root_argument(parser)
 
 
@@ -770,6 +859,7 @@ def cli(argv=None):
     _prepared = os.path.join(output_dir, "model_prepared_for_mfa.json")
     _default  = resolve_path(cfg["model_file"], root)
 
+    _seed = cli.seed if cli.seed is not None else cfg.get("seed", 42)
     args = argparse.Namespace(
         data_dir               = output_dir,
         model_json             = _prepared if os.path.isfile(_prepared) else _default,
@@ -778,7 +868,7 @@ def cli(argv=None):
         split_file             = cli.split_file,
         basis_file             = cli.basis_file,
         device                 = cfg.get("device", "auto"),
-        seed                   = cli.seed if cli.seed is not None else cfg.get("seed", 42),
+        seed                   = _seed,
         max_samples            = t.get("max_samples"),
         epochs                 = t.get("epochs", 100),
         early_stopping_patience = t.get("early_stopping_patience"),
@@ -793,7 +883,7 @@ def cli(argv=None):
         num_transformer_layers = t.get("num_transformer_layers", 4),
         dropout                = t.get("dropout", 0.3),
         flux_token_dropout     = t.get("flux_token_dropout", 0.0),
-        labeling_token_dropout = f.get("token_dropout", 0.0),
+        labeling_token_dropout = t.get("labeling_token_dropout", 0.0),
         measured_fluxes        = measured_fluxes,
         null_space_type        = t.get("null_space_type", "targeted"),   # targeted | varimax | ica_informed | targeted_ica
         ica_nullspace_params   = t.get("ica_nullspace", {}),
@@ -808,14 +898,22 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
-        measured_flux_loss_weight = t.get("measured_flux_loss_weight", 0.0),
-        compartment_mix           = t.get("compartment_mix", False),
-        exclude_extracellular     = t.get("exclude_extracellular", False),
+        shuffle_targets           = cli.shuffle_targets,
+        # Fixed here, NOT re-read as args.seed inside main(): the ensemble loop below
+        # sets member.seed = base_seed + i per member, and a null ensemble's whole point
+        # is that every member trains on the identical broken pairing. Using the
+        # per-member seed would give each one its own unrelated shuffle instead, and
+        # cross-seed agreement would test nothing.
+        shuffle_seed              = _seed,
         # Feature selection (from features: config section)
-        token_selection_method = f.get("token_selection_method", "pca"),
-        n_pca_components       = f.get("n_pca_components", 50),
+        token_selection_method = f.get("token_selection_method", "fisher"),
         features_csv           = os.path.join(output_dir, f.get("output", "features.csv")),
     )
+    if args.token_selection_method not in TOKEN_SELECTION_METHODS:
+        raise ValueError(
+            f"features.token_selection_method must be one of {sorted(TOKEN_SELECTION_METHODS)}, "
+            f"got {args.token_selection_method!r}"
+        )
 
     # ── Ensemble: N models (distinct seeds) sharing ONE split and ONE basis ──
     # ensemble_size > 1 -> members saved to <data_dir>/ensemble/model_{i}.pt.

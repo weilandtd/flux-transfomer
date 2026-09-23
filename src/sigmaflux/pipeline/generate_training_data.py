@@ -44,6 +44,8 @@ from tqdm import tqdm
 from sigmaflux.core.data import MassIsotopomerData, create_data_index
 from sigmaflux.core.experiment import Experiment, Tracer
 from sigmaflux.core.model import MFAModel
+from sigmaflux.core.measurement_pools import (degenerate_pool_members,
+                                             pool_members)
 from sigmaflux.expansion.emu import EMU
 from sigmaflux.pipeline._paths import (
     add_root_argument,
@@ -54,13 +56,13 @@ from sigmaflux.pipeline._paths import (
 
 
 def validate_tracers(tracer_cfg, media_cfg):
-    """Check that every tracer metabolite has an open exchange reaction in the media.
+    """Check that every tracer has an open ``EX_<met_id>`` exchange reaction in the media.
 
-    The exchange reaction for metabolite ``met_id`` is expected to be named
-    ``EX_<met_id>``.  A reaction is considered open when at least one of its
-    bounds is non-zero (i.e. flux can flow through it).
+    Args:
+        tracer_cfg: tracer definitions, as in the organism config's ``labeling.tracers``.
+        media_cfg: media exchange-reaction bounds, as in the config's ``sampling.media``.
 
-    Raises ValueError listing all incompatible tracers.
+    Raises ValueError listing every incompatible tracer.
     """
     errors = []
     for t in tracer_cfg:
@@ -112,7 +114,14 @@ def build_experiments(mfa_model, tracer_cfg):
     ]
 
 
-def build_targets(mfa_model):
+def build_targets(mfa_model, restrict_to=None):
+    """EMU targets, one whole-molecule EMU per atom-mapped metabolite.
+
+    Args:
+        mfa_model: prepared MFAModel whose annotated metabolites become targets.
+        restrict_to: optional set of metabolite ids; when given, only these
+            become targets, so the expansion never walks past them.
+    """
     targets = set()
     measured_metabolites = []
     metabolite_atom_patterns = {}
@@ -120,6 +129,8 @@ def build_targets(mfa_model):
     for metabolite in mfa_model.metabolites:
         atom_pattern = metabolite.annotation.get("atom_pattern", "")
         if not atom_pattern:
+            continue
+        if restrict_to is not None and metabolite.id not in restrict_to:
             continue
         metabolite_atom_patterns[metabolite.id] = atom_pattern
         targets.add(EMU(metabolite, list(range(1, len(atom_pattern) + 1))))
@@ -236,6 +247,10 @@ def main(args):
     reversibility_data = []
     output_suffix = f"_{args.start_idx}_{end_idx}"
     skipped = 0
+    # Pool members whose MID a given flux state leaves undefined. Counted per member so
+    # a systematically unproducible compartment shows up as a number, not a shrug.
+    pool_member_ids = sorted({m for ms in pool_members(cobra_model).values() for m in ms})
+    degenerate_counts = {}
 
     for sample_ix in tqdm(range(len(flux_samples)), desc="Processing samples"):
         fluxes = flux_samples.iloc[sample_ix]
@@ -252,6 +267,22 @@ def main(args):
         labeling_vector = torch.take(labeling, labeling_to).cpu().detach().numpy()
         if labeling_vector.sum() == 0:
             raise ValueError("Predicted labeling is all zeros.")
+
+        # A measurement pool mixes its compartments' MIDs. If this flux state produces
+        # none of one compartment, that compartment's MID comes back zeroed rather than
+        # raising, and the pool silently mixes it in -- so the sample is dropped whole,
+        # as with any other degenerate flux configuration.
+        simulated = labeling.detach().cpu().numpy()
+        mid_of = {met_id: simulated[0, :len(pattern) + 1,
+                                    mfa_model._metabolite_hash[met_id]]
+                  for met_id, pattern in metabolite_atom_patterns.items()
+                  if met_id in pool_member_ids}
+        corrupting = degenerate_pool_members(cobra_model, mid_of)
+        for member in corrupting:
+            degenerate_counts[member] = degenerate_counts.get(member, 0) + 1
+        if corrupting:
+            skipped += 1
+            continue
 
         reversibilities = pd.Series(
             mfa_model.reversibility.cpu().detach().numpy(),
@@ -274,7 +305,15 @@ def main(args):
 
     print(f"\nCompleted processing samples {args.start_idx}:{end_idx}")
     if skipped:
-        print(f"Skipped {skipped} degenerate samples (inversion failure); {len(labeling_data)} samples written.")
+        print(f"Skipped {skipped} degenerate samples; {len(labeling_data)} samples written.")
+    if degenerate_counts:
+        total = len(flux_samples)
+        detail = ", ".join(f"{m} {n} ({n / total:.1%})"
+                           for m, n in sorted(degenerate_counts.items(),
+                                              key=lambda kv: -kv[1]))
+        print(f"Unproducible pool members, by sample count: {detail}")
+        print("  (samples were dropped only where this corrupts a pool that mixes "
+              "more than one compartment)")
     print(f"Output files saved to {args.output_dir}")
 
 

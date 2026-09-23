@@ -19,6 +19,9 @@ experiment:
   data_dir:       data/M_musculus_T_Cell
   reference_flux: Shen_et_al_flux_data_MM.xlsx
   gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
+  mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
+  n_bootstrap: 200
+  reference_signed: true
 
 # Reactions removed from the model after FVA (sampling and MFA use the uncoupled
 # subspace). FVA is still run with these reactions active so their bounds inform
@@ -31,7 +34,7 @@ sampling:
   n_samples: 10000   # final output written to flux_samples.csv
   thinning: 100
   processes: 8
-  method: optgp        # hopsy | optgp | achr
+  method: optgp       # hopsy | optgp | achr
   fva: true
   ko: false
 
@@ -43,7 +46,7 @@ sampling:
   # so coarse bins leave the naive end of each range thinly covered.
   stratified_sampling:
     enabled: true
-    n_subsamples: 500             # MCMC samples per (reaction, bin) stratum
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
     n_bins: 20                    # equal-width bins along each measured reaction's FVA range
     reactions: null               # null → training.measured_fluxes; or explicit list
 
@@ -73,39 +76,34 @@ sampling:
   #   glucose  T cells lack glucose-6-phosphatase, so there is no route to release it
   #   O2       consumed only
   media:
-    # Strictly consumed
-    EX_glc__D_e: {lb: -300.0, ub: 0.0}
-    EX_o2_e:     {lb: -250.0, ub: 0.0}
-    # Overflow metabolism — activated cells secrete lactate, naive cells consume it
-    EX_lac__L_e: {lb: -100.0, ub: 600.0}
+    EX_glc__D_e: {lb: -260.0, ub: 0.0}
+    EX_o2_e:     {lb: -160.0, ub: 0.0}
+    EX_lac__L_e: {lb: -10.0,  ub: 460.0}
     EX_co2_e:    {lb: -50.0,  ub: 250.0}
     EX_urea_e:   {lb: -10.0,  ub: 80.0}
-    # Water, proton, phosphate — freely exchangeable
     EX_h2o_e:    {lb: -300.0, ub: 300.0}
     EX_h_e:      {lb: -400.0, ub: 400.0}
     EX_pi_e:     {lb: -20.0,  ub: 20.0}
-    # Amino acids — all bidirectional. Glutamine is the second carbon source and is
-    # consumed heavily, but nothing here forbids the reverse.
-    EX_gln__L_e: {lb: -120.0, ub: 20.0}
-    EX_ala__L_e: {lb: -20.0,  ub: 20.0}
-    EX_arg__L_e: {lb: -20.0,  ub: 20.0}
+    EX_gln__L_e: {lb: -70.0,  ub: 0.0}
+    EX_ala__L_e: {lb: -5.0,   ub: 1.0}
+    EX_arg__L_e: {lb: -3.0,   ub: 0.0}
     EX_asn__L_e: {lb: -20.0,  ub: 20.0}
-    EX_asp__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asp__L_e: {lb: -1.0,   ub: 1.0}
     EX_cys__L_e: {lb: -20.0,  ub: 20.0}
-    EX_glu__L_e: {lb: -20.0,  ub: 20.0}
-    EX_gly_e:    {lb: -20.0,  ub: 20.0}
+    EX_glu__L_e: {lb: 0.0,    ub: 4.0}
+    EX_gly_e:    {lb: -1.0,   ub: 1.0}
     EX_his__L_e: {lb: -20.0,  ub: 20.0}
-    EX_ile__L_e: {lb: -20.0,  ub: 20.0}
-    EX_leu__L_e: {lb: -20.0,  ub: 20.0}
-    EX_lys__L_e: {lb: -20.0,  ub: 20.0}
-    EX_met__L_e: {lb: -20.0,  ub: 20.0}
-    EX_phe__L_e: {lb: -20.0,  ub: 20.0}
-    EX_pro__L_e: {lb: -20.0,  ub: 20.0}
-    EX_ser__L_e: {lb: -20.0,  ub: 20.0}
-    EX_thr__L_e: {lb: -20.0,  ub: 20.0}
+    EX_ile__L_e: {lb: -5.0,   ub: 0.0}
+    EX_leu__L_e: {lb: -8.0,   ub: 0.0}
+    EX_lys__L_e: {lb: -7.0,   ub: 0.0}
+    EX_met__L_e: {lb: -3.0,   ub: 0.0}
+    EX_phe__L_e: {lb: -3.0,   ub: 0.0}
+    EX_pro__L_e: {lb: -3.0,   ub: 0.0}
+    EX_ser__L_e: {lb: -10.0,  ub: 0.0}
+    EX_thr__L_e: {lb: -5.0,   ub: 0.0}
     EX_trp__L_e: {lb: -20.0,  ub: 20.0}
     EX_tyr__L_e: {lb: -20.0,  ub: 20.0}
-    EX_val__L_e: {lb: -20.0,  ub: 20.0}
+    EX_val__L_e: {lb: -5.0,   ub: 0.0}
 
   # Plasma-membrane transporters the GEM writes one-way, which its own published fit
   # then violates: each of these carries flux in opposite directions in the two
@@ -149,18 +147,9 @@ labeling:
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
-  restrict_to_mapped: true          # only consider metabolites in mapping_csv
-  token_selection_method: fisher    # pca | maxr | fisher | fisher_fast
-  token_dropout: 0.2                # per-token labeling dropout during training
-
-  # Fisher selection parameters — all values that determine which tokens are included:
-  noise_std: 0.01            # assumed labeling noise std (σ) for Fisher Gram weighting
-  gain_threshold: 0.01       # absolute minimum marginal gain to continue greedy selection (nats)
-  rel_gain_threshold: 0.01   # stop greedy when next gain < this fraction of the first gain
-  n_permutations: 10              # null-calibration permutations used to set significance floor
-  token_filter: selected          # significant | selected — which tokens are passed to training
-  include_reversibilities: true   # append log1p-z-scored reversibilities to θ for feature selection
-  budget: null                    # hard cap on token count (null = uncapped)
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true       # drop _e tokens (the LC/MS extract is intracellular)
+  token_selection_method: all       # all measurable tokens; no significance test
 
 # ── Transformer training (train_ai_model.py) ─────────────────────────────────
 training:
@@ -173,14 +162,14 @@ training:
   warmup_epochs: 5
   gradient_clip: 1.0
   scheduler: true
-  val_fraction: 0.2
+  val_fraction: 0.1
   max_samples: 10000
 
   # Architecture (FluxDecoder cross-attention decoder)
-  combined_dim: 128       # d_model
+  combined_dim: 256       # d_model
   num_attn_heads: 8       # n_head
   num_transformer_layers: 4
-  dropout: 0.3
+  dropout: 0.2
 
   # Radial embedding dimensions (number of harmonics H per vocabulary).
   # Resulting embedding vector length = 2*H.
@@ -192,10 +181,9 @@ training:
   h_reaction: 8    # reaction identities (204 reactions → 16-dim)
   h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
 
-  flux_token_dropout: 0.5       # flux masking rate: per-batch prob. each measured-flux token is masked
+  flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
+  labeling_token_dropout: 0.2   # per-token labeling dropout during training
   normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
-  compartment_mix: false        # mix _c/_m labeling with random a ~ U(0,1) to simulate LC/MS non-separation
-  exclude_extracellular: true   # drop _e tokens (the LC/MS extract is intracellular)
 
   # Measured fluxes fed as soft inputs through the fusion layer, and the strata for
   # stratified sampling. This is every flux the curated ExtFlux carries — all 22.
@@ -238,4 +226,3 @@ training:
   null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
   flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
   variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)
-  measured_flux_loss_weight: 0.0  # auxiliary MSE penalty on predicted vs. known measured fluxes

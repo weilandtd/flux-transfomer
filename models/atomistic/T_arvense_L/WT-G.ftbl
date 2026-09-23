@@ -1,0 +1,1216 @@
+PROJECT
+	NAME	VERSION	FORMAT	DATE	COMMENT
+	WT-G.ftbl	1		10/21/2023 
+	//	2023, 2024 Jorg Schwender, Nathaphon Yu King Hing, Brookhaven National Laboratory.
+	// This information is provided "AS IS", without any implied warranty of merchantability or fitness for any particular purpose.
+	//
+	//	Source file for influx_s (https://github.com/sgsokol/influx/, 2022-06-23 version 6.0.4).
+	//	Pennycress WT developing embryos. 3 parallel labeling experiments are modeled. Steady state 13-MFA.
+	//	Main executed file for wild type. Parallel experiments "WT-A1.ftbl", "WT-A2.ftbl" are automatically included (See OPTIONS)
+	//	10% U-13C glucose, 10% 1,2-13C2 glucose, unlabeled Ala, unlabeled Gln.
+
+	//
+	// This file version has the free flux values for the best fit solution.
+	// Run:
+	//       influx_s WT-G.ftbl
+	// to reproduce the optimum outputs.
+
+NETWORK
+	FLUX_NAME	EDUCT_1	EDUCT_2	PRODUCT_1	PRODUCT_2
+
+
+	vHex_HPc	GLCU		HPc			// unlabeled glucose OR 80% glucose / 10% U-13C glucose / 10% 1,2-13C2 glucose
+		#ABCDEF		#ABCDEF
+
+	vuptAla	Ala_l		Alac			// uptake labeled and unlabelled alanine, use Ala_l if labelled
+		#ABC		#ABC
+
+	vuptGln	C5nat		Gln			//uptake glutamine
+		#ABCDE		#ABCDE
+
+// oppp (cytosol)
+
+	vG6PDH_c	HPc		CO2	RuPc		// glucose 6-phosphate dehydrogenase, 6-phosphogluconate dehydrogenase
+		#ABCDEF		#A	#BCDEF
+
+
+	vPPepi_c	RuPc		XPc			// Ru5P isomerase
+		#ABCDE		#ABCDE
+
+// Embden Meyerhof Pathway
+	vAldo_c	HPc		TPc	TPc		// fructose 1,6 bisphosphate aldolase
+		#ABCDEF		#CBA	#DEF
+
+	vGAPDH_c	TPc		PGAc			// GAP-dehydrogenase, phospho glycerokinase
+		#ABC		#ABC
+
+	vPGM_c	PGAc		PEPc			// phospho-glucomutase, enolase
+		#ABC		#ABC
+
+// Transporter (cytosol/plastid)
+// vPyr1, vPyr2 see below
+
+	vGPT	HPc		HPp			// hexose phosphate translocator
+		#ABCDEF		#ABCDEF			// antiport mechanism not considered
+
+	vXPT	XPc		XPp			// xylulose 5-phosphate translocator
+		#ABCDE		#ABCDE
+
+	vTPT	TPc		TPp			// triose phosphate translocator
+		#ABC		#ABC
+
+	vPPT	PEPc		PEPp			// PEP translocator
+		#ABC		#ABC
+
+
+// calvin cycle / ppp  (plastid)
+
+	vG6PDH_p	HPp		CO2	RuPp		// glucose 6-phosphate dehydrogenase, 6-phosphogluconate dehydrogenase
+		#ABCDEF		#A	#BCDEF
+
+	vTK1_p	XPp	RPp	SPp	TPp		// transketolase
+		#ABCDE	#abcde	#ABabcde	#CDE
+
+	vSaldo_p	TPp	EPp	SPp			// Sedoheptulose 7-phosphate aldolase
+		#ABC	#DEFG	#CBADEFG			// with Sedoheptulose bisphosphatase
+
+	vTA_p	TPp	SPp	EPp	HPp		// transaldolase, alternative to Saldo
+		#ABC	#abcdefg	#defg	#abcABC
+
+	vTK2_p	XPp	EPp	TPp	HPp		// transketolase
+		#ABCDE	#abcd	#CDE	#ABabcd
+
+	vPPiso_p	RuPp		RPp			// Ru5P epimerase
+		#ABCDE		#ABCDE
+
+	vPPepi_p	RuPp		XPp			// Ru5P isomerase
+		#ABCDE		#ABCDE
+
+	vRub_p	RuPp	CO2	PGAp	PGAp		// RubisCO (includes phosphoribulokinase)
+		#ABCDE	#a	#aBA	#CDE
+
+// Embden Meyerhof Pathway
+	vAldo_p	HPp		TPp	TPp		// fructose 1,6 bisphosphate aldolase
+		#ABCDEF		#CBA	#DEF
+
+	vGAPDH_p	TPp		PGAp			// GAP-dehydrogenase, phospho glycerokinase
+		#ABC		#ABC
+
+	vPGM_p	PGAp		PEPp			// phospho-glucomutase, enolase
+		#ABC		#ABC
+
+
+	vAT_c	Pyr_c		Alac			// Ala / XXX transaminase interconverts Ala and pyruvate
+		#ABC		#ABC
+
+// cytosolic and plastidic metabolism of PEP, Pyruvate, Ala, Glu
+	vPK_c	PEPc		Pyr_c			// cytosolic pyruvate kinase
+		#ABC		#ABC
+
+	vPK_p	PEPp		Pyr_p			// plastidic pyruvate kinase
+		#ABC		#ABC
+
+	vPEPC_c	PEPc	CO2	OAA			// PEP carboxylase
+		#ABC	#a	#ABCa
+
+	vGlnGlu	Gln		Glu			// Glutaminase
+		#ABCDE		#ABCDE			// glutamate synthase
+
+	vGlu	Glu		KG			// glutamate/KG transaminase
+		#ABCDE		#ABCDE			// and exchange cytosol / mitochondrium
+
+	vPyr_cp	Pyr_c		Pyr_p			// pyruvate import into plastid
+		#ABC		#ABC
+
+	vPyr_cm	Pyr_c		Pyr_m			// Import of pyruvate into mitochondria
+		#ABC		#ABC
+
+	vPDH_p	Pyr_p		AcCoAp	CO2		// formation of plastidic acetyl-CoA 
+		#abc		#bc 	#a		// major CO2 producer
+
+
+
+
+// TCA, glyoxylate cycle
+	vCS	Pyr_m	OAA	Cit	CO2		// pyruvate dehydrogenase + citrate synthase
+		#ABC	#abcd	#BCbcda	#A		// (acetyl-CoA not as free intermediate)
+
+	vAco	Cit		Icit			// Aconitate hydratase 
+		#ABCDEF		#EDCBAF
+
+	vACL	Cit		OAA	AcCoAc		// ATP:citrate lyase
+		#ABCDEF		#FCDE	#AB
+
+	vICDH	Icit		KG	CO2		// isocitrate dehydrogenase
+		#ABCDEF		#ABCDE	#F
+
+	vKDHa	KG		Succ	CO2		// ketoglutarate dehydrogenase
+		#ABCDE		#BCDE	#A
+
+	vKDHb	KG		Succ	CO2		// two reactions for symmetric
+		#ABCDE		#EDCB	#A		// randomization in succinate
+
+	vFMa	Succ		OAA			// Fumarase, malate dehydrogenase
+		#ABCD		#ABCD
+
+	vFMb	Succ		OAA			// two reactions for symmetric
+		#ABCD		#DCBA			// randomization in succinate
+
+	vME_m	OAA		Pyr_m	CO2		// mitochondrial malic enzyme
+		#ABCD		#ABC	#D
+
+	vICLa	Icit		Succ	GOX		// isocitrate lyase
+		#ABCDEF		#EDCF	#AB
+
+	vICLb	Icit		Succ	GOX		// two reactions for symmetric
+		#ABCDEF		#FCDE	#AB		// randomization in succinate
+
+	vGT	GOX		Gly			// interconversion of glyoxylate and gly by transaminase
+		#AB		#AB
+
+	vME_c	OAA		Pyr_c	CO2		// cytosolic malic enzyme
+		#ABCD		#ABC	#D
+
+	vME_p	OAA		Pyr_p	CO2		// plastidic malic enzyme
+		#ABCD		#ABC	#D
+
+// output
+	vCO2_out	CO2		CO2_ex			// CO2 release
+		#A		#A
+
+	vAla_bm	C3nat		Ala_bm			// mix with unlabeled biomass
+		#ABC		#ABC
+
+	vAlaP	Alac		Ala_bm			// Ala into protein
+		#ABC		#ABC
+
+	vAlax	Ala_bm		Ala_ex
+		#ABC		#ABC
+
+	vGlu_bm	C5nat		Glu_bm			// mix with unlabeled biomass
+		#ABCDE		#ABCDE
+
+	vGluP	Glu		Glu_bm
+		#ABCDE		#ABCDE
+
+	vGluX	Glu_bm		Glu_ex			// Glu into protein
+		#ABCDE		#ABCDE			// also Pro, Arg
+
+	vGln_bm	C5nat		Gln_bm
+		#ABCDE		#ABCDE
+
+	vGlnP	Gln		Gln_bm			// Gln into protein & Gln into free metabolites
+		#ABCDE		#ABCDE
+
+	vGlnX	Gln_bm		Gln_ex
+		#ABCDE		#ABCDE
+
+// Ser Gly
+	vSer_bm	C3nat		Ser_bm
+		#ABC		#ABC
+
+	vSerP	ser		Ser_bm
+		#ABC		#ABC
+
+	vSer	PGAp		ser			// plastidic PGA pathway to serine
+		#ABC		#ABC
+
+	v1ex	Ser_bm		Ser_ex
+		#ABC		#ABC
+
+	vSerGly	ser		Gly	C1
+		#ABC		#AB	#C
+
+	vGly_dec	Gly		CO2	C1		//glycine decarboxylase
+		#AB		#A	#B		// for C-1 metabolism
+
+	vGly_bm	C2nat		Gly_bm
+		#AB		#AB
+
+	vGlyP	Gly		Gly_bm
+		#AB		#AB
+
+	v2ex	Gly_bm		Gly_ex
+		#AB		#AB
+
+// histidine synthesis
+
+	vHis	RPp	C1	His			// RP into His, Trp
+		#ABCDE	#a 	#EDCBAa			// this considers carbon numbering in Shanks NMR data
+
+	vHis_bm	C6nat		His_bm
+		#ABCDEF		#ABCDEF
+
+	vHisP	His		His_bm
+		#ABCDEF		#ABCDEF
+
+	v3ex	His_bm		His_ex
+		#ABCDEF		#ABCDEF
+// Phe, Tyr
+	vAra	EPp	PEPp	Shikimat		//shikimate for phe,tyr
+		#ABCD	#abc 	#abcABCD
+
+	vArb	EPp	PEPp	Shikimat
+		#ABCD	#abc 	#abDCBAc		// in aromatic ring c - D and C - A are symmetrically randomized
+
+	vPhe	Shikimat	PEPp	Aro	CO2	//aromatic aa out phe2,3 tyr2,3,5,6
+		#ABCDEFG	#abc 	#abcBCDEFG	#A
+
+	vPhe_bm	C9nat		Phe_bm
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	vPheP	Aro		Phe_bm
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	v4ex	Phe_bm		Phe_ex
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	vTyr	Aro		Tyr		// artificial reaction
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	vTyr_bm	C9nat		Tyr_bm
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	vTyrP	Tyr		Tyr_bm
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+	v5ex	Tyr_bm		Tyr_ex
+		#ABCDEFGHI 		#ABCDEFGHI 
+
+// Val Leu Ile
+	vaKIV	Pyr_p	Pyr_p	aKIV	CO2		// plastidic valine & Leu synthesis
+		#ABC	#abc	#ABbcC	#a
+
+	vVal	aKIV		Val
+		#ABCDE		#ABCDE
+
+	vVal_bm	C5nat		Val_bm
+		#ABCDE		#ABCDE
+
+	vValP	Val		Val_bm
+		#ABCDE		#ABCDE
+
+	v6ex	Val_bm		Val_ex
+		#ABCDE		#ABCDE
+
+	vLeu	aKIV	AcCoAp	Leu	CO2
+		#ABCDE	#ab 	#abBCDE	#A
+
+	vLeu_bm	C6nat		Leu_bm
+		#ABCDEF		#ABCDEF
+
+	vLeuP	Leu		Leu_bm
+		#ABCDEF		#ABCDEF
+
+	v7ex	Leu_bm		Leu_ex
+		#ABCDEF		#ABCDEF
+
+	vIle	Thr	Pyr_p	Ile 	CO2		// special 
+		#ABCD	#abc 	#ABbCDc	#a 
+
+	vIle_bm	C6nat		Ile_bm
+		#ABCDEF		#ABCDEF
+
+	vIleP	Ile		Ile_bm
+		#ABCDEF		#ABCDEF
+
+	v8ex	Ile_bm		Ile_ex
+		#ABCDEF		#ABCDEF
+
+	vThr	Asp		Thr
+		#ABCD		#ABCD
+
+	vThr_bm	C4nat		Thr_bm
+		#ABCD		#ABCD
+
+	vThrP	Thr		Thr_bm
+		#ABCD		#ABCD
+
+	v9ex	Thr_bm		Thr_ex
+		#ABCD		#ABCD
+
+	vAsx	OAA		Asp
+		#ABCD		#ABCD
+
+	vAsx_bm	C4nat		Asx_bm
+		#ABCD		#ABCD
+
+	vAsxP	Asp		Asx_bm		// OAA into Asp + Asn + Met+ free malate
+		#ABCD		#ABCD
+
+	v10ex	Asx_bm		Asx_ex
+		#ABCD		#ABCD
+
+	vLys_a	Asp	Pyr_p	Lys 	CO2
+		#ABCD	#abc 	#ABCDcb	#a 
+
+	vLys_b	Asp	Pyr_p	Lys	CO2
+		#ABCD	#abc 	#abcDCB 	#A
+
+
+	vLys_bm	C6nat		Lys_bm
+		#ABCDEF		#ABCDEF
+
+	vLysP	Lys 		Lys_bm
+		#ABCDEF		#ABCDEF
+
+	v11ex	Lys_bm		Lys_ex
+		#ABCDEF		#ABCDEF
+
+	vGlyc_bm	C3nat		Glyc_bm			// glycerol part of TAG
+		#ABC		#ABC
+
+	vGlyc_outa	TPc		Glyc_bm			// account for randomization of label in glycerol by symmetry
+		#ABC		#ABC
+
+	vGlyc_outb	TPc		Glyc_bm
+		#CBA		#ABC
+
+	v12ex	Glyc_bm		Glyc_ex
+		#ABC		#ABC
+
+	vSt_bm	C6nat		St_bm			// HP into starch
+		#ABCDEF		#ABCDEF
+
+	vSt_out	HPp		St_bm
+		#ABCDEF		#ABCDEF
+
+	v13ex	St_bm		St_ex
+		#ABCDEF		#ABCDEF
+
+
+	vAc_c_bm	C2nat		Ac_c_bm			// use isotopomer pattern in unlabeled Gly for acetate.
+		#AB		#AB
+
+	vFAEc	AcCoAc		Ac_c_bm			// cytosolic fatty acid elongation
+		#AB		#AB
+
+	v14ex	Ac_c_bm		Ac_c_ex			// Acetate units into fatty acids
+		#AB		#AB
+
+	vAc_p_bm	C2nat		Ac_p_bm
+		#AB		#AB
+
+	vFASp	AcCoAp		Ac_p_bm
+		#AB		#AB
+
+	v15ex	Ac_p_bm		Ac_p_ex
+		#AB		#AB
+
+	vHPc_bm	C6nat		HPc_bm
+		#ABCDEF		#ABCDEF
+
+	vHPc_out	HPc		HPc_bm
+		#ABCDEF		#ABCDEF
+
+	v16ex	HPc_bm		HPc_ex
+		#ABCDEF		#ABCDEF
+
+	vGlc_bm	C6nat		GLC_bm			// the glucose pool simulated in the model represents sucrose-glucosyl
+		#ABCDEF		#ABCDEF
+
+	vGlc_out	HPc		GLC_bm
+		#ABCDEF		#ABCDEF
+
+	v17ex	GLC_bm		GLC_ex
+		#ABCDEF		#ABCDEF
+
+	vCit_bm	C6nat		Cit_bm			// Citrate into biomass, free metabolites
+		#ABCDEF		#ABCDEF
+
+	vCit_out	Cit		Cit_bm
+		#ABCDEF		#ABCDEF
+
+	v18ex	Cit_bm		Cit_ex
+		#ABCDEF		#ABCDEF
+
+
+
+FLUXES
+	NET
+		NAME	FCD	VALUE(F/C)	ED_WEIGHT	LOW(F)	INC(F)	UP(F)
+
+		vHex_HPc	F	0.42321414		//
+		vuptAla	F	0.068884158
+		vuptGln	F	0.068993454
+		vG6PDH_c	D
+		vPPepi_c	D
+		vAldo_c	D
+		vGAPDH_c	D
+		vPGM_c	D
+		vGPT	F	0.106539202
+		vXPT	D				// 	F	1
+		vTPT	F	0.111994757
+		vPPT	F	0.03677637
+		vG6PDH_p	F	1E-09
+		vTK1_p	D
+		vSaldo_p	D
+		vTA_p	F	0.242323925
+		vTK2_p	D
+		vPPiso_p	D
+		vPPepi_p	D
+		vRub_p	D
+		vAldo_p	D
+		vGAPDH_p	D
+		vPGM_p	D
+		vAT_c	D
+		vPK_c	D
+		vPK_p	D
+		vPEPC_c	F	0.028396747
+		vGlnGlu	D
+		vGlu	D
+		vPyr_cp	F	0.164444487
+		vPyr_cm	D
+		vPDH_p	D
+		vCS	D
+		vAco	D
+		vACL	D
+		vICDH	F	0.010262648
+		vKDHa	D
+		vKDHb	D
+		vFMa	D
+		vFMb	D
+		vME_m	D
+		vICLa	F	0.001538828
+		vICLb	D			//
+		vGT	D			// cytosolic Ala into protein
+		vME_c	F	0.019511747
+		vME_p	F	1E-09
+		vCO2_out	D
+		vAla_bm	F	0.000229245		//  
+		vAlaP	F	0.010880526
+		vAlax	D
+		vGlu_bm	D			//	Glu + Pro + Arg
+		vGluP	F	0.023269461
+		vGluX	D
+		vGln_bm	D
+		vGlnP	F	0.016081586
+		vGlnX	D
+		vSer_bm	D			//	Ser + Cys
+		vSerP	F	0.009897723
+		vSer	D
+		v1ex	D
+		vSerGly	D
+		vGly_dec	D
+		vGly_bm	D			//
+		vGlyP	F	0.011417648
+		v2ex	D
+		vHis	D
+		vHis_bm	D			//	His + Trp
+		vHisP	F	0.002907072
+		v3ex	D
+		vAra	D
+		vArb	D
+		vPhe	D			//
+		vPhe_bm	D
+		vPheP	F	0.004554585
+		v4ex	D
+		vTyr	D			//
+		vTyr_bm	D
+		vTyrP	F	0.003263098
+		v5ex	D
+		vaKIV	D
+		vVal	D			//
+		vVal_bm	D
+		vValP	F	0.006964743
+		v6ex	D
+		vLeu	D			//
+		vLeu_bm	D
+		vLeuP	F	0.008282016
+		v7ex	D
+		vIle	D			//
+		vIle_bm	D
+		vIleP	F	0.005012828
+		v8ex	D
+		vThr	D			//
+		vThr_bm	D
+		vThrP	F	0.005622781
+		v9ex	D
+		vAsx	D			//	Asp + Asn + Met
+		vAsx_bm	D
+		vAsxP	F	0.015475132
+		v10ex	D
+		vLys_a	D
+		vLys_b	D			//
+		vLys_bm	D
+		vLysP	F	0.006943095
+		v11ex	D
+		vGlyc_bm	D
+		vGlyc_outa	F	0.009640134
+		vGlyc_outb	D
+		v12ex	D
+		vSt_bm	D
+		vSt_out	F	0.003880713
+		v13ex	D
+		vAc_c_bm	D
+		vFAEc	F	0.042267611
+		v14ex	D
+		vAc_p_bm	D
+		vFASp	F	0.476607445
+		v15ex	D
+		vHPc_bm	D
+		vHPc_out	F	0.086868316
+		v16ex	D
+		vGlc_bm	D
+		vGlc_out	F	0.059910513
+		v17ex	D
+		vCit_bm	D
+		vCit_out	F	0.003140312
+		v18ex	D
+
+
+	XCH
+		NAME	FCD	VALUE(F/C)	ED_WEIGHT	LOW(F)	INC(F)	UP(F)
+
+		vHex_HPc	C	0
+		vuptAla	C	0
+		vuptGln	C	0		// in 13CFLUX uptake XCH flux is declared as "D"; in influx_s, it is declared as "C" with value 0.
+		vG6PDH_c	C	0
+		vPPepi_c	F	0.835147447
+		vAldo_c	F	0.025082251
+		vGAPDH_c	F	0
+		vPGM_c	F	0
+		vGPT	F	0.999
+		vXPT	F	0.028931816
+		vTPT	F	0
+		vPPT	F	0.999
+		vG6PDH_p	C	0
+		vTK1_p	F	0.999		// could be set free with more measurement data
+		vSaldo_p	C	0
+		vTA_p	F	3.50118E-16
+		vTK2_p	F	0.197154014		// could be set free with more measurement data
+		vPPiso_p	F	0.728572325
+		vPPepi_p	F	0.284738841
+		vRub_p	C	0
+		vAldo_p	F	0.321978425		// could be set free with more measurement data
+		vGAPDH_p	F	0.999
+		vPGM_p	F	0.194657447
+		vAT_c	F	0.999		// estimate based on enzyme activity			200
+		vPK_c	C	0
+		vPK_p	C	0
+		vPEPC_c	C	0
+		vGlnGlu	F	0
+		vGlu	F	0.110572828		//
+		vPyr_cp	C	0
+		vPyr_cm	C	0
+		vPDH_p	C	0
+		vCS	C	0
+		vAco	F	0.999
+		vACL	C	0
+		vICDH	F	0.343659207		//	4.32E-02
+		vKDHa	C	0
+		vKDHb	C	0
+		vFMa	F	0.137891059		//	9.95E-02
+		vFMb	D			//	vFM1-vFM2 = 0
+		vME_m	C	0
+		vICLa	C	0		// output XCH flux "D"
+		vICLb	C	0		//
+		vGT	F	0.014417465
+		vME_c	C	0
+		vME_p	C	0
+		vCO2_out	D
+		vAla_bm	D
+		vAlaP	C	0
+		vAlax	D
+		vGlu_bm	D
+		vGluP	C	0
+		vGluX	D
+		vGln_bm	D
+		vGlnP	C	0
+		vGlnX	D
+		vSer_bm	D
+		vSerP	C	0
+		vSer	C	0
+		v1ex	D
+		vSerGly	F	0.005665016
+		vGly_dec	F	0.002698169
+		vGly_bm	D
+		vGlyP	C	0
+		v2ex	D
+		vHis	C	0
+		vHis_bm	D
+		vHisP	C	0
+		v3ex	D
+		vAra	C	0
+		vArb	C	0
+		vPhe	C	0
+		vPhe_bm	D
+		vPheP	C	0
+		v4ex	D
+		vTyr	C	0
+		vTyr_bm	D
+		vTyrP	C	0
+		v5ex	D
+		vaKIV	C	0
+		vVal	C	0
+		vVal_bm	D
+		vValP	C	0
+		v6ex	D
+		vLeu	C	0
+		vLeu_bm	D
+		vLeuP	C	0
+		v7ex	D
+		vIle	C	0
+		vIle_bm	D
+		vIleP	C	0
+		v8ex	D
+		vThr	C	0
+		vThr_bm	D
+		vThrP	C	0
+		v9ex	D
+		vAsx	C	0
+		vAsx_bm	D
+		vAsxP	C	0
+		v10ex	D
+		vLys_a	C	0
+		vLys_b	C	0
+		vLys_bm	D
+		vLysP	C	0
+		v11ex	D
+		vGlyc_bm	D
+		vGlyc_outa	C	0
+		vGlyc_outb	C	0
+		v12ex	D
+		vSt_bm	D
+		vSt_out	C	0
+		v13ex	D
+		vAc_c_bm	D
+		vFAEc	C	0
+		v14ex	D
+		vAc_p_bm	D
+		vFASp	C	0
+		v15ex	D
+		vHPc_bm	D
+		vHPc_out	C	0
+		v16ex	D
+		vGlc_bm	D
+		vGlc_out	C	0		// no sucrose in medium
+		v17ex	D
+		vCit_bm	D
+		vCit_out	C	0
+		v18ex	D
+
+
+
+
+
+
+EQUALITIES
+	NET
+		VALUE	FORMULA
+
+		0	vICLa-vICLb		// scrambling reaction
+		0	vKDHa-vKDHb		// scrambling reaction
+		0	vFMa-vFMb		// scrambling reaction
+		0	vLys_a-vLys_b		// scrambling reaction
+		0	vGlyc_outa-vGlyc_outb		// scrambling reaction
+		0	vAra-vArb		// scrambling reaction
+		// Below equations are for accounting for unlabeled biomass that was present in the inoculum material of the cultures.
+		0	2.142237629*vAla_bm-vGlu_bm
+		0	1.469508828*vAla_bm-vGln_bm
+		0	0.898978579*vAla_bm-vSer_bm
+		0	1.032734283*vAla_bm-vGly_bm
+		0	0.265193384*vAla_bm-vHis_bm
+		0	0.415792936*vAla_bm-vPhe_bm
+		0	0.297038835*vAla_bm-vTyr_bm
+		0	0.661497069*vAla_bm-vVal_bm
+		0	0.730726735*vAla_bm-vLeu_bm
+		0	0.466134126*vAla_bm-vIle_bm
+		0	0.530597151*vAla_bm-vThr_bm
+		0	1.466042387*vAla_bm-vAsx_bm
+		0	0.672280754*vAla_bm-vLys_bm
+		0	1.758594949*vAla_bm-vGlyc_bm
+		0	0.354562764*vAla_bm-vSt_bm
+		0	3.584240800*vAla_bm-vAc_c_bm
+		0	43.991109513*vAla_bm-vAc_p_bm
+		0	7.939126061*vAla_bm-vHPc_bm
+		0	5.415180805*vAla_bm-vGlc_bm
+		0	0.288252997*vAla_bm-vCit_bm
+
+
+	XCH
+		VALUE	FORMULA
+
+		0	vICLa-vICLb		// reversibility for both scrambling reactions equal
+		0	vFMa-vFMb
+
+INEQUALITIES
+	NET
+		VALUE	COMP	FORMULA
+// Inequalities for Input and Output Fluxes are generated automatically
+		0.000000001	<=	vME_m
+		0.000000001	<=	vKDHa
+		0.000000001	<=	vACL
+		0.000000001	<=	vCS
+		0.000000001	<=	vPyr_cp
+		0.000000001	<=	vPyr_cm
+		0.000000001	<=	vPEPC_c
+		0.000000001	<=	vPK_c
+		0.000000001	<=	vPK_p
+		0.000000001	<=	vRub_p
+		0.000000001	<=	vG6PDH_p
+		0.000000001	<=	vG6PDH_c
+		0.000000001	<=	vICLa
+		0.000000001	<=	vME_p
+		0.000000001	<=	vME_c
+		0.000000001	<=	vSaldo_p
+
+
+
+
+
+	XCH
+		VALUE	COMP	FORMULA
+// Inequalities for Input and Output Fluxes are generated automatically
+
+FLUX_MEASUREMENTS
+	FLUX_NAME	VALUE	DEVIATION	//		Val	Dev
+	vAlaP	1.09435111681266E-02	9.22722539800018E-04
+	vGluP	2.34436014164696E-02	1.1194523271203E-03
+	vGlnP	1.60815862700075E-02	1.35780531275869E-03
+	vSerP	9.83798212304426E-03	9.77472096821769E-04
+	vGlyP	1.13017391612779E-02	1.04436570929543E-03
+	vHisP	2.90214675731261E-03	2.43222944913513E-04
+	vPheP	4.55023463511122E-03	4.07502188790744E-04
+	vTyrP	3.25064780825447E-03	3.0304753053567E-04
+	vValP	7.23910056620277E-03	6.63739506630335E-04
+	vLeuP	7.99671618394449E-03	1.0588502648636E-03
+	vIleP	5.1011440180613E-03	5.54065720369725E-04
+	vThrP	5.80659584646635E-03	4.87040685358395E-04
+	vAsxP	0.016043651232223	1.29493289868324E-03
+	vLysP	7.35711194193635E-03	6.93270204754949E-04
+	vGlyc_outa	9.6226017324913E-03	5.51799705672306E-04
+	vSt_out	3.88016156435658E-03	6.55188933001122E-04
+	vFAEc	0.039224179228246	2.06542962114879E-03
+	vFASp	0.481417198255247	1.48078098871825E-02
+	vHPc_out	8.68819147108878E-02	5.19036352275443E-03
+	vGlc_out	5.92610916192465E-02	7.34380731014682E-03
+	vCit_out	3.15449988797412E-03	2.53169936871349E-04
+//	vRub_p	0.222	1.00E-06
+//	vPK_c	0.126	1.00E-06
+//	vCO2_out	0.423	1.00E-06	//0.462329502800269
+
+// These pseudo-measurements minimize loop flux.
+	vAldo_c	0	1
+	vAldo_p	0	1
+	vGAPDH_c	0	1
+	vGPT	0	1
+	vPGM_c	0	1
+	vPGM_p	0	1
+	vPPepi_c	0	1
+	vPPepi_p	0	1
+	vPPT	0	1
+	vTA_p	0	1
+	vTPT	0	1
+	vXPT	0	1
+
+
+
+
+LABEL_INPUT
+	META_NAME	ISOTOPOMER	VALUE
+
+
+//	The mixing of labeled and unlabeled glucose is defined on sheet "EQUALITIES"
+//
+
+
+	//	D:\Data\Modeling\C13flux\calc isotopomer abundances.xlsx
+	//	10 % U-13C glucose
+	//	10 % 1,2-13C2 glucose
+	GLCU	#000000	0.750004014756126
+		#000001	8.11183965195952E-03
+		#000010	8.11183965195952E-03
+		#000011	8.773643362273E-05
+		#000100	8.11183965195952E-03
+		#000101	8.773643362273E-05
+		#000110	8.773643362273E-05
+		#000111	1.04595272694149E-06
+		#001000	8.11183965195952E-03
+		#001001	8.773643362273E-05
+		#001010	8.773643362273E-05
+		#001011	1.04595272694149E-06
+		#001100	8.773643362273E-05
+		#001101	1.04595272694149E-06
+		#001110	1.04595272694149E-06
+		#001111	9.61622339146699E-06
+		#010000	9.06003928244591E-03
+		#010001	9.79919031933399E-05
+		#010010	9.79919031933399E-05
+		#010011	1.15687309933159E-06
+		#010100	9.799190319334E-05
+		#010101	1.15687309933159E-06
+		#010110	1.15687309933159E-06
+		#010111	9.61742307607689E-06
+		#011000	9.799190319334E-05
+		#011001	1.15687309933159E-06
+		#011010	1.15687309933159E-06
+		#011011	9.61742307607689E-06
+		#011100	1.15687309933159E-06
+		#011101	9.61742307607689E-06
+		#011110	9.61742307607689E-06
+		#011111	9.50990173880436E-04
+		#100000	9.06003928244591E-03
+		#100001	9.79919031933399E-05
+		#100010	9.79919031933399E-05
+		#100011	1.15687309933159E-06
+		#100100	9.799190319334E-05
+		#100101	1.15687309933159E-06
+		#100110	1.15687309933159E-06
+		#100111	9.61742307607689E-06
+		#101000	9.799190319334E-05
+		#101001	1.15687309933159E-06
+		#101010	1.15687309933159E-06
+		#101011	9.61742307607689E-06
+		#101100	1.15687309933159E-06
+		#101101	9.61742307607689E-06
+		#101110	9.61742307607689E-06
+		#101111	9.50990173880436E-04
+		#110000	0.093969755321346
+		#110001	1.01644836058971E-03
+		#110010	1.01644836058971E-03
+		#110011	2.05985399426968E-05
+		#110100	1.01644836058971E-03
+		#110101	2.05985399426968E-05
+		#110110	2.05985399426968E-05
+		#110111	9.51108942656815E-04
+		#111000	1.01644836058971E-03
+		#111001	2.05985399426968E-05
+		#111010	2.05985399426968E-05
+		#111011	9.51108942656816E-04
+		#111100	2.05985399426968E-05
+		#111101	9.51108942656816E-04
+		#111110	9.51108942656816E-04
+		#111111	9.41480162260118E-02
+
+	//	Alanine, unlabeled
+	Ala_l	#000	0.968242244957
+		#001	0.010472245043
+		#010	0.010472245043
+		#011	0.000113264957
+		#100	0.010472245043
+		#101	0.000113264957
+		#110	0.000113264957
+		#111	0.000001225043
+
+	//unlabeled (natural 13C enrichment)
+
+//	C1nat	#0	0.9893
+//		#1	0.0107
+
+	C2nat	#00	0.97871449
+		#01	0.01058551
+		#10	0.01058551
+		#11	0.00011449
+
+	C3nat	#000	0.968242244957
+		#001	0.010472245043
+		#010	0.010472245043
+		#011	0.000113264957
+		#100	0.010472245043
+		#101	0.000113264957
+		#110	0.000113264957
+		#111	0.000001225043
+
+	C4nat	#0000	0.95788205293596
+		#0001	1.03601920210399E-02
+		#0010	1.03601920210399E-02
+		#0011	1.120530219601E-04
+		#0100	1.03601920210399E-02
+		#0101	1.120530219601E-04
+		#0110	1.120530219601E-04
+		#0111	1.2119350399E-06
+		#1000	1.03601920210399E-02
+		#1001	1.120530219601E-04
+		#1010	1.120530219601E-04
+		#1011	1.2119350399E-06
+		#1100	1.120530219601E-04
+		#1101	1.2119350399E-06
+		#1110	1.2119350399E-06
+		#1111	1.31079601E-08
+
+	C5nat	#00000	0.947632714969545
+		#00001	1.02493379664148E-02
+		#00010	1.02493379664148E-02
+		#00011	1.10854054625127E-04
+		#00100	1.02493379664148E-02
+		#00101	1.10854054625127E-04
+		#00110	1.10854054625127E-04
+		#00111	1.19896733497307E-06
+		#01000	1.02493379664148E-02
+		#01001	1.10854054625127E-04
+		#01010	1.10854054625127E-04
+		#01011	1.19896733497307E-06
+		#01100	1.10854054625127E-04
+		#01101	1.19896733497307E-06
+		#01110	1.19896733497307E-06
+		#01111	1.296770492693E-08
+		#10000	1.02493379664148E-02
+		#10001	1.10854054625127E-04
+		#10010	1.10854054625127E-04
+		#10011	1.19896733497307E-06
+		#10100	1.10854054625127E-04
+		#10101	1.19896733497307E-06
+		#10110	1.19896733497307E-06
+		#10111	1.296770492693E-08
+		#11000	1.10854054625127E-04
+		#11001	1.19896733497307E-06
+		#11010	1.19896733497307E-06
+		#11011	1.296770492693E-08
+		#11100	1.19896733497307E-06
+		#11101	1.296770492693E-08
+		#11110	1.296770492693E-08
+		#11111	1.4025517307E-10
+
+		//
+	C6nat	#000000	0.937493044919371
+		#000001	1.01396700501741E-02
+		#000010	1.01396700501741E-02
+		#000011	1.09667916240638E-04
+		#000100	1.01396700501741E-02
+		#000101	1.09667916240638E-04
+		#000110	1.09667916240638E-04
+		#000111	1.18613838448886E-06
+		#001000	1.01396700501741E-02
+		#001001	1.09667916240638E-04
+		#001010	1.09667916240638E-04
+		#001011	1.18613838448886E-06
+		#001100	1.09667916240638E-04
+		#001101	1.18613838448886E-06
+		#001110	1.18613838448886E-06
+		#001111	1.28289504842118E-08
+		#010000	1.01396700501741E-02
+		#010001	1.09667916240638E-04
+		#010010	1.09667916240638E-04
+		#010011	1.18613838448886E-06
+		#010100	1.09667916240638E-04
+		#010101	1.18613838448886E-06
+		#010110	1.18613838448886E-06
+		#010111	1.28289504842118E-08
+		#011000	1.09667916240638E-04
+		#011001	1.18613838448886E-06
+		#011010	1.18613838448886E-06
+		#011011	1.28289504842118E-08
+		#011100	1.18613838448886E-06
+		#011101	1.28289504842118E-08
+		#011110	1.28289504842118E-08
+		#011111	1.38754442718151E-10
+		#100000	1.01396700501741E-02
+		#100001	1.09667916240638E-04
+		#100010	1.09667916240638E-04
+		#100011	1.18613838448886E-06
+		#100100	1.09667916240638E-04
+		#100101	1.18613838448886E-06
+		#100110	1.18613838448886E-06
+		#100111	1.28289504842118E-08
+		#101000	1.09667916240638E-04
+		#101001	1.18613838448886E-06
+		#101010	1.18613838448886E-06
+		#101011	1.28289504842118E-08
+		#101100	1.18613838448886E-06
+		#101101	1.28289504842118E-08
+		#101110	1.28289504842118E-08
+		#101111	1.38754442718151E-10
+		#110000	1.09667916240638E-04
+		#110001	1.18613838448886E-06
+		#110010	1.18613838448886E-06
+		#110011	1.28289504842118E-08
+		#110100	1.18613838448886E-06
+		#110101	1.28289504842118E-08
+		#110110	1.28289504842118E-08
+		#110111	1.38754442718151E-10
+		#111000	1.18613838448886E-06
+		#111001	1.28289504842118E-08
+		#111010	1.28289504842118E-08
+		#111011	1.38754442718151E-10
+		#111100	1.28289504842118E-08
+		#111101	1.38754442718151E-10
+		#111110	1.38754442718151E-10
+		#111111	1.500730351849E-12
+
+
+	C9nat	#000000000	0.91795463624909
+		#100000000	9.81765689250386E-03
+		#010000000	9.81765689250386E-03
+		#001000000	9.81765689250386E-03
+		#000010000	9.81765689250386E-03
+		#000001000	9.81765689250386E-03
+		#000000100	9.81765689250386E-03
+		#000000010	9.81765689250386E-03
+		#000000001	9.81765689250386E-03
+		#110000000	1.06185109420592E-04
+		#011000000	1.06185109420592E-04
+		#001100000	1.06185109420592E-04
+		#000011000	1.06185109420592E-04
+		#000001100	1.06185109420592E-04
+		#000000110	1.06185109420592E-04
+		#000000011	1.06185109420592E-04
+		#101000000	1.06185109420592E-04
+		#010100000	1.06185109420592E-04
+		#001010000	1.06185109420592E-04
+		#000010100	1.06185109420592E-04
+		#000001010	1.06185109420592E-04
+		#000000101	1.06185109420592E-04
+		#100100000	1.06185109420592E-04
+		#010010000	1.06185109420592E-04
+		#001001000	1.06185109420592E-04
+		#000010010	1.06185109420592E-04
+		#000001001	1.06185109420592E-04
+		#100010000	1.06185109420592E-04
+		#010001000	1.06185109420592E-04
+		#001000100	1.06185109420592E-04
+		#000100010	1.06185109420592E-04
+		#000010001	1.06185109420592E-04
+		#100001000	1.06185109420592E-04
+		#010000100	1.06185109420592E-04
+		#001000010	1.06185109420592E-04
+		#000100001	1.06185109420592E-04
+		#100000100	1.06185109420592E-04
+		#010000010	1.06185109420592E-04
+		#001000001	1.06185109420592E-04
+		#100000010	1.06185109420592E-04
+		#010000001	1.06185109420592E-04
+		#100000001	1.06185109420592E-04
+
+		// abundance of isotopomers with > 2 13C nuclei is neglected
+
+LABEL_MEASUREMENTS
+	META_NAME	CUM_GROUP	VALUE	DEVIATION	CUM_CONSTRAINTS
+
+
+PEAK_MEASUREMENTS
+	META_NAME	PEAK_NO	VALUE_S	VALUE_D-	VALUE_D+	VALUE_DD	VALUE_T	DEVIATION_S	DEVIATION_D-	DEVIATION_D+	DEVIATION_DD/T
+
+MASS_SPECTROMETRY
+	META_NAME	FRAGMENT	WEIGHT	VALUE	DEVIATION
+
+	Ala_bm	1,2,3	0	0.847024431	8.93E-03
+			1	0.072880371	5.50E-03
+			2	0.043728967	5.50E-03
+			3	0.036366231	5.50E-03
+		2,3	0	0.877707747	6.16E-03
+			1	0.045764782	5.50E-03
+			2	0.076527471	5.50E-03
+	Gly_bm	1,2	0	0.810558017	8.02E-03
+			1	0.150239314	5.53E-03
+			2	0.039202669	5.50E-03
+		2	0	0.871090415	5.50E-03
+			1	0.128909585	5.50E-03
+	Val_bm	1,2,3,4,5	0	0.685471603	5.81E-03
+			1	0.108780072	5.50E-03
+			2	0.136314719	5.50E-03
+			3	0.05487834	5.50E-03
+			4	0.008951996	5.50E-03
+			5	0.005603271	5.50E-03
+		2,3,4,5	0	0.71081028	5.50E-03
+			1	0.087779386	5.50E-03
+			2	0.17820619	5.50E-03
+			3	0.011543315	5.50E-03
+			4	0.011660829	5.50E-03
+		1,2	0	0.812214493	5.50E-03
+			1	0.117477405	5.50E-03
+			2	0.070308102	5.50E-03
+	Leu_bm	2,3,4,5,6	0	0.607348174	5.50E-03
+			1	0.163259901	5.50E-03
+			2	0.175686896	5.50E-03
+			3	0.037577693	5.50E-03
+			4	0.013996513	5.50E-03
+			5	0.002130824	5.50E-03
+	Ile_bm	2,3,4,5,6	0	0.715533731	5.50E-03
+			1	0.119909183	5.50E-03
+			2	0.136055849	5.50E-03
+			3	0.021279977	5.50E-03
+			4	0.006033471	5.50E-03
+			5	0.001187788	5.50E-03
+	Ser_bm	1,2,3	0	0.758451043	5.50E-03
+			1	0.13307439	5.50E-03
+			2	0.065362124	5.50E-03
+			3	0.043112443	5.50E-03
+		2,3	0	0.804193983	5.50E-03
+			1	0.103138032	5.50E-03
+			2	0.092667985	5.50E-03
+		1,2	0	0.803688754	5.50E-03
+			1	0.139249117	5.50E-03
+			2	0.057062129	5.50E-03
+	Thr_bm	1,2,3,4	0	0.817128016	6.50E-03
+			1	0.11646326	5.50E-03
+			2	0.045179593	5.50E-03
+			3	0.019217092	5.50E-03
+			4	0.002012039	5.50E-03
+		2,3,4	0	0.861226204	6.05E-03
+			1	0.087496966	5.50E-03
+			2	0.042278109	5.50E-03
+			3	0.00899872	5.50E-03
+	Phe_bm	1,2	0	0.798730196	5.50E-03
+			1	0.136709326	5.50E-03
+			2	0.064560478	5.50E-03
+	Asx_bm	1,2,3,4	0	0.804925554	6.83E-03
+			1	0.124677082	5.50E-03
+			2	0.048404574	5.50E-03
+			3	0.019831466	5.50E-03
+			4	0.002161325	5.50E-03
+		1,2	0	0.871515148	5.50E-03
+			1	0.101427335	5.50E-03
+			2	0.027057518	5.50E-03
+		2,3,4	0	0.842473701	5.50E-03
+			1	0.094471125	5.50E-03
+			2	0.046157169	5.50E-03
+			3	0.016898005	5.50E-03
+	Glu_bm	1,2,3,4,5	0	0.864943033	5.50E-03
+			1	0.083927376	5.50E-03
+			2	0.04289954	5.50E-03
+			3	0.006439564	5.50E-03
+			4	0.001472672	5.50E-03
+			5	0.000317814	5.50E-03
+		2,3,4,5	0	0.887651474	5.50E-03
+			1	0.067012146	5.50E-03
+			2	0.041361387	5.50E-03
+			3	0.00273257	5.50E-03
+			4	0.001242424	5.50E-03
+	Lys_bm	1,2,3,4,5,6	0	0.697259135	6.28E-03
+			1	0.140905582	5.50E-03
+			2	0.106564618	5.50E-03
+			3	0.044474642	5.50E-03
+			4	0.007860507	5.50E-03
+			5	0.002410135	5.50E-03
+			6	0.000525381	5.50E-03
+		2,3,4,5,6	0	0.725113073	5.50E-03
+			1	0.119754605	5.50E-03
+			2	0.127521742	5.50E-03
+			3	0.020474401	5.50E-03
+			4	0.005662289	5.50E-03
+			5	0.001473891	5.50E-03
+	Tyr_bm	1,2	0	0.792444788	1.09E-02
+			1	0.144058904	7.53E-03
+			2	0.063496308	5.50E-03
+	Glyc_bm	1,2,3	0	0.772760675	1.75E-02
+			1	0.088128218	5.50E-03
+			2	0.072218236	5.50E-03
+			3	0.066892871	7.07E-03
+		2,3	0	0.810012258	1.72E-02
+			1	0.090715006	6.73E-03
+			2	0.099272737	1.05E-02
+	Ac_p_bm	1,2	0	0.829881416	5.50E-03
+			1	0.059093863	5.50E-03
+			2	0.111024721	5.50E-03
+	Ac_c_bm	1,2	0	0.897056214	5.50E-03
+			1	0.046776887	5.50E-03
+			2	0.056166899	5.50E-03
+	GLC_bm	1,2,3,4,5,6	0	0.627972686	5.50E-03
+			1	0.134217131	5.50E-03
+			2	0.118245042	5.50E-03
+			3	0.060934003	5.50E-03
+			4	0.016312261	5.50E-03
+			5	0.011170026	5.50E-03
+			6	0.031148851	5.50E-03
+
+
+OPTIONS
+	OPT_NAME	OPT_VALUE
+	posttreat_R	test.R
+	MATLAB_FOR_FLUX_EQ_CONSTR_MATR	1
+	prl_exp	WT-A1;WT-A2		// WT-A1;WT-A2	// define parallel experiments
+	commandArgs	--ln --zc 0.0001	// --ln Least norm solution is used for increments during the non-linear iterations when Jacobian is rank deficient  --zc Apply zero crossing strategy with non-negative threshold for net fluxes
+
+
+

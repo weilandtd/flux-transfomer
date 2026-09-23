@@ -10,6 +10,7 @@ Example:
 
 import argparse
 import datetime
+import math
 import os
 import warnings
 from pathlib import Path
@@ -21,6 +22,11 @@ import yaml
 from cobra.flux_analysis import flux_variability_analysis
 from cobra.io.json import load_json_model
 from cobra.sampling import sample
+
+from ..core.measurement_pools import (POOL_DRAIN_PREFIX, is_pool_reaction,
+                                     warn_unproducible_members)
+from ..core.utils import add_dilution_inputs, media_dilution_targets
+from .reusable_sampler import ReusableSampler
 
 try:
     from cobra.sampling import HopsySampler
@@ -53,7 +59,12 @@ _HOPSY_PROPOSALS = {
 
 
 def resolve_path(path, root=None):
-    """Resolve a config path against the config's project root."""
+    """Resolve a config path against the config's project root.
+
+    Args:
+        path: path from the config, absolute or root-relative.
+        root: project root; ``path`` is returned unchanged if omitted.
+    """
     if os.path.isabs(path) or root is None:
         return path
     return _resolve_path(path, root)
@@ -72,20 +83,15 @@ def set_bounds(model, reaction_id, lower_bound, upper_bound):
 def apply_media(model, media_cfg, close_unlisted=True):
     """Constrain the model's boundary fluxes.
 
-    With ``close_unlisted`` (the default) every ``EX_`` reaction is closed first
-    and only those named in *media_cfg* are reopened. That is the right model for
-    an organism grown in a defined medium: anything not in the medium is simply
-    not available.
+    With ``close_unlisted`` (the default) every ``EX_`` reaction is closed first and
+    only those named in *media_cfg* are reopened -- correct for a defined medium, but
+    wrong for a whole-body/multi-tissue model where ``EX_`` is internal physiology;
+    set ``close_unlisted: false`` there so unlisted exchanges keep their model bounds.
 
-    It is the wrong model for a whole-body or multi-tissue model, where the
-    ``EX_`` reactions are internal physiology — inter-tissue exchange — rather
-    than a medium the experimenter composed. There, *media_cfg* lists the fluxes
-    that were *measured* (respiration, protein synthesis, TG release, ...) and
-    everything else must keep the bounds the model was built with. Closing them
-    makes the model infeasible.
-
-    Set ``close_unlisted: false`` alongside ``media:`` in the sampling config for
-    that case.
+    Args:
+        model: model whose exchange reactions are constrained.
+        media_cfg: mapping of reaction id to ``{lb, ub}`` bounds.
+        close_unlisted: close every ``EX_`` reaction not named in ``media_cfg``.
     """
     if close_unlisted:
         for reaction in model.reactions:
@@ -109,11 +115,13 @@ def apply_media(model, media_cfg, close_unlisted=True):
 def apply_reaction_bounds(model, bounds_cfg):
     """Override bounds on named non-exchange reactions, before FVA.
 
-    `media` only reaches EX_ reactions, but a GEM's internal directions can be wrong
-    for the organism being modelled.  Transport directionality is the usual case:
-    microbial models can mostly write a transporter one-way, while cultured mammalian
-    cells run amino acid and monocarboxylate carriers in whichever direction the
-    gradient dictates, so the same reaction reverses between conditions.
+    ``media`` only reaches ``EX_`` reactions, but a GEM's internal reaction
+    directions (e.g. transporter directionality) can be wrong for the organism
+    being modelled.
+
+    Args:
+        model: model whose reactions are overridden.
+        bounds_cfg: mapping of reaction id to ``{lb, ub}`` bounds; skipped if falsy.
     """
     if not bounds_cfg:
         return
@@ -129,23 +137,45 @@ def constrain_growth(model, growth_cfg):
     set_bounds(model, "BIOMASS", growth_cfg["lb"], growth_cfg["ub"])
 
 
-def drop_skip_constraints(model, skip_constraints):
-    """Remove listed reactions and any dead-end product metabolites from the model.
+def can_consume(reaction, metabolite):
+    """Whether *reaction* can consume *metabolite* in some feasible direction.
 
-    After removing e.g. BIOMASS, pseudo-metabolites that were only consumed by
-    BIOMASS become production-only sinks. At steady state this forces their
-    producers to zero flux, making sampling infeasible. Removing them frees the
-    component reactions to vary within their FVA-tightened bounds.
+    Determined by the reaction's bounds, not which side the metabolite sits on: a
+    reversible reaction listing it as a product still consumes it running backwards.
+
+    Args:
+        reaction: reaction to check.
+        metabolite: metabolite the reaction may or may not be able to consume.
+    """
+    coef = reaction.metabolites[metabolite]
+    return (coef < 0 and reaction.upper_bound > 0) or (coef > 0 and reaction.lower_bound < 0)
+
+
+def drop_skip_constraints(model, skip_constraints):
+    """Remove the listed reactions, draining any pool left with no consumer.
+
+    Removing a reaction (e.g. BIOMASS) can strand metabolites it used to consume,
+    forcing their producers to zero flux and making sampling infeasible. Stranded
+    pools are found via ``can_consume`` (bounds, not stoichiometric sign, since a
+    reversible reaction can consume a listed product on reverse flux) and given an
+    explicit demand reaction rather than being deleted, which keeps mass balance and
+    the atom mapping usable instead of leaving an invisible unbounded sink.
+
+    Args:
+        model: model the listed reactions are removed from.
+        skip_constraints: reaction ids to remove.
     """
     to_remove = [model.reactions.get_by_id(r) for r in skip_constraints if r in model.reactions]
     model.remove_reactions(to_remove, remove_orphans=True)
-    # Find metabolites that are now only produced and never consumed (dead-end sinks).
-    sink_mets = [m for m in model.metabolites if all(r.metabolites[m] > 0 for r in m.reactions)]
-    if sink_mets:
-        model.remove_metabolites(sink_mets)
+
+    stranded = [m for m in model.metabolites
+                if m.reactions and not any(can_consume(r, m) for r in m.reactions)]
+    demands = [model.add_boundary(m, type="demand") for m in stranded]
+
     print(f"Dropped {len(to_remove)} skip-constraints reaction(s): {[r.id for r in to_remove]}")
-    if sink_mets:
-        print(f"  Removed {len(sink_mets)} dead-end metabolite(s): {[m.id for m in sink_mets]}")
+    if demands:
+        print(f"  Added {len(demands)} demand reaction(s) for pools left without a "
+              f"consumer: {[r.id for r in demands]}")
 
 
 def constrain_by_fva(model):
@@ -171,6 +201,116 @@ def constrain_by_fva(model):
     print(f"  Fixed (non-zero, min≈max) reactions kept: {fixed_count}")
 
     return len(zero_reactions), len(orphaned_metabolites), fva
+
+
+#: Upper bound the measurement-pool block is reopened to once sampling is done.
+POOL_RELAXED_UB = 100.0
+
+
+def relax_measurement_pool_bounds(model, upper=POOL_RELAXED_UB, legs=False):
+    """Reopen each pool *drain*, after the samples have been drawn.
+
+    Sampling needs each pool's drain pinned at 1: that is what puts its mixing fluxes on
+    the unit simplex, so they read directly as compartment fractions. The pinning belongs
+    to how the fractions are drawn, though, not to the network. A pool's EMU balance is
+    ``X_pool = sum_i(v_i X_i) / sum_i(v_i)``, invariant under scaling the whole block, so
+    the ratios carry all of the information and the absolute values none -- the flux only
+    has to stay positive. A zero-width interval is also something downstream code cannot
+    work with at all: the ray projection in inference needs its origin strictly inside
+    the box, which no pinned reaction can be.
+
+    By default only the drain is reopened, and the saved model keeps its mixing legs in
+    ``[0, 1]``. That is what a compartment fraction means, and widening them there once
+    handed the MFA fit a search box 100x larger than the simplex the fluxes are confined
+    to -- ``model_prepared_for_mfa.json`` is read by both arms, so the legs stay put in it.
+
+    ``legs=True`` is for the *predictor's* copy of the bounds. Once the drain is free the
+    block can scale, so a leg above 1 is not an over-claim any more, it is the same
+    fraction at a larger scale -- and with the legs pinned at 1 the box asserts otherwise.
+    A leg is bounded by its drain, so the two share ``upper``.
+
+    Args:
+        model: prepared cobra model, modified in place.
+        upper: upper bound to reopen the block to.
+        legs: also reopen the mixing legs. Off for the shared prepared model.
+
+    Returns the ids of the reactions reopened.
+    """
+    reopened = [r.id for r in model.reactions
+                if r.id.startswith(POOL_DRAIN_PREFIX)
+                or (legs and is_pool_reaction(r))]
+    for rxn_id in reopened:
+        model.reactions.get_by_id(rxn_id).bounds = (0.0, upper)
+    return reopened
+
+
+def prepare_for_mfa(model, cfg):
+    """Bring a loaded organism model to the state sampling and MFA both need.
+
+    Media, reaction-bound overrides, the growth window, a feasibility check, FVA
+    tightening, *then* unlabeled dilution inputs, then skip-constraint drops -- in
+    that order, because each step's input is the one before it, and FVA has to run
+    on the real network alone.
+
+    Dilution inputs (``EX_<met>_env``/``DILUT_<met>``) give the EMU network an
+    unlabeled source for a medium component the cell also produces, but their own
+    bounds are a generous, unconditional ``(0, 1000)`` -- they carry no information
+    about what the real network can actually support. Added before FVA, they are a
+    second, glucose-free route into the exchange they feed: FVA sees the exchange
+    reachable via the free backdoor regardless of what the real network can supply,
+    and leaves its bound at the raw media value instead of tightening it (an exchange
+    bounded ``(0, 100)`` in the media block stayed at 100 even when the network can
+    derive at most ~40 of it from the sampled glucose uptake). Adding them *after*
+    FVA has already tightened every real reaction's bounds from the stoichiometry
+    alone means the exchange's own bound is fixed at what the network can really
+    support before the backdoor exists to loosen it -- the backdoor still gives the
+    EMU network its unlabeled source afterward, it just can no longer widen an
+    exchange bound FVA already set.
+
+    The sampler and the MFA model checker each kept a hand-maintained copy of this
+    sequence, which is how they drifted; they now both call this.
+
+    Args:
+        model: loaded cobra model, modified in place.
+        cfg: organism config supplying sampling, media and growth settings.
+
+    Returns the flux-variability frame computed by :func:`constrain_by_fva`.
+    """
+    s = cfg["sampling"]
+    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
+    # Before dilution-target detection: a reversible-transporter override (e.g.
+    # ALAt_c_e lb 0 -> -20) only makes its metabolite internally-producible once
+    # applied. Detecting on the pre-override bounds silently skipped dilution for
+    # any medium component whose only internal route was such an override.
+    apply_reaction_bounds(model, s.get("reaction_bounds"))
+    if s.get("growth"):
+        constrain_growth(model, s["growth"])
+
+    solution = model.optimize()
+    if solution.status != "optimal":
+        raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
+    print(f"  Prepared model status: {solution.status}, objective={solution.objective_value}")
+
+    model.objective = Zero
+    n_zero, n_orphan, fva = constrain_by_fva(model)
+    print(f"  Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; "
+          f"tightened remaining bounds with ±1e-6")
+
+    # After FVA: see the docstring above -- added earlier, this is a second,
+    # glucose-free route into whatever exchange it feeds, and FVA would leave that
+    # exchange at its raw media bound instead of tightening it.
+    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
+    if diluted:
+        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
+
+    if cfg.get("skip_constraints"):
+        drop_skip_constraints(model, cfg["skip_constraints"])
+
+    # The pools ship in the model file, so their member set is fixed before FVA rather
+    # than after it. A member FVA leaves unproducible still carries its mixing flux and
+    # contributes a zeroed MID, so name it here instead of only per sample.
+    warn_unproducible_members(model, fva)
+    return fva
 
 
 def check_sampling_coverage(samples, fva, key_reactions=None):
@@ -221,6 +361,13 @@ def diagnose_pool_coverage(samples, fva, reactions, n_bins, label="Pool"):
     """
     Per-reaction bin occupancy diagnostic. Reports observed FVA coverage,
     bin fill rate, and boundary bin counts (first/last bin) for each reaction.
+
+    Args:
+        samples: sampled flux points, columns are reactions.
+        fva: per-reaction FVA min/max, used as the coverage range.
+        reactions: reaction ids to report on.
+        n_bins: number of bins per reaction.
+        label: label prefixing the printed report.
     """
     present = [r for r in reactions if r in samples.columns and r in fva.index]
     if not present:
@@ -249,6 +396,11 @@ def _ipf_weights(bin_asgn, n_bins, n_iter=30):
     """
     Iterative Proportional Fitting: weights w_i such that for every reaction f
     and bin b the weighted fraction equals 1/n_bins (uniform marginal).
+
+    Args:
+        bin_asgn: per-sample, per-reaction bin index array.
+        n_bins: number of bins per reaction.
+        n_iter: number of IPF sweeps.
     """
     n = len(bin_asgn)
     w = np.ones(n, dtype=np.float64) / n
@@ -268,6 +420,13 @@ def draw_quasi_uniform(samples, fva, n_final, n_bins, reactions):
     IPF-weighted draw from `samples` targeting uniform marginals for each reaction.
     Returns a DataFrame of n_final rows drawn without replacement (with replacement
     only if the pool is smaller than n_final).
+
+    Args:
+        samples: pool of sampled flux points to draw from.
+        fva: per-reaction FVA min/max, used as the binning range.
+        n_final: number of rows to draw.
+        n_bins: number of bins per reaction.
+        reactions: reaction ids the marginals are targeted on.
     """
     present = [r for r in reactions if r in samples.columns and r in fva.index]
     if not present:
@@ -317,7 +476,12 @@ def screen_nonessential(model):
     """Return IDs of reactions whose knockout leaves the prepared model feasible."""
     nonessential = []
     essential = []
+    # A measurement pool's mixing leg is trivially non-essential -- it carries no mass --
+    # so it would otherwise soak up the KO budget on "knockouts" that only set a
+    # compartment fraction to zero.
     for rxn in model.reactions:
+        if is_pool_reaction(rxn):
+            continue
         with model:
             rxn.bounds = (0, 0)
             if model.optimize().status == "optimal":
@@ -331,15 +495,157 @@ def screen_nonessential(model):
     return nonessential
 
 
+_KO_STRATEGIES = ("all", "random", "uncorrelated")
+
+
+def _normalize_ko_strategy(ko_value):
+    """Normalize `sampling.ko` to one of `_KO_STRATEGIES`, or None if disabled.
+
+    Accepts the legacy ``ko: true`` (every non-essential reaction -- now named
+    "all") alongside the ``false | all | random | uncorrelated`` string enum.
+    """
+    if ko_value is False or ko_value is None:
+        return None
+    if ko_value is True:
+        return "all"
+    if ko_value in _KO_STRATEGIES:
+        return ko_value
+    raise ValueError(f"Unknown sampling.ko value {ko_value!r}; expected one of "
+                      f"False, True, or {_KO_STRATEGIES}")
+
+
+def greedy_pivoted_cholesky_select(C, k, tol=1e-10):
+    """Greedy pivoted Cholesky: pick up to *k* indices of *C* whose directions carry
+    the most variance unexplained by picks already made -- the least mutually
+    correlated set. No swaps (a pick is never revisited) and no tuning (runs exactly
+    *k* steps, fewer only once remaining residual variance is numerically exhausted).
+
+    Args:
+        C: symmetric PSD matrix (e.g. a correlation matrix), shape (n, n).
+        k: number of indices to select; capped at n.
+        tol: stop once the largest remaining residual diagonal drops below this.
+    """
+    n = C.shape[0]
+    k = min(k, n)
+    d = np.diag(C).astype(float).copy()
+    L = np.zeros((n, k))
+    selected = []
+    for t in range(k):
+        piv = int(np.argmax(d))
+        if d[piv] <= tol:
+            break
+        L[:, t] = (C[:, piv] - L[:, :t] @ L[piv, :t]) / np.sqrt(d[piv])
+        d -= L[:, t] ** 2
+        d[piv] = -np.inf  # never reselect; also guards against float noise
+        selected.append(piv)
+    return selected
+
+
+def _select_uncorrelated_ko(model, candidates, n_ko, seed):
+    """Pick the *n_ko* of *candidates* whose pFBA solutions move least like each other.
+
+    One pFBA solution per candidate KO plus a wild-type baseline; each KO's change
+    vector is (KO pFBA - WT pFBA) over all reactions. Correlates the change vectors
+    and greedily selects the least mutually correlated set via
+    `greedy_pivoted_cholesky_select`.
+
+    Args:
+        model: prepared model (post FVA-pruning/skip_constraints); its objective is
+            already Zero at the point `main()` calls this, so pfba() finds the
+            minimal-total-flux point of the existing feasible region (which already
+            encodes media/growth), not a growth-optimizing solution.
+        candidates: reaction ids to rank (from `screen_nonessential`).
+        n_ko: number of reactions to select.
+        seed: used only for the degenerate all-uninformative fallback.
+    """
+    from cobra.flux_analysis import pfba
+
+    rxn_ids = [r.id for r in model.reactions]
+    wt = pfba(model).fluxes.reindex(rxn_ids).to_numpy()
+
+    kept, deltas = [], []
+    for rxn_id in candidates:
+        rxn = model.reactions.get_by_id(rxn_id)
+        with model:
+            rxn.bounds = (0, 0)
+            try:
+                ko_fluxes = pfba(model).fluxes.reindex(rxn_ids).to_numpy()
+            except Exception:
+                continue  # pFBA can fail even where the FBA feasibility screen passed
+        kept.append(rxn_id)
+        deltas.append(ko_fluxes - wt)
+
+    if not kept:
+        print("  [uncorrelated] no candidate KO had a successful pFBA solve")
+        return []
+
+    deltas = np.asarray(deltas)
+    informative = deltas.std(axis=1) > 1e-12
+    if not informative.any():
+        print("  [uncorrelated] every candidate's pFBA solution is unchanged by its "
+              "own KO -- falling back to a random n_ko selection")
+        rng = np.random.default_rng(seed)
+        k = min(n_ko, len(kept))
+        return rng.choice(kept, size=k, replace=False).tolist()
+
+    kept = [r for r, keep in zip(kept, informative) if keep]
+    C = np.corrcoef(deltas[informative])
+    chosen = [kept[i] for i in greedy_pivoted_cholesky_select(C, n_ko)]
+    print(f"  [uncorrelated] {len(chosen)}/{len(kept)} least-correlated KO reactions "
+          f"selected (target n_ko={n_ko})")
+    return chosen
+
+
+def select_ko_reactions(model, strategy, n_ko, seed):
+    """Choose which reactions to knock out, per *strategy* (`_normalize_ko_strategy`
+    output). "all": every non-essential reaction. "random": a size-`n_ko` random
+    subset. "uncorrelated": the `n_ko` non-essential reactions whose pFBA change
+    vectors are least mutually correlated (`_select_uncorrelated_ko`). If `n_ko` is
+    at least the number of non-essential candidates, both `random` and
+    `uncorrelated` degrade to `all` (nothing to sub-select).
+
+    Args:
+        model: prepared model to screen for essentiality and knock out from.
+        strategy: one of `_KO_STRATEGIES`.
+        n_ko: number of reactions to select; required for "random"/"uncorrelated",
+            ignored for "all".
+        seed: base seed; "random" draws from it directly, "uncorrelated" only uses
+            it for its degenerate fallback.
+    """
+    nonessential = screen_nonessential(model)
+    if strategy == "all":
+        return nonessential
+    if not n_ko:
+        raise ValueError(f"sampling.n_ko is required when sampling.ko is {strategy!r}")
+    if n_ko >= len(nonessential):
+        print(f"  [{strategy}] n_ko={n_ko} >= {len(nonessential)} non-essential "
+              f"reactions -- using all of them")
+        return nonessential
+    if strategy == "random":
+        rng = np.random.default_rng(seed)
+        return rng.choice(nonessential, size=n_ko, replace=False).tolist()
+    return _select_uncorrelated_ko(model, nonessential, n_ko, seed)
+
+
 def _do_sample_n(model, s, n_samples, seed):
     return _do_sample(model, dict(s, n_samples=n_samples), seed)
 
 
-def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
+def stratified_sample(sampler, s, fva, reactions, n_bins, n_subsamples, seed):
     """
     For each variable measured reaction, run one constrained MCMC chain per bin.
     Returns a DataFrame containing all strata concatenated.
+
+    Args:
+        sampler: ReusableSampler to draw from.
+        s: sampling config (method, thinning, processes, ...).
+        fva: per-reaction FVA min/max, used to define the bin bounds.
+        reactions: reaction ids to stratify on.
+        n_bins: number of bins per reaction.
+        n_subsamples: samples drawn per stratum.
+        seed: base seed; offset per bin.
     """
+    model = sampler.model
     all_strata = []
     for rxn_id in reactions:
         if rxn_id not in model.reactions or rxn_id not in fva.index:
@@ -352,22 +658,41 @@ def stratified_sample(model, s, fva, reactions, n_bins, n_subsamples, seed):
         for b in range(n_bins):
             bin_lo = lo + b * bin_width
             bin_hi = lo + (b + 1) * bin_width
-            with model:
-                rxn = model.reactions.get_by_id(rxn_id)
-                rxn.bounds = (max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi))
+            rxn = model.reactions.get_by_id(rxn_id)
+            # The bin window is cut from *this reaction's own* WT FVA range, so it
+            # normally sits inside [rxn.lower_bound, rxn.upper_bound] by construction.
+            # That stops holding when the caller has separately forced rxn's bounds to
+            # (0, 0) -- e.g. sampling.ko knocking this exact reaction out while it is
+            # also one of the strata reactions -- and the two windows may not overlap
+            # at all, which cobra's bounds setter raises on rather than reports as
+            # infeasible. Treat "no overlap" the same as "infeasible": skip the stratum.
+            new_lo, new_hi = max(rxn.lower_bound, bin_lo), min(rxn.upper_bound, bin_hi)
+            if new_lo > new_hi:
+                print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — outside current "
+                      f"bounds [{rxn.lower_bound:g}, {rxn.upper_bound:g}] "
+                      f"(e.g. this reaction is under an active knockout)")
+                continue
+            with sampler.temporary_bounds({rxn_id: (new_lo, new_hi)}):
                 if model.optimize().status != "optimal":
                     print(f"  [stratify] skip {rxn_id} bin {b + 1}/{n_bins} — infeasible")
                     continue
-                all_strata.append(_do_sample_n(model, s, n_subsamples, seed + b))
+                all_strata.append(_do_sample_n(sampler, s, n_subsamples, seed + b))
         print(f"  [stratify] {rxn_id}: {n_bins} strata × {n_subsamples} samples")
+    # Every stratum can be skipped -- e.g. all of `reactions` were knocked out in this
+    # call -- and pd.concat([]) raises rather than giving an empty pool; an empty pool
+    # is correct here (the caller's pd.concat over KO iterations tolerates it).
+    if not all_strata:
+        return pd.DataFrame(columns=[r.id for r in model.reactions])
     return pd.concat(all_strata, ignore_index=True)
 
 
-def _do_sample(model, s, seed):
+def _do_sample(model_or_sampler, s, seed):
     # optgp, not hopsy: HopsySampler ships only on the cobrapy devel branch, so a released
     # cobra cannot honour a hopsy default. Every config in paper/configs sets this explicitly.
     method = s.get("method", "optgp")
     if method == "hopsy":
+        model = (model_or_sampler.model if isinstance(model_or_sampler, ReusableSampler)
+                  else model_or_sampler)
         if HopsySampler is None:
             warnings.warn(
                 "method: hopsy was requested but HopsySampler is unavailable — SAMPLING WITH "
@@ -387,7 +712,7 @@ def _do_sample(model, s, seed):
         proposal_cls = getattr(_hopsy, _HOPSY_PROPOSALS[proposal_key])
         sol = model.optimize()
         assert sol.status == "optimal", f"Model infeasible before sampling: {sol.status}"
-        sampler = HopsySampler(
+        hopsy_sampler = HopsySampler(
             model,
             sampler=proposal_cls,
             thinning=s["thinning"],
@@ -396,9 +721,11 @@ def _do_sample(model, s, seed):
             seed=seed,
             rounding=s.get("rounding", True),
         )
-        return sampler.sample(s["n_samples"])
+        return hopsy_sampler.sample(s["n_samples"])
+    if isinstance(model_or_sampler, ReusableSampler):
+        return model_or_sampler.sample(s["n_samples"], seed=seed)
     return sample(
-        model,
+        model_or_sampler,
         n=s["n_samples"],
         thinning=s["thinning"],
         processes=s["processes"],
@@ -409,31 +736,23 @@ def _do_sample(model, s, seed):
 
 def main(cfg, output_dir_override=None):
     s = cfg["sampling"]
+    ko_strategy = _normalize_ko_strategy(s.get("ko", False))
     output_dir = output_dir_for(cfg, output_dir_override)
     os.makedirs(output_dir, exist_ok=True)
 
     print(f"Loading model: {cfg['model_file']}")
     model = load_json_model(resolve_path(cfg["model_file"], cfg.get("_root")))
     model.solver.configuration.tolerances.feasibility = 1e-9
+    # TEMPORARY, for a real glpk-vs-gurobi A/B run on e_coli genome-scale -- not a
+    # supported config surface, remove after the comparison is decided either way.
+    _solver_override = os.environ.get("SIGMAFLUX_SOLVER_OVERRIDE")
+    if _solver_override:
+        model.solver = _solver_override
+        if _solver_override == "gurobi":
+            model.solver.configuration.threads = 1
+        print(f"  [SIGMAFLUX_SOLVER_OVERRIDE] solver forced to {_solver_override!r}")
 
-    apply_media(model, s["media"], close_unlisted=s.get("close_unlisted", True))
-    apply_reaction_bounds(model, s.get("reaction_bounds"))
-    if s.get("growth"):
-        constrain_growth(model, s["growth"])
-
-    solution = model.optimize()
-    if solution.status != "optimal":
-        raise RuntimeError(f"Prepared model is not feasible: {solution.status}")
-    print(f"Prepared model status: {solution.status}, objective={solution.objective_value}")
-
-    model.objective = Zero
-
-    n_zero, n_orphan, fva_result = constrain_by_fva(model)
-    print(f"Removed {n_zero} zero-flux reactions and {n_orphan} orphaned metabolites; tightened remaining bounds with ±1e-6")
-
-    skip_constraints = cfg.get("skip_constraints", [])
-    if skip_constraints:
-        drop_skip_constraints(model, skip_constraints)
+    fva_result = prepare_for_mfa(model, cfg)
 
     measured_rxns = cfg.get("training", {}).get("measured_fluxes", [])
     sub_rxns = s.get("stratified_sampling", {}).get("reactions") or measured_rxns
@@ -450,43 +769,77 @@ def main(cfg, output_dir_override=None):
             else:
                 print(f"  {rxn_id:<30s}  REMOVED (zero-flux by FVA)")
 
-    prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
-    cobra.io.save_json_model(model, prepared_model_path)
-    print(f"Saved prepared model: {prepared_model_path}")
-
-    if s.get("ko", False) and s.get("growth", {}).get("lb") == 0:
+    if ko_strategy and s.get("growth", {}).get("lb") == 0:
         print("WARNING: ko is enabled but growth lb is 0 — knocked-out models may be trivially feasible at v=0, producing uninformative zero-flux samples")
 
     strat_cfg = s.get("stratified_sampling", {})
     n_final = s["n_samples"]
 
+    # The sampler is built once here and reused for every KO/stratum below -- only the
+    # bounds of the affected reaction(s) change from this point on, via
+    # sampler.temporary_bounds(), instead of rebuilding a sampler per bounds change. hopsy
+    # is devel-only and unavailable in a released cobra (see _do_sample), so it never
+    # actually reaches sampler.sample(); "optgp" here just gives it working warmup/problem
+    # bookkeeping to sample from.
+    method = s.get("method", "optgp")
+    sampler = ReusableSampler(model, method=("optgp" if method == "hopsy" else method),
+                              thinning=s["thinning"], processes=s["processes"], seed=cfg["seed"])
+
     if strat_cfg.get("enabled", False):
         n_bins = strat_cfg.get("n_bins", 5)
-        n_subsamples = strat_cfg["n_subsamples"]
-        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × {n_subsamples} samples/stratum...")
-        all_strata = [stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
-        if s.get("ko", False):
-            nonessential = screen_nonessential(model)
-            for i, rxn_id in enumerate(nonessential):
-                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}")
-                with model:
-                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                    all_strata.append(stratified_sample(model, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
+        # KO count decides the per-pass sample budget below, so it has to be known
+        # before that budget is resolved -- select once here rather than inside the
+        # loop that used to follow the WT call.
+        ko_reactions = (select_ko_reactions(model, ko_strategy, s.get("n_ko"), cfg["seed"])
+                        if ko_strategy else [])
+        n_ko_passes = 1 + len(ko_reactions)  # WT + every KO
+        n_subsamples_cfg = strat_cfg["n_subsamples"]
+        if n_subsamples_cfg == "auto":
+            # Each KO reruns the full stratified pass, and draw_quasi_uniform only
+            # keeps n_final of whatever gets drawn -- a fixed n_subsamples multiplies
+            # by n_ko_passes for no benefit (measured: r_toruloides drew ~6.08M raw
+            # samples across 152 passes for a 10k final pool). Spread a ~n_final-sized
+            # budget per reaction across its bins and every pass instead, so the total
+            # pool stays about `len(sub_rxns) x n_final`, not `... x n_ko_passes`.
+            n_subsamples = math.ceil(n_final / n_bins / n_ko_passes)
+            print(f"  n_subsamples=auto -> {n_subsamples} (ceil({n_final}/{n_bins}/{n_ko_passes}))")
+        else:
+            n_subsamples = n_subsamples_cfg
+        print(f"Stratified sampling: {len(sub_rxns)} reactions × {n_bins} bins × "
+              f"{n_subsamples} samples/stratum × {n_ko_passes} passes "
+              f"(WT + {len(ko_reactions)} KO, strategy={ko_strategy})...")
+        all_strata = [stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"])]
+        for i, rxn_id in enumerate(ko_reactions):
+            print(f"  KO [{i + 1}/{len(ko_reactions)}]: {rxn_id}")
+            with sampler.temporary_bounds({rxn_id: (0, 0)}):
+                all_strata.append(stratified_sample(sampler, s, fva_result, sub_rxns, n_bins, n_subsamples, cfg["seed"] + (i + 1) * 1000))
         samples = pd.concat(all_strata, ignore_index=True)
         print(f"Stratified pool: {len(samples)} samples")
         diagnose_pool_coverage(samples, fva_result, sub_rxns, n_bins, label="Stratified pool")
         samples = draw_quasi_uniform(samples, fva_result, n_final, n_bins, sub_rxns)
     else:
         print(f"Sampling {n_final} flux distributions (WT)...")
-        all_samples = [_do_sample(model, s, cfg["seed"])]
-        if s.get("ko", False):
-            nonessential = screen_nonessential(model)
-            for i, rxn_id in enumerate(nonessential):
-                print(f"  KO [{i + 1}/{len(nonessential)}]: {rxn_id}  ({n_final} samples)")
-                with model:
-                    model.reactions.get_by_id(rxn_id).bounds = (0, 0)
-                    all_samples.append(_do_sample(model, s, cfg["seed"] + i + 1))
+        all_samples = [_do_sample(sampler, s, cfg["seed"])]
+        if ko_strategy:
+            ko_reactions = select_ko_reactions(model, ko_strategy, s.get("n_ko"), cfg["seed"])
+            for i, rxn_id in enumerate(ko_reactions):
+                print(f"  KO [{i + 1}/{len(ko_reactions)}]: {rxn_id}  ({n_final} samples)")
+                with sampler.temporary_bounds({rxn_id: (0, 0)}):
+                    all_samples.append(_do_sample(sampler, s, cfg["seed"] + i + 1))
         samples = pd.concat(all_samples, ignore_index=True) if len(all_samples) > 1 else all_samples[0]
+
+    # Sampling is done, so the pool block's pinned drains have served their purpose:
+    # the fractions are drawn. Reopen the bounds before the model is written, since the
+    # saved bounds are what training and inference read.
+    reopened = relax_measurement_pool_bounds(model)
+    if reopened:
+        print(f"Reopened {len(reopened)} measurement-pool drain(s) to "
+              f"[0, {POOL_RELAXED_UB:g}]; the mixing legs stay in [0, 1], which is "
+              f"what a compartment fraction means")
+
+    prepared_model_path = os.path.join(output_dir, "model_prepared_for_mfa.json")
+    cobra.io.save_json_model(model, prepared_model_path)
+    print(f"Saved prepared model: {prepared_model_path}")
 
     samples_path = os.path.join(output_dir, "flux_samples.csv")
     samples.to_csv(samples_path)

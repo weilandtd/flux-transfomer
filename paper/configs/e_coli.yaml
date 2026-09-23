@@ -1,0 +1,180 @@
+# SigmaFlux training configuration — Escherichia coli, genome-scale iAF1260
+#
+# The ¹³C data in data/E_coli_LC_MS is the HILIC/LC-MS wild-type batch: three separate
+# cultures, one per tracer sheet. The external rates still come from the Long &
+# Antoniewicz (2019) GC-MS workbook, which reports them on a glucose = 100 basis.
+name: E_coli
+model_file: models/atomistic/E_coli/iAF1260_annotated.json
+mapping_csv: models/atomistic/E_coli/E_coli_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# MIDs come from the LC-MS directory, which e_coli_core also reads; the mapping there
+# is the core model's, so this one gets its own name->iAF1260 map. ExtFlux and the
+# reference fluxes stay in the GC-MS directory, which is where they were published.
+experiment:
+  data_dir: data/E_coli_LC_MS
+  gem_xlsx: models/atomistic/E_coli/iAF1260_GEM.xlsx
+  # 40 of the 44 compounds in E_coli_B.xlsx, all carbon-mapped in the annotated model.
+  # Left out: sedoheptulose-1,7-bisphosphate (iAF1260 has no SBPase, so no such
+  # metabolite) and the three peaks that cover an isomer pair the measurement cannot
+  # resolve to one species -- D-glucosamine-1/6-phosphate,
+  # N-acetyl-glucosamine-1/6-phosphate, shikimate(-3-phosphate).
+  mapping_csv: data/E_coli_LC_MS/E_coli_mapping.csv
+  ext_flux: data/E_coli_GC_MS/EColi_ExtFlux_genomescale.xlsx
+  reference_flux: data/E_coli_GC_MS/E_coli_core_reference_flux.xlsx
+  n_bootstrap: 200
+
+
+# Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
+# biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
+# has to stay in the network.
+skip_constraints: []
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000
+  thinning: 100
+  processes: 8
+  method: optgp       # hopsy | optgp | achr
+  fva: true
+  ko: false
+
+  stratified_sampling:
+    enabled: true
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
+    n_bins: 20
+    reactions: null               # null → training.measured_fluxes
+
+  # Absolute units, mmol/gDW/h, so growth is a real specific growth rate. The
+  # published MFA reports everything on a glucose = 100 basis instead; converting
+  # is a matter of scaling by the measured glucose uptake.
+  growth:
+    lb: 0.01
+    ub: 0.8
+
+  # Convention (after standardization): positive flux = secretion, negative = uptake.
+  #
+  # Aerobic glucose minimal medium, mmol/gDW/h. Only the salts and the carbon source
+  # are opened for uptake; fermentation products are secretion-only. Glucose tops out
+  # near 15, which is what a growth rate of 0.8/h costs.
+  media:
+    # Carbon source and electron acceptor
+    EX_glc-D_e:  {lb: -15.0, ub: 0.0}
+    EX_o2_e:     {lb: -30.0, ub: 0.0}
+    # Salts and minerals — unrestricted uptake
+    EX_nh4_e:    {lb: -20.0, ub: 0.0}
+    EX_pi_e:     {lb: -20.0, ub: 0.0}
+    EX_so4_e:    {lb: -20.0, ub: 0.0}
+    EX_k_e:      {lb: -20.0, ub: 0.0}
+    EX_ca2_e:    {lb: -20.0, ub: 0.0}
+    EX_cl_e:     {lb: -20.0, ub: 0.0}
+    EX_cobalt2_e: {lb: -20.0, ub: 0.0}
+    EX_cu2_e:    {lb: -20.0, ub: 0.0}
+    EX_fe2_e:    {lb: -20.0, ub: 0.0}
+    EX_fe3_e:    {lb: -20.0, ub: 0.0}
+    EX_mg2_e:    {lb: -20.0, ub: 0.0}
+    EX_mn2_e:    {lb: -20.0, ub: 0.0}
+    EX_mobd_e:   {lb: -20.0, ub: 0.0}
+    EX_zn2_e:    {lb: -20.0, ub: 0.0}
+    EX_cbl1_e:   {lb: -20.0, ub: 0.0}
+    # Water and proton — freely exchangeable
+    EX_h2o_e:    {lb: -50.0,  ub: 50.0}
+    EX_h_e:      {lb: -50.0,  ub: 50.0}
+    # Secreted products
+    EX_ac_e:     {lb: 0.0, ub: 30.0}
+    EX_co2_e:    {lb: 0.0, ub: 30.0}
+    EX_etoh_e:   {lb: 0.0, ub: 30.0}
+    EX_lac-D_e:  {lb: 0.0, ub: 30.0}
+    EX_succ_e:   {lb: 0.0, ub: 30.0}
+    EX_fum_e:    {lb: 0.0, ub: 30.0}
+    EX_pyr_e:    {lb: 0.0, ub: 30.0}
+    EX_h2_e:     {lb: 0.0, ub: 30.0}
+    EX_urea_e:   {lb: 0.0, ub: 30.0}
+    # Cofactors the subset cannot synthesise. They are listed so media_dilution_targets
+    # selects them, which is what supplies them: each gets an unlabeled <met>_env feed.
+    # The exchange itself stays shut, because a second supply route on the same pool is
+    # the duplicate-boundary defect again, and an unmapped one injects 51 carbons of
+    # quinone with no atom map behind it.
+    EX_mql8_c:   {lb: 0.0, ub: 0.0}
+    EX_q8h2_c:   {lb: 0.0, ub: 0.0}
+    EX_sheme_c:  {lb: 0.0, ub: 0.0}
+    EX_thmpp_c:  {lb: 0.0, ub: 0.0}
+
+  # The MFA needs glucose entry one-way: reversible, GLCtex gives glc-D_e a producer
+  # and the tracer inlet stops being an EMU network input.
+  reaction_bounds:
+    GLCtex: {lb: 0.0, ub: 15.0}
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+labeling:
+  batch_size: 512
+  # One per sheet of data/E_coli_LC_MS/E_coli_B.xlsx — three separate cultures, so the
+  # enrichments are the cultures' own. The U-13C feed was 50% labelled, not 100%.
+  tracers:
+    - tracer_id: glc-D_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 1.0
+      name: "1,2-13C glucose"
+    - tracer_id: glc-D_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: glc-D_e
+      labeling: [0, 0, 1, 0, 0, 0]
+      enrichment: 1.0
+      name: "3-13C glucose"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true
+  token_selection_method: all       # all measurable tokens; no significance test
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: ecoli_transformer.pt
+  ensemble_size: 20
+  epochs: 1000
+  early_stopping_patience: 10
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.1
+  max_samples: 10000
+
+  combined_dim: 256
+  num_attn_heads: 8
+  num_transformer_layers: 4
+  dropout: 0.2
+
+  # 626 metabolites and ~740 reactions — the largest network here, so the compound
+  # and reaction vocabularies need more harmonics than the yeasts.
+  h_compound: 16
+  h_label: 5
+  h_tracer: 1
+  h_reaction: 16
+  h_type: 2
+
+  flux_token_dropout: 0.2
+  labeling_token_dropout: 0.2
+  normalize_mids: false
+
+  # iAF1260 has a single lumped biomass, so there is no PROTEIN/RNA/DNA/CARB/LIPID
+  # split to measure. What the published MFA constrains is glucose uptake (its
+  # basis) and the acetate yield.
+  # O2 and CO2 are deliberately absent — off-gas rates are hard to measure and were
+  # not reported here, so treating them as known inputs would be wishful.
+  measured_fluxes:
+    - EX_glc-D_e
+    - EX_ac_e
+    - BIOMASS
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01
+  loss: variance
+  null_space_type: targeted_ica
+  flux_loss_space: basis
+  variance_min_cutoff: 0.1

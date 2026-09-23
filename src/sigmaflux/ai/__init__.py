@@ -4,6 +4,7 @@ AI module for metabolic flux prediction from labeling data.
 
 # Model
 from .model import CrossAttention, FluxDecoderConfig, FluxDecoder
+from .flux_projection import FluxProjection, active_set_sizes
 
 # Training
 from .train import (
@@ -39,7 +40,7 @@ from .predict import (
 )
 
 # Utilities (null-space, token scoring, file conversion)
-from .utils import compute_sparse_nullspace, compute_token_scores, load_fisher_token_scores
+from .utils import compute_sparse_nullspace, load_fisher_token_scores
 
 # Data utilities
 from .data import (
@@ -60,20 +61,18 @@ from .data import (
     IDTokenizedDataset,
     prepare_dataset,
     prepare_id_dataset,
-    apply_random_masking,
-    extract_mask_from_data,
-    generate_experiment_mask,
 )
 
 __all__ = [
     # Utilities
     'compute_sparse_nullspace',
-    'compute_token_scores',
     'load_fisher_token_scores',
     # Model
     'CrossAttention',
     'FluxDecoderConfig',
     'FluxDecoder',
+    'FluxProjection',
+    'active_set_sizes',
     # Training
     'train_model',
     'evaluate_validation_correlations',
@@ -122,7 +121,4 @@ __all__ = [
     'IDTokenizedDataset',
     'prepare_dataset',
     'prepare_id_dataset',
-    'apply_random_masking',
-    'extract_mask_from_data',
-    'generate_experiment_mask',
 ]

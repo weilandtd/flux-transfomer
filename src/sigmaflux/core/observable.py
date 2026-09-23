@@ -4,12 +4,13 @@
 import torch 
 
 class Observable(): 
-    """
-    observable: tensor of the observable 
-    observable_mapping:  mapping length with same length as observable on axis but contains a list of the rows that are mapped 
-    
-    """
-    def __init__(self, observable_mapping, observable_weighting,axis=0): 
+    """Reduces a tensor along one axis into a weighted sum over grouped rows, per observable_mapping."""
+    def __init__(self, observable_mapping, observable_weighting,axis=0):
+        """Args:
+            observable_mapping: per-observable list of row indices to group.
+            observable_weighting: per-observable list of weights, aligned with observable_mapping.
+            axis: tensor axis the grouping/reduction is applied along.
+        """
         self.observable_mapping = observable_mapping
         self.observable_weighting = observable_weighting
         self.axis = axis

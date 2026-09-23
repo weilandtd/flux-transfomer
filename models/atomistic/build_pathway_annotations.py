@@ -108,6 +108,13 @@ _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
 def build_annotations(model_json, gem_xlsx, out_csv):
+    """Assign each model metabolite its most-frequent subsystem and write the CSV.
+
+    Args:
+        model_json: path to the COBRA JSON model.
+        gem_xlsx: GEM workbook supplying per-reaction subsystems.
+        out_csv: path to write the metabolite-to-pathway CSV.
+    """
     model_json = _REPO_ROOT / model_json
     gem_xlsx   = _REPO_ROOT / gem_xlsx
     out_csv    = _REPO_ROOT / out_csv

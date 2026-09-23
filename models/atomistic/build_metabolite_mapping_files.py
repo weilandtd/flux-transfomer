@@ -1,23 +1,35 @@
 """
 Build metabolite name mapping CSVs for each organism.
 
-Run this once per organism (or whenever the model or compound list changes).
-Edit the USER CONFIGURATION section below with your actual file paths, then run:
+Run this once per organism (or whenever the model changes). Edit the USER
+CONFIGURATION section below with your actual file paths, then run:
 
     .venv/bin/python models/build_metabolite_mapping_files.py
 
-Each entry produces one CSV mapping experimental compound names (from the MID
-xlsx) to model metabolite IDs (from the AMM xlsx).  The output CSV is used by
-prepare_experiment_data.py and run_inference.py via --mapping-csv.
+Each entry produces one CSV mapping LC/MS platform compound names (from
+data/HILIC_LCMS_knowns.csv) to model metabolite IDs, filtered to rows whose atom
+map tracks the compound's full carbon count (see
+sigmaflux.utils.carbon_coverage.filter_by_carbon_coverage). This CSV is the
+LC/MS-platform-measurable subset of the model -- what one experiment happened to
+report plays no part in it. It is used by prepare_experiment_data.py and
+run_inference.py via --mapping-csv.
 
-An entry may also carry `lcms_knowns`, the LC/MS platform's compound library.  Its
-matches are unioned into the output, so the mapping describes everything the
-platform *can* measure rather than only what one experiment did.  The measured
-short names still have to be present or the MID workbooks would not load — the
-sheets say `Gly` and `aKG`, the library says `Glycine` and `Oxoglutaric acid`.
+An entry whose GEM xlsx carries no metabolite names (E_coli, E_coli_core) supplies
+`name_fallback`, a BiGG-id -> name table from _bigg_name_fallback.py, used to fill
+the gap before matching.
+
+**The `*_fragment_mapping.csv` files are NOT built here, and need rebuilding.** GC/MS
+measures TBDMS-derivatised *fragments* -- Ala260, Glu432, a named ion carrying a known
+subset of a molecule's carbons -- not whole molecules, so they cannot be matched against
+`data/HILIC_LCMS_knowns.csv` the way this script matches everything else. The equivalent
+GC/MS fragment knowns list, giving each ion its parent metabolite and the carbon
+positions it retains, **does not exist in this repo yet**. Until it does, the two
+fragment CSVs (E_coli, E_coli_core) stay hand-written and carry no carbon-coverage or
+measurement-token filtering: their rows were only pruned of `_e`/`_p` compartments by
+hand. Anything reading them is measuring whole molecules that the platform actually
+resolves as fragments.
 """
 
-import csv
 import os
 import sys
 
@@ -25,96 +37,62 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from sigmaflux.utils import build_data_name_maps, match_lcms_knowns
+from sigmaflux.utils import match_lcms_knowns
+from sigmaflux.utils.carbon_coverage import filter_by_carbon_coverage, formulas_from_knowns
+from _bigg_name_fallback import E_COLI_BIGG_NAMES, E_COLI_CORE_NAMES, fill_missing_names
 
-
-def _compound_names_all_sheets(*mid_xlsx):
-    """Every compound measured across every tracer sheet of the given MID workbooks.
-
-    build_data_name_maps reads a single sheet per file, which would miss compounds
-    unique to one tracer — the T-cell 1,2-13C glucose sheet is the only one carrying
-    glucose and G6P.
-    """
-    import pandas as pd
-
-    names = set()
-    for path in mid_xlsx:
-        full = os.path.join(os.path.dirname(__file__), '..', '..', path)
-        for sheet in pd.ExcelFile(full).sheet_names:
-            df = pd.read_excel(full, sheet)
-            if "Compound" in df.columns:
-                names.update(df["Compound"].dropna().astype(str))
-    return sorted(names)
-
-
-def _measured_compound_names(*mapping_csvs):
-    """Compound names measured for organisms that already have a mapping CSV.
-
-    R. toruloides has no MID data yet, so its measurable token space is taken from
-    the compounds the same LC/MS platform resolves for the other two yeasts.
-    """
-    names = set()
-    for path in mapping_csvs:
-        with open(os.path.join(os.path.dirname(__file__), '..', '..', path)) as f:
-            names.update(row["experimental_id"] for row in csv.DictReader(f))
-    return sorted(names)
+LCMS_KNOWNS = "data/HILIC_LCMS_knowns.csv"
 
 # ============================================================
 # USER CONFIGURATION — edit paths for your local setup
 # ============================================================
 
+# `model_json` names the atom-mapping-annotated model (the one paper/configs/*.yaml
+# points `model_file` at); `gem_xlsx` is that model's sibling GEM workbook.
 ORGANISMS = [
     {
         "name": "I_orientalis",
-        "mid_xlsx": [
-            "data/I_orientalis/I_orientalis_C.xlsx",
-            "data/I_orientalis/I_orientalis_N.xlsx",
-            "data/I_orientalis/I_orientalis_P.xlsx",
-            "data/I_orientalis/I_orientalis_batch.xlsx",
-        ],
-        "amm_xlsx":   "models/atomistic/I_orientalis/imIsor_AMM.xlsx",
         "output_csv": "models/atomistic/I_orientalis/I_orientalis_mapping.csv",
+        "model_json": "models/atomistic/I_orientalis/imIsor_annotated_hierarchical.json",
+        "gem_xlsx":   "models/atomistic/I_orientalis/imIsor_GEM.xlsx",
     },
     {
         "name": "S_cerevisiae",
-        "mid_xlsx": [
-            "data/S_cervesiae/S_cerevisiae_C.xlsx",
-            "data/S_cervesiae/S_cerevisiae_N.xlsx",
-            "data/S_cervesiae/S_cerevisiae_P.xlsx",
-            "data/S_cervesiae/S_cerevisiae_batch.xlsx",
-        ],
-        "amm_xlsx":   "models/atomistic/S_cerevisiae/scAMM.xlsx",
         "output_csv": "models/atomistic/S_cerevisiae/S_cerevisiae_mapping.csv",
+        "model_json": "models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json",
+        "gem_xlsx":   "models/atomistic/S_cerevisiae/scGEM.xlsx",
     },
     {
-        # No data/R_toruloides yet — the compound list comes from the other two yeasts.
         "name": "R_toruloides",
-        "mid_xlsx": None,
-        "compound_names": _measured_compound_names(
-            "models/atomistic/I_orientalis/I_orientalis_mapping.csv",
-            "models/atomistic/S_cerevisiae/S_cerevisiae_mapping.csv",
-        ),
-        "amm_xlsx":   "models/atomistic/R_toruloides/imRt_AMM.xlsx",
         "output_csv": "models/atomistic/R_toruloides/R_toruloides_mapping.csv",
+        "model_json": "models/atomistic/R_toruloides/imRt_annotated_hierarchical.json",
+        "gem_xlsx":   "models/atomistic/R_toruloides/imRt_GEM.xlsx",
     },
     {
         "name": "M_musculus_T_Cell",
-        "mid_xlsx": None,
-        "compound_names": _compound_names_all_sheets(
-            "data/M_musculus_T_Cell/M_musculus_T_Cell_A.xlsx",
-            "data/M_musculus_T_Cell/M_musculus_T_Cell_N.xlsx",
-        ),
-        "amm_xlsx":   "models/atomistic/M_musculus_T_Cell/mmTcell_AMM_completeMFA.xlsx",
         "output_csv": "models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_mapping.csv",
-        # This model has no cytosolic succinate and writes aconitate with a
-        # stereochemistry tag, so the shared table's assumptions do not hold.
-        "overrides": {
-            "Suc":  ["succ_m"],
-            "Acon": ["acon_C_m"],
-        },
-        "lcms_knowns": "data/HILIC_LCMS_knowns.csv",
-        "model_json":  "models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json",
-        "gem_xlsx":    "models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx",
+        "model_json": "models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json",
+        "gem_xlsx":   "models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx",
+    },
+    {
+        # iAF1260_GEM.xlsx's metname column is entirely empty, so name matching needs
+        # the BiGG-id fallback table.
+        "name": "E_coli",
+        "output_csv": "models/atomistic/E_coli/E_coli_mapping.csv",
+        "model_json": "models/atomistic/E_coli/iAF1260_annotated.json",
+        "gem_xlsx":   "models/atomistic/E_coli/iAF1260_GEM.xlsx",
+        "name_fallback": E_COLI_BIGG_NAMES,
+        "strip_compartment": True,
+    },
+    {
+        # Same gap as E_coli, but example_GEM.xlsx's ids carry no compartment suffix
+        # and don't follow BiGG spelling, hence the separate table.
+        "name": "E_coli_core",
+        "output_csv": "models/atomistic/E_coli_core/E_coli_core_mapping.csv",
+        "model_json": "models/atomistic/E_coli_core/e_coli_core_annotated.json",
+        "gem_xlsx":   "models/atomistic/E_coli_core/example_GEM.xlsx",
+        "name_fallback": E_COLI_CORE_NAMES,
+        "strip_compartment": False,
     },
 ]
 
@@ -122,37 +100,89 @@ ORGANISMS = [
 # END USER CONFIGURATION
 # ============================================================
 
-def _add_lcms_knowns(org):
-    """Union the LC/MS measurable space into an already-written mapping CSV."""
-    root = os.path.join(os.path.dirname(__file__), '..', '..')
+
+def _build_platform_mapping(org, root):
+    """Write org's `output_csv`: model metabolites matched to data/HILIC_LCMS_knowns.csv by name.
+
+    Args:
+        org: this organism's config dict from ORGANISMS.
+        root: project root, for resolving org's relative paths.
+    """
+    from cobra.io import load_json_model
+
+    gem_xlsx = os.path.join(root, org["gem_xlsx"])
+    metabolites = pd.read_excel(gem_xlsx, sheet_name='Metabolites', usecols=['metid', 'metname'])
+    if org.get("name_fallback"):
+        metabolites = fill_missing_names(
+            metabolites, 'metid', 'metname', org["name_fallback"], org["strip_compartment"])
+
+    model = load_json_model(os.path.join(root, org["model_json"]))
+    mapping = match_lcms_knowns(
+        gem_xlsx=gem_xlsx,
+        knowns_path=os.path.join(root, LCMS_KNOWNS),
+        model_metabolite_ids=[m.id for m in model.metabolites],
+        metabolites_df=metabolites,
+    )
+    if mapping.empty:
+        print("  WARNING: 0 LC/MS knowns matched by name -- no row can be confirmed "
+              "against the platform")
+
+    output = os.path.join(root, org["output_csv"])
+    mapping.sort_values(["experimental_id", "model_id"]).to_csv(output, index=False)
+    print(f"  {mapping['model_id'].nunique()} measurable metabolites, {len(mapping)} mappings -> {output}")
+
+
+def _filter_carbon_coverage(org, root):
+    """Drop mapping rows whose model_id does not track every carbon of its real molecule.
+
+    Args:
+        org: this organism's config dict from ORGANISMS.
+        root: project root, for resolving org's relative paths.
+    """
     from cobra.io import load_json_model
 
     model = load_json_model(os.path.join(root, org["model_json"]))
-    knowns = match_lcms_knowns(
-        gem_xlsx=os.path.join(root, org["gem_xlsx"]),
-        knowns_path=os.path.join(root, org["lcms_knowns"]),
-        model_metabolite_ids=[m.id for m in model.metabolites],
-    )
+    formula_by_name = formulas_from_knowns(os.path.join(root, LCMS_KNOWNS))
+
     output = os.path.join(root, org["output_csv"])
-    measured = pd.read_csv(output)
-    merged = (pd.concat([measured, knowns], ignore_index=True)
-                .drop_duplicates()
-                .sort_values(["experimental_id", "model_id"]))
-    merged.to_csv(output, index=False)
-    print(f"  + LC/MS knowns: {knowns['model_id'].nunique()} measurable metabolites, "
-          f"{len(merged)} mappings total ({len(measured)} measured)")
+    mapping = pd.read_csv(output)
+    filtered = filter_by_carbon_coverage(mapping, model, formula_by_name)
+    filtered.to_csv(output, index=False)
+    print(f"  Carbon coverage: {len(mapping)} -> {len(filtered)} mappings")
+
+
+def _collapse_to_measurement_tokens(org, root):
+    """Rewrite ``model_id`` to the id the platform actually reports.
+
+    A metabolite the model pools is reported as its pool -- naming one compartment would
+    assert a labeling the extract cannot distinguish -- and a metabolite in an excluded
+    compartment is not in the extract at all. Doing it here is what keeps a re-run of
+    this script from reverting the mapping files to per-compartment ids.
+
+    Args:
+        org: this organism's config dict from ORGANISMS.
+        root: project root, for resolving org's relative paths.
+    """
+    from cobra.io import load_json_model
+
+    from sigmaflux.core.measurement_pools import measurement_token
+
+    model = load_json_model(os.path.join(root, org["model_json"]))
+    output = os.path.join(root, org["output_csv"])
+    mapping = pd.read_csv(output)
+    mapping["model_id"] = [measurement_token(model, m) for m in mapping["model_id"]]
+    collapsed = (mapping.dropna(subset=["model_id"])
+                        .drop_duplicates(["experimental_id", "model_id"])
+                        .sort_values(["experimental_id", "model_id"]))
+    collapsed.to_csv(output, index=False)
+    print(f"  Measurement tokens: {len(mapping)} -> {len(collapsed)} mappings")
 
 
 if __name__ == "__main__":
+    _root = os.path.join(os.path.dirname(__file__), '..', '..')
     for org in ORGANISMS:
         print(f"\n=== {org['name']} ===")
-        build_data_name_maps(
-            experimental_xlsx  = org["mid_xlsx"],
-            experimental_names = org.get("compound_names"),
-            model_amm_xlsx     = org["amm_xlsx"],
-            output_csv         = org["output_csv"],
-            overrides          = org.get("overrides"),
-        )
-        if org.get("lcms_knowns"):
-            _add_lcms_knowns(org)
+        _build_platform_mapping(org, _root)
+        _filter_carbon_coverage(org, _root)
+        _collapse_to_measurement_tokens(org, _root)
     print("\nDone.")
