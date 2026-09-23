@@ -70,7 +70,10 @@ def make_test_data(model, dataset='yeast'):
     the test would go on to assert against a silently empty measurement set.
     """
     prefix = DATASETS[dataset]['prefix']
-    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_labeling.csv'))
+    path = os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_labeling.csv')
+    if not os.path.exists(path):
+        pytest.skip(f"missing {dataset} labeling fixture: {path}")
+    df = pd.read_csv(path)
     data = df.groupby(['id', 'mid']).mean()[['enrichment']]
     data['std'] = df.groupby(['id', 'mid']).std()['enrichment']
     data.columns = ['mean', 'std']
@@ -84,7 +87,10 @@ def make_test_data(model, dataset='yeast'):
 
 def make_test_flux_data(model, dataset='yeast'):
     prefix = DATASETS[dataset]['prefix']
-    df = pd.read_csv(os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_fluxes.csv'))
+    path = os.path.join(PROJECT_DIR, 'data', 'test', f'{prefix}_fluxes.csv')
+    if not os.path.exists(path):
+        pytest.skip(f"missing {dataset} flux fixture: {path}")
+    df = pd.read_csv(path)
     data = df.groupby(['id']).mean()[['flux']]
     data['std'] = df.groupby(['id']).std()['flux']
     data.columns = ['mean', 'std']

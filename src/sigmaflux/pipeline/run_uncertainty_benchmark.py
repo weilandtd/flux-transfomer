@@ -412,6 +412,24 @@ def main(args):
     else:
         todo = grid
 
+    # Optional solver imports are only needed if an MFA task will actually run.
+    if any(method == "mfa" for _, method, _, _ in todo):
+        # See mfa_entry.py's module docstring for why: cyipopt/x3cflux must be
+        # pre-imported before torch when selected.
+        if args.backend == "x3cflux":
+            from ..x3cflux import preimport, require
+            if not preimport():
+                require()      # not installed: raise with the install instructions
+        elif args.backend == "native-ipopt":
+            try:
+                import cyipopt  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "the native-ipopt backend needs the optional cyipopt dependency, "
+                    "which pip cannot build (it needs Ipopt headers at build time): "
+                    "conda env create -f environment.yml"
+                ) from exc
+
     # Resolved lazily -- --list must work with no baseline MFA run on disk yet, and
     # a toy/test invocation with an empty todo should never require one either.
     samples_path = _resolve_sample_pool_path(args, output_dir, root) if todo else None
@@ -428,25 +446,6 @@ def main(args):
 
 def cli(argv=None):
     args = build_parser().parse_args(argv)
-    # See mfa_entry.py's module docstring for why: cyipopt/x3cflux must be
-    # pre-imported before torch when the mfa method is selected with a backend that
-    # needs them (CXXABI_1.3.15 from the conda libstdc++ vs the system one torch
-    # pulls in). This module dispatches into run_mfa_benchmark.cli() itself, so it
-    # inherits that constraint whenever "mfa" is among --methods.
-    methods = [m.strip() for m in args.methods.split(",")]
-    if "mfa" in methods and args.backend == "x3cflux":
-        from ..x3cflux import preimport, require
-        if not preimport():
-            require()          # not installed: raise with the install instructions
-    elif "mfa" in methods and args.backend == "native-ipopt":
-        try:
-            import cyipopt  # noqa: F401
-        except ImportError as exc:
-            raise ImportError(
-                "the native-ipopt backend needs the optional cyipopt dependency, "
-                "which pip cannot build (it needs Ipopt headers at build time): "
-                "conda env create -f environment.yml"
-            ) from exc
     return main(args)
 
 

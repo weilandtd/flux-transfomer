@@ -44,6 +44,9 @@ ORGANISMS = [
 
 def _match(gem_xlsx, model_json, fallback):
     """Run the matcher exactly as build_metabolite_mapping_files.py does."""
+    with open(gem_xlsx, "rb") as fh:
+        if fh.read(64).startswith(b"version https://git-lfs.github.com/spec/v1"):
+            pytest.skip(f"{gem_xlsx} is a Git LFS pointer; workbook content unavailable")
     import sys
     sys.path.insert(0, os.path.join(REPO_ROOT, "models", "atomistic"))
     from cobra.io import load_json_model
