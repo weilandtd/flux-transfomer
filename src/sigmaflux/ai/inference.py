@@ -1035,6 +1035,7 @@ class EnsembleSigmaFlux:
         self.name                = None
         self.model_version       = None
         self.source_path         = None
+        self._projector          = None   # built lazily by _null_space_projector()
 
     def predict(self, df_L, df_Vm=None, *, aggregate=True, with_mid=False):
         """Ensemble prediction. Members share inputs, so per-member outputs have
