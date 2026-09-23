@@ -53,7 +53,7 @@ import matplotlib.pyplot as plt
 from sigmaflux.utils import magnitude_bounds
 
 from _figure_common import (
-    COLORS, CONDITION_COLORS, CONDITION_LABEL, PREDICTION_SPECS, R2_THRESHOLD,
+    COLORS, CONDITION_LABEL, PREDICTION_SPECS, R2_THRESHOLD, condition_color,
     add_common_args, apply_style, axis_floor, benchmark_metrics,
     build_reference_comparison, error_offsets, resolve_organism, run_dir_for,
     save_figure, selected_models)
@@ -179,7 +179,7 @@ def plot_experimental_flux(model, df, out_dir):
     # carries its own color; seaborn has no per-point xerr/yerr equivalent.
     for key, grp in tidy.groupby("key", sort=False):
         x, y = grp["reference"].to_numpy(), grp["sigmaflux"].to_numpy()
-        color = CONDITION_COLORS.get(key, "#777777")
+        color = condition_color(model["key"], key)
         xerr = error_offsets(x, grp["ref_lo"].to_numpy(), grp["ref_hi"].to_numpy(),
                               lim_lo, lim_hi)
         yerr = error_offsets(y, grp["pred_lo"].to_numpy(), grp["pred_hi"].to_numpy(),
@@ -187,7 +187,7 @@ def plot_experimental_flux(model, df, out_dir):
         ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="none", ecolor=color,
                     elinewidth=0.6, alpha=0.35, capsize=0, zorder=1.5)
 
-    palette = {names.get(k, k): CONDITION_COLORS.get(k, "#777777")
+    palette = {names.get(k, k): condition_color(model["key"], k)
                for k in tidy["key"].unique()}
     # Sign disagreement is reported as a count in the summary CSV rather than as a second
     # marker style: encoding it here made the panel hard to read for a case that is rare

@@ -77,6 +77,20 @@ CONDITION_COLORS = {
     "B": "#9b7fb3",   # muted purple -- batch
 }
 
+#: Colors for the (organism, condition) pairs whose letter means something else. The
+#: T cell's N is naive, not nitrogen limitation, so it must not carry the yeasts' N color
+#: on an axis that shows both.
+CONDITION_COLOR_BY_MODEL = {
+    ("m_musculus_t_cell", "N"): "#8c8c8c",   # grey -- naive
+}
+
+
+def condition_color(key, condition, default="#777777"):
+    """Color for one organism's condition. Every panel resolves it through here, so a
+    condition is the same color in the scatter panels and in the summary bars."""
+    return CONDITION_COLOR_BY_MODEL.get((key, condition),
+                                        CONDITION_COLORS.get(condition, default))
+
 
 # Which conditions and growth condition go into each model's experimental panel.
 # "max_D" keeps only the highest dilution rate per condition; "wt" keeps only the
