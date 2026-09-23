@@ -821,6 +821,15 @@ class SigmaFlux:
         self._mfa = (mfa_model, reaction_ids, labeling_to, labeling_index)
         return self._mfa
 
+    def flux_bounds(self):
+        """``{flux name: (lb, ub)}`` -- the box predictions are projected into.
+
+        Exposed so a caller resampling measured fluxes can truncate its draws to the same
+        box the prediction will be projected into, rather than to the error bar alone.
+        """
+        return {n: (float(lo), float(hi)) for n, lo, hi
+                in zip(self.flux_names, self._flux_lb, self._flux_ub)}
+
     def simulate_mid(self, flux_arr, rev_arr, samples, context=None):
         """Labeling each predicted flux state implies, in this predictor's input schema.
 
@@ -1081,6 +1090,7 @@ class EnsembleSigmaFlux:
     def expected_tracers(self):         return self.members[0].expected_tracers()
     def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
     def tracer_ids(self):               return self.members[0].tracer_ids()
+    def flux_bounds(self):              return self.members[0].flux_bounds()
 
 
 def load_predictor(config, checkpoint, data_dir=None, device=None):
