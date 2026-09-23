@@ -88,12 +88,15 @@ PREDICTION_SPECS = {
     # by models/atomistic/build_e_coli_reference_flux.py. Wild type only, not the
     # knockouts, is the like-for-like comparison the other models make.
     "e_coli_core":       dict(conditions=["B"],           select="wt"),
-    "s_cerevisiae":      dict(conditions=["C", "N", "P"], select="max_D"),
-    "i_orientalis":      dict(conditions=["C", "N", "P"], select="max_D"),
-    # Naive (N) dropped: its measured glucose/lactate/gln are rejected by both MFA
-    # fits (see the tcell_naive_extflux_unreliable note), so the reference itself is
-    # unreliable there -- activated is the only condition worth plotting against.
-    "m_musculus_t_cell": dict(conditions=["A"],           select="all"),
+    # C/N/P are chemostats; B is batch growth, a single growth condition that "max_D"
+    # therefore keeps as-is.
+    "s_cerevisiae":      dict(conditions=["C", "N", "P", "B"], select="max_D"),
+    "i_orientalis":      dict(conditions=["C", "N", "P", "B"], select="max_D"),
+    # Naive (N) is scored on the MFA-identifiable set like every other condition. Read
+    # it knowing its measured glucose/lactate/gln are rejected by both MFA fits (see the
+    # tcell_naive_extflux_unreliable note), so the reference carries scale, not
+    # per-reaction structure.
+    "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
 }
 
 # The condition letter means different things per organism: N is nitrogen-limited for
