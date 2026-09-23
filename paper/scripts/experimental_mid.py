@@ -141,7 +141,7 @@ def condition_tokens(sf, mid_file, ext_file, mapping_path, cond, gc, flux_names,
                                             n_bootstrap=n_bootstrap,
                                             bounds=sf.flux_bounds())
     n_draws = int(df_L_draws["Sample"].max())      # the MLE row sits at the top index
-    _, mids = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False, with_mid=True)
+    _, mids = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=True, with_mid=True)
 
     mids = (mids.rename(columns=RENAME)
                 .assign(Tracer=lambda d: d["Tracer Name"].map(name_to_id))
@@ -149,13 +149,15 @@ def condition_tokens(sf, mid_file, ext_file, mapping_path, cond, gc, flux_names,
     if not (mids["Sample"] == n_draws).any():
         raise ValueError("the maximum-likelihood flux state has no solvable labeling; "
                          "nothing to report for this growth condition")
-    # Same reduction the flux predictions report: ensemble mean at the maximum-likelihood
-    # input, and a bias-corrected bootstrap percentile interval over the draws.
+    # One simulated state per draw -- the labeling of that draw's aggregate flux state --
+    # so the nominal value is the labeling of the fluxes we publish and the interval is
+    # that value's own spread across resampled inputs.
     predicted = summarize_draws(mids, n_draws, group_cols=TOKEN)
 
     measured = measured_table(df_L, name_to_id)
     tokens = agreement(predicted.set_index(TOKEN)["Value"].rename("sim"), measured)
-    return tokens.merge(predicted[TOKEN + ["Value_lo", "Value_hi", "sigma_total"]],
+    return tokens.merge(predicted[TOKEN + ["Value_lo", "Value_hi", "sigma_input",
+                                           "n_draws"]],
                         on=TOKEN, how="left")
 
 

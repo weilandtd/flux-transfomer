@@ -1040,6 +1040,7 @@ class EnsembleSigmaFlux:
         """
         # Members see identical inputs, so only the first reports coverage.
         preds, mids = [], []
+        context = None
         if with_mid:
             # Members share one model, so they share one network: seed every member's
             # memo with member 0's rather than preparing the same EMU expansion once
@@ -1047,8 +1048,12 @@ class EnsembleSigmaFlux:
             context = self.members[0].mfa_context()
             for m in self.members:
                 m._mfa = context
+        # Per-member labeling is only simulated when per-member output is what is asked
+        # for. The aggregate path simulates the aggregate state instead, once -- see the
+        # comment on mid_out below.
+        per_member_mid = with_mid and not aggregate
         for i, m in enumerate(self.members):
-            if with_mid:
+            if per_member_mid:
                 pred, mid = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0), with_mid=True)
                 mids.append(mid.assign(Member=i))
                 print(f"     simulated labeling for member {i + 1}/{len(self.members)}",
@@ -1056,7 +1061,7 @@ class EnsembleSigmaFlux:
             else:
                 pred = m.predict(df_L, df_Vm=df_Vm, verbose=(i == 0))
             preds.append(pred)
-        mid_out = pd.concat(mids, ignore_index=True) if with_mid else None
+        mid_out = pd.concat(mids, ignore_index=True) if per_member_mid else None
         if not aggregate:
             raw = []
             for midx, p in enumerate(preds):
@@ -1083,7 +1088,34 @@ class EnsembleSigmaFlux:
         weights = _medoid_weights(values, how="medoid_convex")
         out = preds[0].copy()
         out['Value'] = weights @ values
+        if with_mid:
+            # The labeling of the flux state we report, not the average of the labelings
+            # each member implies. The EMU pass is nonlinear, so those differ, and only
+            # the first is the labeling that corresponds to the published fluxes. It is
+            # also better conditioned: the aggregate is a convex combination and so stays
+            # inside the box, where individual members often sit on or outside it and
+            # return fractions the forward pass cannot produce.
+            mid_out = self.members[0].simulate_mid(
+                *self._aggregate_arrays(out, df_L), context=context)
         return (out, mid_out) if with_mid else out
+
+    def _aggregate_arrays(self, out, df_L):
+        """``out``'s long Value column back as (flux_arr, rev_arr, samples).
+
+        ``_format_output`` writes every flux name then every reversibility name for one
+        sample before moving to the next, so the column reshapes by position. Names are
+        not unique across the two blocks -- a reaction appears in both -- so position is
+        what identifies a value here, not a pivot on the name.
+        """
+        samples = sorted(df_L['Sample'].unique().tolist()) if 'Sample' in df_L else [0]
+        n_flux, n_rev = len(self.flux_names), len(self.reversibility_names)
+        block = n_flux + n_rev
+        expected = block * len(samples)
+        if len(out) != expected:
+            raise ValueError(f"cannot reshape {len(out)} rows into {len(samples)} samples "
+                             f"x ({n_flux} fluxes + {n_rev} reversibilities)")
+        wide = out['Value'].to_numpy().reshape(len(samples), block)
+        return wide[:, :n_flux], wide[:, n_flux:], samples
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
