@@ -38,9 +38,9 @@ MODELS = [
     dict(key="e_coli_core", label="E. coli core",
          run="paper/.results/e_coli_core_20260917"),
     dict(key="s_cerevisiae", label="S. cerevisiae",
-         run="paper/.results/s_cerevisiae_20260917"),
+         run="paper/.results/s_cerevisiae_20260921"),
     dict(key="i_orientalis", label="I. orientalis",
-         run="paper/.results/i_orientalis_20260917"),
+         run="paper/.results/i_orientalis_20260921"),
     dict(key="m_musculus_t_cell", label="M. musculus T cell",
          run="paper/.results/m_musculus_t_cell_20260917"),
 ]
