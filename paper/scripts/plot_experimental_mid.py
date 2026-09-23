@@ -2,8 +2,8 @@
 SigmaFlux's predicted labeling against the measured ¹³C data it was inferred from.
 
 Per model:
-  experimental_mid_<key>.svg      predicted vs measured isotopologue fraction, log-log,
-                                   one point per (condition, growth condition, tracer,
+  experimental_mid_<key>.svg      predicted vs measured isotopologue fraction, one point
+                                   per (condition, growth condition, tracer,
                                    metabolite, isotopomer), with error bars on both axes;
                                    no R² text on the panel -- it lives in the summary CSV
 Across all models:
@@ -30,12 +30,11 @@ The x error bar is the measured replicate spread -- the floor on how well any me
 do. The y bar is the bootstrap interval of the prediction, propagated through the EMU pass
 draw by draw (see experimental_mid.py).
 
-Axes are log-log: measured fractions run over several decades, and a linear panel puts
-most tokens in the bottom corner. ``--min-fraction`` sets the floor below which a token is
-dropped rather than drawn, defaulting to 1e-3: below that a fraction is far under the
-replicate spread the measurement itself carries, so the point says more about the noise
-floor than about the prediction. Anything non-positive is dropped regardless -- a log axis
-cannot place it.
+Axes are linear and run from zero, which is what a mass fraction is: the compression the
+panel shows above a measured 0.25 is the finding, and a log axis spreads it out of sight.
+Every token the simulation produced is drawn, including the zeros a log axis has no
+position for; ``--min-fraction`` raises that floor, for a panel restricted to fractions
+above the replicate spread the measurement itself carries.
 
 Each panel reports R² per condition, on the fractions in linear space -- the same
 definition the flux panels and the simulation benchmark use, so R² means one thing across
@@ -47,7 +46,7 @@ the figure set fills itself in as the compute step lands.
 Usage:
     python paper/scripts/plot_experimental_mid.py
     python paper/scripts/plot_experimental_mid.py --models m_musculus_t_cell
-    python paper/scripts/plot_experimental_mid.py --min-fraction 0
+    python paper/scripts/plot_experimental_mid.py --min-fraction 1e-3
 """
 
 import argparse
@@ -58,15 +57,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from _figure_common import (
-    CONDITION_COLORS, CONDITION_LABEL, COLORS, PREDICTION_SPECS, TRACER_MARKERS,
-    add_common_args, apply_style, axis_floor, error_offsets, run_dir_for, save_figure,
+    CONDITION_LABEL, COLORS, PREDICTION_SPECS, TRACER_MARKERS, condition_color,
+    add_common_args, apply_style, error_offsets, run_dir_for, save_figure,
     selected_models, tracer_label)
 from experimental_mid import tokens_path
-
-#: Hard floor for the log axes. Only a backstop: the limit is set from the data
-#: (:func:`_figure_common.axis_floor`), and this stops a single near-zero fraction from
-#: stretching the panel over a dozen empty decades.
-MID_FLOOR = 1e-5
 
 apply_style()
 
@@ -75,21 +69,21 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     add_common_args(p)
-    p.add_argument("--min-fraction", type=float, default=1e-3,
-                   help="Drop tokens whose measured or predicted fraction is at or below "
-                        "this; below the replicate spread a point describes the noise "
-                        "floor, not the prediction (default: 1e-3)")
+    p.add_argument("--min-fraction", type=float, default=0.0,
+                   help="Drop tokens whose measured or predicted fraction is below this; "
+                        "below the replicate spread a point describes the noise floor, "
+                        "not the prediction (default: 0, draw every token)")
     return p.parse_args()
 
 
 def drop_unplottable(df, min_fraction):
-    """Tokens a log axis can show, plus how many were dropped.
+    """Tokens at or above the floor, plus how many were dropped.
 
-    A measured fraction of exactly zero -- the instrument saw nothing at that mass -- has
-    no position on a log axis. It is dropped rather than floored, because flooring would
-    draw it at whatever the axis bottom happens to be and invite reading a value off it.
+    Inclusive, so a measured zero -- the instrument saw nothing at that mass -- is drawn
+    at the origin rather than discarded.
     """
-    keep = (df["measured"] > min_fraction) & (df["sim"] > min_fraction)
+    lo = max(min_fraction, 0.0)
+    keep = (df["measured"] >= lo) & (df["sim"] >= lo)
     return df[keep].copy(), int((~keep).sum())
 
 
@@ -99,7 +93,7 @@ def _r2(pred, measured):
     Linear, not on log10 of the fractions the axes show: this is the same definition as
     ``_r2_linear`` in plot_experimental_predictions.py and ``per_flux_r2`` in the
     benchmark, so R² means one thing across the paper. It is therefore carried by the
-    large fractions, which the log axes deliberately are not.
+    large fractions, whatever scale the axes are drawn on.
     """
     if len(measured) < 2:
         return float("nan")
@@ -133,7 +127,7 @@ def summarize(model, df):
 
 
 def plot_experimental_mid(model, df, summary_rows, out_dir):
-    """Predicted vs measured MID fraction, log-log, one figure per model.
+    """Predicted vs measured MID fraction, one figure per model.
 
     Color encodes condition (as before); marker shape encodes tracer, so a mixed-tracer
     panel (e.g. S. cerevisiae's U-13C + 1,2-13C glucose) distinguishes the two without a
@@ -144,15 +138,16 @@ def plot_experimental_mid(model, df, summary_rows, out_dir):
     names = CONDITION_LABEL.get(model["key"], {})
     tidy = df.assign(label=[names.get(c, c) for c in df["condition"]],
                      tracer_disp=df["Tracer"].map(tracer_label))
-    palette = {names.get(c, c): CONDITION_COLORS.get(c, "#777777")
+    palette = {names.get(c, c): condition_color(model["key"], c)
                for c in tidy["condition"].unique()}
     tracers = sorted(tidy["tracer_disp"].unique())
     marker_map = {t: TRACER_MARKERS[i % len(TRACER_MARKERS)] for i, t in enumerate(tracers)}
 
-    lim_lo = axis_floor(tidy["measured"], tidy["sim"], floor=MID_FLOOR)
+    lim_lo = 0.0
+    # The top follows the data rather than sitting at 1, or most of the panel is empty.
     # A simulated fraction above 1 is not a MID -- the flux state that produced it is
-    # infeasible. The axis stretches to show it rather than clipping it out of sight.
-    lim_hi = float(max(1.0, tidy["measured"].max(), tidy["sim"].max()))
+    # infeasible -- and is shown rather than clipped out of sight.
+    lim_hi = float(max(tidy["measured"].max(), tidy["sim"].max())) * 1.05
     n_over = int((tidy["sim"] > 1.0).sum())
     if n_over:
         print(f"  {n_over} simulated fraction(s) above 1 — those flux states are not "
@@ -172,7 +167,7 @@ def plot_experimental_mid(model, df, summary_rows, out_dir):
         yerr = error_offsets(y, grp["Value_lo"].to_numpy(), grp["Value_hi"].to_numpy(),
                              lim_lo, lim_hi)
         ax.errorbar(x, y, xerr=xerr, yerr=yerr, fmt="none",
-                    ecolor=CONDITION_COLORS.get(cond, "#777777"), elinewidth=0.6,
+                    ecolor=condition_color(model["key"], cond), elinewidth=0.6,
                     alpha=0.35, capsize=0, zorder=1.5)
 
     sns.scatterplot(data=tidy, x="measured", y="sim", hue="label", palette=palette,
@@ -182,13 +177,11 @@ def plot_experimental_mid(model, df, summary_rows, out_dir):
     # Pooled per condition, not per growth condition: a panel legend with one line per
     # (condition, growth condition) would not fit, and the CSV keeps the finer split.
     # R² stays in the CSV, not on the panel.
-    ax.set_xscale("log")
-    ax.set_yscale("log")
     ax.set_xlim(lim_lo, lim_hi)
     ax.set_ylim(lim_lo, lim_hi)
     ax.set_aspect("equal")
     ax.set_xlabel("Measured isotopologue fraction")
-    ax.set_ylabel("SigmaFlux simulated isotopologue fraction")
+    ax.set_ylabel("SigmaFlux isotopologue fraction")
 
     # Two legends -- color (condition) and marker shape (tracer) -- since seaborn's
     # combined hue+style legend gets cluttered once both vary; built manually from
