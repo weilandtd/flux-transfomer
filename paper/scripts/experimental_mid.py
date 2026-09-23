@@ -138,7 +138,8 @@ def condition_tokens(sf, mid_file, ext_file, mapping_path, cond, gc, flux_names,
     df_L, df_Vm, df_err = load_condition_inputs(mid_file, ext_file, cond, gc, mapping_path,
                                                 flux_names)
     df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng,
-                                            n_bootstrap=n_bootstrap)
+                                            n_bootstrap=n_bootstrap,
+                                            bounds=sf.flux_bounds())
     n_draws = int(df_L_draws["Sample"].max())      # the MLE row sits at the top index
     _, mids = sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False, with_mid=True)
 

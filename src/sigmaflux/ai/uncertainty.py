@@ -64,7 +64,8 @@ _MID_POINT = _MID_GROUP + ['Isotopomer']
 
 
 def resample_flux(value: float, err: float, n_samples: int,
-                  rng: np.random.Generator) -> np.ndarray:
+                  rng: np.random.Generator, lb: float = None,
+                  ub: float = None) -> np.ndarray:
     """n_samples draws of one measured flux, bounded to the side of zero it was measured on.
 
     An exchange flux is either uptake or secretion in a given condition, never both, so the
@@ -76,11 +77,20 @@ def resample_flux(value: float, err: float, n_samples: int,
     kappa is bounded below by ~2.17 (the value == 0 limit) and grows with |value|/err, so
     alpha and beta are always positive -- there is no infeasible case to fall back on.
 
+    ``lb``/``ub`` truncate that law to the reaction's own bounds. A draw is a claim about
+    what the flux might really have been, so it has to be a value the model admits: the
+    measurement's error bar does not know about the network, and without this a quarter of
+    the draws for a well-measured uptake can fall outside the polytope the prediction is
+    then projected into. Truncation is exact, by inverse CDF rather than by rejection or
+    clipping -- clipping would pile the excluded mass onto the bound itself, which is the
+    one place a flux is most likely to make the labeling system singular.
+
     Args:
         value: measured flux value.
         err: reported uncertainty of that value.
         n_samples: number of draws.
         rng: random generator used for the draw.
+        lb, ub: the reaction's bounds; None leaves that side untruncated.
     """
     a = -abs(value) / err   # zero, standardized -- the truncation point
     tn = truncnorm(a, np.inf, loc=abs(value), scale=err)
@@ -88,7 +98,26 @@ def resample_flux(value: float, err: float, n_samples: int,
     x, v = m / M, (s / M) ** 2
     kappa = x * (1 - x) / v - 1
     sign = 1.0 if value >= 0 else -1.0
-    return sign * M * rng.beta(kappa * x, kappa * (1 - x), size=n_samples)
+    a_beta, b_beta = kappa * x, kappa * (1 - x)
+    if lb is None and ub is None:
+        return sign * M * rng.beta(a_beta, b_beta, size=n_samples)
+
+    # The draw is sign*M*u with u ~ Beta on [0, 1]; map [lb, ub] onto u and truncate there.
+    lo = -np.inf if lb is None else float(lb)
+    hi = np.inf if ub is None else float(ub)
+    u_lo, u_hi = (lo / M, hi / M) if sign > 0 else (-hi / M, -lo / M)
+    u_lo, u_hi = max(0.0, u_lo), min(1.0, u_hi)
+    q_lo = stats.beta.cdf(u_lo, a_beta, b_beta) if u_hi > u_lo else 0.0
+    q_hi = stats.beta.cdf(u_hi, a_beta, b_beta) if u_hi > u_lo else 0.0
+    if q_hi - q_lo < 1e-12:
+        # The bounds exclude essentially the whole measured law -- the measurement and the
+        # model disagree about this reaction. Report that rather than resampling noise.
+        import warnings
+        warnings.warn(f"measured flux {value:g} +/- {err:g} has almost no mass inside its "
+                      f"bounds [{lo:g}, {hi:g}]; draws are held at the nearest bound")
+        return np.full(n_samples, float(np.clip(value, lo, hi)))
+    q = rng.uniform(q_lo, q_hi, size=n_samples)
+    return sign * M * stats.beta.ppf(q, a_beta, b_beta)
 
 
 def _bootstrap_replicates(df_L, n_bootstrap: int, rng: np.random.Generator):
@@ -114,7 +143,7 @@ def _bootstrap_replicates(df_L, n_bootstrap: int, rng: np.random.Generator):
 
 
 def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator,
-                  n_bootstrap: int = DEFAULT_N_BOOTSTRAP):
+                  n_bootstrap: int = DEFAULT_N_BOOTSTRAP, bounds=None):
     """The measured inputs to evaluate the model at, plus the replicate mean as the
     maximum-likelihood row.
 
@@ -138,6 +167,8 @@ def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator,
         df_err: reported uncertainty per measured flux, or None.
         rng: random generator used for the replicate and flux draws.
         n_bootstrap: number of bootstrapped cross-tracer replicate combinations.
+        bounds: ``{flux name: (lb, ub)}`` to truncate the flux draws to, or None to draw
+            from the reported error alone (see :func:`resample_flux`).
     """
     n_draws = int(n_bootstrap)
     if n_draws < 1:
@@ -147,10 +178,12 @@ def sample_inputs(df_L, df_Vm, df_err, rng: np.random.Generator,
     parts = _bootstrap_replicates(df_L, n_draws, rng)
     parts.append(mu.assign(Sample=n_draws))
 
-    return pd.concat(parts, ignore_index=True), _flux_draws(df_Vm, df_err, n_draws, rng)
+    return (pd.concat(parts, ignore_index=True),
+            _flux_draws(df_Vm, df_err, n_draws, rng, bounds))
 
 
-def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator) -> pd.DataFrame:
+def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator,
+                bounds=None) -> pd.DataFrame:
     """Measured fluxes resampled from their reported error, plus the unperturbed row.
 
     Fluxes without a usable error are held at their measured value; ``np.isfinite`` guards
@@ -165,7 +198,8 @@ def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator) -> pd.Dat
     for name, value in zip(base['Flux Name'], base['Value']):
         err = err_idx.get(name)
         if (value is not None and np.isfinite(value) and err is not None and err > 0):
-            draws[name] = resample_flux(float(value), float(err), n_draws, rng)
+            lb, ub = (bounds or {}).get(name, (None, None))
+            draws[name] = resample_flux(float(value), float(err), n_draws, rng, lb, ub)
 
     parts = []
     for s in range(n_draws + 1):

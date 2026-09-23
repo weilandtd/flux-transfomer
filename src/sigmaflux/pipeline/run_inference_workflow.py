@@ -251,7 +251,8 @@ def cli(argv=None):
                   f"  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
 
             df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng,
-                                                    n_bootstrap=n_bootstrap)
+                                                    n_bootstrap=n_bootstrap,
+                                                    bounds=sf.flux_bounds())
 
             print(f"     Running inference ({n_draws} bootstrapped cross-tracer draws "
                   f"+ 1 maximum-likelihood input, bias-corrected percentile interval)...")

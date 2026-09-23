@@ -65,6 +65,40 @@ class TestResampleFlux:
         draws = _resample_flux(value, err, 10, rng)
         assert np.all(np.isfinite(draws))
 
+    def test_bounds_truncate_the_draws(self, rng):
+        """A draw is a claim about what the flux might really have been, so it has to be a
+        value the model admits. Without this the error bar alone decides, and a well
+        measured uptake puts a large share of its draws outside the polytope the
+        prediction is then projected into."""
+        value, err, lb, ub = -11.378, 3.353, -12.0, -1.0      # I. orientalis batch glucose
+        free = _resample_flux(value, err, 20000, rng)
+        held = _resample_flux(value, err, 20000, rng, lb, ub)
+
+        assert ((free < lb) | (free > ub)).mean() > 0.3       # the defect this fixes
+        assert ((held < lb) | (held > ub)).sum() == 0
+        assert (held < 0).all()                               # sign is still preserved
+
+    def test_truncation_keeps_the_shape_rather_than_piling_on_the_bound(self, rng):
+        """Clipping would put every excluded draw exactly on the bound -- the one place a
+        flux is most likely to make the labeling system singular. Inverse-CDF truncation
+        redistributes that mass across the admissible range instead."""
+        held = _resample_flux(-11.378, 3.353, 20000, rng, -12.0, -1.0)
+        on_bound = (np.abs(held - (-12.0)) < 1e-9).mean()
+        assert on_bound < 1e-3, f"{on_bound:.3%} of draws sit exactly on the bound"
+
+    def test_bounds_excluding_the_measurement_warn_and_hold(self, rng):
+        """The measurement and the model disagree about this reaction; resampling noise
+        inside a range the measurement never visits would hide that."""
+        with pytest.warns(UserWarning, match="almost no mass inside its bounds"):
+            held = _resample_flux(-11.0, 0.1, 100, rng, -1.0, -0.5)
+        assert np.allclose(held, -1.0)
+
+    def test_no_bounds_leaves_the_draw_unchanged(self, rng):
+        """The argument is optional, so every existing caller keeps its behaviour."""
+        a = _resample_flux(-5.0, 1.0, 500, np.random.default_rng(7))
+        b = _resample_flux(-5.0, 1.0, 500, np.random.default_rng(7), None, None)
+        assert np.array_equal(a, b)
+
 
 #: Small draw count so these single-tracer cases stay readable; the draw count itself is
 #: covered by TestBootstrapReplicates.
