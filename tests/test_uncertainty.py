@@ -11,7 +11,8 @@ import pandas as pd
 import pytest
 from scipy.stats import norm
 
-from sigmaflux.ai.uncertainty import coverage_by_reaction, summarize_draws
+from sigmaflux.ai.uncertainty import (
+    _aggregate_draws, coverage_by_reaction, summarize_draws)
 
 
 class TestSummarizeDraws:
@@ -82,20 +83,33 @@ class TestSummarizeDraws:
         row = out.iloc[0]
         assert row["Value_lo"] < row["Value"] < row["Value_hi"]
 
-    def test_interval_is_the_bias_corrected_bootstrap_percentile(self):
-        """The draws are a nonparametric bootstrap, so the interval is their percentile --
-        shifted by Efron's z0 because the bootstrap distribution does not centre on the
-        point estimate, which is evaluated at the maximum-likelihood input instead."""
+    def test_interval_is_the_percentile_of_the_aggregated_draws(self):
+        """The interval is the uncertainty of the reported value, so its bootstrap
+        distribution is one aggregate per draw -- not every member's own prediction,
+        which would answer the wider question of where a single member lands."""
         n_draws = 400
         raw = self._raw(n_reps=n_draws, n_members=5, seed=3)
         out = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
 
-        boot = raw[raw["Sample"] < n_draws]["Value"].to_numpy()
-        z0 = norm.ppf((boot < out["Value"]).mean())
+        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], ["Type", "Flux Name"])
+        boot = agg["Value"].to_numpy()
+        assert len(boot) == n_draws            # one value per draw, not per (draw, member)
+        z0 = norm.ppf(np.clip((boot < out["Value"]).mean(),
+                              1 / (2 * n_draws), 1 - 1 / (2 * n_draws)))
         q = norm.cdf(2 * z0 + np.array([norm.ppf(0.025), norm.ppf(0.975)]))
         lo, hi = np.quantile(boot, q)
         assert out["Value_lo"] == pytest.approx(lo)
         assert out["Value_hi"] == pytest.approx(hi)
+
+    def test_interval_is_narrower_than_the_per_member_spread(self):
+        """The distinction that motivated the change: members disagree far more than the
+        aggregate moves, so an interval built from pooled member draws would be several
+        times wider and would not describe the value we report."""
+        n_draws = 200
+        raw = self._raw(n_reps=n_draws, n_members=5, seed=7)
+        row = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
+        pooled = raw[raw["Sample"] < n_draws]["Value"].std(ddof=1)
+        assert row["Value_hi"] - row["Value_lo"] < 2 * 1.96 * pooled
 
     def test_interval_is_asymmetric_when_the_draws_are(self):
         """The point of the change: a symmetric band could not report a skewed spread.
@@ -124,9 +138,10 @@ class TestSummarizeDraws:
         assert row["Value_hi"] == pytest.approx(4.0)
 
     def test_components_separate_member_spread_from_input_spread(self):
-        """sigma_model is member disagreement at the MLE input; sigma_input is how far
-        the consensus moves across replicates. Members are spread far wider here than
-        the replicate draws, so the model term must dominate."""
+        """sigma_model is member disagreement at the MLE input, a diagnostic; sigma_input
+        is how far the aggregate moves across draws, which is what the interval reports.
+        Members are spread far wider here than the replicate draws, so the diagnostic term
+        must dominate -- and that gap is exactly why only one of them sets the width."""
         out = summarize_draws(self._raw(n_members=5), n_draws=3, group_cols=["Type", "Flux Name"])
         row = out.iloc[0]
         assert row["sigma_model"] > row["sigma_input"]
@@ -148,14 +163,15 @@ class TestSummarizeDraws:
         out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"])
         assert out["sigma_model"].iloc[0] == 0.0
 
-    def test_sigma_total_is_the_pooled_spread_not_assumed_additive(self):
-        """sigma_total is measured directly over every pooled (replicate, member) draw,
-        not sqrt(sigma_model^2 + sigma_input^2) -- that identity need not hold and is
-        not imposed."""
-        raw = self._raw()
-        out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"]).iloc[0]
-        pooled = raw[raw["Sample"] < 3].groupby("Flux Name")["Value"].std(ddof=1).iloc[0]
-        assert out["sigma_total"] == pytest.approx(pooled)
+    def test_sigma_input_is_the_standard_error_of_the_reported_value(self):
+        """sigma_input is the spread of the aggregate across draws, so it matches the
+        interval it accompanies rather than describing a different quantity."""
+        n_draws = 200
+        raw = self._raw(n_reps=n_draws, n_members=5, seed=11)
+        out = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
+        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], ["Type", "Flux Name"])
+        assert out["sigma_input"] == pytest.approx(agg["Value"].std(ddof=1))
+        assert "sigma_total" not in out.index
 
 
 class TestCoverageByReaction:

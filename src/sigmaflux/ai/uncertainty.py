@@ -24,17 +24,23 @@ legitimate combinations -- and leaves an under-replicated tracer contributing no
 its own replicate count. Draws are therefore always bootstrapped pairings, ``n_bootstrap``
 of them. This resamples measured values only, nothing from a fitted distribution, and the
 interval's degrees of freedom stay tied to the real replicate count -- pooled as
-``sum_t(R_t - 1)``, which is just ``R - 1`` for a single tracer -- so the extra draws
-sharpen the estimate of the spread without narrowing the interval on resampling alone, and the reported interval is the bootstrap percentile itself rather than
-a symmetric band fitted to its width.
+``sum_t(R_t - 1)``, which is just ``R - 1`` for a single tracer -- so extra draws sharpen
+the estimate of the spread without narrowing the interval on resampling alone.
 
-Two variance sources compose into the reported interval, measured together rather than
-assumed independent (they are the pooled spread of every (replicate, member) prediction,
-capturing their interaction rather than assuming ``sigma_total^2 = sigma_model^2 +
-sigma_input^2``):
+**The interval is the uncertainty of the reported value.** Each draw is reduced to one
+aggregate by the same estimator that produces ``Value``, and the interval is the percentile
+of those aggregates -- the same quantity an MFA confidence interval describes, so the two
+can be compared directly. It is deliberately *not* the spread of individual member
+predictions: that answers "where would one member land", which is a wider question and
+made our intervals incomparable with the MFA fits they sit beside.
 
-* ``sigma_model``  -- epistemic: ensemble members disagree, at the maximum-likelihood input.
-* ``sigma_input``  -- measurement: the ensemble consensus moves with which replicate it sees.
+Two spreads are reported, and only the first enters the interval:
+
+* ``sigma_input``  -- the bootstrap standard error of ``Value``: how far the aggregate
+  moves when the measured replicates it is built from are resampled.
+* ``sigma_model``  -- diagnostic only: how far the members disagree at the
+  maximum-likelihood input. It says where an interval's width comes from; it is not part
+  of one, because the members are not resampled.
 
 No factor is fitted to make the interval cover any known answer -- coverage against
 held-out ground truth is a diagnostic (:func:`coverage_by_reaction`), and tuning to it
@@ -244,26 +250,20 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
     member. What is given up relative to the mean is nothing measured so far; watch
     ``sigma_model``, which reports member spread regardless of which aggregate is used.
 
-    Two variance sources compose into the interval:
+    The interval is the bias-corrected bootstrap percentile (:func:`_bc_percentile_interval`)
+    of the *aggregated* draws -- each draw reduced by the same estimator that produces
+    ``Value`` (:func:`_aggregate_draws`) -- so it reports the uncertainty of the value we
+    publish, which is what an MFA confidence interval reports too. Taking the percentile of
+    the raw per-member draws instead would describe where a single member lands, a wider
+    and different question.
 
-    * ``sigma_model``  -- member disagreement at the maximum-likelihood input (epistemic).
-    * ``sigma_input``  -- how far the ensemble consensus moves across replicates
-      (measurement).
+    Being a percentile rather than a fitted scale, it is **asymmetric** wherever the draws
+    are. Its resolution is bounded by the replicate structure, not the draw count: with
+    4/2/2 replicates there are only 16 distinct MID configurations to resample, and the
+    tails are as fine as that allows.
 
-    ``sigma_total`` is measured directly over every (replicate, member) draw pooled
-    together, not assumed to be ``sqrt(sigma_model^2 + sigma_input^2)`` -- pooling captures
-    their interaction, which that identity would not.
-
-    The reported interval is the bias-corrected bootstrap percentile of the draws
-    (:func:`_bc_percentile_interval`), so it is **asymmetric** wherever the predictions are.
-    It replaces a ``point +/- t * sigma_total`` interval, which could only ever be
-    symmetric. That interval was chosen when a draw was one measured replicate and there
-    were as few as three of them -- too few for a 2.5% tail, since the extreme percentiles
-    sat on the sample extrema. Draws are now bootstrap resamples and there are hundreds, so
-    the percentile is resolvable and no distributional shape has to be assumed. Note the
-    resolution is still bounded by the replicate structure rather than by the draw count:
-    with 4/2/2 replicates there are only 16 distinct MID configurations to resample, and
-    the tails are as fine as that allows.
+    ``sigma_model`` is carried alongside as a diagnostic -- member disagreement at the
+    maximum-likelihood input -- but nothing is computed from it.
 
     The sigma columns are kept as diagnostics -- they say where the width comes from, which
     an interval alone does not -- but nothing is computed from them any more.
@@ -295,15 +295,37 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
         'Value':       agg_value,
         'sigma_model': at_mle.std(ddof=1).fillna(0.0),
     })
-    out['sigma_input'] = (drawn.groupby(keys + ['Sample'], sort=False)['Value']
-                                .mean().reset_index()
-                                .groupby(keys, sort=False)['Value']
-                                .std(ddof=1).fillna(0.0))
-    out['sigma_total'] = drawn.groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0)
+    # The estimator re-applied to every draw. This, not the raw per-member values, is the
+    # bootstrap distribution of what gets reported.
+    agg_drawn = _aggregate_draws(drawn, keys)
+    # How many draws actually reached the percentile. A draw can be lost upstream -- a
+    # flux state whose labeling did not solve is dropped rather than carried as NaN -- and
+    # an interval from a handful of survivors is not the same statement as one from 200.
+    out['n_draws'] = agg_drawn.groupby(keys, sort=False)['Value'].size()
+    out['sigma_input'] = (agg_drawn.groupby(keys, sort=False)['Value']
+                                   .std(ddof=1).fillna(0.0))
 
     out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(
-        drawn, keys, out['Value'], alpha)
+        agg_drawn, keys, out['Value'], alpha)
     return out.reset_index()
+
+
+def _aggregate_draws(drawn, keys, how='medoid_convex'):
+    """The point estimator applied to each bootstrap draw on its own.
+
+    Bootstrapping a statistic means recomputing *that statistic* on every resample, so the
+    weights are solved again per draw rather than reused from the maximum-likelihood row:
+    which members sit nearest the coordinatewise median is itself a function of the input,
+    and holding the weights fixed would report the spread of a different estimator than
+    the one ``Value`` uses.
+    """
+    frames = []
+    for sample, g in drawn.groupby('Sample', sort=False):
+        wide = g.pivot_table(index='Member', columns=keys, values='Value', sort=False)
+        w = _medoid_weights(wide.to_numpy(float), how=how)
+        agg = pd.Series(w @ wide.to_numpy(float), index=wide.columns, name='Value')
+        frames.append(agg.reset_index().assign(Sample=sample))
+    return pd.concat(frames, ignore_index=True)
 
 
 def _medoid_weights(members: np.ndarray, how: str = "medoid") -> np.ndarray:
