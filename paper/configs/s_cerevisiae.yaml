@@ -52,7 +52,7 @@ sampling:
   media:
     EX_glc__D_e: {lb: -25.0, ub: -0.1}
     # Electron acceptor
-    EX_o2_e:     {lb: -100.0, ub: 0.0}
+    EX_o2_e:     {lb: -25.0, ub: 0.0}
     # Carbon secretion products
     EX_co2_e:    {lb: 0.0,  ub: 100.0}
     EX_etoh_e:   {lb: 0.0,  ub: 35.0}
@@ -132,6 +132,7 @@ training:
   # via intermediate metabolites, so they're NOT independent null-space DOFs.
   measured_fluxes:
     - EX_glc__D_e
+    - EX_o2_e
     - EX_etoh_e
     - EX_ac_e
     - EX_glyc_e

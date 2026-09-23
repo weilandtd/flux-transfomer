@@ -49,7 +49,7 @@ sampling:
     # Carbon source — mandatory uptake
     EX_glc__D_e: {lb: -12.0, ub: -1.0}
     # Electron acceptor — mandatory uptake
-    EX_o2_e:     {lb: -100.0, ub: 0.0}
+    EX_o2_e:     {lb: -25.0, ub: 0.0}
     # Carbon secretion products
     EX_co2_e:    {lb: 0.0,  ub: 100.0}
     EX_etoh_e:   {lb: 0.0,  ub: 100.0}
@@ -134,6 +134,7 @@ training:
   # via intermediate metabolites, so they're NOT independent null-space DOFs.
   measured_fluxes:
     - EX_glc__D_e
+    - EX_o2_e
     - PROTEIN_c
     - RNA_c
     - DNA_c
