@@ -1,0 +1,98 @@
+experimental_id,model_id
+3-Phosphoglyceric acid,3pg_c
+"4,5-Dihydroorotic acid",dhor-S_c
+ADP,adp_c
+AICAR,aicar_c
+Acetyl-CoA,accoa_c
+Acetylphosphate,actp_c
+Adenine,ade_c
+Adenosine monophosphate,amp_c
+Adenosine triphosphate,atp_c
+CDP,cdp_c
+Citric acid,cit_c
+Citrulline,citr-L_c
+Coenzyme A,coa_c
+Cytidine,cytd_c
+Cytidine monophosphate,cmp_c
+Cytidine triphosphate,ctp_c
+D-Erythrose 4-phosphate,e4p_c
+D-Glucose,glc-D_c
+D-Glyceraldehyde 3-phosphate,g3p_c
+D-Ribose 5-phosphate,r5p_c
+Deoxyadenosine,dad-2_c
+Deoxyinosine,din_c
+Dephospho-CoA,dpcoa_c
+Dihydroxyacetone phosphate,dhap_c
+Flavin Mononucleotide,fmn_c
+"Fructose 1,6-bisphosphate",fdp_c
+Fructose 6-phosphate,f6p_c
+Fumaric acid,fum_c
+Glucosamine 6-phosphate,gam6p_c
+Glucose 6-phosphate,g6p_c
+Glutathione,gthrd_c
+Glycerol,glyc_c
+Glycerol 3-phosphate,glyc3p_c
+Glycine,gly_c
+Glycolic acid,glyclt_c
+Glyoxylic acid,glx_c
+Guanine,gua_c
+Guanosine diphosphate,gdp_c
+Guanosine monophosphate,gmp_c
+Guanosine triphosphate,gtp_c
+Homocysteine,hcys-L_c
+Hypoxanthine,hxan_c
+Inosine,ins_c
+Inosinic acid,imp_c
+Isopentenyl pyrophosphate,ipdp_c
+L-Alanine,ala-L_c
+L-Arginine,arg-L_c
+L-Asparagine,asn-L_c
+L-Aspartic acid,asp-L_c
+L-Cysteine,cys-L_c
+L-Glutamic acid,glu-L_c
+L-Glutamine,gln-L_c
+L-Histidine,his-L_c
+L-Isoleucine,ile-L_c
+L-Leucine,leu-L_c
+L-Lysine,lys-L_c
+L-Methionine,met-L_c
+L-Phenylalanine,phe-L_c
+L-Proline,pro-L_c
+L-Serine,ser-L_c
+L-Threonine,thr-L_c
+L-Tryptophan,trp-L_c
+L-Tyrosine,tyr-L_c
+L-Valine,val-L_c
+Malonyl-CoA,malcoa_c
+NAD,nad_c
+NADH,nadh_c
+NADP,nadp_c
+NADPH,nadph_c
+Ornithine,orn_c
+Orotic acid,orot_c
+Pantothenic acid,pnto-R_c
+Phosphoenolpyruvic acid,pep_c
+Propionyl-CoA,ppcoa_c
+Pyridoxal 5'-phosphate,pydx5p_c
+Pyruvic acid,pyr_c
+Riboflavin,ribflv_c
+S-Adenosylhomocysteine,ahcys_c
+S-Adenosylmethionine,amet_c
+Shikimic acid,skm_c
+Succinic acid,succ_c
+Thiamine monophosphate,thmmp_c
+Thiamine pyrophosphate,thmpp_c
+Uracil,ura_c
+Uridine,uri_c
+Uridine 5'-diphosphate,udp_c
+Uridine 5'-monophosphate,ump_c
+Uridine diphosphate glucose,udpg_c
+Uridine diphosphate-N-acetylglucosamine,uacgam_c
+Uridine triphosphate,utp_c
+Xanthine,xan_c
+cis-Aconitic acid,acon-C_c
+dCDP,dcdp_c
+dCTP,dctp_c
+dGDP,dgdp_c
+dTDP,dtdp_c
+dUMP,dump_c

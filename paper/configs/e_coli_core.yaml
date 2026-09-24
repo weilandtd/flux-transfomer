@@ -1,0 +1,130 @@
+# SigmaFlux training configuration — E. coli core (toy network)
+#
+# The small teaching network that ships alongside iAF1260, 121 reactions. Useful as
+# a fast end-to-end check of the pipeline; it is not a genome-scale model and its
+# predictions are not comparable with the other organisms.
+name: E_coli_core
+model_file: models/atomistic/E_coli_core/e_coli_core_annotated.json
+# Fallback only: experiment.mapping_csv below overrides this everywhere the measurable
+# metabolite set is needed -- feature selection, the EMU expansion targets and inference
+# alike -- so the model is only ever trained on tokens this platform can supply.
+mapping_csv: models/atomistic/E_coli_core/E_coli_core_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# LC-MS (HILIC) data: 2 tracers x 5 biological replicates, one growth condition.
+# The GC-MS arm of the same study lives in data/E_coli_GC_MS, driven by e_coli_core_gc.yaml.
+experiment:
+  data_dir: data/E_coli_LC_MS
+  gem_xlsx: models/atomistic/E_coli_core/example_GEM.xlsx
+  mapping_csv: data/E_coli_LC_MS/E_coli_core_mapping.csv
+  reference_flux: data/E_coli_LC_MS/E_coli_core_park_reference_flux.xlsx
+  n_bootstrap: 200
+
+# Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
+# biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
+# has to stay in the network.
+skip_constraints: []
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000
+  thinning: 100
+  processes: 8
+  method: optgp        # hopsy | optgp | achr
+  fva: true
+  ko: false         # false | all | random | uncorrelated
+
+  stratified_sampling:
+    enabled: true
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
+    n_bins: 20
+    reactions: null               # null → training.measured_fluxes
+
+  # Absolute units, mmol/gDW/h, so growth is a real specific growth rate.
+  growth:
+    lb: 0.01
+    ub: 0.8
+
+  # Convention (after standardization): positive flux = secretion, negative = uptake.
+  #
+  # This network fuses glucose transport with hexokinase in `gluc_up`
+  # (ATP + Gluc_e --> G6P), so EX_Gluc_e is the only clean handle on glucose entry
+  # and `gluc_up` carries the first glycolytic step as well. `EX_Biomass` drains the
+  # `Biomass` metabolite, which nothing else consumes.
+  media:
+    EX_Gluc_e:   {lb: -15.0,  ub: 0.0}
+    EX_O2_e:     {lb: -30.0,  ub: 0.0}
+    EX_NH3_e:    {lb: -20.0,  ub: 0.0}
+    EX_SO4_e:    {lb: -20.0,  ub: 0.0}
+    EX_Ac_e:     {lb: 0.0,    ub: 30.0}
+    EX_CO2_e:    {lb: 0.0,    ub: 50.0}
+    EX_Biomass:  {lb: 0.0,    ub: 5.0}
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+labeling:
+  batch_size: 512
+  tracers:
+    - tracer_id: Gluc_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 1.0
+      name: "1,2-13C glucose"
+    - tracer_id: Gluc_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.5
+      name: "U-13C glucose (50%)"
+    - tracer_id: Gluc_e
+      labeling: [0, 0, 1, 0, 0, 0]
+      enrichment: 1.0
+      name: "3-13C glucose"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true
+  token_selection_method: all       # all measurable tokens; no significance test
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: ecoli_core_transformer.pt
+  ensemble_size: 20
+  epochs: 1000
+  early_stopping_patience: 10
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.1
+  max_samples: 10000
+
+  combined_dim: 256
+  num_attn_heads: 8
+  num_transformer_layers: 4
+  dropout: 0.2
+
+  # 112 metabolites and 121 reactions — a much smaller vocabulary than the yeasts.
+  h_compound: 7
+  h_label: 5
+  h_tracer: 1
+  h_reaction: 7
+  h_type: 2
+
+  flux_token_dropout: 0.2
+  labeling_token_dropout: 0.2
+  normalize_mids: false
+
+  # What the published MFA constrains: glucose uptake (its basis) and acetate yield.
+  # O2 and CO2 are deliberately absent — off-gas rates are hard to measure and were
+  # not reported here, so treating them as known inputs would be wishful.
+  measured_fluxes:
+    - EX_Gluc_e
+    - EX_Ac_e
+    - BIOMASS
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01
+  loss: variance
+  null_space_type: targeted_ica
+  flux_loss_space: basis
+  variance_min_cutoff: 0.1

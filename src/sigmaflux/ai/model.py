@@ -9,15 +9,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ScalarFeatureEncoder(nn.Module):
-	"""
-	Encodes a scalar value as a d_model-dimensional embedding via learned projection.
+#: Fills a dropped/unmeasured labeling token's fraction, distinguishing "not measured"
+#: from a real 0 fraction. Outside a fraction's valid [0, 1] range, so ScalarFeatureEncoder's
+#: sign(x) feature alone separates it from every real value; finite through all of
+#: log(|x|+1)/|x|/sign(x), so it introduces no NaN. The token stays attended (unlike
+#: labeling_mask, since removed), keeping its identity visible to the rest of the sequence.
+MISSING_LABEL_VALUE = -1.0
 
-	Maps: z = W · φ(x)
-	  where φ(x) = [x, log(|x|+ε), x², sign(x)] (4-dim featurization)
-	        W ∈ ℝ^(d_model × 4) learned projection
-    
-	"""
+
+class ScalarFeatureEncoder(nn.Module):
+	"""Encodes a scalar as a d_model embedding: z = W · φ(x), where
+	φ(x) = [x, log(|x|+1), |x|, sign(x)] and W is a learned projection."""
 
 	def __init__(self, d_model):
 		super().__init__()
@@ -27,15 +29,7 @@ class ScalarFeatureEncoder(nn.Module):
 		nn.init.xavier_uniform_(self.projection.weight)
 
 	def _featurize(self, x):
-		"""
-		Featurize scalar values with non-linear transformations.
-
-		Args:
-		  x: (...) tensor of scalar values
-
-		Returns:
-		  features: (..., 4) with [x, log(|x|+1), x², sign(x)]
-		"""
+		"""Featurize x into [x, log(|x|+1), |x|, sign(x)], shape (..., 4)."""
 		log_feat = torch.log(torch.abs(x) + 1)
 		abs_feat = torch.abs(x)
 		sign_feat = torch.sign(x)
@@ -43,13 +37,7 @@ class ScalarFeatureEncoder(nn.Module):
 		return torch.stack([x, log_feat, abs_feat, sign_feat], dim=-1)
 
 	def forward(self, x):
-		"""
-		Args:
-		  x: (B, N) or (B, N, 1) scalar values
-
-		Returns:
-		  (B, N, d_model) projected embedding
-		"""
+		"""Accepts x as (B, N) or (B, N, 1); returns (B, N, d_model)."""
 		if x.dim() == 3 and x.shape[-1] == 1:
 			x = x.squeeze(-1)  # (B, N, 1) → (B, N)
 
@@ -82,23 +70,24 @@ class FluxDecoderConfig:
     d_tracer:    int   = 0
     n_fluxes:    int   = 0
     n_rev:       int   = 0
-    n_free:      int   = 0
+    n_free:      int   = 0     # head width for the flux latent
     d_reaction:  int   = 0     # frozen reaction radial embedding dim; 0 = no flux tokens
     d_type:      int   = 0     # frozen token-type radial embedding dim (= 2 * h_type)
 
 
 class CrossAttention(nn.Module):
-    """
-    Cross-attention with pre-norm applied to Q and K/V separately.
+    """Cross-attention with pre-norm applied to Q and K/V separately.
 
-    forward(q, kv, key_padding_mask=None, attn_bias=None)
-      q:               (B, R, d)
-      kv:              (B, N, d)
-      key_padding_mask:(B, N) bool — True = padded/hidden
-      attn_bias:       (B*n_heads, R, N) float — additive bias
+    forward(q, kv): q is (B, R, d), kv is (B, N, d); key_padding_mask is
+    (B, N) bool (True = hidden); attn_bias is (B*n_heads, R, N) additive.
     """
 
     def __init__(self, d_model, n_heads, dropout):
+        """Args:
+            d_model: token embedding dimension.
+            n_heads: number of attention heads.
+            dropout: attention dropout probability.
+        """
         super().__init__()
         self.n_heads = n_heads
         self.q_norm  = nn.LayerNorm(d_model)
@@ -108,6 +97,13 @@ class CrossAttention(nn.Module):
         )
 
     def forward(self, q, kv, key_padding_mask=None, attn_bias=None, return_weights=False):
+        """Args:
+            q: query tokens, shape (B, R, d).
+            kv: key/value tokens, shape (B, N, d).
+            key_padding_mask: bool mask, shape (B, N); True hides that key.
+            attn_bias: additive attention bias, shape (B*n_heads, R, N).
+            return_weights: also return the attention weights.
+        """
         q  = self.q_norm(q)
         kv = self.kv_norm(kv)
         out, weights = self.attn(
@@ -123,26 +119,12 @@ class CrossAttention(nn.Module):
 
 
 class FluxDecoder(nn.Module):
-    """
-    Perceiver-IO–style cross-attention decoder for metabolic flux prediction.
+    """Perceiver-IO–style cross-attention decoder for metabolic flux prediction.
 
-    Architecture:
-      1. Build a unified token sequence from two token types, both sharing the same
-         d_in feature vector and single input_proj + input_norm:
-
-           Labeling token: [comp_emb | label_emb | tracer_emb | type_emb[0] | fraction]
-           Flux token:     [reaction_emb | zeros(pad) | type_emb[1] | norm_flux]
-
-         type_emb is a frozen 2-vocabulary radial embedding (vocab_size=2, H=h_type).
-         Reaction embeddings are zero-padded to d_entity_lab = d_comp+d_label+d_tracer.
-
-      2. TransformerEncoder — self-attention over the combined token sequence
-      3. CrossAttention — R queries attend over encoded tokens
-      4. Linear(d_model → 1) → basis coefficients x_l and reversibilities
-      5. Flux reconstruction: fluxes = x_l @ Z_full.T  (satisfies Sv=0)
-
-    d_in = d_comp + d_label + d_tracer + d_type + 1
-    R    = n_free + n_rev
+    Builds a unified token sequence from labeling and flux tokens (sharing one
+    input_proj/input_norm), self-attends via a TransformerEncoder, cross-attends
+    R = n_free + n_rev flux/reversibility queries over it, and reconstructs
+    fluxes as ``x_l @ Z_full.T + flux_offset`` (satisfying S v = 0).
     """
 
     def __init__(
@@ -157,6 +139,17 @@ class FluxDecoder(nn.Module):
         type_emb_table=None,        # (2, d_type) frozen table; required when d_type > 0
         flux_norm_stats=None,       # dict with 'mean' and 'std' (n_fluxes,) arrays
     ):
+        """Args:
+            config: architecture hyperparameters.
+            token_experiment_ids: per-token source-experiment index, -1 for bypass tokens.
+            compound_emb_table: frozen (n_compounds, d_comp) embedding table.
+            label_emb_table: frozen (n_labels, d_label) embedding table.
+            tracer_emb_table: frozen (n_tracers, d_tracer) embedding table.
+            null_space_data: dict with Z_free, fixed_idx, and optional y_*/rev_log_* norm stats.
+            reaction_emb_table: frozen (n_fluxes, d_reaction) table; required when d_reaction > 0.
+            type_emb_table: frozen (2, d_type) table; required when d_type > 0.
+            flux_norm_stats: dict with 'mean' and 'std' (n_fluxes,) arrays.
+        """
         super().__init__()
         cfg = config
         self.cfg = cfg
@@ -247,6 +240,16 @@ class FluxDecoder(nn.Module):
             Z_full = torch.tensor(Z_full, dtype=torch.float32)
         self.register_buffer('Z_full', Z_full)
 
+        # Directions the training fluxes never moved along -- a measurement pool's
+        # pinned drain, an FVA-fixed route -- are held at their constant value instead of
+        # being predicted. The offset lies in the null space, so S v = 0 still holds.
+        _offset = null_space_data.get('flux_offset')
+        if _offset is None:
+            _offset = torch.zeros(Z_full.shape[0])
+        elif not isinstance(_offset, torch.Tensor):
+            _offset = torch.tensor(_offset, dtype=torch.float32)
+        self.register_buffer('flux_offset', _offset)
+
         # Basis-space normalization statistics (y_mean/y_std from training data)
         # Used to denormalize logits from N(0,1) to actual y-space in forward()
         _y_mean = null_space_data.get('y_mean')
@@ -290,18 +293,29 @@ class FluxDecoder(nn.Module):
         label_ids,                # (B, N_lab) long
         tracer_ids,               # (B, N_lab) long
         fractions,                # (B, N_lab, 1) float
-        labeling_mask=None,       # (B, N_lab) bool, True = hidden
         flux_mask=None,           # (B, n_fx)  bool, True = hidden; requires measured_fluxes
         measured_fluxes=None,     # (B, n_fx) float, raw flux values
         measured_flux_ids=None,   # (n_fx,) long; uses self.fixed_idx_t when None
         attn_bias=None,           # (B*n_heads, n_queries, N) float additive bias
         return_attn=False,
     ):
-        """
+        """Args:
+            compound_ids: labeling-token compound ids, shape (B, N_lab).
+            label_ids: labeling-token isotopomer-label ids, shape (B, N_lab).
+            tracer_ids: labeling-token tracer ids, shape (B, N_lab).
+            fractions: labeling-token fractions, shape (B, N_lab, 1). A token the
+                experiment didn't measure is MISSING_LABEL_VALUE, not hidden from
+                attention -- labeling tokens are always attended; see MISSING_LABEL_VALUE.
+            flux_mask: True hides that flux token, shape (B, n_fx); requires measured_fluxes.
+            measured_fluxes: raw flux values for flux tokens, shape (B, n_fx).
+            measured_flux_ids: reaction indices for measured_fluxes; defaults to self.fixed_idx_t.
+            attn_bias: additive attention bias, shape (B*n_heads, n_queries, N).
+            return_attn: also return the cross-attention weights.
+
         Returns:
-            fluxes:          (B, n_fluxes) satisfying Sv=0
-            reversibilities: (B, n_rev) non-negative
-            attn_weights:    (B, n_queries, N_total) — only when return_attn=True
+            (fluxes, reversibilities), plus attn_weights (B, n_queries, N_total)
+            when return_attn=True. fluxes is (B, n_fluxes) satisfying Sv=0;
+            reversibilities is (B, n_rev) non-negative.
         """
         B      = compound_ids.shape[0]
         device = compound_ids.device
@@ -371,18 +385,15 @@ class FluxDecoder(nn.Module):
         else:
             x = x_lab
 
-        # Build encoder mask (None = no masking)
-        if labeling_mask is None and flux_mask is None:
+        # Build encoder mask (None = no masking). Labeling tokens are always attended --
+        # a token the experiment didn't measure is MISSING_LABEL_VALUE in `fractions`,
+        # not hidden from attention -- so only flux tokens can still be masked here
+        # (flux_token_dropout).
+        if flux_mask is None or x_flux is None:
             full_mask = None
         else:
-            lm = labeling_mask if labeling_mask is not None else \
-                 torch.zeros(B, N_lab, dtype=torch.bool, device=device)
-            if x_flux is not None:
-                fm = flux_mask if flux_mask is not None else \
-                     torch.zeros(B, N_fx, dtype=torch.bool, device=device)
-                full_mask = torch.cat([lm, fm], dim=1)
-            else:
-                full_mask = lm
+            lm = torch.zeros(B, N_lab, dtype=torch.bool, device=device)
+            full_mask = torch.cat([lm, flux_mask], dim=1)
 
         x = self.encoder(x, src_key_padding_mask=full_mask)
         x = torch.nan_to_num(x, nan=0.0)
@@ -406,7 +417,7 @@ class FluxDecoder(nn.Module):
             x_l = x_l_raw * self.y_norm_std + self.y_norm_mean
         else:
             x_l = x_l_raw
-        fluxes = x_l @ self.Z_full.T
+        fluxes = x_l @ self.Z_full.T + self.flux_offset
 
         rev_raw = logits[:, n_free:]
         if self.rev_norm_mean is not None:

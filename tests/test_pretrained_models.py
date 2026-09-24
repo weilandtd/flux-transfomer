@@ -198,23 +198,31 @@ def test_measured_fluxes_reach_the_prediction(model):
     assert not np.allclose(without, with_vm), "df_Vm did not reach the model"
 
 
-def test_predicted_fluxes_are_mass_balanced(model, sfx_path):
-    """S @ v ≈ 0 from the packaged file alone, with no run directory in reach.
+def test_each_member_and_the_ensemble_are_mass_balanced(model, sfx_path):
+    """Every member is mass-balanced, and so is what ``predict()`` reports.
 
-    Skipped for releases exported before the network was packaged — re-export
-    them to get this coverage, since without a stoichiometry a consumer cannot
-    check that what it serves is a feasible flux distribution at all.
+    A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
+    space. ``EnsembleSigmaFlux.predict`` combines members with an elementwise **mean**,
+    a convex combination, which stays in the null space — so the reported value is a
+    flux state too. It was an elementwise median before, which is not a convex
+    combination and did leave it (measured ``max|S v| = 5.74`` on E. coli core LC-MS
+    against a glucose uptake of 8.6); this pins the fix.
     """
     if not inspect_model(sfx_path).get("network", {}).get("included"):
         pytest.skip("release predates the packaged COBRA network; re-export to cover it")
 
     S, _, _ = read_stoichiometry(sfx_path)
-    flux = model.predict(make_df_L(model, n_samples=1))["Value"].values[:len(model.flux_names)]
+    df_L = make_df_L(model, n_samples=1)
+    n_flux = len(model.flux_names)
+    for i, member in enumerate(model.members):
+        flux = member.predict(df_L)["Value"].values[:n_flux]
+        resid = np.abs(S @ flux).max()
+        assert resid < 1e-5 * max(np.abs(flux).max(), 1.0), f"member {i}: |S@v|max={resid:.3e}"
 
-    assert S.shape[1] == len(model.flux_names)
-    # Relative to the flux scale: the null-space basis is float32, so an exact
-    # zero is not on offer.
-    assert np.abs(S @ flux).max() < 1e-5 * max(np.abs(flux).max(), 1.0)
+    combined = model.predict(df_L)["Value"].values[:n_flux]
+    resid = np.abs(S @ combined).max()
+    assert resid < 1e-5 * max(np.abs(combined).max(), 1.0), \
+        f"ensemble aggregate: |S@v|max={resid:.3e}"
 
 
 def test_each_member_is_mass_balanced(model, sfx_path):

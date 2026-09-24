@@ -15,55 +15,18 @@ EPSILON = 1e-9
 logger = logging.getLogger(__name__)
 
 
-@time_function
-def fit_mfa_model(model,
-                  simultanous_experiments=3,
-                  max_iter=1000,
-                  tol=1e-3,
-                  checkpoint_file=None,
-                  labeling_checkpoint_file=None,
-                  disp=0):
-    """Fit an MFA model using chi-squared minimization with null-space reparameterization.
+def _prepare_mfa_batches(model, simultanous_experiments):
+    """Experiment batches + measurement tensors + per-block count factors.
 
-    The mass-balance constraint S·v = 0 is satisfied automatically by parameterizing
-    net fluxes as v_net = T @ p, where T = null(S) (right null space of S).
-    Exchange fluxes (reversibility) r are bounded below by min_rev_flux.
-    Optimization uses scipy L-BFGS-B with autograd-based gradient.
+    Used by fit_mfa_model and fit_mfa_model_ipopt.
 
-    Objective (reduced χ² per data block, so the few flux measurements are not drowned
-    out by the many labeling measurements):
-        (1/n_L) Σ (L_sim − L_meas)² / σ²_L  +  (1/n_F) Σ (v_sim − v_meas)² / σ²_v
+    Args:
+        model: MFAModel whose ``experiments`` supply the measurement data.
+        simultanous_experiments: number of experiments forward-simulated per batch.
 
-    Parameters
-    ----------
-    model : MFAModel
-    simultanous_experiments : int
-    max_iter : int
-    tol : float
-        Projected-gradient tolerance (gtol) for L-BFGS-B convergence.
-    checkpoint_file, labeling_checkpoint_file : str or None
-    disp : int
-        Verbosity: 0 = silent, >1 = per-iteration output.
-
-    Returns
-    -------
-    dict
-        {"loss": float, "converged": bool, "n_iter": int,
-         "ssr_labeling": float, "ssr_fluxes": float,
-         "n_labeling": int, "n_fluxes": int}
-        where ``loss`` is the reduced χ² (mean_ssr_labeling + mean_ssr_fluxes) and
-        ``ssr_labeling`` / ``ssr_fluxes`` are the per-block reduced χ² (χ²_L/n_L, χ²_F/n_F).
+    Returns ``(experiment_batches, batch_data, n_L_total, n_F_total, inv_n_L, inv_n_F)``.
     """
-    n = model.num_reactions
-    dtype, device = model.dtype, model.device
-    mask_f = model._reversibility_mask  # float tensor, 1.0 for reversible reactions
-
-    # ── Null-space basis of S: v_net = T @ p satisfies S @ v_net = 0 ─────────
-    T_np = gen_SVD_kernel(model.stoichiometry.cpu().numpy())  # [n, k]
-    T_t = torch.tensor(T_np, dtype=dtype, device=device)
-    k = T_t.shape[1]
-
-    # ── Experiment batches + measurement data ─────────────────────────────────
+    device = model.device
     experiment_batches = []
     for i in range(0, len(model.experiments), simultanous_experiments):
         experiment_batches.append(range(i, min(i + simultanous_experiments, len(model.experiments))))
@@ -78,15 +41,105 @@ def fit_mfa_model(model,
         batch_data[tuple(exp_ix)] = (index_labeling, L_mean, L_std,
                                      index_fluxes, v_mean, v_std)
 
-    # Per-block measurement counts. The labeling block has many MID measurements
-    # (~hundreds) and the flux block only a handful; a plain summed χ² lets labeling
-    # drown out the flux constraints. Reduced χ² per block (χ²_L/n_L + χ²_F/n_F) gives
-    # each data type equal footing so the few measured fluxes actually constrain the fit.
     n_L_total = int(sum(bd[0].numel() for bd in batch_data.values()))
     n_F_total = int(sum(bd[3].numel() for bd in batch_data.values()))
-    # Precompute inverse counts once so the per-iteration objective is branch-free.
     inv_n_L = 1.0 / max(n_L_total, 1)
     inv_n_F = (1.0 / n_F_total) if n_F_total > 0 else 0.0
+    return experiment_batches, batch_data, n_L_total, n_F_total, inv_n_L, inv_n_F
+
+
+def _mfa_residual(model, v_net, r, experiment_batches, batch_data, mask_f,
+                  inv_n_L, inv_n_F, return_blocks=False, return_vector=False):
+    """Labeling+flux SSR for one (v_net, r) flux state.
+
+    Differentiable w.r.t. v_net/r via autograd through the EMU forward model.
+
+    return_blocks=False, return_vector=False (default) returns the raw sum of
+    squared residuals over both blocks. return_blocks=True returns (labeling,
+    flux) separately, each divided by its own measurement count. return_vector=True
+    returns the concatenated standardized residuals themselves (not squared/summed)
+    -- the SSR is ``residuals.square().sum()`` -- for callers that need the
+    per-measurement Jacobian (e.g. a Gauss-Newton Hessian J^T J), not just the loss.
+
+    Args:
+        model: MFAModel the labeling forward pass runs against.
+        v_net: net flux per reaction.
+        r: reversibility per reaction.
+        experiment_batches, batch_data, inv_n_L, inv_n_F: from :func:`_prepare_mfa_batches`.
+        mask_f: reversibility mask (1.0 for reversible reactions), from ``model._reversibility_mask``.
+        return_blocks: return the two reduced-χ² blocks separately instead of
+            the combined raw SSR.
+        return_vector: return the flat standardized-residual vector instead of
+            any reduction; takes precedence over return_blocks.
+    """
+    rev = torch.where((r * mask_f) <= model.min_rev_flux,
+                      torch.full_like(r, model.min_rev_flux),
+                      r * mask_f)
+    vf = 0.5 * (v_net.abs() + v_net + rev)
+    vb = 0.5 * (v_net.abs() - v_net + rev)
+    vf = vf - vb * (1.0 - mask_f)
+    vb = vb * mask_f
+    rev_fluxes = torch.cat([vf, vb])
+
+    total_L = v_net.new_zeros(())
+    total_F = v_net.new_zeros(())
+    residuals = [] if return_vector else None
+    for exp_ix in experiment_batches:
+        index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
+        output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
+        sim_L = torch.take(output, index_labeling)
+        lab_res = (sim_L - L_mean) / L_std
+        total_L = total_L + lab_res.square().sum()
+        if return_vector:
+            residuals.append(lab_res)
+        if index_fluxes.numel() > 0:
+            flux_res = (v_net[index_fluxes] - v_mean) / v_std
+            total_F = total_F + flux_res.square().sum()
+            if return_vector:
+                residuals.append(flux_res)
+    if return_vector:
+        return torch.cat(residuals)
+    if return_blocks:
+        return total_L * inv_n_L, total_F * inv_n_F
+    return total_L + total_F
+
+
+@time_function
+def fit_mfa_model(model,
+                  simultanous_experiments=3,
+                  max_iter=1000,
+                  tol=1e-3,
+                  checkpoint_file=None,
+                  labeling_checkpoint_file=None,
+                  disp=0):
+    """Fit an MFA model by minimizing the raw SSR over labeling and flux data via L-BFGS-B.
+
+    Net fluxes are parameterized as v_net = T @ p with T = null(S), so the mass-balance
+    constraint S·v = 0 holds automatically; gradients come from autograd.
+
+    Args:
+        model: MFAModel to fit in place.
+        simultanous_experiments: number of experiments forward-simulated per batch.
+        max_iter: maximum L-BFGS-B iterations.
+        tol: gradient-norm convergence tolerance (gtol).
+        checkpoint_file: path to save model checkpoints to, if given.
+        labeling_checkpoint_file: path to save predicted labeling to, if given.
+        disp: print per-iteration progress when truthy.
+
+    Returns:
+        dict with loss, converged, n_iter, ssr_labeling, ssr_fluxes, n_labeling, n_fluxes.
+    """
+    n = model.num_reactions
+    dtype, device = model.dtype, model.device
+    mask_f = model._reversibility_mask  # float tensor, 1.0 for reversible reactions
+
+    # ── Null-space basis of S: v_net = T @ p satisfies S @ v_net = 0 ─────────
+    T_np = gen_SVD_kernel(model.stoichiometry.cpu().numpy())  # [n, k]
+    T_t = torch.tensor(T_np, dtype=dtype, device=device)
+    k = T_t.shape[1]
+
+    (experiment_batches, batch_data, n_L_total, n_F_total,
+     inv_n_L, inv_n_F) = _prepare_mfa_batches(model, simultanous_experiments)
 
     # ── Initial point: project current fluxes onto null(S), keep r ───────────
     # Columns of T are orthonormal, so T^T is the pseudo-inverse.
@@ -108,29 +161,8 @@ def fit_mfa_model(model,
     def objective(x: torch.Tensor, return_blocks: bool = False) -> torch.Tensor:
         p, r = x[:k], x[k:]
         v_net = T_t @ p  # S @ v_net = 0 automatically
-        rev = torch.where((r * mask_f) <= model.min_rev_flux,
-                          torch.full_like(r, model.min_rev_flux),
-                          r * mask_f)
-        vf = 0.5 * (v_net.abs() + v_net + rev)
-        vb = 0.5 * (v_net.abs() - v_net + rev)
-        vf = vf - vb * (1.0 - mask_f)
-        vb = vb * mask_f
-        rev_fluxes = torch.cat([vf, vb])
-
-        total_L = x.new_zeros(())
-        total_F = x.new_zeros(())
-        for exp_ix in experiment_batches:
-            index_labeling, L_mean, L_std, index_fluxes, v_mean, v_std = batch_data[tuple(exp_ix)]
-            output = model.forward(exp_ix=exp_ix, reversible_fluxes=rev_fluxes)
-            sim_L = torch.take(output, index_labeling)
-            total_L = total_L + ((sim_L - L_mean) / L_std).square().sum()
-            if index_fluxes.numel() > 0:
-                total_F = total_F + ((v_net[index_fluxes] - v_mean) / v_std).square().sum()
-        # Reduced χ² per block so the flux constraints aren't drowned out by the
-        # far more numerous labeling measurements (inverse counts precomputed).
-        if return_blocks:
-            return total_L * inv_n_L, total_F * inv_n_F
-        return total_L * inv_n_L + total_F * inv_n_F
+        return _mfa_residual(model, v_net, r, experiment_batches, batch_data,
+                             mask_f, inv_n_L, inv_n_F, return_blocks)
 
     # ── Gradient via autograd ─────────────────────────────────────────────────
     # Track the most recent objective/gradient + evaluation count so the per-iteration
@@ -212,11 +244,11 @@ def fit_mfa_model(model,
         rchi2_L, rchi2_F = objective(x_opt, return_blocks=True)
 
     return {
-        "loss":         float(result.fun),    # mean_ssr_labeling + mean_ssr_fluxes
+        "loss":         float(result.fun),    # raw SSR at the optimum
         "converged":    bool(result.success),
         "n_iter":       int(result.nit),
-        "ssr_labeling": float(rchi2_L),       # reduced χ²_L  (mean ssr labeling)
-        "ssr_fluxes":   float(rchi2_F),       # reduced χ²_F  (mean ssr fluxes)
+        "ssr_labeling": float(rchi2_L),       # reduced χ²_L
+        "ssr_fluxes":   float(rchi2_F),       # reduced χ²_F
         "n_labeling":   n_L_total,
         "n_fluxes":     n_F_total,
     }
@@ -232,11 +264,26 @@ def fit_mfa_model_penalized(model, loss_fn, flux_loss_fn, optimizer,
                             optimizer_checkpoint=None,
                             lr_scheduler=None, with_std=True,
                             early_stop_tol=None):
-    """Legacy penalized-Lagrangian MFA optimizer (soft constraints, L1/L2 reg).
+    """Legacy penalized-Lagrangian MFA optimizer (soft mass-balance/positivity constraints, L1/L2 reg); use :func:`fit_mfa_model` instead.
 
-    Retained for reproducing analyses published before :func:`fit_mfa_model` was
-    rewritten as a null-space chi-squared fit. New work should use
-    :func:`fit_mfa_model`.
+    Args:
+        model: MFAModel to fit in place.
+        loss_fn: loss function applied to simulated vs measured labeling.
+        flux_loss_fn: loss function applied to simulated vs measured fluxes.
+        optimizer: torch optimizer driving the parameter updates.
+        lam1: L1 regularization weight on reversible fluxes.
+        lam2: L2 regularization weight on reversible fluxes.
+        epochs: number of optimization epochs.
+        simultanous_experiments: number of experiments forward-simulated per batch.
+        labeling_scaler: per-experiment labeling scale factor(s); defaults to all ones.
+        flux_scaler: scale factor applied to the flux loss term.
+        checkpoint: epoch interval at which checkpoints are written.
+        checkpoint_file: path to save model checkpoints to, if given.
+        labeling_checkpoint_file: path to append predicted labeling to, if given.
+        optimizer_checkpoint: path to save optimizer state to, if given.
+        lr_scheduler: learning-rate scheduler stepped once per epoch.
+        with_std: whether measurement std devs are used (currently forced True).
+        early_stop_tol: stop early once the epoch-to-epoch loss change drops below this.
     """
     from tqdm import trange
     from sigmaflux.core.scaling import Scaling
@@ -399,26 +446,28 @@ def filter_conv_inputs_with_indices(emu_inputs):
             emu_indices.append(i)
     return emus, emu_indices
 
-def calc_emu_input(emu_states, emu_inputs, mid_inputs, ):
-    this_emu_inputs = [0.0, ] * ()
-    for ix, the_input in enumerate(emu_inputs):
-        if isinstance(the_input, OriginSet) and len(OriginSet) > 1:
-            this_emu_inputs[ix] = convolution(emu_states, the_input)
-        else:
-            this_emu_inputs[ix] = extract_input(mid_inputs, the_input)
-
-    return emu_inputs
-
-
 # Invariant: every component of a multi-element OriginSet must be a core node
 # (present in core_met_ix for its subnet size).  This is guaranteed by
 # EMUExpansion._prune_orphaned_edges(); a KeyError here means the prune step
 # was skipped or a new code path bypasses it.
 def convolution(core_met_ix, emu_states, origin_set, device, dtype):
-    """
-    emu_states matrix is a dictionary of # of subnets torch tensors with # of core emu x # of mids
+    """Convolve the MIDs of an OriginSet's member EMUs pairwise into the joint MID distribution.
+
+    A singleton OriginSet has no partner to convolve with, so its own MID is
+    already the joint distribution.
+
+    Args:
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        emu_states: solved MID tensors, keyed by subnet size.
+        origin_set: OriginSet whose member EMUs are convolved together.
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
     """
     emu_size = origin_set.size
+
+    if len(origin_set) == 1:
+        value = origin_set._values[0]
+        return emu_states[value.size][core_met_ix[value.size][value]]
 
     if len(origin_set) > 2:
         emus = origin_set._values 
@@ -474,17 +523,37 @@ def convolution(core_met_ix, emu_states, origin_set, device, dtype):
 #def conv(x, y, emu_size, device):
 #    return torch.tensor([sum([x[alpha - beta] * y[beta] for beta in range(alpha + 1)]) for alpha in range(emu_size + 1)],dtype = torch.float32, device=device)
 
-def conv(x,y,emu_size, device, dtype): 
-    result = torch.zeros(x.shape[0], emu_size+1, device = device, dtype = dtype) 
-    for alpha in range(emu_size+1): 
-        beta = torch.arange(alpha+1)
-        result[:,alpha] = torch.sum(x[:, alpha-beta] @ y[beta], axis=1)
-    return result
+def conv(x, y, emu_size, device, dtype):
+    """Mass-isotopomer convolution ``result[n, a] = sum_b x[n, a-b] * y[b]``, via one matmul against the Toeplitz matrix of *y*.
+
+    Accumulation order differs from a naive loop, so results can differ by ~1 ulp in float64.
+
+    Args:
+        x: batched MID tensor being convolved.
+        y: MID vector convolved against each row of x.
+        emu_size: number of carbon atoms in the EMU (result has emu_size + 1 mass isotopomers).
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
+    """
+    k = emu_size + 1
+    y_flat = y.reshape(-1)[:k]
+    shift = (torch.arange(k, device=device).unsqueeze(0)
+             - torch.arange(k, device=device).unsqueeze(1))
+    toeplitz = torch.where(shift >= 0, y_flat[shift.clamp(min=0)],
+                           torch.zeros((), device=device, dtype=dtype))
+    return x[:, :k] @ toeplitz
 
 # can this be done more efficiently? 
 def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_set, device, dtype):
-    """
-    emu_states matrix [M,K]
+    """Derivative of convolution() with respect to fluxes, for a multi-element OriginSet, via the product rule.
+
+    Args:
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size.
+        emu_states: solved MID tensors, keyed by subnet size.
+        origin_set: OriginSet whose member EMUs are convolved together.
+        device: torch device for intermediate tensors.
+        dtype: torch dtype for intermediate tensors.
     """
     emu_size = origin_set.size
     if len(origin_set) > 2:
@@ -565,36 +634,81 @@ def convolution_derivative(core_met_ix, derivative_states, emu_states, origin_se
     return conv_derivative_1 + conv_derivative_2
 
 
-def update_derivative_states(derivative_states, dX, emu_size,core_met_ix): 
+def update_derivative_states(derivative_states, dX, emu_size,core_met_ix):
+    """Write a subnet's newly solved flux-derivative states back into derivative_states in place.
+
+    Args:
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size, updated in place.
+        dX: newly solved derivative values for this subnet.
+        emu_size: subnet size (number of carbon atoms) being updated.
+        core_met_ix: per-subnet mapping from EMU to row index in derivative_states.
+    """
     for i, met in enumerate(core_met_ix[emu_size]):
         derivative_states[emu_size][core_met_ix[emu_size][met]] = dX[:,i]
 
 
 def update_states(emu_states, X, emu_size, core_met_ix):
+    """Write a subnet's newly solved MID states back into emu_states in place.
+
+    Args:
+        emu_states: solved MID tensors, keyed by subnet size, updated in place.
+        X: newly solved MID values for this subnet.
+        emu_size: subnet size (number of carbon atoms) being updated.
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+    """
     for i, met in enumerate(core_met_ix[emu_size]):
         # set for each emu size and each metabolite, the labels for each MID 
         emu_states[emu_size][core_met_ix[emu_size][met]] = X[i]
 
     
-def extract_input(mid_inputs, origin):
-    return mid_inputs[origin.ix, :]
+def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device,
+                 dtype=torch.float64, boundary_inputs=None):
+    """Assemble per-metabolite MID tensors from solved core states, then overlay boundary_inputs.
 
+    boundary_inputs are network inputs whose labeling is given rather than solved for, so they
+    never appear in core_met_ix and must be written in separately.
 
-def get_labeling(metabolite_hash, emu_states, emu_met_filter, core_met_ix, device, dtype=torch.float64):
+    Args:
+        metabolite_hash: mapping from metabolite id to column index in the output tensor.
+        emu_states: solved MID tensors, keyed by subnet size.
+        emu_met_filter: per-subnet list of EMUs representing each metabolite.
+        core_met_ix: per-subnet mapping from EMU to row index in emu_states.
+        device: torch device for the output tensor.
+        dtype: torch dtype for the output tensor.
+        boundary_inputs: given (unsolved) MIDs for boundary EMUs, keyed by EMU/OriginSet.
     """
-    emu_states: list(torch.tensor)
-    emu_met_filter: list(torch.tensor)
-    """
-    labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device) 
-    for subnet in emu_met_filter: 
-        for met in emu_met_filter[subnet]: 
-            if met in core_met_ix[subnet]: 
+    labeling = torch.zeros((len(emu_states)+1, len(metabolite_hash),), dtype=dtype, device=device)
+    for subnet in emu_met_filter:
+        for met in emu_met_filter[subnet]:
+            if met in core_met_ix[subnet]:
                 labeling[:(subnet+1), metabolite_hash[met.id]] = emu_states[subnet][core_met_ix[subnet][met]]
-    #return sum([es * emf for es, emf in zip(emu_states, emu_met_filter)])
+
+    # Write the inputs after the core states: an input pool is by definition not
+    # produced inside the network, so the two sets never collide. Only the
+    # whole-molecule EMU is written, since the output tensor holds one MID per
+    # metabolite and a sub-EMU would overwrite it with a shorter distribution.
+    for emu, values in (boundary_inputs or {}).items():
+        emu = emu._values[0] if hasattr(emu, "_values") else emu
+        if emu.id not in metabolite_hash:
+            continue
+        n_atoms = len(emu._metabolite.annotation.get('atom_pattern', ''))
+        if emu.size != n_atoms:
+            continue
+        labeling[:(emu.size + 1), metabolite_hash[emu.id]] = values
     return labeling
 
 
-def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, core_met_ix,device, dtype): 
+def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, core_met_ix,device, dtype):
+    """Assemble per-metabolite flux-derivative tensors from solved core derivative states.
+
+    Args:
+        metabolite_hash: mapping from metabolite id to column index in the output tensor.
+        derivative_states: flux-derivative tensors of the MIDs, keyed by subnet size.
+        emu_met_filter: per-subnet list of EMUs representing each metabolite.
+        core_met_ix: per-subnet mapping from EMU to row index in derivative_states.
+        device: torch device for the output tensor.
+        dtype: torch dtype for the output tensor.
+    """
     derivative_labeling = torch.zeros((len(derivative_states)+1, len(metabolite_hash), derivative_states[1].shape[1]),device=device, dtype=dtype)
     for subnet in emu_met_filter:
         for met in emu_met_filter[subnet]:
@@ -606,8 +720,12 @@ def get_derivative_labeling(metabolite_hash, derivative_states, emu_met_filter, 
 
 
 def build_emu_met_filter(model, metabolites, device=None):
-    """
+    """Map each metabolite to the largest-subnet EMU that represents it, for indexing into the solved EMU states.
 
+    Args:
+        model: MFAModel whose EMU expansion network is queried.
+        metabolites: metabolites to build the filter for.
+        device: torch device (currently unused, kept for interface symmetry).
     """
     #emu_met_filter = [0.0 * torch.ones(model.max_mid_size, model.max_emu_mets, dtype=torch.float32, device=device)
     #                  for _ in range(model.max_emu_size)]

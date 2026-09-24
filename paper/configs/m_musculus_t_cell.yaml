@@ -1,0 +1,228 @@
+# SigmaFlux training configuration — Mus musculus primary T cell
+#
+# One model covers both cell states. The GEM ships a single BIOMASS whose
+# coefficients are the *activated* composition, while the published MFA fits a
+# separate biomass reaction per state. Splitting BIOMASS into its macromolecule
+# components makes both representable here: naive is simply DNA_c = 0 and a
+# ~20x lower PROTEIN_c. All four components are separately measured.
+#
+# Fluxes are nmol/1E6 cells/h throughout, the units of the published flux table.
+name: M_musculus_T_Cell
+model_file: models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json
+mapping_csv: models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# Condition letters are the cell state, not a nutrient limitation:
+#   A = activated (aCD3/aCD28, IL2)    N = naive (IL7)
+experiment:
+  data_dir:       data/M_musculus_T_Cell
+  reference_flux: Shen_et_al_flux_data_MM.xlsx
+  gem_xlsx:       models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx
+  mapping_csv:    models/atomistic/M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv
+  n_bootstrap: 200
+  reference_signed: true
+
+# Reactions removed from the model after FVA (sampling and MFA use the uncoupled
+# subspace). FVA is still run with these reactions active so their bounds inform
+# the remaining reactions before they are dropped.
+skip_constraints:
+  - BIOMASS
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000   # final output written to flux_samples.csv
+  thinning: 100
+  processes: 8
+  method: optgp       # hopsy | optgp | achr
+  fva: true
+  ko: false
+
+  # Stratified sampling: for each (reaction, bin) pair, run a short MCMC chain
+  # with that reaction constrained to its bin. IPF then draws n_samples quasi-uniformly.
+  # reactions: null falls back to training.measured_fluxes.
+  #
+  # 20 bins rather than the usual 10: the two cell states' fluxes differ ~20-fold,
+  # so coarse bins leave the naive end of each range thinly covered.
+  stratified_sampling:
+    enabled: true
+    n_subsamples: auto            # ceil(n_samples / n_bins / (1 + KO count)); int also accepted
+    n_bins: 20                    # equal-width bins along each measured reaction's FVA range
+    reactions: null               # null → training.measured_fluxes; or explicit list
+
+  # BIOMASS is 1.0 for activated in the published fit. Naive lands near 0.05 once
+  # expressed in the activated composition, so the range spans both states.
+  #
+  # The floor is low because BIOMASS couples the components during FVA: at lb 0.01 it
+  # forced DNA_c >= 0.000142, and naive T cells do not divide, so their DNA synthesis
+  # is measured as exactly zero.
+  growth:
+    lb: 0.001
+    ub: 1.5
+
+  # Only reactions listed here are open; all other EX_ reactions are closed (0, 0).
+  # Convention (after standardization): met_e →  i.e. positive flux = secretion,
+  # negative flux = uptake.
+  #
+  # Bounds are the superset that covers both cell states, set from mammalian
+  # physiology rather than from the GEM's declared reaction directions. Exchange
+  # direction is not the clean, mostly-one-way affair it is in microbes: cultured
+  # mammalian cells run amino acids both ways depending on state, and this dataset
+  # shows it — the paper fits activated alanine as taken up and naive alanine as
+  # secreted, and lactate is secreted by activated cells but consumed by naive ones.
+  # The GEM writes both of those reactions one-way, which its own fit violates.
+  #
+  # Only two directions are genuinely forbidden, on biochemical grounds:
+  #   glucose  T cells lack glucose-6-phosphatase, so there is no route to release it
+  #   O2       consumed only
+  media:
+    EX_glc__D_e: {lb: -260.0, ub: 0.0}
+    EX_o2_e:     {lb: -160.0, ub: 0.0}
+    EX_lac__L_e: {lb: -10.0,  ub: 460.0}
+    EX_co2_e:    {lb: -50.0,  ub: 250.0}
+    EX_urea_e:   {lb: -10.0,  ub: 80.0}
+    EX_h2o_e:    {lb: -300.0, ub: 300.0}
+    EX_h_e:      {lb: -400.0, ub: 400.0}
+    EX_pi_e:     {lb: -20.0,  ub: 20.0}
+    EX_gln__L_e: {lb: -70.0,  ub: 0.0}
+    EX_ala__L_e: {lb: -5.0,   ub: 1.0}
+    EX_arg__L_e: {lb: -3.0,   ub: 0.0}
+    EX_asn__L_e: {lb: -20.0,  ub: 20.0}
+    EX_asp__L_e: {lb: -1.0,   ub: 1.0}
+    EX_cys__L_e: {lb: -20.0,  ub: 20.0}
+    EX_glu__L_e: {lb: 0.0,    ub: 4.0}
+    EX_gly_e:    {lb: -1.0,   ub: 1.0}
+    EX_his__L_e: {lb: -20.0,  ub: 20.0}
+    EX_ile__L_e: {lb: -5.0,   ub: 0.0}
+    EX_leu__L_e: {lb: -8.0,   ub: 0.0}
+    EX_lys__L_e: {lb: -7.0,   ub: 0.0}
+    EX_met__L_e: {lb: -3.0,   ub: 0.0}
+    EX_phe__L_e: {lb: -3.0,   ub: 0.0}
+    EX_pro__L_e: {lb: -3.0,   ub: 0.0}
+    EX_ser__L_e: {lb: -10.0,  ub: 0.0}
+    EX_thr__L_e: {lb: -5.0,   ub: 0.0}
+    EX_trp__L_e: {lb: -20.0,  ub: 20.0}
+    EX_tyr__L_e: {lb: -20.0,  ub: 20.0}
+    EX_val__L_e: {lb: -5.0,   ub: 0.0}
+
+  # Plasma-membrane transporters the GEM writes one-way, which its own published fit
+  # then violates: each of these carries flux in opposite directions in the two
+  # states, so as written the model cannot reproduce the naive state at all.
+  # Opening the exchange is not enough — an irreversible carrier behind it still
+  # blocks the route. All four are bidirectional carriers in mammalian cells.
+  #
+  #   LACLtps_e  lactate    MCT1/MCT4, proton-coupled symporters (Slc16a1/Slc16a3)
+  #   ALAt_c_e   alanine    Slc1a5 / Slc38 system A and ASC
+  #   ASPt_c_e   aspartate  Slc1a3
+  #   GLYt_c_e   glycine    Slc6a9
+  #
+  # Glucose is deliberately not here: GLCt_c_e flips only in the naive measurement,
+  # which is below detection, and T cells lack glucose-6-phosphatase.
+  reaction_bounds:
+    LACLtps_e: {lb: -600.0, ub: 600.0}
+    ALAt_c_e:  {lb: -20.0,  ub: 20.0}
+    ASPt_c_e:  {lb: -20.0,  ub: 20.0}
+    GLYt_c_e:  {lb: -20.0,  ub: 20.0}
+
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+labeling:
+  batch_size: 512
+  # Each entry is one tracer experiment — build_experiments creates one Experiment
+  # per entry, so these are three separate cultures, not a mixed-label experiment.
+  # `name` must match the sheet name in the curated MID workbooks.
+  tracers:
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 1.0
+      name: "U-13C glucose"
+    - tracer_id: gln__L_e
+      labeling: [1, 1, 1, 1, 1]
+      enrichment: 1.0
+      name: "U-13C glutamine"
+    - tracer_id: glc__D_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 1.0
+      name: "1,2-13C glucose"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  exclude_extracellular: true       # drop _e tokens (the LC/MS extract is intracellular)
+  token_selection_method: all       # all measurable tokens; no significance test
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: mmtcell_transformer.pt
+  ensemble_size: 20             # # models (distinct seeds) trained for per-reaction confidence; saved in <run>/ensemble/
+  epochs: 1000
+  early_stopping_patience: 10   # stop after N consecutive epochs w/o val_loss improvement (null = off)
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.1
+  max_samples: 10000
+
+  # Architecture (FluxDecoder cross-attention decoder)
+  combined_dim: 256       # d_model
+  num_attn_heads: 8       # n_head
+  num_transformer_layers: 4
+  dropout: 0.2
+
+  # Radial embedding dimensions (number of harmonics H per vocabulary).
+  # Resulting embedding vector length = 2*H.
+  # This model is roughly half the size of the yeast models — 198 metabolites and
+  # 204 reactions — so the compound and reaction vocabularies need fewer harmonics.
+  h_compound: 8    # compounds  — 198 metabolites → 16-dim
+  h_label: 5       # isotopomer labels (M+0, M+1, …  → 10-dim)
+  h_tracer: 2      # tracer identities (3 tracers   →  4-dim)
+  h_reaction: 8    # reaction identities (204 reactions → 16-dim)
+  h_type: 2        # token-type embedding (0=labeling, 1=flux →  4-dim, frozen)
+
+  flux_token_dropout: 0.2       # flux masking rate: per-batch prob. each measured-flux token is masked
+  labeling_token_dropout: 0.2   # per-token labeling dropout during training
+  normalize_mids: false         # z-score MID inputs per token (tested → worse; kept off)
+
+  # Measured fluxes fed as soft inputs through the fusion layer, and the strata for
+  # stratified sampling. This is every flux the curated ExtFlux carries — all 22.
+  # Listing only a subset withholds real measurements from the model, and the amino
+  # acid uptakes are exactly what separates the two cell states: activated cells pull
+  # them in for protein synthesis at ~20x the naive rate.
+  # (duplicate comment removed; see above)
+  measured_fluxes:
+    # carbon sources and overflow
+    - EX_glc__D_e
+    - EX_lac__L_e
+    - EX_gln__L_e
+    # respiration — measured here by Seahorse (mitochondrial + non-mitochondrial
+    # OCR), unlike the other organisms where off-gas rates are not available
+    - EX_o2_e
+    # amino acid exchanges, all measured by LC-MS
+    - EX_ala__L_e
+    - EX_arg__L_e
+    - EX_asp__L_e
+    - EX_glu__L_e
+    - EX_gly_e
+    - EX_ile__L_e
+    - EX_leu__L_e
+    - EX_lys__L_e
+    - EX_met__L_e
+    - EX_phe__L_e
+    - EX_pro__L_e
+    - EX_ser__L_e
+    - EX_thr__L_e
+    - EX_val__L_e
+    # biomass components, from fraction renewal and mass
+    - PROTEIN_c
+    - RNA_c
+    - DNA_c
+    - LIPID_c
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01        # Gaussian noise std (0 = disabled)
+  loss: variance                  # variance | mse
+  null_space_type: targeted_ica   # targeted | varimax | ica_informed | targeted_ica
+  flux_loss_space: basis          # basis | flux | mixed — train in null-space, reconstructed flux, or combination
+  variance_min_cutoff: 0.1        # min variance clamp for loss weighting (prevents division by zero and extreme weighting)

@@ -14,8 +14,10 @@ Usage:
 
 Optional:
     --conditions C N P      run only these conditions (default: all discovered)
-    --n-flux-samples 50     flux draws per bio-replicate (default: 50)
-    --flux-to-sample EX_glc__D_e
+
+Measurement uncertainty is propagated through the ensemble by resampling cross-tracer
+combinations of the measured MID replicates, one flux draw each; ``experiment.n_bootstrap``
+sets how many. See :mod:`sigmaflux.ai.uncertainty` for the composition.
 """
 
 import argparse
@@ -24,13 +26,17 @@ import os
 import re
 import sys
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
+from sigmaflux.ai.uncertainty import (
+    DEFAULT_N_BOOTSTRAP, sample_inputs, summarize_draws,
+)
+from sigmaflux.pipeline._paths import (
+    add_root_argument, load_config, mapping_csv_for, resolve_path,
+)
 from sigmaflux.utils import read_xlsx_mid_data, read_xlsx_extflux
 
 
@@ -71,54 +77,70 @@ def _inspect_growth_conditions(xlsx_path: str) -> list[int]:
     return gcs if gcs else [1]
 
 
-def _expand_samples(
-    df_L:           pd.DataFrame,
-    df_Vm:          pd.DataFrame,
-    flux_to_sample: str,
-    df_err:         pd.DataFrame | None,
-    n_samples:      int,
-    rng:            np.random.Generator,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def prepared_network_for(checkpoint):
+    """The run's ``model_prepared_for_mfa.json``, or None if it is not beside *checkpoint*.
+
+    Needed only for its measurement-pool annotations, which decide whether a measured
+    compound resolves to one whole-cell token or to one per compartment.
     """
-    Replicate df_L and df_Vm n_samples times per bio-rep, perturbing flux_to_sample.
+    for directory in (os.path.dirname(os.path.abspath(checkpoint)),
+                      os.path.dirname(os.path.dirname(os.path.abspath(checkpoint)))):
+        path = os.path.join(directory, "model_prepared_for_mfa.json")
+        if os.path.isfile(path):
+            from cobra.io.json import load_json_model
+            return load_json_model(path)
+    return None
 
-    For bio-rep R and flux sample S the synthetic sample ID is:
-        (R - 1) * n_samples + S          (S in 0 .. n_samples-1)
 
-    The perturbed flux is drawn uniformly from [value - error, value + error].
+def load_condition_inputs(mid_file, ext_file, condition, gc, mapping_path, flux_names,
+                          model=None):
+    """Measured MID and exchange-flux frames for one growth condition.
+
+    ``Sample`` is dense-ranked on both sides so the replicate ids line up regardless of
+    how the workbook numbered them.
+
+    Args:
+        mid_file: per-condition MID xlsx.
+        ext_file: the *_ExtFlux.xlsx for this organism.
+        condition: condition prefix, e.g. 'B'.
+        gc: growth-condition number within that file.
+        mapping_path: experimental-id -> model-id CSV.
+        flux_names: measured flux columns to keep, or None for all.
+        model: prepared cobra model, so compounds the platform reports as one pool
+            resolve to that pool's token rather than to one token per compartment.
+
+    Returns ``(df_L, df_Vm, df_err)``.
     """
-    bio_reps = sorted(df_L['Sample'].unique())
-    L_parts, V_parts = [], []
+    df_L = read_xlsx_mid_data(xlsx_path=mid_file, mapping_csv=mapping_path,
+                              growth_condition=gc)
+    df_L['Sample'] = df_L['Sample'].rank(method='dense').astype(int)
+    df_Vm, df_err = read_xlsx_extflux(xlsx_path=ext_file, condition=condition,
+                                      flux_names=flux_names, return_errors=True,
+                                      growth_condition=gc)
+    for _df in (df_Vm, df_err):
+        _df['Sample'] = _df['Sample'].rank(method='dense').astype(int)
+    return df_L, df_Vm, df_err
 
-    err_idx = (
-        df_err.set_index(['Sample', 'Flux Name'])['Value'].to_dict()
-        if df_err is not None else {}
-    )
 
-    for rep in bio_reps:
-        df_L_rep = df_L[df_L['Sample'] == rep].copy()
-        vm_sample = rep if rep in df_Vm['Sample'].values else int(df_Vm['Sample'].iloc[0])
-        df_Vm_rep = df_Vm[df_Vm['Sample'] == vm_sample].copy()
+def predict_draws(sf, df_L_draws, df_Vm_draws, n_flux):
+    """Raw per-(sample, member) predictions, tagged flux vs reversibility.
 
-        base_rows = df_Vm_rep.loc[df_Vm_rep['Flux Name'] == flux_to_sample, 'Value']
-        base_val  = float(base_rows.iloc[0]) if len(base_rows) else None
-        err_val   = err_idx.get((vm_sample, flux_to_sample))
+    Outputs come back per sample in flux-then-reversibility order and a reaction can
+    appear in both, so 'Type' is assigned by position -- it is part of what identifies a
+    predicted quantity, not a property of the name.
 
-        for s in range(n_samples):
-            syn_id = (rep - 1) * n_samples + s
-
-            df_L_syn = df_L_rep.copy()
-            df_L_syn['Sample'] = syn_id
-            L_parts.append(df_L_syn)
-
-            df_Vm_syn = df_Vm_rep.copy()
-            df_Vm_syn['Sample'] = syn_id
-            if base_val is not None and err_val is not None and err_val > 0:
-                df_Vm_syn.loc[df_Vm_syn['Flux Name'] == flux_to_sample, 'Value'] = \
-                    float(rng.uniform(base_val - err_val, base_val + err_val))
-            V_parts.append(df_Vm_syn)
-
-    return pd.concat(L_parts, ignore_index=True), pd.concat(V_parts, ignore_index=True)
+    Args:
+        sf: predictor, single or ensemble.
+        df_L_draws: labeling inputs, one Sample per draw.
+        df_Vm_draws: matching measured-flux inputs.
+        n_flux: number of flux outputs, i.e. where the reversibility block starts.
+    """
+    raw = (sf.predict(df_L_draws, df_Vm=df_Vm_draws, aggregate=False)
+           if hasattr(sf, 'members') else sf.predict(df_L_draws, df_Vm=df_Vm_draws))
+    member_key = ['Sample', 'Member'] if 'Member' in raw.columns else ['Sample']
+    raw['Type'] = (raw.groupby(member_key, sort=False).cumcount()
+                      .lt(n_flux).map({True: 'flux', False: 'reversibility'}))
+    return raw
 
 
 def build_parser():
@@ -136,10 +158,6 @@ def build_parser():
                         help="Directory where per-condition prediction CSVs are written")
     parser.add_argument("--conditions", nargs="+", default=None,
                         help="Conditions to run (default: all discovered from data-dir)")
-    parser.add_argument("--n-flux-samples", type=int, default=50,
-                        help="Independent flux draws per bio-replicate")
-    parser.add_argument("--flux-to-sample", default="EX_glc__D_e",
-                        help="Reaction whose flux is perturbed within ±error per bio-rep")
     return add_root_argument(parser)
 
 
@@ -152,7 +170,17 @@ def cli(argv=None):
     t           = cfg.get("training", {})
     flux_names  = t.get("measured_fluxes") or None
     organism    = cfg.get("name", "organism")
-    mapping_csv = cfg.get("mapping_csv")
+    mapping_csv = mapping_csv_for(cfg)
+    # experiment.ext_flux lets one organism pick a specific *_ExtFlux.xlsx out of a
+    # data_dir shared with another organism, when their measured-flux reaction ids
+    # differ (e.g. e_coli's iAF1260 ids vs e_coli_core's naming in the same shared
+    # file) — same override pattern as experiment.mapping_csv above. Defaults to the
+    # single *_ExtFlux.xlsx glob match when absent.
+    ext_flux    = cfg.get("experiment", {}).get("ext_flux")
+    # Each tracer is its own culture, so replicate i of one says nothing about replicate i
+    # of another; draws are always bootstrapped combinations, experiment.n_bootstrap only
+    # sets how many.
+    n_bootstrap = cfg.get("experiment", {}).get("n_bootstrap", DEFAULT_N_BOOTSTRAP)
 
     def _p(rel):
         return resolve_path(rel, root)
@@ -162,7 +190,7 @@ def cli(argv=None):
     out_dir      = os.path.abspath(args.out_dir)
     mapping_path = _p(mapping_csv) if mapping_csv else None
 
-    ext_file = _find_ext_flux_file(data_dir)
+    ext_file = _p(ext_flux) if ext_flux else _find_ext_flux_file(data_dir)
     if ext_file is None:
         print(f"ERROR: no *_ExtFlux.xlsx found in {data_dir}")
         sys.exit(1)
@@ -195,6 +223,13 @@ def cli(argv=None):
 
     rng = np.random.default_rng(seed=42)
 
+    # Only for its measurement-pool annotations: without them a compound the platform
+    # reports as one pool would be written into each compartment separately, and every
+    # such token would then be dropped as absent from the trained token index.
+    network = prepared_network_for(checkpoint)
+
+    n_flux = len(sf.flux_names)
+
     for condition in conditions:
         mid_file = all_condition_files[condition]
         gcs      = _inspect_growth_conditions(mid_file)
@@ -206,55 +241,29 @@ def cli(argv=None):
         for gc in gcs:
             print(f"  ── Growth condition {gc} ──")
 
-            df_L = read_xlsx_mid_data(
-                xlsx_path        = mid_file,
-                mapping_csv      = mapping_path,
-                growth_condition = gc,
-            )
-            df_Vm, df_err = read_xlsx_extflux(
-                xlsx_path        = ext_file,
-                condition        = condition,
-                flux_names       = flux_names,
-                return_errors    = True,
-                growth_condition = gc,
-            )
+            df_L, df_Vm, df_err = load_condition_inputs(
+                mid_file, ext_file, condition, gc, mapping_path, flux_names,
+                model=network)
 
-            for _df in (df_L, df_Vm, df_err):
-                _df['Sample'] = _df['Sample'].rank(method='dense').astype(int)
+            n_draws = int(n_bootstrap)
+            reps_by_tracer = df_L.groupby('Tracer Name')['Sample'].nunique()
+            print(f"     Replicates per tracer: {reps_by_tracer.to_dict()}"
+                  f"  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
 
-            bio_reps = sorted(df_L['Sample'].unique())
-            print(f"     Bio-reps: {bio_reps}  |  MID rows: {len(df_L)}  |  Vm rows: {len(df_Vm)}")
+            df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=rng,
+                                                    n_bootstrap=n_bootstrap,
+                                                    bounds=sf.flux_bounds())
 
-            df_L_exp, df_Vm_exp = _expand_samples(
-                df_L, df_Vm,
-                flux_to_sample = args.flux_to_sample,
-                df_err         = df_err,
-                n_samples      = args.n_flux_samples,
-                rng            = rng,
-            )
+            print(f"     Running inference ({n_draws} bootstrapped cross-tracer draws "
+                  f"+ 1 maximum-likelihood input, bias-corrected percentile interval)...")
 
-            n_syn = df_L_exp['Sample'].nunique()
-            print(f"     Running inference ({len(bio_reps)} bio-reps × "
-                  f"{args.n_flux_samples} flux samples = {n_syn} synthetic samples)...")
-            result = sf.predict(df_L_exp, df_Vm=df_Vm_exp)
+            raw = predict_draws(sf, df_L_draws, df_Vm_draws, n_flux)
 
-            result['BioRep']          = result['Sample'] // args.n_flux_samples + 1
-            result['GrowthCondition'] = gc
-            result['Condition']       = condition
+            agg = summarize_draws(raw, n_draws=n_draws,
+                                  group_cols=['Type', 'Flux Name'])
+            agg.insert(0, 'GrowthCondition', gc)
+            agg.insert(0, 'Condition', condition)
 
-            n_flux = len(sf.flux_names)
-            result['Type'] = (
-                result.groupby('Sample', sort=False).cumcount()
-                      .lt(n_flux).map({True: 'flux', False: 'reversibility'})
-            )
-
-            agg = (
-                result
-                .groupby(['Condition', 'GrowthCondition', 'BioRep', 'Type', 'Flux Name'],
-                         sort=False)['Value']
-                .mean()
-                .reset_index()
-            )
             cond_frames.append(agg)
             print(f"     → {len(agg)} rows after aggregation")
 

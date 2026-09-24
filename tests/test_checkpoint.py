@@ -177,8 +177,13 @@ def test_flux_decoder_config_ignores_extra_keys(toy_run):
 
 # ── ensemble prediction (the default predict path) ────────────────────────────
 
-def test_ensemble_predict_is_median(toy_run):
-    """EnsembleSigmaFlux returns the elementwise median with SigmaFlux's schema."""
+def test_ensemble_predict_is_mean(toy_run):
+    """EnsembleSigmaFlux returns the elementwise mean with SigmaFlux's schema.
+
+    The toy ensemble has two members, where mean and median coincide, so this pins the
+    schema and the combination rather than telling them apart --
+    ``test_uncertainty.TestSummarizeDraws`` does that on a skewed five-member ensemble.
+    """
     ens = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
     assert len(ens.members) == 2
 
@@ -186,11 +191,47 @@ def test_ensemble_predict_is_median(toy_run):
     combined = ens.predict(df_L)
     per_member = np.stack([m.predict(df_L)["Value"].to_numpy() for m in ens.members])
 
-    assert np.allclose(combined["Value"].to_numpy(), np.median(per_member, axis=0))
+    assert np.allclose(combined["Value"].to_numpy(), per_member.mean(axis=0))
 
     single = SigmaFlux(toy_run["config"], toy_run["member_paths"][0], device="cpu")
     assert list(combined.columns) == list(single.predict(df_L).columns)
     assert len(combined) == len(single.predict(df_L))
+
+
+def test_ensemble_predict_aggregate_false(toy_run):
+    """aggregate=False returns every member's raw prediction, not the mean."""
+    ens = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
+
+    df_L = _toy_df_L(n_samples=2)
+    aggregated = ens.predict(df_L)
+    raw = ens.predict(df_L, aggregate=False)
+
+    assert len(raw) == len(ens.members) * len(aggregated)
+    assert raw["Member"].nunique() == len(ens.members)
+    assert "Sample" in raw.columns
+
+    # Row order within each member's block matches `aggregated`'s row order exactly
+    # (same Sample/Flux Name sequence per member, since flux_names/rev_names are
+    # shared across members) -- reshape by Member and take the positional mean,
+    # mirroring EnsembleSigmaFlux.predict()'s own aggregate=True path. A name-based
+    # groupby would be wrong here: reversibility names can repeat a flux's own
+    # reaction id, so "Flux Name" alone is not unique per Sample.
+    for midx in range(len(ens.members)):
+        sub = raw[raw["Member"] == midx].reset_index(drop=True)
+        assert list(sub["Sample"]) == list(aggregated["Sample"])
+        assert list(sub["Flux Name"]) == list(aggregated["Flux Name"])
+    per_member_values = np.stack([
+        raw[raw["Member"] == midx]["Value"].to_numpy()
+        for midx in range(len(ens.members))
+    ])
+    assert np.allclose(per_member_values.mean(axis=0), aggregated["Value"].to_numpy())
+
+    # Single-sample calls drop 'Sample' inside SigmaFlux.predict(); aggregate=False
+    # must still guarantee the column is present.
+    single_df_L = _toy_df_L(n_samples=1)
+    raw_single = ens.predict(single_df_L, aggregate=False)
+    assert "Sample" in raw_single.columns
+    assert raw_single["Member"].nunique() == len(ens.members)
 
 
 def test_ensemble_missing_members_raises(tmp_path, toy_run):

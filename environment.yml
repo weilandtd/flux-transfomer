@@ -1,28 +1,38 @@
+# The full development stack, including the optional x3cflux MFA backend.
+#
+# Run from the repo root -- the pip section resolves `-e .` against the invoking
+# working directory, not against this file:
+#
+#   conda env create -f environment.yml && conda activate sigmaflux
+#
+# The split between the two dependency lists is deliberate: conda owns everything
+# with a compiled ABI that pip cannot build, pip owns the pure-Python graph, and it
+# owns it exactly once -- through `-e .`, so pyproject.toml stays the single
+# dependency list and the two files cannot drift apart.
 name: sigmaflux
 channels:
   - conda-forge
-  - defaults
+  # Keeps `defaults` out of the solve even when the user's .condarc adds it, so the
+  # BLAS stack stays consistently conda-forge.
+  - nodefaults
 dependencies:
+  # What the cluster runs. x3cflux 3.0.4 ships cp310-cp314 wheels, so this is a
+  # choice rather than a constraint.
   - python=3.11
+  # cyipopt links libspral, which needs CXXABI_1.3.15 -- present here, absent from
+  # the system /lib64 libstdc++. See sigmaflux.x3cflux's module docstring for why
+  # the import order matters as well.
   - libstdcxx-ng>=12
+  # The only supported route to Ipopt: pip's cyipopt is an sdist that needs Ipopt
+  # headers at build time. Pulls ipopt, libspral and mumps-seq with it, and makes
+  # pip see x3cflux's cyipopt requirement as already satisfied.
+  - cyipopt
+  # On the conda side deliberately: cyipopt is a compiled extension built against
+  # this numpy's ABI, and naming it here stops pip swapping the shared library out
+  # from under it.
+  - numpy>=1.24,<3
   - pip
   - pip:
-    - torch>=2.0
-    - numpy>=1.24
-    - pandas>=2.0
-    - scipy>=1.10
-    - cobra>=0.29
-    - networkx>=3.0
-    - optlang>=1.8
-    - tqdm>=4.0
-    - matplotlib>=3.7
-    - h5py>=3.8
-    - tables>=3.8
-    - openpyxl
-    - pyyaml>=6.0
-    - pytest>=7.0
-    - pytest-cov
-    - ruff
-    - mypy
-    - seaborn>=0.13
-    - scikit-learn>=1.3
+    # `dev` brings pytest/ruff/mypy and hopsy (cobra >= 0.32 raises NameError on
+    # import without it); `x3cflux` brings the second MFA backend.
+    - -e .[dev,x3cflux]

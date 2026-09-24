@@ -129,8 +129,6 @@ def build_table(run_dir: pathlib.Path, flux_floor: float) -> pd.DataFrame:
     }, index=rxn)
     tbl["disagree_rel"] = tbl.disagree_abs / np.clip(med_gt, 1e-12, None)
 
-    # R² uses the project-standard Q-Q outlier cut so these numbers match the benchmark
-    # figures; the error columns above are medians and need no filtering.
     tbl["r2_mfa"] = per_flux_r2(df_mfa)
     tbl["r2_sf"] = per_flux_r2(df_ai)
 

@@ -22,6 +22,7 @@ import argparse, os, glob, shutil
 import numpy as np, pandas as pd, yaml
 from cobra.io import load_json_model
 
+from sigmaflux.pipeline.reusable_sampler import ReusableSampler
 from sigmaflux.pipeline.sample_flux import _do_sample
 
 
@@ -77,14 +78,20 @@ def cli(argv=None):
     print(f"held-out (val-only) KO reactions: {sorted(holdout)}")
 
     # ── sample each KO ───────────────────────────────────────────────────────
+    # One sampler, built once; each KO below only mutates that reaction's bounds in the
+    # already-built sampler instead of rebuilding it (see reusable_sampler.py). hopsy is
+    # devel-only/unavailable in a released cobra (see _do_sample's fallback), so it never
+    # actually reaches sampler.sample(); "optgp" just gives it working bookkeeping.
+    method = s.get("method", "optgp")
+    sampler = ReusableSampler(model, method=("optgp" if method == "hopsy" else method),
+                              thinning=s["thinning"], processes=s["processes"], seed=args.seed)
     ko_blocks, labels = [wt[rxn_cols].reset_index(drop=True)], \
                         [pd.DataFrame({'ko_reaction': ['WT'] * n_wt, 'split': ['mixed'] * n_wt})]
     for i, r in enumerate(chosen):
-        with model:
-            model.reactions.get_by_id(r).bounds = (0, 0)
-            if model.optimize().status != 'optimal':
+        with sampler.temporary_bounds({r: (0, 0)}):
+            if sampler.model.optimize().status != 'optimal':
                 print(f"  skip {r} (infeasible)"); continue
-            samp = _do_sample(model, s, args.seed + (i + 1) * 1000)
+            samp = _do_sample(sampler, s, args.seed + (i + 1) * 1000)
         samp = samp.reindex(columns=rxn_cols)             # align reaction columns
         # enforce exact zero for the knocked-out reaction
         samp[r] = 0.0

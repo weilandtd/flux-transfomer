@@ -19,27 +19,45 @@ from cobra.io.json import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
 
+def _maybe_decode(x):
+    """Bytes come back from h5py as ``numpy.bytes_``; numeric labels do not."""
+    return x.decode() if isinstance(x, bytes) else x
+
+
+def _read_axis(g, prefix):
+    """A pandas Index or MultiIndex stored under ``prefix`` (``'axis0'``/``'axis1'``).
+
+    A flat axis is one dataset, ``g[prefix]``. A MultiIndex axis (e.g. labeling's
+    3-level Tracer/Metabolite/Isotopomer row index, or an ensemble AI benchmark's
+    (sample, member) column index) is stored as one ``{prefix}_level{i}`` (the
+    categories) plus ``{prefix}_label{i}`` (the per-column category code) dataset
+    pair per level.
+    """
+    if f'{prefix}_level0' not in g:
+        return pd.Index([_maybe_decode(x) for x in g[prefix][:]])
+    n_levels = sum(1 for k in g.keys() if k.startswith(f'{prefix}_level'))
+    arrays, names = [], []
+    for i in range(n_levels):
+        ds   = g[f'{prefix}_level{i}']
+        lvls = [_maybe_decode(x) for x in ds[:]]
+        lbs  = g[f'{prefix}_label{i}'][:]
+        arrays.append([lvls[lb] for lb in lbs])
+        names.append(ds.attrs.get('name', b'').decode())
+    return pd.MultiIndex.from_arrays(arrays, names=names)
+
+
 def _read_hdf(filepath, key):
-    """Read a pandas HDF5 file using h5py, bypassing the broken tables package."""
+    """Read a pandas HDF5 file using h5py, bypassing the broken tables package.
+
+    Args:
+        filepath: path to the HDF5 file.
+        key: group key to read (e.g. ``'labeling'``, ``'fluxes'``).
+    """
     with h5py.File(filepath, 'r') as f:
         g = f[key]
-        columns = g['axis0'][:]
+        columns = _read_axis(g, 'axis0')
+        index   = _read_axis(g, 'axis1')
         values  = g['block0_values'][:]  # (n_rows, n_cols)
-
-        if 'axis1_level0' in g:
-            # MultiIndex (labeling data has 3 levels: Tracer, Metabolite, Isotopomer)
-            n_levels = sum(1 for k in g.keys() if k.startswith('axis1_level'))
-            arrays, names = [], []
-            for i in range(n_levels):
-                ds   = g[f'axis1_level{i}']
-                lvls = [x.decode() for x in ds[:]]
-                lbs  = g[f'axis1_label{i}'][:]
-                arrays.append([lvls[lb] for lb in lbs])
-                names.append(ds.attrs.get('name', b'').decode())
-            index = pd.MultiIndex.from_arrays(arrays, names=names)
-        else:
-            index = pd.Index([x.decode() for x in g['axis1'][:]])
-
         return pd.DataFrame(values, index=index, columns=columns)
 
 
@@ -85,21 +103,14 @@ def _group_reaction_ids(group):
 
 
 def get_measured_fluxes_reaction_ids(spec=None, config_path=None):
-    """Resolve a measured-flux *spec* into reactions and derived features.
+    """Resolve a measured-flux *spec* into ``(reaction_ids, derived_specs, feature_names)``.
 
     Args:
-        spec: one of
-            - ``None`` / ``False``: no measured-flux features
-            - ``list``: explicit reaction ids, no derived features
-            - ``"all"``: every group in the config
-            - ``dict``: ``{"groups": [...], "derived": bool}`` selecting groups
-              by name (``derived`` defaults to True)
-        config_path: JSON config, required unless *spec* is a list or empty.
-
-    Returns:
-        reaction_ids: reaction ids whose flux must be read
-        derived_specs: ``{name: definition}`` for computed features
-        feature_names: feature order in the emitted array
+        spec: ``None``/``False`` (nothing), a list of reaction ids, ``"all"`` (every
+            config group), or ``{"groups": [...], "derived": bool}`` to select groups
+            by name.
+        config_path: path to the measured-flux JSON config (required unless *spec*
+            is a plain list, ``None``, or ``False``).
     """
     if spec is None or spec is False:
         return [], {}, []
@@ -147,7 +158,12 @@ def get_measured_fluxes_reaction_ids(spec=None, config_path=None):
 
 
 def _normalize_derived(definition, name):
-    """Accept both the descriptive string form and the explicit dict form."""
+    """Accept both the descriptive string form and the explicit dict form.
+
+    Args:
+        definition: the derived-feature definition, dict or legacy string.
+        name: the derived feature's name, used in the error message.
+    """
     if isinstance(definition, dict):
         return definition
     # Legacy/descriptive configs carry a human-readable string; infer nothing
@@ -163,16 +179,14 @@ def extract_measured_fluxes(flux_df, train_indices, spec=None, config_path=None,
     """Extract measured-flux features from simulated flux data.
 
     Args:
-        flux_df: DataFrame of fluxes (reactions x samples)
-        train_indices: sample indices to extract
-        spec: measured-flux spec, see :func:`get_measured_fluxes_reaction_ids`.
-            Ignored when *reaction_ids* is given.
-        config_path: JSON config path. Ignored when *reaction_ids* is given.
-        reaction_ids: explicit reaction ids; skips spec resolution entirely.
+        flux_df: full flux DataFrame (reactions x all samples).
+        train_indices: sample columns to extract.
+        spec: measured-flux spec; see :func:`get_measured_fluxes_reaction_ids`.
+        config_path: measured-flux JSON config path.
+        reaction_ids: explicit reaction id list; skips *spec*/*config_path* resolution.
 
-    Returns:
-        measured_fluxes_data: ``(n_samples, n_features)`` array, or None
-        feature_names: names matching the array columns
+    Returns ``(measured_fluxes_data, feature_names)``, an ``(n_samples, n_features)``
+    array (or ``None``) and the matching column names.
     """
     if reaction_ids is not None:
         direct_rxn_ids = list(reaction_ids)
@@ -257,16 +271,12 @@ def extract_measured_fluxes(flux_df, train_indices, spec=None, config_path=None,
 
 
 def find_data_batches(base_dir, base_filename, pattern='*_*.h5'):
-    """
-    Find all batch files matching a base pattern.
+    """Find batch files matching ``{base_filename}_{pattern}``; returns ``(start_idx, end_idx, filepath)`` tuples sorted by start index.
 
     Args:
-        base_dir: Directory containing data files
-        base_filename: Base name of files (e.g., 'wb_model_labeling_data')
-        pattern: Glob pattern for batch suffix (default: '*_*.h5')
-
-    Returns:
-        batch_files: List of (start_idx, end_idx, filepath) tuples sorted by start_idx
+        base_dir: directory to search.
+        base_filename: filename prefix before the batch suffix.
+        pattern: glob pattern for the batch suffix.
     """
     search_pattern = os.path.join(base_dir, f"{base_filename}_{pattern}")
     files = glob.glob(search_pattern)
@@ -288,17 +298,13 @@ def find_data_batches(base_dir, base_filename, pattern='*_*.h5'):
 
 
 def load_data_batches(base_dir, base_filename, key='labeling', max_samples=None):
-    """
-    Load data from multiple batch files.
+    """Load and concatenate a base filename's batch files (or the single non-batched file) into one DataFrame.
 
     Args:
-        base_dir: Directory containing data files
-        base_filename: Base name of files (e.g., 'wb_model_labeling_data')
-        key: HDF5 key to load
-        max_samples: Maximum number of samples to load (None for all)
-
-    Returns:
-        df: Combined DataFrame from all batches
+        base_dir: directory to search.
+        base_filename: filename prefix before the batch suffix.
+        key: HDF5 group key to read from each file.
+        max_samples: cap the total number of samples loaded.
     """
     batch_files = find_data_batches(base_dir, base_filename)
 
@@ -333,26 +339,24 @@ def load_data_batches(base_dir, base_filename, key='labeling', max_samples=None)
             break
 
     combined_df = pd.concat(dfs, axis=1)
+
+    # The flux batches are written with global sample ids (0..9999), but the
+    # labeling and reversibility batches restart their column numbering at 0 in
+    # every chunk. Concatenating those leaves five columns labelled 0, so
+    # df[global_ix] silently returns a DataFrame rather than the sample asked for,
+    # while df.iloc[:, global_ix] is correct. Relabel positionally so both work and
+    # the three frames stay aligned.
+    if combined_df.columns.has_duplicates:
+        combined_df.columns = pd.RangeIndex(combined_df.shape[1])
     return combined_df
 
 
 def load_data(base_dir, max_samples=None):
-    """
-    Load labeling, flux, and reversibility data from HDF5 files.
-
-    Automatically detects and loads batch files with patterns like:
-    - wb_model_labeling_data_0_500.h5
-    - wb_model_flux_data_0_500.h5
-    - wb_model_reversibility_data_0_500.h5
+    """Load labeling, flux, and reversibility data (batched or single HDF5 files) from *base_dir*; returns the three DataFrames.
 
     Args:
-        base_dir: Base directory containing the data files
-        max_samples: Maximum number of samples to load (None for all)
-
-    Returns:
-        labeling_df: DataFrame with labeling data
-        flux_df: DataFrame with flux data
-        reversibility_df: DataFrame with reversibility data
+        base_dir: directory containing the data files.
+        max_samples: cap the number of samples loaded from each file.
     """
     print("Loading data from files...")
 
@@ -380,13 +384,15 @@ def split_sample_indices(split, checkpoint_path=None, n_total=None,
                          val_fraction=None, seed=None):
     """Sorted HDF5 column indices for a benchmark split: ``'val'``, ``'train'``, or ``'all'``.
 
-    The validation set is the one withheld from AI training, so the trained checkpoint's
-    stored ``val_indices`` / ``train_indices`` are the single source of truth. When a
-    checkpoint is given and carries them, they are used directly; otherwise the split is
-    recomputed from (n_total, val_fraction, seed) — identical to
-    ``train_ai_model.split_indices`` (shuffle ``arange(n_total)`` with ``default_rng(seed)``,
-    hold out the last ``val_fraction``). The two paths produce the same set for matching
-    parameters. Indices are returned sorted so ``--start-ix`` tiles the split deterministically.
+    Args:
+        split: which split to return, ``'val'``, ``'train'``, or ``'all'``.
+        checkpoint_path: checkpoint whose stored split to reuse, if given.
+        n_total: total sample count; used to recompute the split when no checkpoint is given.
+        val_fraction: validation fraction, to recompute the split.
+        seed: shuffle seed, to recompute the split.
+
+    Prefers a checkpoint's stored ``val_indices``/``train_indices`` when given; otherwise
+    recomputes the same split from ``(n_total, val_fraction, seed)``.
     """
     if split == "all":
         if n_total is None:
@@ -411,18 +417,9 @@ def split_sample_indices(split, checkpoint_path=None, n_total=None,
 
 
 def create_tracer_mapping(labeling_df):
-    """
-    Extract unique base tracer names from labeling DataFrame.
+    """Extract unique base tracer names from a labeling DataFrame (handles multi-tracer "A|B" experiments).
 
-    Supports single and multi-tracer experiments (e.g., "tracer1|tracer2").
-
-    Args:
-        labeling_df: DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer)
-
-    Returns:
-        tracer_multi_hot: Array of multi-hot vectors (num_rows, num_base_tracers)
-            (kept for backwards-compatibility; no longer used by prepare_dataset)
-        base_tracer_names: Sorted list of unique base tracer names
+    Returns ``(tracer_multi_hot, base_tracer_names)``; ``tracer_multi_hot`` is currently unused.
     """
     print("\nExtracting tracer names...")
 
@@ -459,16 +456,7 @@ def create_tracer_mapping(labeling_df):
 
 
 def load_stoichiometric_matrix(model_path):
-    """
-    Load stoichiometric matrix from a COBRA model JSON file.
-
-    Args:
-        model_path: Path to model JSON file
-
-    Returns:
-        S: Stoichiometric matrix (numpy array)
-        model: COBRA model object
-    """
+    """Load a COBRA model JSON file; returns ``(S, model)``."""
     print(f"\nLoading model from {model_path}")
 
     model = load_json_model(model_path)
@@ -486,19 +474,12 @@ def load_stoichiometric_matrix(model_path):
 # ---------------------------------------------------------------------------
 
 def radial_embedding_table(vocab_size, num_harmonics):
-    """
-    Compute a fixed multi-frequency radial embedding matrix.
-
-    Each index k in [0, vocab_size) is mapped to a 2*num_harmonics vector:
-        e(k) = [sin θ(k,1), cos θ(k,1), ..., sin θ(k,H), cos θ(k,H)]
-    where θ(k,h) = 2π * k/vocab_size * h.
+    """Fixed multi-frequency radial embedding: index k -> [sin θ(k,1), cos θ(k,1), ..., sin θ(k,H), cos θ(k,H)]
+    with θ(k,h) = 2π * k/vocab_size * h. Returns a ``(vocab_size, 2*num_harmonics)`` float32 array.
 
     Args:
-        vocab_size: Number of items in the alphabet (N).
-        num_harmonics: Number of frequency harmonics (H). Vector length = 2H.
-
-    Returns:
-        table: (vocab_size, 2 * num_harmonics) float32 array
+        vocab_size: number of distinct vocabulary entries (embedding rows).
+        num_harmonics: number of sin/cos frequency pairs per entry.
     """
     k = np.arange(vocab_size, dtype=np.float64)          # (N,)
     h = np.arange(1, num_harmonics + 1, dtype=np.float64)  # (H,)
@@ -508,33 +489,20 @@ def radial_embedding_table(vocab_size, num_harmonics):
 
 def build_radial_vocabs(cobra_model, labeling_df, base_tracer_names,
                         h_compound=None, h_label=None, h_tracer=None):
-    """
-    Build radial-embedding vocabularies for compound, isotopomer label, and tracer.
-
-    Compound vocabulary is taken from the full COBRA model so embeddings
-    generalise to any metabolite in the network (not just measured ones).
-    Label and tracer vocabularies are built from what is present in labeling_df
-    and base_tracer_names respectively.
-
-    H values default to ceil(log2(N)) per vocabulary; pass explicit values to
-    override (e.g. h_compound=16 as suggested in the design spec).
+    """Build radial-embedding vocabularies for compound, isotopomer label, and tracer.
 
     Args:
-        cobra_model: COBRA model object (from load_stoichiometric_matrix).
-        labeling_df: DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer).
-        base_tracer_names: Sorted list of unique base tracer names.
-        h_compound: Number of harmonics for compound embeddings (default: auto).
-        h_label: Number of harmonics for isotopomer label embeddings (default: auto).
-        h_tracer: Number of harmonics for tracer embeddings (default: auto).
+        cobra_model: COBRA model supplying the full compound vocabulary.
+        labeling_df: labeling DataFrame supplying the isotopomer vocabulary.
+        base_tracer_names: base tracer names supplying the tracer vocabulary.
+        h_compound: harmonics for the compound embedding; default ``ceil(log2(N))``.
+        h_label: harmonics for the label embedding; default ``ceil(log2(N))``.
+        h_tracer: harmonics for the tracer embedding; default ``ceil(log2(N))``.
 
-    Returns:
-        vocabs: dict with keys:
-            compound_vocab, label_vocab, tracer_vocab  — sorted string lists
-            h_compound, h_label, h_tracer              — int H values used
-            token_dim                                   — total token dimension
-            compound_emb_table                         — (N_c, 2*H_c) float32 array
-            label_emb_table                            — (N_l, 2*H_l) float32 array
-            tracer_emb_table                           — (N_t, 2*H_t) float32 array
+    Compound vocabulary is the full COBRA model's metabolites (not just measured
+    ones); label and tracer vocabularies come from *labeling_df* and
+    *base_tracer_names*. See :func:`radial_vocabs_from_lists` for the returned
+    dict's keys.
     """
     # Compound vocab: full metabolic network
     compound_vocab = sorted([met.id for met in cobra_model.metabolites])
@@ -552,29 +520,21 @@ def build_radial_vocabs(cobra_model, labeling_df, base_tracer_names,
 def radial_vocabs_from_lists(compound_vocab, label_vocab, tracer_vocab,
                              h_compound=None, h_label=None, h_tracer=None,
                              verbose=True):
-    """
-    Build the radial-embedding tables from three already-derived vocabularies.
-
-    This is the half of :func:`build_radial_vocabs` that needs no COBRA model and
-    no labeling DataFrame — only the three sorted string lists. An exported model
-    stores those lists, so it can rebuild identical embedding tables without the
-    network JSON or the training data.
+    """Build the radial-embedding tables from three already-sorted vocabulary lists.
 
     Args:
-        compound_vocab: Sorted metabolite IDs (the full network, not just measured).
-        label_vocab:    Sorted isotopomer labels.
-        tracer_vocab:   Sorted base tracer names.
-        h_compound/h_label/h_tracer: Harmonics per vocabulary (default: ceil(log2(N))).
-        verbose:        Print the vocabulary summary.
+        compound_vocab: sorted list of compound (metabolite) ids.
+        label_vocab: sorted list of isotopomer labels.
+        tracer_vocab: sorted list of base tracer names.
+        h_compound: harmonics for the compound embedding; default ``ceil(log2(N))``.
+        h_label: harmonics for the label embedding; default ``ceil(log2(N))``.
+        h_tracer: harmonics for the tracer embedding; default ``ceil(log2(N))``.
+        verbose: print the resulting vocabulary sizes and dimensions.
 
-    Returns:
-        vocabs: dict with keys:
-            compound_vocab, label_vocab, tracer_vocab  — sorted string lists
-            h_compound, h_label, h_tracer              — int H values used
-            token_dim                                   — total token dimension
-            compound_emb_table                         — (N_c, 2*H_c) float32 array
-            label_emb_table                            — (N_l, 2*H_l) float32 array
-            tracer_emb_table                           — (N_t, 2*H_t) float32 array
+    Needs no COBRA model or labeling DataFrame, so an exported model can rebuild
+    identical embedding tables from its stored vocab lists alone. Returns a dict
+    with ``compound_vocab``/``label_vocab``/``tracer_vocab``, ``h_compound``/``h_label``/
+    ``h_tracer``, ``token_dim``, and the three ``*_emb_table`` arrays.
     """
     n_compound, n_label, n_tracer = len(compound_vocab), len(label_vocab), len(tracer_vocab)
     if h_compound is None:
@@ -608,19 +568,15 @@ def radial_vocabs_from_lists(compound_vocab, label_vocab, tracer_vocab,
 
 
 def build_tracer_combo_emb_table(tracer_combo_vocab, tracer_base_vocab, tracer_base_emb_table):
-    """Embedding table for combined tracer strings, by summing base embeddings.
-
-    A token's tracer may be a co-fed combination written ``"A|B"``; its embedding
-    is the sum of the base tracer embeddings. Unknown base names fall back to
-    index 0, matching the tokenizer.
+    """Embedding table for combined tracer strings (e.g. ``"A|B"``), each the sum of its base tracer embeddings.
 
     Args:
-        tracer_combo_vocab:    sorted unique tracer strings (may contain '|').
-        tracer_base_vocab:     sorted base tracer names.
-        tracer_base_emb_table: (n_base, d_tracer) float32 base embeddings.
+        tracer_combo_vocab: list of combined tracer strings (e.g. ``"A|B"``).
+        tracer_base_vocab: list of base tracer names.
+        tracer_base_emb_table: embedding table for the base tracers.
 
-    Returns:
-        (n_combos, d_tracer) float32 array, row order matching tracer_combo_vocab.
+    Unknown base names fall back to index 0, matching the tokenizer. Returns a
+    ``(n_combos, d_tracer)`` float32 array in ``tracer_combo_vocab`` order.
     """
     base_to_idx = {t: i for i, t in enumerate(tracer_base_vocab)}
     table = np.zeros((len(tracer_combo_vocab), tracer_base_emb_table.shape[1]), dtype=np.float32)
@@ -631,21 +587,14 @@ def build_tracer_combo_emb_table(tracer_combo_vocab, tracer_base_vocab, tracer_b
 
 
 def build_token_static_features(labeling_df, vocabs):
-    """
-    Precompute the fixed (non-fraction) part of each token from labeling_df.
-
-    Each row of labeling_df corresponds to one token: its compound, isotopomer
-    label, and tracer identity are looked up in the vocabulary and their radial
-    embeddings are concatenated.  Multi-tracer rows (e.g., "A|B") get the sum
-    of the individual base-tracer embeddings.
+    """Precompute each token's fixed (non-fraction) radial embedding: compound + label + tracer, concatenated.
 
     Args:
-        labeling_df: DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer).
-        vocabs: dict from build_radial_vocabs.
+        labeling_df: labeling DataFrame; its rows define the token order.
+        vocabs: vocabulary/embedding dict from :func:`build_radial_vocabs`.
 
-    Returns:
-        static_features: (num_tokens, 2*H_c + 2*H_l + 2*H_t) float32 array
-        token_experiment_ids: (num_tokens,) int64 array, 0-based experiment index
+    Multi-tracer rows (e.g. "A|B") get the sum of the individual base-tracer
+    embeddings. Returns ``(static_features, token_experiment_ids)``.
     """
     compound_vocab = vocabs['compound_vocab']
     label_vocab = vocabs['label_vocab']
@@ -727,23 +676,17 @@ def build_token_static_features(labeling_df, vocabs):
 # ---------------------------------------------------------------------------
 
 class TokenizedDataset(Dataset):
-    """
-    Memory-efficient dataset for tokenized labeling experiments.
-
-    Stores the fixed token ID embeddings (compound / label / tracer radial
-    embeddings) once and assembles the full token tensor on-the-fly in
-    __getitem__ by appending the per-sample fraction value.
-
-    This avoids materialising the full (num_samples, num_tokens, token_dim)
-    array, which can be large for deep learning datasets.
+    """Tokenized labeling-experiment dataset that stores static token embeddings once and
+    assembles the full token tensor on-the-fly in ``__getitem__``, avoiding a materialised
+    ``(num_samples, num_tokens, token_dim)`` array.
     """
 
     def __init__(self, static_features, fractions, targets):
         """
         Args:
-            static_features: (num_tokens, token_dim-1) array of ID embeddings
-            fractions: (num_samples, num_tokens) array of normalised fraction values
-            targets: (num_samples, output_dim) array of target values
+            static_features: per-token fixed radial embeddings, (num_tokens, D-1).
+            fractions: per-sample, per-token labeling fractions, (S, num_tokens).
+            targets: per-sample regression targets, (S, out_dim).
         """
         self.static = torch.tensor(static_features, dtype=torch.float32)   # (num_tokens, D-1)
         self.fractions = torch.tensor(fractions, dtype=torch.float32)       # (S, num_tokens)
@@ -765,31 +708,23 @@ class TokenizedDataset(Dataset):
 def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
                     train_indices=None, measured_fluxes=None,
                     norm_stats_input=None, normalize=False, normalize_mids=False):
-    """
-    Prepare a TokenizedDataset from DataFrames using radial-embedding tokenization.
-
-    Each row of labeling_df becomes one token: [compound_emb | label_emb |
-    tracer_emb | fraction].  Measured flux tokens are built separately inside
-    FluxDecoder.forward() using reaction embeddings — they are NOT prepended
-    here.
+    """Prepare a TokenizedDataset from DataFrames using radial-embedding tokenization.
 
     Args:
-        labeling_df: DataFrame with labeling data (MultiIndex: Tracer/Metabolite/Isotopomer).
-        flux_df: DataFrame with flux data.
-        reversibility_df: DataFrame with reversibility data.
-        vocabs: dict from build_radial_vocabs.
-        train_indices: Sample indices to use (None = all).
-        normalize: Whether to standardise flux/reversibility targets.
-        measured_fluxes: Accepted for API compatibility; no longer used to build
-            bypass tokens. Measured flux values are present in the targets tensor
-            and passed to forward() at training time.
-        norm_stats_input: Pre-computed normalisation stats (for inference/val).
+        labeling_df: labeling DataFrame (rows are tokens, columns are samples).
+        flux_df: flux DataFrame (rows are reactions, columns are samples).
+        reversibility_df: reversibility DataFrame, same layout as *flux_df*.
+        vocabs: vocabulary/embedding dict from :func:`build_radial_vocabs`.
+        train_indices: sample columns to use; defaults to every column.
+        measured_fluxes: currently unused (bypass tokens are built in FluxDecoder.forward).
+        norm_stats_input: precomputed normalization stats to reuse instead of recomputing.
+        normalize: z-score the flux/reversibility targets.
+        normalize_mids: z-score the labeling (MID) fractions per token.
 
-    Returns:
-        dataset: TokenizedDataset
-        norm_stats: dict with normalisation statistics
-        token_experiment_ids: (num_tokens,) int64 tensor mapping tokens to
-            experiment indices
+    Each row of labeling_df becomes one token: [compound_emb | label_emb |
+    tracer_emb | fraction]. Measured flux tokens are built separately inside
+    FluxDecoder.forward(); they are not prepended here, so *measured_fluxes* is
+    currently unused. Returns ``(dataset, norm_stats, token_experiment_ids)``.
     """
     if train_indices is None:
         train_indices = range(labeling_df.shape[1])
@@ -883,129 +818,20 @@ def prepare_dataset(labeling_df, flux_df, reversibility_df, vocabs,
 
 
 # ---------------------------------------------------------------------------
-# Masking utilities
-# ---------------------------------------------------------------------------
-
-def apply_random_masking(tokens, token_experiment_ids, mask_prob=0.3, min_experiments=1):
-    """
-    Apply random experiment-group masking for missing-data augmentation.
-
-    Randomly zeroes out all tokens belonging to a randomly selected subset of
-    experiments.  Tokens with experiment id == -1 (bypass tokens) are never
-    masked.
-
-    Args:
-        tokens: (batch_size, num_tokens, token_dim) tensor
-        token_experiment_ids: (num_tokens,) int64 tensor (model buffer or plain tensor)
-        mask_prob: Probability of masking each experiment
-        min_experiments: Minimum number of experiments guaranteed to remain unmasked
-
-    Returns:
-        masked_tokens: (batch_size, num_tokens, token_dim) tensor
-        mask: (batch_size, num_tokens) bool tensor (True = valid / unmasked)
-    """
-    batch_size, num_tokens, token_dim = tokens.shape
-    device = tokens.device
-    exp_ids = token_experiment_ids.to(device)
-
-    # Identify valid experiment indices (exclude bypass tokens with id == -1)
-    valid_mask = exp_ids >= 0
-    unique_exp_ids = exp_ids[valid_mask].unique()
-    num_experiments = unique_exp_ids.shape[0]
-
-    # Initialise all tokens as valid
-    token_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool, device=device)
-
-    if num_experiments == 0 or mask_prob <= 0.0:
-        return tokens, token_mask
-
-    # Per-sample experiment-level mask: True = keep
-    # shape: (batch_size, num_experiments)
-    exp_keep = torch.rand(batch_size, num_experiments, device=device) >= mask_prob
-
-    # Ensure min_experiments are kept
-    for b in range(batch_size):
-        num_kept = exp_keep[b].sum().item()
-        if num_kept < min_experiments:
-            # Randomly enable some masked experiments
-            masked_idxs = torch.where(~exp_keep[b])[0]
-            to_enable = masked_idxs[
-                torch.randperm(len(masked_idxs), device=device)[
-                    :min_experiments - int(num_kept)
-                ]
-            ]
-            exp_keep[b, to_enable] = True
-
-    # Expand experiment mask to token level
-    for exp_i in range(num_experiments):
-        exp_id = unique_exp_ids[exp_i]
-        tok_idxs = (exp_ids == exp_id)                          # (num_tokens,)
-        # For each sample: if this experiment is masked, set token_mask to False
-        token_mask[:, tok_idxs] &= exp_keep[:, exp_i].unsqueeze(1)
-
-    masked_tokens = tokens * token_mask.unsqueeze(-1).float()
-    return masked_tokens, token_mask
-
-
-def extract_mask_from_data(tokens, token_experiment_ids, threshold=1e-6):
-    """
-    Infer an experiment-group mask from zero-valued fractions in the token tensor.
-
-    For each experiment group, if all token fraction values (last column) are
-    below threshold the entire group is considered masked.  Bypass tokens
-    (experiment id == -1) are always considered valid.
-
-    Args:
-        tokens: (batch_size, num_tokens, token_dim) tensor
-        token_experiment_ids: (num_tokens,) int64 tensor
-        threshold: Absolute value threshold for detecting missing data
-
-    Returns:
-        mask: (batch_size, num_tokens) bool tensor (True = valid)
-    """
-    batch_size, num_tokens, _ = tokens.shape
-    device = tokens.device
-    exp_ids = token_experiment_ids.to(device)
-
-    token_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool, device=device)
-
-    valid_mask = exp_ids >= 0
-    unique_exp_ids = exp_ids[valid_mask].unique()
-
-    fractions = tokens[:, :, -1]  # (batch, num_tokens)
-
-    for exp_id in unique_exp_ids:
-        tok_idxs = (exp_ids == exp_id)                              # (num_tokens,)
-        exp_fracs = fractions[:, tok_idxs]                          # (batch, n)
-        exp_has_data = exp_fracs.abs().max(dim=1).values > threshold  # (batch,)
-        token_mask[:, tok_idxs] &= exp_has_data.unsqueeze(1)
-
-
-# ---------------------------------------------------------------------------
 # ID-based token features (for FluxDecoder)
 # ---------------------------------------------------------------------------
 
 def build_id_token_features(labeling_df, vocabs):
-    """
-    Build integer ID arrays for FluxDecoder's internal embedding lookups.
-
-    Unlike build_token_static_features (which precomputes float embeddings),
-    this returns integer indices so the model performs embedding lookups at
-    runtime.  Multi-tracer combinations (e.g. "A|B") are handled by summing
-    base tracer embeddings and treating each unique combination string as a
-    single vocabulary entry.
+    """Build integer ID arrays for FluxDecoder's internal embedding lookups, rather than the
+    precomputed float embeddings :func:`build_token_static_features` returns. Multi-tracer
+    combinations (e.g. "A|B") are treated as a single combo vocabulary entry.
 
     Args:
-        labeling_df: DataFrame with MultiIndex (Tracer, Metabolite, Isotopomer).
-        vocabs: dict from build_radial_vocabs.
+        labeling_df: labeling DataFrame; its rows define the token order.
+        vocabs: vocabulary/embedding dict from :func:`build_radial_vocabs`.
 
-    Returns:
-        compound_ids:         (num_tokens,) int64
-        label_ids:            (num_tokens,) int64
-        tracer_ids:           (num_tokens,) int64
-        token_experiment_ids: (num_tokens,) int64  (same index as tracer_ids)
-        tracer_combo_vocab:   sorted list of unique tracer strings
-        tracer_combo_emb_table: (n_combos, d_tracer) float32
+    Returns ``(compound_ids, label_ids, tracer_ids, token_experiment_ids, tracer_combo_vocab,
+    tracer_combo_emb_table)``.
     """
     compound_vocab       = vocabs['compound_vocab']
     label_vocab          = vocabs['label_vocab']
@@ -1068,24 +894,19 @@ def build_id_token_features(labeling_df, vocabs):
 
 
 class IDTokenizedDataset(Dataset):
-    """
-    Dataset for FluxDecoder: stores integer IDs + fractions rather than
-    precomputed float embeddings.
+    """Dataset for FluxDecoder: stores integer IDs + fractions rather than precomputed float embeddings.
 
-    __getitem__ returns:
-        ((compound_ids, label_ids, tracer_ids, fracs), targets)
-        where compound/label/tracer_ids are (num_tokens,) int64 tensors shared
-        across all samples, and fracs is (num_tokens, 1) per-sample float32.
+    ``__getitem__`` returns ``((compound_ids, label_ids, tracer_ids, fracs), targets)``.
     """
 
     def __init__(self, compound_ids, label_ids, tracer_ids, fractions, targets):
         """
         Args:
-            compound_ids: (num_tokens,) int64
-            label_ids:    (num_tokens,) int64
-            tracer_ids:   (num_tokens,) int64
-            fractions:    (num_samples, num_tokens) float32
-            targets:      (num_samples, out_dim) float32
+            compound_ids: per-token compound vocabulary indices.
+            label_ids: per-token isotopomer label vocabulary indices.
+            tracer_ids: per-token tracer-combo vocabulary indices.
+            fractions: per-sample, per-token labeling fractions, (S, num_tokens).
+            targets: per-sample regression targets, (S, out_dim).
         """
         self.compound_ids = torch.tensor(compound_ids, dtype=torch.long)
         self.label_ids    = torch.tensor(label_ids,    dtype=torch.long)
@@ -1109,22 +930,22 @@ class IDTokenizedDataset(Dataset):
 def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
                        train_indices=None, measured_fluxes=None,
                        norm_stats_input=None, normalize=False, normalize_mids=False):
-    """
-    Prepare an IDTokenizedDataset for use with FluxDecoder.
-
-    Delegates all normalization and bypass-token handling to prepare_dataset,
-    then extracts integer ID arrays so the model can perform embedding lookups
-    at runtime rather than receiving precomputed float embeddings.
+    """Prepare an IDTokenizedDataset for use with FluxDecoder.
 
     Args:
-        Same as prepare_dataset.
+        labeling_df: labeling DataFrame (rows are tokens, columns are samples).
+        flux_df: flux DataFrame (rows are reactions, columns are samples).
+        reversibility_df: reversibility DataFrame, same layout as *flux_df*.
+        vocabs: vocabulary/embedding dict from :func:`build_radial_vocabs`.
+        train_indices: sample columns to use; defaults to every column.
+        measured_fluxes: bypass-token reaction ids; see :func:`prepare_dataset`.
+        norm_stats_input: precomputed normalization stats to reuse instead of recomputing.
+        normalize: z-score the flux/reversibility targets.
+        normalize_mids: z-score the labeling (MID) fractions per token.
 
-    Returns:
-        dataset:               IDTokenizedDataset
-        norm_stats:            dict (same schema as prepare_dataset)
-        token_experiment_ids:  (num_tokens,) int64 tensor
-        tracer_combo_vocab:    sorted list of unique tracer strings
-        tracer_combo_emb_table:(n_combos, d_tracer) float32 array
+    Delegates normalization and bypass-token handling to :func:`prepare_dataset`, then extracts
+    integer ID arrays for runtime embedding lookups. Returns ``(dataset, norm_stats,
+    token_experiment_ids, tracer_combo_vocab, tracer_combo_emb_table)``.
     """
     float_dataset, norm_stats, token_experiment_ids = prepare_dataset(
         labeling_df, flux_df, reversibility_df, vocabs,
@@ -1145,94 +966,3 @@ def prepare_id_dataset(labeling_df, flux_df, reversibility_df, vocabs,
     return dataset, norm_stats, token_experiment_ids, tracer_combo_vocab, tracer_combo_emb_table
 
 
-def generate_experiment_mask(token_experiment_ids, batch_size, device,
-                              mask_prob=0.3, min_experiments=1):
-    """
-    Generate a random experiment-group mask for missing-data augmentation.
-
-    Equivalent to apply_random_masking but returns only the boolean mask
-    without modifying any input tensor — suitable for FluxDecoder where
-    inputs are integer IDs that cannot be zeroed out meaningfully.
-
-    Args:
-        token_experiment_ids: (num_tokens,) int64 tensor; -1 = bypass token
-        batch_size:           int
-        device:               torch device
-        mask_prob:            probability of masking any given experiment
-        min_experiments:      minimum experiments kept unmasked per sample
-
-    Returns:
-        mask: (batch_size, num_tokens) bool, True = valid / unmasked
-    """
-    exp_ids       = token_experiment_ids.to(device)
-    num_tokens    = exp_ids.shape[0]
-    valid_exp     = exp_ids >= 0
-    unique_exp_ids = exp_ids[valid_exp].unique()
-    num_experiments = unique_exp_ids.shape[0]
-
-    token_mask = torch.ones(batch_size, num_tokens, dtype=torch.bool, device=device)
-
-    if num_experiments == 0 or mask_prob <= 0.0:
-        return token_mask
-
-    exp_keep = torch.rand(batch_size, num_experiments, device=device) >= mask_prob
-
-    for b in range(batch_size):
-        num_kept = exp_keep[b].sum().item()
-        if num_kept < min_experiments:
-            masked_idxs = torch.where(~exp_keep[b])[0]
-            to_enable   = masked_idxs[
-                torch.randperm(len(masked_idxs), device=device)[
-                    :min_experiments - int(num_kept)
-                ]
-            ]
-            exp_keep[b, to_enable] = True
-
-    for exp_i in range(num_experiments):
-        exp_id    = unique_exp_ids[exp_i]
-        tok_idxs  = (exp_ids == exp_id)
-        token_mask[:, tok_idxs] &= exp_keep[:, exp_i].unsqueeze(1)
-
-    return token_mask
-
-
-def generate_metabolite_mask(compound_ids, batch_size, device, mask_prob=0.15):
-    """
-    Randomly mask entire metabolites (all isotopomers of a compound) per sample.
-
-    Finer-grained complement to generate_experiment_mask: while that function
-    drops whole tracer experiments, this one drops individual metabolites within
-    experiments, simulating metabolites that were not detected in the MS run.
-
-    Args:
-        compound_ids: (N,) int64 tensor — compound index for each token (shared across batch)
-        batch_size:   int
-        device:       torch device
-        mask_prob:    probability of masking each unique metabolite per sample
-
-    Returns:
-        mask: (batch_size, N) bool, True = valid / unmasked
-    """
-    compound_ids = compound_ids.to(device)
-    unique_comps = compound_ids.unique()
-    n_comps      = unique_comps.shape[0]
-    n_tokens     = compound_ids.shape[0]
-
-    token_mask = torch.ones(batch_size, n_tokens, dtype=torch.bool, device=device)
-    if mask_prob <= 0.0 or n_comps == 0:
-        return token_mask
-
-    # Per-sample, independently decide which metabolites to keep
-    comp_keep = torch.rand(batch_size, n_comps, device=device) >= mask_prob
-
-    # Ensure at least one metabolite is always unmasked per sample
-    all_masked = ~comp_keep.any(dim=1)
-    if all_masked.any():
-        rescue = torch.randint(n_comps, (int(all_masked.sum().item()),), device=device)
-        comp_keep[all_masked, rescue] = True
-
-    for i, comp_id in enumerate(unique_comps):
-        tok_idxs = (compound_ids == comp_id)
-        token_mask[:, tok_idxs] &= comp_keep[:, i].unsqueeze(1)
-
-    return token_mask

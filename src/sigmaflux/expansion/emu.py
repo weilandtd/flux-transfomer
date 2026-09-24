@@ -4,39 +4,37 @@
 from collections.abc import Iterable
 import cobra
 
-from sigmaflux.expansion.utils import can_make_met
+from sigmaflux.expansion.utils import can_make_met, labeling_educts, labeling_products
 
 
 def _produces_from_nothing(rxn, metabolite):
-    """
-    Check if a reaction introduces the metabolite "from nothing", i.e. the
-    producing side of the reaction carries no educt metabolite.  Such a
-    production is not connected to any upstream EMU node and marks the
-    metabolite as a network input (boundary).
+    """Whether rxn produces metabolite "from nothing" (no educt on the producing side), marking it as a network input (boundary).
 
-    :param rxn: cobra.Reaction
-    :param metabolite: cobra.Metabolite
-    :return: bool
+    "No educt" has to be read in labeling terms, not stoichiometric ones: a measurement
+    pool's mixing leg moves no mass of the compartment it observes, so `rxn.reactants` is
+    empty for it and the pool would be mistaken for a tracer input and pinned to M+0.
+
+    Args:
+        rxn: reaction to check.
+        metabolite: metabolite to check for boundary production of.
     """
     # forward production: metabolite is a product, educts are the reactants
-    if rxn.upper_bound > 0 and metabolite in rxn.products and len(rxn.reactants) == 0:
+    if rxn.upper_bound > 0 and metabolite in rxn.products and not labeling_educts(rxn):
         return True
     # reverse production: metabolite is a reactant, educts are the products
-    if rxn.lower_bound < 0 and metabolite in rxn.reactants and len(rxn.products) == 0:
+    if rxn.lower_bound < 0 and metabolite in rxn.reactants and not labeling_products(rxn):
         return True
     return False
 
 
 class EMU(object):
-    """
-    Class method for EMU.
-    """
+    """An Elementary Metabolite Unit: a metabolite plus a set of 1-based carbon positions it covers."""
 
-    def __init__(self, metabolite, mid, ix=None):
+    def __init__(self, metabolite, mid):
 
-        """
-        :param metabolite: cobra.Metabolite
-        :param mid: [1,2,3,4] (EMU)
+        """Args:
+            metabolite: cobra.Metabolite this EMU covers part of.
+            mid: 1-based carbon positions this EMU covers, e.g. [1,2,3,4].
         """
         if not isinstance(metabolite, cobra.Metabolite):
             raise TypeError(f'Input {metabolite} is of type {type(metabolite)} must be cobra.Metabolite')
@@ -60,11 +58,6 @@ class EMU(object):
         symetries = metabolite.annotation.get('symmetries', [])
         self.symmetries = [parse_symetry(s) for s in symetries]
 
-        if ix is None:
-            self.ix = [ i for i in range(len(mid))]
-        else:
-            self.ix = ix
-
     @property
     def size(self) -> int:
         return len(self.mid)
@@ -85,28 +78,24 @@ class EMU(object):
 
     def __eq__(self, other):
         if isinstance(other, EMU):
-            #return (self.id == other.id) & (self.mid == other.mid)
-            return (self.id == other.id) & (self.mid == other.mid) #& (self.ix == other.ix)
+            return (self.id == other.id) & (self.mid == other.mid)
         elif isinstance(other, OriginSet) and len(other) == 1:
-            # return (self.id == other._values[0].id) \
-            #        & (self.mid == other._values[0].mid)
             return (self.id == other._values[0].id) & \
-                   (self.mid == other._values[0].mid) #& \
-                   #(self.ix == other._values[0].ix)  
-            
-        return False 
+                   (self.mid == other._values[0].mid)
+        return False
 
     def __hash__(self):
         return hash(self.__repr__())
 
     def __repr__(self):
-        return str(self.id) + \
-        '_' + ''.join([str(i) for i in self.mid]) #+ \
-        #'_' + ''.join([str(i) for i in self.ix])
+        return str(self.id) + '_' + ''.join([str(i) for i in self.mid])
 
 
 class OriginSet(object):
     def __init__(self, value):
+        """Args:
+            value: a single EMU, or an iterable of EMUs, to wrap as one origin set.
+        """
         self.current = -1
 
         if isinstance(value, EMU):
@@ -180,11 +169,7 @@ def get_metabolite(item):
 
 
 def parse_symetry(s):
-    """
-    Parse a symetry string like 'ABC,ACB' into a tuple ('ABC', 'ACB')
-    :param s: str
-    :return: tuple
-    """
+    """Parse a symmetry string like 'ABC.ACB' into a tuple ('ABC', 'ACB')."""
     parts = s.split('.')
     if len(parts) != 2:
         raise ValueError(f'Error in symetry string {s}')
