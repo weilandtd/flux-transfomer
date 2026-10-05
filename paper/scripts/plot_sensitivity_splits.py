@@ -161,6 +161,7 @@ def main():
                             & (measured["met"] == met) & measured["Isotopomer"].isin(isos)]
             for (cond, gc), h in hits.groupby(["condition", "gc"]):
                 h = h.set_index("Isotopomer")
+                h["measured_std"] = h["measured_std"].fillna(0.0)
                 if cond not in predicted[key] or not set(isos) <= set(h.index):
                     continue
                 value, std = h.loc[isos[0], "measured"], h.loc[isos[0], "measured_std"]
