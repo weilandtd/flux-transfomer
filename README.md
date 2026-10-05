@@ -93,7 +93,7 @@ to `df_L`/`df_Vm` to predict many samples in one call.
 To inspect a model without loading any weights (no torch required):
 
 ```bash
-sigmaflux-inspect models/pretrained/i_orientalis-v1.2.0.sfx --verify
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.0.sfx --verify
 ```
 
 Reads the name, version, output dimensions, tracers, and provenance — the
