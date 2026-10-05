@@ -32,6 +32,17 @@ model's own compartment structure, so there is no list to keep in step with anyt
 ``POOL_`` is the marker. Every reaction whose id starts with it is observation machinery
 rather than metabolism, and every one of them is what the x3cflux converter has to rewrite
 into a shape that engine can express (see :mod:`sigmaflux.x3cflux.convert`).
+
+**Fragments** are single-member pools that keep only some of their member's carbons. A
+GC/MS ion such as Ala232 (carbons 2-3 of alanine) is written the same way::
+
+    0 Ala (abc) -> Ala232 (bc)     POOL_Ala232,    [0, 1]
+      Ala232 (ab) ->               POOL_SK_Ala232, [1, 1]
+
+Their leg is named after the fragment rather than the member, since one member has
+several fragments, and they never make the member *measured as* the fragment -- see
+:func:`measurement_token`. :func:`add_fragment_pools` builds them. The x3cflux converter
+writes every leg as a whole-molecule tap, so it does not handle fragments.
 """
 
 import re
@@ -50,6 +61,8 @@ POOL_DRAIN_PREFIX = POOL_PREFIX + "SK_"
 
 #: Metabolite annotation listing a pool's members.
 POOL_MEMBERS_KEY = "measurement_pool"
+#: Metabolite annotation of a fragment pool: the 1-based member carbons it retains.
+FRAGMENT_CARBONS_KEY = "fragment_carbons"
 
 #: Compartment suffixes that are never pool members. ``e`` is the medium, which a cell
 #: extract does not contain -- and pooling it would mix the tracer inlet (``glc__D_e``)
@@ -92,6 +105,12 @@ def pool_members(model):
             for m in model.metabolites if POOL_MEMBERS_KEY in m.annotation}
 
 
+def fragment_pools(model):
+    """``{fragment_id: (member id, retained carbons)}`` read back from *model*."""
+    return {m.id: (m.annotation[POOL_MEMBERS_KEY][0], list(m.annotation[FRAGMENT_CARBONS_KEY]))
+            for m in model.metabolites if FRAGMENT_CARBONS_KEY in m.annotation}
+
+
 def measurement_token(model, met_id, exclude_compartments=EXCLUDED_COMPARTMENTS):
     """The id *met_id* is actually measured under, or None if it is not measurable.
 
@@ -108,8 +127,9 @@ def measurement_token(model, met_id, exclude_compartments=EXCLUDED_COMPARTMENTS)
         met_id: a model metabolite id.
         exclude_compartments: compartment suffixes that are not in the measured extract.
     """
+    fragments = fragment_pools(model)
     for pool, members in pool_members(model).items():
-        if met_id in members:
+        if met_id in members and pool not in fragments:
             return pool
     if _compartment(met_id) in set(exclude_compartments):
         return None
@@ -255,6 +275,63 @@ def add_measurement_pools(model, plan=None):
         drain.add_metabolites({pool: -1.0})
         drain.annotation = {"atom_mapping": f" {pool_id} ({pattern}) -> "}
         added.append(drain.id)
+    return added
+
+
+def add_fragment_pools(model, fragments):
+    """Add a fragment pool per entry: metabolite, zero-stoichiometry leg and pinned drain.
+
+    Args:
+        model: cobra model, modified in place.
+        fragments: ``{fragment_id: (member id, retained carbons)}``, carbons 1-based.
+
+    Returns the ids of the reactions added.
+
+    Raises:
+        ValueError: the fragment id is taken, the member carries no atom pattern, the
+            carbons fall outside it, or a partial fragment cuts a symmetric member.
+    """
+    added = []
+    for frag_id, (member_id, carbons) in fragments.items():
+        member = model.metabolites.get_by_id(member_id)
+        member_pattern = member.annotation.get("atom_pattern", "")
+        carbons = sorted(set(carbons))
+        taken = [i for i in (frag_id, f"{POOL_PREFIX}{frag_id}", f"{POOL_DRAIN_PREFIX}{frag_id}")
+                 if i in model.metabolites or i in model.reactions]
+        if taken:
+            raise ValueError(f"fragment {frag_id!r}: id(s) {taken} already exist")
+        if not member_pattern:
+            raise ValueError(f"fragment {frag_id!r}: {member_id!r} carries no atom pattern")
+        if not carbons or carbons[0] < 1 or carbons[-1] > len(member_pattern):
+            raise ValueError(f"fragment {frag_id!r}: carbons {carbons} are outside "
+                             f"{member_id!r}'s {len(member_pattern)} carbons")
+        if member.annotation.get("symmetries") and len(carbons) < len(member_pattern):
+            raise ValueError(f"fragment {frag_id!r}: a partial fragment of symmetric "
+                             f"{member_id!r} depends on which orientation it is cut from")
+
+        retained = "".join(member_pattern[c - 1] for c in carbons)
+        pattern = member_pattern[:len(carbons)]
+        frag = cobra.Metabolite(frag_id, compartment="")
+        frag.name = f"{member.name or member_id} C{','.join(map(str, carbons))}"
+        frag.annotation = {"atom_pattern": pattern, POOL_MEMBERS_KEY: [member_id],
+                           FRAGMENT_CARBONS_KEY: carbons}
+        model.add_metabolites([frag])
+
+        leg = cobra.Reaction(f"{POOL_PREFIX}{frag_id}")
+        leg.lower_bound, leg.upper_bound = 0.0, 1.0
+        model.add_reactions([leg])
+        leg.add_metabolites({frag: 1.0})
+        leg.annotation = {
+            "atom_mapping": f"{member_id} ({member_pattern}) -> {frag_id} ({retained})",
+            "zero_stoichiometry": [member_id],
+        }
+
+        drain = cobra.Reaction(f"{POOL_DRAIN_PREFIX}{frag_id}")
+        drain.lower_bound, drain.upper_bound = 1.0, 1.0
+        model.add_reactions([drain])
+        drain.add_metabolites({frag: -1.0})
+        drain.annotation = {"atom_mapping": f" {frag_id} ({pattern}) -> "}
+        added += [leg.id, drain.id]
     return added
 
 
