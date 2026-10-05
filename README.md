@@ -60,7 +60,7 @@ network JSON required.
 import pandas as pd
 from sigmaflux.ai import load_model
 
-sf = load_model("models/pretrained/i_orientalis-v1.2.0.sfx")
+sf = load_model("models/pretrained/i_orientalis-v1.4.0.sfx")
 
 # What the model expects
 sf.expected_tracers()          # tracer names to use in df_L
