@@ -9,9 +9,9 @@ classical EMU (Elementary Metabolite Unit) ¹³C-MFA implementation with a
 transformer that predicts fluxes directly from mass-isotopomer distributions,
 so a fit that takes minutes of optimisation becomes a forward pass.
 
-Atom-mapped network models for *Issatchenkia orientalis*, *Saccharomyces cerevisiae*
-and *Rhodotorula toruloides* ship with the repository, with pretrained ensembles for
-the first two.
+Atom-mapped network models for *Issatchenkia orientalis*, *Saccharomyces cerevisiae*,
+*Rhodotorula toruloides*, *Escherichia coli* core and *Mus musculus* T cells ship
+with the repository, with pretrained ensembles for all except *R. toruloides*.
 
 ## Installation
 
