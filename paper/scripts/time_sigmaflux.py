@@ -45,7 +45,8 @@ def main():
     data_dir = pathlib.Path(resolve_path(args.run_dir, root))
 
     started = time.perf_counter()
-    sf = load_predictor(args.config, str(data_dir / "ensemble"), data_dir=str(data_dir))
+    sf = load_predictor(args.config, str(data_dir / "ensemble"), data_dir=str(data_dir),
+                        device="cpu")
     load_seconds = time.perf_counter() - started
 
     _, mapped_met_ids, labeling_df, flux_df, _ = load_benchmark_inputs(str(data_dir), cfg, root)
