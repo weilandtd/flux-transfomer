@@ -83,13 +83,22 @@ def main(args):
     if exclude_extracellular:
         labeling_df = feat_lib.drop_extracellular_tokens(labeling_df)
 
+    # method 'all' never reads theta -- select_all_tokens takes token_states alone
+    # and reports n_free_flux_directions: None -- so do not pay for the null-space
+    # rotation to build it. That rotation is O(max_iter * d^2) in Varimax pairwise
+    # sweeps and dominates everything else at genome scale: on the mouse whole-body
+    # model (d = 1790) it ran 16 h without converging, for a result that was then
+    # discarded.
+    need_theta = method != "all"
     theta, token_states, d = feat_lib.build_theta_and_token_states(
         labeling_df, flux_df, model_json, n_samples,
         reversibility_df=reversibility_df if include_rev else None,
-        subsample_n=subsample_n, seed=seed,
+        subsample_n=subsample_n, seed=seed, need_theta=need_theta,
     )
-    print(f"  free-flux directions d = {d}; candidate tokens = {len(token_states)}; "
-          f"samples = {theta.shape[0]}")
+    n_used = theta.shape[0] if theta is not None else min(
+        n_samples, flux_df.shape[1], labeling_df.shape[1])
+    print(f"  free-flux directions d = {d if need_theta else 'not computed (method=all)'}; "
+          f"candidate tokens = {len(token_states)}; samples = {n_used}")
 
     if restrict:
         if mapping_csv and os.path.isfile(mapping_csv):
