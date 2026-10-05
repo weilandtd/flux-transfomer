@@ -17,6 +17,8 @@ Layout
     shared/token_experiment_ids.npy
     shared/null_space/*.npy           Z_free, y_*, rev_log_*, obs_weights, *_idx
     shared/flux_norm/{mean,std}.npy
+    shared/cobra_model.json           prepared COBRA network
+    shared/metabolites.json           per metabolite: id, description, observable
     validation/*.npy                  val split: indices, actuals, MID inputs
     validation/member_metrics.json
     members/000.bin …                 one flat little-endian blob per ensemble member
