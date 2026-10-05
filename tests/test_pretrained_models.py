@@ -28,7 +28,7 @@ import pytest
 import torch
 
 from sigmaflux.ai._sfx import SCHEMA_VERSION
-from sigmaflux.ai.export import inspect_model, load_model, read_stoichiometry
+from sigmaflux.ai.export import inspect_model, load_model, read_metabolites, read_stoichiometry
 from sigmaflux.ai.inference import EnsembleSigmaFlux
 from sigmaflux.pipeline import inspect_model as inspect_cli
 
@@ -141,6 +141,15 @@ def test_inspect_cli_reads_every_model(sfx_path, capsys):
 
 
 # ── Loading and running ───────────────────────────────────────────────────────
+
+def test_metabolite_list_marks_the_observables(model, sfx_path):
+    """Every network metabolite is listed, and observable means the model takes its MIDs."""
+    mets = read_metabolites(sfx_path)
+
+    assert len(mets) == inspect_model(sfx_path)["network"]["n_metabolites"]
+    assert set(mets.loc[mets["observable"], "metabolite_id"]) == set(model.expected_metabolites())
+    assert not (mets["description"] == "nan").any()
+
 
 def test_load_model_matches_its_manifest(model, sfx_path):
     """load_model returns a complete ensemble that agrees with the manifest."""
