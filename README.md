@@ -42,7 +42,7 @@ Verify:
 
 ```bash
 python -c "import sigmaflux; print(sigmaflux.__version__)"
-sigmaflux-inspect models/pretrained/i_orientalis-v1.2.0.sfx
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.0.sfx
 ```
 
 If `sigmaflux-inspect` reports a format error, the LFS objects were not fetched —
