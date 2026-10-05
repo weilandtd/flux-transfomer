@@ -49,6 +49,41 @@ from sigmaflux.ai.utils import (
 )
 
 
+def load_shared_basis(basis_file, n_reactions):
+    """A previously saved basis, or None when there is nothing usable to load.
+
+    Companion to :func:`share_basis`, for callers that would otherwise build a
+    basis only to throw it away. share_basis takes an already computed ``Z_full``
+    and returns the saved one instead when a file exists -- by which point the
+    expensive part is paid. Checking first turns that into a real skip.
+
+    It matters at genome scale. The targeted and targeted_ica bases rotate via
+    Varimax, which does pairwise Jacobi sweeps at O(max_iter * d^2); on the mouse
+    whole-body model (d = 1790, so 1.6e6 rotations per sweep) that ran 16 h
+    without converging. An ensemble shares one basis, so without this every
+    member repeats the same computation and discards it -- 20 times, each holding
+    a GPU idle while it runs on one CPU core.
+
+    Only the reaction count is checked. ``d`` is a property of the saved basis,
+    and requiring it to match a locally computed one would mean computing it. A
+    basis belonging to a different model is the real risk and it shows up in the
+    row count.
+
+    Args:
+        basis_file: path a previous run wrote, or None to disable loading.
+        n_reactions: rows the basis must have, i.e. this model's reaction count.
+    """
+    if not basis_file or not os.path.exists(basis_file):
+        return None
+    loaded = np.load(basis_file)['Z_full']
+    if loaded.shape[0] != n_reactions:
+        raise ValueError(
+            f"basis file {basis_file} holds a basis over {loaded.shape[0]} reactions "
+            f"but this model has {n_reactions}; it belongs to a different model")
+    print(f"Null-space basis: loaded {loaded.shape} from {basis_file} (build skipped)")
+    return loaded
+
+
 def share_basis(Z_full, basis_file):
     """Return the null-space basis every ensemble member must use.
 
@@ -394,11 +429,22 @@ def main(args):
     # Leading columns of a targeted basis are the identity block, one per measured
     # reaction; split_constant_directions must not rotate them away.
     n_targets = 0
+    # A saved basis makes the whole build below dead work -- share_basis would
+    # discard whatever it produced. Skip it. n_targets still has to be right,
+    # since split_constant_directions must not rotate the targeted identity block
+    # away, and it is a property of the config rather than of the computation.
+    _preloaded_basis = load_shared_basis(getattr(args, 'basis_file', None),
+                                         stoichiometric_matrix.shape[1])
+    if _preloaded_basis is not None and args.null_space_type in ('targeted', 'targeted_ica') \
+            and args.measured_fluxes:
+        n_targets = len([r for r in args.measured_fluxes if r in set(flux_df.index)])
     use_targeted = (
         args.null_space_type == 'targeted'
         and args.measured_fluxes
     )
-    if use_targeted:
+    if _preloaded_basis is not None:
+        Z_full = _preloaded_basis
+    elif use_targeted:
         rxn_names = list(flux_df.index)
         Z_full, basis_status = compute_targeted_nullspace(
             stoichiometric_matrix,
@@ -478,7 +524,8 @@ def main(args):
     # rotations of the same subspace. Predictions are unaffected — fluxes are
     # physical — but any per-member comparison in basis coordinates is not, so
     # members must share one basis, exactly as they share one train/val split.
-    Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
+    if _preloaded_basis is None:
+        Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
 
     # Directions no sample moves along -- a measurement pool's pinned drain, an
     # FVA-fixed route -- still have to be representable for v = y @ Z.T to reconstruct a
