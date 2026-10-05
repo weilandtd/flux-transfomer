@@ -530,8 +530,8 @@ def compute_targeted_ica_nullspace(
     variance-based observability score (ICA modes before the SVD complement).
 
     Raises RuntimeError if the target reactions are not separable (stoichiometrically
-    coupled) — see :func:`compute_targeted_nullspace`. Falls back to the Varimax
-    targeted basis (unrotated free columns) if FastICA itself fails.
+    coupled) — see :func:`compute_targeted_nullspace`. Falls back to the targeted
+    basis with raw LU free columns (unrotated) if FastICA itself fails.
 
     Parameters
     ----------
@@ -554,7 +554,7 @@ def compute_targeted_ica_nullspace(
         SVD complement last).
     status : dict
         separable, cond_SD, target_indices, n_ica_free, n_complement_free,
-        n_active_free, and fallback (True if FastICA failed, Varimax free cols kept).
+        n_active_free, and fallback (True if FastICA failed, raw LU free cols kept).
     """
     from sklearn.decomposition import FastICA
 
@@ -633,7 +633,7 @@ def compute_targeted_ica_nullspace(
         # Modes in reaction null-space: Q_free @ W_wh @ mixing_matrix
         modes = Q_free @ (W_wh @ ica.components_.T)   # (n, n_ica_req), zeros on target rows ✓
     except Exception:
-        print("targeted_ica: FastICA failed; keeping Varimax free columns")
+        print("targeted_ica: FastICA failed; keeping raw LU free columns")
         return Z_targ, {
             'separable': True, 'cond_SD': tgt_status['cond_SD'],
             'targets_kept': tgt_status['targets_kept'],
