@@ -96,7 +96,8 @@ def main(args):
         subsample_n=subsample_n, seed=seed, need_theta=need_theta,
     )
     n_used = theta.shape[0] if theta is not None else min(
-        n_samples, flux_df.shape[1], labeling_df.shape[1])
+        n_samples, flux_df.shape[1], labeling_df.shape[1],
+        subsample_n if subsample_n is not None else n_samples)
     print(f"  free-flux directions d = {d if need_theta else 'not computed (method=all)'}; "
           f"candidate tokens = {len(token_states)}; samples = {n_used}")
 
