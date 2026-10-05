@@ -1168,11 +1168,15 @@ class EnsembleSigmaFlux:
         # across every member, which measured better on real SC data (pooled flux R²
         # 0.242 vs the mean's 0.228, `[[medoid_convex_production_default]]` /
         # compare_aggregation_sc.py) with no feasibility cost, since it is still a
-        # convex combination.
+        # convex combination. Weights are solved per sample, so a sample's aggregate does
+        # not depend on which other samples share the call.
+        block = len(self.flux_names) + len(self.reversibility_names)
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
-        weights = _medoid_weights(values, how="medoid_convex")
+        values = values.reshape(len(preds), -1, block)
         out = preds[0].copy()
-        out['Value'] = weights @ values
+        out['Value'] = np.concatenate([
+            _medoid_weights(values[:, i], how="medoid_convex") @ values[:, i]
+            for i in range(values.shape[1])])
         if with_mid:
             # The labeling of the flux state we report, not the average of the labelings
             # each member implies. The EMU pass is nonlinear, so those differ, and only
