@@ -1,17 +1,16 @@
+import warnings
+
 import cobra
 import networkx as nx
 from sigmaflux.expansion.atom_mapping import AtomMapping, MissingAtomMappingError
-from sigmaflux.expansion.emu import EMU, OriginSet
-from sigmaflux.expansion.utils import can_make_met
+from sigmaflux.expansion.emu import OriginSet
+from sigmaflux.expansion.utils import can_make_met, labeling_educts, labeling_products
 
 
 
 class EMUNetwork(object):
     def __init__(self, max_size):
-        """
-        Class for that describes the collective emu expansion
-        :param max_size:
-        """
+        """Collection of EMU subnetworks, one per EMU size up to max_size."""
 
         self.max_size = max_size
         self.subnetworks = dict()
@@ -31,26 +30,70 @@ class EMUNetwork(object):
         return self.subnetworks[item.size].has_node(item)
 
 
+def _check_origin_size(origin_set, target_emu, reaction, direction):
+    """Reject an origin set that does not supply exactly the target's atoms.
+
+    An empty origin set is legitimate (no edge, e.g. a boundary input from nothing);
+    a non-empty set of the wrong size is always a defect in the atom map, and must
+    raise rather than be silently skipped so the reaction doesn't vanish from the
+    labeling network while still carrying flux.
+
+    Args:
+        origin_set: candidate OriginSet of educt/product EMUs.
+        target_emu: EMU the origin set must exactly supply.
+        reaction: reaction the mapping came from, for the error message.
+        direction: 'fwd' or 'rvs', for the error message.
+    """
+    if origin_set.size and origin_set.size != target_emu.size:
+        raise OriginSizeError(
+            f"{reaction.id} ({direction}): origin set {origin_set!r} carries "
+            f"{origin_set.size} atoms but target {target_emu!r} needs "
+            f"{target_emu.size}. The atom map is inconsistent -- most often a "
+            f"metabolite named more times than the stoichiometry moves it.")
+    return origin_set.size == target_emu.size
+
+
+class OriginSizeError(ValueError):
+    """An atom map yields an origin set that cannot supply its target EMU."""
+
+
 class EMUExpansion(object):
     def __init__(self, model, target_emus):
-        """
+        """Build atom mappings for every reaction in model, warning about any carbon-carrying reaction left unmapped.
 
-        :param model: Annotated cobra model
-        :param target_emus: set MID [MID, ... ]
+        Args:
+            model: atom-mapped cobra.Model to build the EMU expansion for.
+            target_emus: EMUs the network is expanded to trace back from.
         """
 
         self.model = model
 
         self.mappings = dict()
 
+        unmapped_with_carbon = []
         for rxn in model.reactions:
             try:
                 mapping = AtomMapping(rxn)
                 self.mappings[rxn.id] = mapping
 
             except MissingAtomMappingError:
-                print("missing atommaping", rxn.id)
-                pass
+                # An unmapped reaction carries no labeling edge, so any carbon
+                # passing through it simply disappears from the EMU network. That
+                # is fine and expected for the carbon-free transport and redox
+                # reactions, which are the overwhelming majority, but a reaction
+                # that does move carbon is a hole in the network and is worth
+                # separating from the noise -- SK_accoa_c sat in this list
+                # unnoticed among 26 legitimately carbon-free reactions.
+                if any(m.annotation.get('atom_pattern')
+                       for m in labeling_educts(rxn) + labeling_products(rxn)):
+                    unmapped_with_carbon.append(rxn.id)
+
+        if unmapped_with_carbon:
+            warnings.warn(
+                f"{len(unmapped_with_carbon)} reaction(s) carry carbon but have no "
+                f"atom_mapping, so their carbon does not propagate: "
+                f"{sorted(unmapped_with_carbon)}",
+                RuntimeWarning, stacklevel=2)
 
         self.target_emus = target_emus
 
@@ -58,10 +101,7 @@ class EMUExpansion(object):
         self.emu_network = EMUNetwork(max_size)
 
     def expand_network(self):
-        """
-
-        :return: EMU reaction network object
-        """
+        """Build the EMU network by tracing each target EMU back to its origin EMUs, then prune orphaned/disconnected nodes."""
         emus_to_expand = list(self.target_emus)
         # Sort the emus to expand start with largest
         emus_to_expand = sorted(emus_to_expand, key=lambda obj: obj.size, reverse=True)
@@ -86,54 +126,32 @@ class EMUExpansion(object):
                     continue
                 the_atom_mapping = self.mappings[the_rxn.id]
 
-                #DWR: one atom maping can have multiple origin sets
+                # One atom mapping can have multiple origin sets, each carrying its
+                # own weight -- see AtomMapping.get_origin_emus.
                 origin_sets, origin_sets_rev = the_atom_mapping.get_origin_emus(the_emu)
 
-                # Symmetries of the target emu
-                symmetry_weight = 1/(1+len(the_emu.symmetries))
-
-                # Print some debug info
-                # print(f"Origin sets for {the_emu}: {origin_sets}, {origin_sets_rev}")
-
                 # New emus that are not yet in the network
-                all_origin_sets = origin_sets.union(origin_sets_rev)
+                all_origin_sets = set(origin_sets) | set(origin_sets_rev)
                 sum_all_origin_sets = sum(all_origin_sets, OriginSet({}))
 
                 new_emus = [o_emu for o_emu in sum_all_origin_sets
                             if not self.emu_network.has_emu(o_emu)]
-                
-                for origin_set in origin_sets:
-                    # Add the edges to the respective emu network
-                    if origin_set.size == the_emu.size:
-                        data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set, the_emu)
-                        if data is None: 
-                            has_edge = False 
-                        else: 
-                            compare = [d['reaction'] == the_rxn and d['direction'] == 'fwd' for d in data.values()]
-                            has_edge = any(compare) 
 
-                        if not has_edge: 
-                            self.emu_network.subnetworks[the_emu.size].add_edge(origin_set, the_emu,
-                                                                                reaction=the_rxn, 
-                                                                                direction='fwd',
-                                                                                symmetry_weight=symmetry_weight,
-                                                                                )
-
-                for origin_set_rev in origin_sets_rev:
-                    if origin_set_rev.size == the_emu.size:
-                        data = self.emu_network.subnetworks[the_emu.size].get_edge_data(origin_set_rev, the_emu)
-                        if data is None: 
-                            has_edge = False 
-                        else: 
-                            compare = [d['reaction'] == the_rxn and d['direction'] == 'rvs' for d in data.values()]
-                            has_edge = any(compare) 
-
-                        if not has_edge: 
-                            self.emu_network.subnetworks[the_emu.size].add_edge(origin_set_rev, the_emu,
-                                                                            reaction=the_rxn, 
-                                                                            direction='rvs',
-                                                                            symmetry_weight=symmetry_weight,
-                                                                            )
+                for direction, sets in (('fwd', origin_sets), ('rvs', origin_sets_rev)):
+                    for origin_set, weight in sets.items():
+                        if not _check_origin_size(origin_set, the_emu, the_rxn, direction):
+                            continue
+                        subnet = self.emu_network.subnetworks[the_emu.size]
+                        data = subnet.get_edge_data(origin_set, the_emu)
+                        # The same (origin set, target) can be revisited when an EMU
+                        # is queued more than once; the weight is already total, so a
+                        # second edge would double it.
+                        if data is not None and any(
+                                d['reaction'] == the_rxn and d['direction'] == direction
+                                for d in data.values()):
+                            continue
+                        subnet.add_edge(origin_set, the_emu, reaction=the_rxn,
+                                        direction=direction, weight=weight)
 
                 #Add a new subnetwork of size new_emu if necessary
                 for the_new_emu in new_emus:

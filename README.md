@@ -9,8 +9,9 @@ classical EMU (Elementary Metabolite Unit) ¹³C-MFA implementation with a
 transformer that predicts fluxes directly from mass-isotopomer distributions,
 so a fit that takes minutes of optimisation becomes a forward pass.
 
-Pretrained ensembles for *Issatchenkia orientalis* and *Saccharomyces cerevisiae*
-ship with the repository.
+Atom-mapped network models for *Issatchenkia orientalis*, *Saccharomyces cerevisiae*,
+*Rhodotorula toruloides*, *Escherichia coli* core and *Mus musculus* T cells ship
+with the repository, with pretrained ensembles for all except *R. toruloides*.
 
 ## Installation
 
@@ -28,11 +29,20 @@ pip install -e ".[dev]"     # + pytest, ruff, mypy
 pip install -e ".[docs]"    # + sphinx
 ```
 
+For the full stack, including the optional x3cflux MFA backend, use conda instead —
+x3cflux needs Ipopt, and pip's `cyipopt` is an sdist that wants Ipopt headers at
+build time, so it has to come from conda-forge:
+
+```bash
+conda env create -f environment.yml   # from the repo root: `-e .` resolves against cwd
+conda activate sigmaflux
+```
+
 Verify:
 
 ```bash
 python -c "import sigmaflux; print(sigmaflux.__version__)"
-sigmaflux-inspect models/pretrained/i_orientalis-v1.0.0.sfx
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.0.sfx
 ```
 
 If `sigmaflux-inspect` reports a format error, the LFS objects were not fetched —
@@ -50,7 +60,7 @@ network JSON required.
 import pandas as pd
 from sigmaflux.ai import load_model
 
-sf = load_model("models/pretrained/i_orientalis-v1.0.0.sfx")
+sf = load_model("models/pretrained/i_orientalis-v1.4.0.sfx")
 
 # What the model expects
 sf.expected_tracers()          # tracer names to use in df_L
@@ -83,7 +93,7 @@ to `df_L`/`df_Vm` to predict many samples in one call.
 To inspect a model without loading any weights (no torch required):
 
 ```bash
-sigmaflux-inspect models/pretrained/i_orientalis-v1.0.0.sfx --verify
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.0.sfx --verify
 ```
 
 Reads the name, version, output dimensions, tracers, and provenance — the

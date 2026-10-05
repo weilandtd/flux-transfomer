@@ -8,19 +8,13 @@ import re
 
 class Experiment(object):
     def __init__(self, mid_data, tracers, fluxes=None, enrichment = None):
-        """
-        
-        parameters
-        ----------
-        mid_data: MassIsotopomerData
-            Mass isotopomer data    
+        """Bundle MID data, tracers, and optional flux data for one labeling experiment.
 
-        tracers: list of Tracer
-
-        fluxes: FluxData
-
-        enrichment: list of float   
-
+        Args:
+            mid_data: MassIsotopomerData measured for this experiment.
+            tracers: Tracer objects applied in this experiment.
+            fluxes: optional measured FluxData for this experiment.
+            enrichment: per-tracer enrichment overrides; defaults to each tracer's own enrichment.
         """
 
         if not isinstance(mid_data, MassIsotopomerData):
@@ -62,7 +56,13 @@ class Experiment(object):
 
 class Tracer(object):
     def __init__(self, metabolite, enrichment, labeling, serum_enrichment=1.0):
-        """
+        """A labeled tracer applied to a specific metabolite.
+
+        Args:
+            metabolite: metabolite carrying the label.
+            enrichment: fraction of the metabolite pool that is labeled.
+            labeling: per-atom labeling pattern of the tracer.
+            serum_enrichment: enrichment of the tracer in the feeding serum.
         """
         self.metabolite = metabolite
         self.enrichment = enrichment
@@ -74,6 +74,14 @@ class Tracer(object):
 
 
 def get_tracer_inputs(experiment, boundaries, device=None, dtype=torch.float64):
+    """Build boundary MID input tensors for an experiment's tracers.
+
+    Args:
+        experiment: Experiment supplying the tracer definitions.
+        boundaries: EMU/OriginSet boundary objects to build inputs for.
+        device: torch device for the returned tensors.
+        dtype: torch dtype for the returned tensors.
+    """
     boundary_inputs = dict()
     for the_boundary in boundaries:
         # check if the boundary input is a tracer
@@ -108,21 +116,32 @@ def get_tracer_inputs(experiment, boundaries, device=None, dtype=torch.float64):
 
 
 def calculate_tracer_input(tracer_list, boundary, device=None, dtype = torch.float64):
+    """Combine a metabolite's tracers into one boundary MID tensor.
+
+    Args:
+        tracer_list: tracers applied to the boundary's metabolite.
+        boundary: EMU boundary the MID is computed for.
+        device: torch device for the returned tensor.
+        dtype: torch dtype for the returned tensor.
+    """
     tracer_mid = [0.0 for i in range(len(boundary.mid) + 1)]
     M0 = 1.0
     for tracer in tracer_list:
-        k = sum([tracer.labeling[m - 1] for m in boundary.ix])
+        k = sum([tracer.labeling[m - 1] for m in boundary.mid])
         tracer_mid[k] += tracer.enrichment
         M0 -= tracer.enrichment
     tracer_mid[0] += M0
     return torch.tensor(tracer_mid, dtype=dtype, device=device)
 
 
-def add_tracers_to_model(tracers, model, tracer_influx= 0.01, bound =20): 
-    """
-        :param tracers: list of cobra.metabolite 
-        :param model: MFA model
-        :param tracer_influx: µm/min (to be chosen to be minimally perturbative)
+def add_tracers_to_model(tracers, model, tracer_influx= 0.01, bound =20):
+    """Add input/infusion reactions for each tracer metabolite, carrying its atom mapping onto the new reactions.
+
+    Args:
+        tracers: tracer metabolites to add input/infusion reactions for.
+        model: cobra model to add the reactions to.
+        tracer_influx: fixed flux bound set on each infusion reaction.
+        bound: upper bound on each input reaction.
     """
 
     for tracer in tracers: 
@@ -141,12 +160,10 @@ def add_tracers_to_model(tracers, model, tracer_influx= 0.01, bound =20):
 
         # exchange_reaction  = model.reactions.get_by_id(f"EX_{tracer.id[:-2]}[v]")
 
-        # pattern = re.escape(tracer.id) + r'\s*(\([^)]+\))'
-        # match = re.search(pattern, exchange_reaction.annotation["atom_mapping"])
         for r in tracer.reactions: 
             if "atom_mapping" in r.annotation: 
                 annotation = r.annotation["atom_mapping"]
-                pattern = re.escape(tracer.id) + r'\s*(\([^)]+\))'
+                pattern = r'(?<![\w-])' + re.escape(tracer.id) + r'\s*(\([^)]+\))'
                 match = re.search(pattern, annotation)
                 if match: 
                     break

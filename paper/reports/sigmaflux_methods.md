@@ -318,8 +318,9 @@ provided: as ordinary tokens in the input set.** The network fuses them with the
 purely through attention (the token‑type embedding lets it tell them apart). There is *no* gate
 and *no* separate "known‑flux shortcut" in the current architecture — an earlier design had a
 soft fusion gate, but it was refactored out in favor of this simpler uniform‑token scheme. For
-*I. orientalis* the input is 196 labeling tokens (98 per tracer × 2 tracers, after Fisher
-selection) + 10 flux tokens.
+*I. orientalis*, a pre‑refactor run (§5, greedy‑trimmed selection, since removed) used 196
+labeling tokens (98 per tracer × 2 tracers) + 10 flux tokens; today's significance‑only selection
+(§5.4) keeps a different, larger token count.
 
 ### 4.3 Radial embeddings (and the scalar encoder)
 Categorical ids (compound, label, tracer, reaction, token‑type) are embedded with a **fixed,
@@ -376,46 +377,36 @@ $$ G_m = \mathrm{sym}\!\big(B_A^{\top}B_B\big), \qquad F_m = \tfrac{1}{\sigma^2}
 Spurious gradients differ across folds and cancel in expectation, so a genuinely uninformative
 token yields $G_m\approx 0$.
 
-### 5.3 D‑optimality and the two information scores
-The flux prior contributes a precision $F_0 = \mathrm{cov}(\theta)^{-1}$ (with a tiny ridge). The
-posterior precision after measuring a token set $S$ is
+### 5.3 The standalone information score
+The flux prior contributes a precision $F_0 = \mathrm{cov}(\theta)^{-1}$ (with a tiny ridge). Each
+token's standalone information — the information it would give *on its own* — is
 
-$$ P_S = F_0 + \frac{1}{\sigma^2}\sum_{m\in S} G_m . $$
+$$ \texttt{standalone\_nats} = \log\det(F_0 + \tfrac1{\sigma^2}G_m) - \log\det F_0 . $$
 
-**D‑optimality** maximizes $\log\det P_S$ — equivalently it *minimizes the volume of the posterior
-uncertainty ellipsoid* over the free fluxes. The $\log\det$ is what makes selection
-**redundancy‑aware**: a token whose sensitivity lies in directions already well‑covered adds
-almost nothing.
+An earlier version of this pipeline also ran a greedy D‑optimal forward selection on top (adding
+tokens by largest redundancy‑discounted marginal gain, stopping at a relative elbow) to prune
+`significant` down to a smaller non‑redundant `selected` subset. It was tried and found not to
+help, and has been removed: only the standalone significance test below decides what the model
+trains on.
 
-This yields two per‑token scores reported in `features.csv` (units: nats):
-
-* **`standalone_nats`** $= \log\det(F_0 + \tfrac1{\sigma^2}G_m) - \log\det F_0$ — the information
-  the token would give *on its own*.
-* **`marginal_nats`** $= \log\det(P_S + \tfrac1{\sigma^2}G_m) - \log\det P_S$ — its *incremental*
-  information given the tokens already selected (defined for selected tokens). Always
-  $\le$ standalone, because redundancy is discounted.
-
-### 5.4 Greedy selection, significance, and what the model trains on
+### 5.4 Significance, and what the model trains on
 * **Significance floor.** Because the empirical Fisher has finite‑sample bias, we calibrate a
   null by permuting $\theta$ against the tokens many times and taking the largest standalone gain
   achievable by chance. A token is **`significant`** iff its standalone information exceeds that
-  floor.
-* **Greedy D‑optimal forward selection.** Over the significant tokens, repeatedly add the token
-  with the largest marginal $\log\det$ gain; stop at a *relative elbow* (when the best new gain
-  falls below a fraction of the first gain) — i.e. once the resolvable flux directions are
-  covered. This produces the `rank` and the redundancy‑pruned **`selected`** set.
-* **`included` = the training gate.** A config switch `token_filter` decides which set the model
-  trains on: `significant` (default — every token that beat the null floor) or `selected` (the
-  smaller greedy D‑optimal subset). Training physically drops the non‑included MID rows. For *I.
-  orientalis*, $4536 \to 4500$ (extracellular dropped) $\to 196$ included labeling tokens.
+  floor — and, with no redundancy trimming, **`included` = `significant`** always.
+* **Exact vs. approximate.** `features.token_selection_method` picks how $G_m$ is estimated:
+  `fisher` cross‑fits it (bias‑corrected, costlier), `fisher_fast` uses a single‑shot fit (biased,
+  cheaper). Everything above runs identically either way.
 
 `features.csv` columns: `metabolite_id, isotopomer, included, significant, rank,
-standalone_nats, marginal_nats`.
+standalone_nats`.
 
-> **Why this is satisfying.** Stage 3 is classical optimal‑experiment design applied to choose
-> *which mass‑spec peaks matter*. It compresses the input ~20× while keeping the information that
-> constrains fluxes — and, as an interpretability check, the trained model's attention later turns
-> out to concentrate on exactly these Fisher‑informative metabolites.
+> **Why this is satisfying.** Stage 3 applies a significance test to choose *which mass‑spec peaks
+> carry real information* versus what chance alone produces, keeping only tokens that clear a
+> permutation‑calibrated floor — and, as an interpretability check, the trained model's attention
+> later turns out to concentrate on exactly these Fisher‑informative metabolites. (The ~20×
+> compression figure below was specific to the since‑removed greedy trim; significance‑only
+> selection keeps a larger, differently‑sized set.)
 
 ---
 
@@ -660,9 +651,9 @@ Two design choices do the heavy lifting:
    *automatically* satisfies $Sv=0$. The network never has to learn 343 balance equations; it only
    has to learn the 44 free coordinates the data can constrain.
 
-2. **Information‑guided inputs.** Fisher/D‑optimal selection feeds the network only the
-   measurements that actually carry flux information, compressing the input ~20× without losing
-   identifiability.
+2. **Information‑guided inputs.** Fisher‑significance selection feeds the network only the
+   measurements that actually carry flux information (beat the permutation‑null floor), without
+   losing identifiability.
 
 And the trained model behaves sensibly, which we verified post‑hoc on the attention maps:
 
@@ -681,12 +672,15 @@ correlations.
 
 ### Appendix — concrete dimensions for the *I. orientalis* run
 
+Token counts below are from a pre‑refactor run using the since‑removed greedy trim (§5.3); the
+significance‑only selection now in use keeps a different, larger labeling‑token count.
+
 | Quantity | Value |
 |---|---|
 | Reactions $n$ | 387 |
 | Metabolites (compound vocab) | 356 |
 | Raw MID features | 4536 → 4500 (extracellular dropped) |
-| Fisher‑selected labeling tokens | **196** (98 per tracer × 2 tracers) |
+| Fisher‑selected labeling tokens | **196** (98 per tracer × 2 tracers, pre‑refactor) |
 | Known‑flux (bypass) tokens | 10 |
 | Null‑space dimension $d$ | **44** = 10 identity DOF + 34 ICA free modes |
 | Reversibility outputs | 33 (variable) of 387 |

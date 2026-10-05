@@ -22,7 +22,9 @@ classifiers = [
 dependencies = [
     "torch>=2.0",
     "numpy>=1.24",
-    "pandas>=2.0",
+    # pandas 3 breaks pytables reads of the training HDF5 files, and this bound is
+    # also what constrains hopsy's unbounded pandas requirement.
+    "pandas>=2.0,<3",
     "scipy>=1.10",
     "cobra>=0.29",
     "networkx>=3.0",
@@ -30,6 +32,7 @@ dependencies = [
     "tqdm>=4.0",
     "matplotlib>=3.7",
     "seaborn>=0.13",
+    "matplotlib-venn>=1.1",
     "h5py>=3.8",
     "tables>=3.8",
     "pyyaml>=6.0",
@@ -45,13 +48,29 @@ sigmaflux-train           = "sigmaflux.pipeline.train_ai_model:cli"
 sigmaflux-workflow        = "sigmaflux.pipeline.run_training_workflow:cli"
 sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
 sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
+sigmaflux-benchmark       = "sigmaflux.pipeline.run_ai_benchmark:cli"
+sigmaflux-benchmark-mfa   = "sigmaflux.pipeline.mfa_entry:cli"
+sigmaflux-benchmark-uncertainty = "sigmaflux.pipeline.run_uncertainty_benchmark:cli"
+sigmaflux-check-mfa-model = "sigmaflux.pipeline.check_mfa_model:cli"
 sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
 sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
 sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
 sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy"]
+# hopsy is a test-only dependency, not a runtime one. cobra >= 0.32 ships
+# cobra/sampling/hopsy.py, which evaluates `hopsy.UniformCoordinateHitAndRunProposal` as a
+# default argument at class-definition time — so `import cobra` raises NameError when hopsy
+# is absent, before any of our code runs. Installing hopsy keeps the import alive. The
+# HopsySampler wrapper itself is devel-branch-only, which is why this is not a runtime dep.
+dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "hopsy"]
+# The second MFA backend. sigmaflux.x3cflux is imported lazily and its tests skip
+# when it is absent, so this stays optional. One install note pip cannot express:
+# x3cflux needs Ipopt, and pip's cyipopt is an sdist that wants Ipopt headers at
+# build time -- so cyipopt has to come from conda-forge, which is what
+# environment.yml does. Install with `conda env create -f environment.yml`, not with
+# this extra alone.
+x3cflux = ["x3cflux>=3.0.4"]
 docs = [
     "sphinx>=7.0",
     "sphinx-autodoc-typehints",

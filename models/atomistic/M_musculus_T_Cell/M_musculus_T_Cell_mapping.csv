@@ -1,0 +1,52 @@
+experimental_id,model_id
+3-Phosphoglyceric acid,3pg_c
+ADP,adp
+AICAR,aicar_c
+CDP,cdp_c
+Citric acid,cit
+Citrulline,citr__L
+D-Erythrose 4-phosphate,e4p_c
+D-Glucose,glc__D_c
+D-Glyceraldehyde 3-phosphate,g3p_c
+D-Ribose 5-phosphate,r5p_c
+Dihydroxyacetone phosphate,dhap_c
+"Fructose 1,6-bisphosphate",fdp_c
+Fructose 6-phosphate,f6p_c
+Fumaric acid,fum
+Glucose 6-phosphate,g6p_c
+Glycerol 3-phosphate,glyc3p_c
+Glycine,gly
+L-Alanine,ala__L
+L-Arginine,arg__L_c
+L-Asparagine,asn__L_c
+L-Aspartic acid,asp__L
+L-Cysteine,cys__L_c
+L-Glutamic acid,glu__L
+L-Glutamine,gln__L
+L-Histidine,his__L_c
+L-Isoleucine,ile__L_c
+L-Lactic acid,lac__L
+L-Leucine,leu__L_c
+L-Lysine,lys__L_c
+L-Malic acid,mal__L
+L-Methionine,met__L_c
+L-Phenylalanine,phe__L_c
+L-Proline,pro__L
+L-Serine,ser__L
+L-Threonine,thr__L_c
+L-Tryptophan,trp__L_c
+L-Tyrosine,tyr__L_c
+L-Valine,val__L_c
+Ornithine,orn
+Orotic acid,orot_c
+Oxoglutaric acid,akg
+Phosphoenolpyruvic acid,pep_c
+Pyruvic acid,pyr
+Sedoheptulose 7-phosphate,s7p_c
+Succinic acid,succ_m
+cis-Aconitic acid,acon_C_m
+dCDP,dcdp_c
+dCTP,dctp_c
+dGDP,dgdp_c
+dTDP,dtdp_c
+dUMP,dump_c

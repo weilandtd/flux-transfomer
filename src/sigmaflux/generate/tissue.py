@@ -9,9 +9,15 @@ def restrict_exchange(model, serum_concentration_data_file, tissue_cardiac_outpu
                       metabolite_mapping=None, lowest_bound=0.01, compartment="a", input=True):
     """Bound arterial input reactions by measured serum concentrations.
 
-    tissue_cardiac_output is in ml/min. metabolite_mapping is a two-column CSV
-    (experimental name, model metabolite id); it is organism-specific and has
-    no sensible default, so it must be supplied by the caller.
+    Args:
+        model: cobra model whose IN_ boundary reactions are bounded.
+        serum_concentration_data_file: CSV of measured serum concentrations (metabolite, mean, std).
+        tissue_cardiac_output: cardiac output scaling the concentrations into flux bounds, in ml/min.
+        metabolite_mapping: two-column CSV (experimental name, model metabolite id); organism-specific,
+            so it must be supplied by the caller.
+        lowest_bound: upper bound applied to input reactions not covered by serum_exchange_df.
+        compartment: compartment suffix of the IN_ reactions to bound.
+        input: whether this is an uptake (lower bound 0) rather than an output bound.
     """
     if metabolite_mapping is None:
         raise ValueError(
@@ -50,8 +56,13 @@ def restrict_exchange(model, serum_concentration_data_file, tissue_cardiac_outpu
 
     return model 
 
-# add _label to the end of all reaction and metabolite names in the model
-def label_model(model, label): 
+def label_model(model, label):
+    """Append label to every reaction/metabolite id (and atom_mapping references), except _a/_v compartment pools.
+
+    Args:
+        model: cobra model to relabel (copied, not modified in place).
+        label: suffix appended to each reaction/metabolite id.
+    """
     model_new = model.copy()
     for reaction in model_new.reactions: 
         reaction.id = reaction.id + label
@@ -69,13 +80,11 @@ def label_model(model, label):
 
 
 def get_tissue_model_from_model(model, bounds = [0,20]):
-    """This function takes a model and creates a new issue model from the given model .
+    """Replace each boundary exchange with arterial and venous input/exchange reaction pairs ([a]/[v] compartments), carrying over atom mappings.
 
     Args:
-        model ([type]): [description]
-
-    Returns:
-        [type]: [description]
+        model: cobra model to convert, modified in place.
+        bounds: [lower, upper] bounds applied to every new reaction.
     """
 
     reactions = []
@@ -122,7 +131,7 @@ def get_tissue_model_from_model(model, bounds = [0,20]):
 
         if "atom_mapping" in x.annotation: 
             annotation = x.annotation["atom_mapping"]
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(metabolite.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match:
                 atom_map = match.group(1)
@@ -148,13 +157,11 @@ def get_tissue_model_from_model(model, bounds = [0,20]):
 
 
 def get_organ_model_from_model(model, bounds = [0,20]):
-    """This function takes a model and creates a new issue model from the given model .
+    """Replace each boundary exchange with arterial and venous exchange reactions ([a]/[v] compartments, no separate input reaction), carrying over atom mappings.
 
     Args:
-        model ([type]): [description]
-
-    Returns:
-        [type]: [description]
+        model: cobra model to convert, modified in place.
+        bounds: [lower, upper] bounds applied to every new reaction.
     """
 
     reactions = []
@@ -195,7 +202,7 @@ def get_organ_model_from_model(model, bounds = [0,20]):
 
         if "atom_mapping" in x.annotation: 
             annotation = x.annotation["atom_mapping"]
-            pattern = re.escape(metabolite.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(metabolite.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match:
                 atom_map = match.group(1)
@@ -219,14 +226,26 @@ def get_organ_model_from_model(model, bounds = [0,20]):
     model.add_metabolites(metabolites)
     return model 
 
-# take in two cobra models and merge them together 
-def merge_models(model1, model2): 
+def merge_models(model1, model2):
+    """Merge model2's reactions and metabolites into model1, in place.
+
+    Args:
+        model1: cobra model merged into, modified in place.
+        model2: cobra model whose reactions/metabolites are added to model1.
+    """
     model1.add_reactions(model2.reactions)
     model1.add_metabolites(model2.metabolites)
     return model1
 
-# adds an input reaction into the arterial metabolite, atommaps and sets the bound 
-def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]): 
+def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]):
+    """Add an input pool feeding met, with its atom mapping copied from an existing mapped reaction of met.
+
+    Args:
+        model: cobra model to add the reactions to, modified in place.
+        met: metabolite to feed with the new input reaction.
+        suffix: suffix appended to the id of the met-consuming reaction.
+        bounds: [lower, upper] bounds applied to both new reactions.
+    """
 
     input_metabolite = Metabolite(f"{met.id}_input")
     rxn = Reaction(f"{met.id}_{suffix}")
@@ -242,7 +261,7 @@ def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]):
     for r in met.reactions: 
         if "atom_mapping" in r.annotation: 
             annotation = r.annotation["atom_mapping"]
-            pattern = re.escape(met.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(met.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match: 
                 break
@@ -257,7 +276,15 @@ def add_input_reaction(model, met, suffix = "IN", bounds = [0,20]):
     model.add_metabolites(input_metabolite)
     return model
 
-def add_output_reaction(model, met, suffix = "IN", bounds = [0,20]): 
+def add_output_reaction(model, met, suffix = "IN", bounds = [0,20]):
+    """Add an output pool draining met, with its atom mapping copied from an existing mapped reaction of met.
+
+    Args:
+        model: cobra model to add the reactions to, modified in place.
+        met: metabolite to drain with the new output reaction.
+        suffix: suffix appended to the id of the met-producing reaction.
+        bounds: [lower, upper] bounds applied to both new reactions.
+    """
     output_metabolite = Metabolite(f"{met.id}_output")
     rxn = Reaction(f"{met.id}_{suffix}")
     output_rxn = Reaction(f"OUT_{met.id}_{suffix}")
@@ -270,7 +297,7 @@ def add_output_reaction(model, met, suffix = "IN", bounds = [0,20]):
     for r in met.reactions: 
         if "atom_mapping" in r.annotation: 
             annotation = r.annotation["atom_mapping"]
-            pattern = re.escape(met.id) + r'\s*(\([^)]+\))'
+            pattern = r'(?<![\w-])' + re.escape(met.id) + r'\s*(\([^)]+\))'
             match = re.search(pattern, annotation)
             if match: 
                 break

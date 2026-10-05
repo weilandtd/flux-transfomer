@@ -9,23 +9,11 @@ def mid_df_to_mass_isotopomer_table(
     df_L: pd.DataFrame,
     tracer_name: str | None = None,
 ) -> pd.DataFrame:
-    """
-    Convert df_L from read_xlsx_mid_data to a MassIsotopomerData-ready table.
+    """Convert df_L from read_xlsx_mid_data to a MassIsotopomerData-ready table [id, mid, mean, std], aggregating Fraction across bio-replicates.
 
-    Parameters
-    ----------
-    df_L : pd.DataFrame
-        Output of read_xlsx_mid_data.
-        Columns: [Tracer Name, Sample, Metabolite ID, Isotopomer, Fraction].
-    tracer_name : str or None
-        If given, filter to rows whose 'Tracer Name' matches this value.
-
-    Returns
-    -------
-    pd.DataFrame with columns [id, mid, mean, std].
-        id  — model metabolite ID
-        mid — integer isotopomer index (0, 1, 2, …)
-        mean/std — aggregated across bio-replicates (Sample dimension)
+    Args:
+        df_L: long-format MID table from read_xlsx_mid_data.
+        tracer_name: if given, filters to that Tracer Name.
     """
     df = df_L if tracer_name is None else df_L[df_L['Tracer Name'] == tracer_name]
     df = df.copy()
@@ -43,23 +31,12 @@ def extflux_df_to_flux_table(
     df_Vm: pd.DataFrame,
     df_err: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """
-    Convert df_Vm (and optional df_err) from read_xlsx_extflux to a FluxData-ready table.
+    """Convert df_Vm (and optional df_err) from read_xlsx_extflux to a FluxData-ready table [reaction, mean, std].
 
-    Parameters
-    ----------
-    df_Vm : pd.DataFrame
-        Output of read_xlsx_extflux.
-        Columns: [Sample, Flux Name, Value].
-    df_err : pd.DataFrame or None
-        Optional error DataFrame with the same structure as df_Vm.
-        When provided, its Value column becomes the std column.
-
-    Returns
-    -------
-    pd.DataFrame with columns [reaction, mean, std].
-        reaction — model reaction ID
-        mean/std — flux value and its uncertainty
+    Args:
+        df_Vm: flux value table from read_xlsx_extflux.
+        df_err: flux error table from read_xlsx_extflux; if given, its Value column
+            supplies std instead of the sample std.
     """
     if df_err is not None:
         merged = df_Vm.merge(

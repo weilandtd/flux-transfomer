@@ -39,8 +39,6 @@ def main():
                     help='features.csv (default: <npz dir>/../features.csv)')
     ap.add_argument('--out', default=None,
                     help='Output SVG (default: <npz dir>/fisher_attention.svg)')
-    ap.add_argument('--fisher-col', default='standalone_nats',
-                    choices=['standalone_nats', 'marginal_nats'])
     args = ap.parse_args()
 
     npz_dir = os.path.dirname(args.npz)
@@ -60,8 +58,8 @@ def main():
 
     # ── Fisher info per (met, iso) ─────────────────────────────────────────────
     f = pd.read_csv(feat_path)
-    fish = {(strip_compartment(r.metabolite_id), r.isotopomer): float(getattr(r, args.fisher_col))
-            for r in f.itertuples() if not np.isnan(getattr(r, args.fisher_col))}
+    fish = {(strip_compartment(r.metabolite_id), r.isotopomer): float(r.standalone_nats)
+            for r in f.itertuples() if not np.isnan(r.standalone_nats)}
 
     keys = [k for k in tok if k in fish]
     t = pd.DataFrame({'met': [k[0] for k in keys], 'iso': [k[1] for k in keys],
@@ -72,7 +70,7 @@ def main():
 
     r_tok, p_tok = spearmanr(t['attn'], t['fisher'])
     r_met, p_met = spearmanr(m['attn'], m['fisher'])
-    print(f"matched: {len(t)} tokens, {len(m)} metabolites  (Fisher col: {args.fisher_col})")
+    print(f"matched: {len(t)} tokens, {len(m)} metabolites")
     print(f"per-token      attn vs Fisher: Spearman r={r_tok:+.3f} p={p_tok:.1e}")
     print(f"per-metabolite attn vs Fisher: Spearman r={r_met:+.3f} p={p_met:.1e}")
 

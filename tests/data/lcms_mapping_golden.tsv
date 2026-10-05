@@ -1,0 +1,698 @@
+I_orientalis	2-Isopropylmalic acid	3c3hmp_c
+I_orientalis	3-Hydroxy-3-methylglutaryl-CoA	hmgcoa_c
+I_orientalis	3-Phosphoglyceric acid	3pg_c
+I_orientalis	3-dehydroshikimate	3dhsk_c
+I_orientalis	5-Methyltetrahydrofolic acid	5mthf_c
+I_orientalis	ADP	adp_c
+I_orientalis	ADP	adp_m
+I_orientalis	AICAR	aicar_c
+I_orientalis	Acetoacetyl-CoA	aacoa_c
+I_orientalis	Acetyl-CoA	accoa_c
+I_orientalis	Acetyl-CoA	accoa_m
+I_orientalis	Adenosine	adn_c
+I_orientalis	CDP	cdp_c
+I_orientalis	Citric acid	cit_c
+I_orientalis	Citric acid	cit_d1
+I_orientalis	Citric acid	cit_d2
+I_orientalis	Citric acid	cit_i
+I_orientalis	Citric acid	cit_m
+I_orientalis	Citrulline	citr__L_c
+I_orientalis	Citrulline	citr__L_d1
+I_orientalis	Citrulline	citr__L_d2
+I_orientalis	Citrulline	citr__L_i
+I_orientalis	Coenzyme A	coa_c
+I_orientalis	Coenzyme A	coa_m
+I_orientalis	D-Erythrose 4-phosphate	e4p_c
+I_orientalis	D-Glucose	glc__D_c
+I_orientalis	D-Glucose	glc__D_e
+I_orientalis	D-Glyceraldehyde 3-phosphate	g3p_c
+I_orientalis	D-Glyceraldehyde 3-phosphate	g3p_d1
+I_orientalis	D-Glyceraldehyde 3-phosphate	g3p_d2
+I_orientalis	D-Glyceraldehyde 3-phosphate	g3p_i
+I_orientalis	D-Ribose 5-phosphate	r5p_c
+I_orientalis	D-Ribose 5-phosphate	r5p_d1
+I_orientalis	D-Ribose 5-phosphate	r5p_d2
+I_orientalis	D-Ribose 5-phosphate	r5p_i
+I_orientalis	Dihydroxyacetone phosphate	dhap_c
+I_orientalis	Dihydroxyacetone phosphate	dhap_d1
+I_orientalis	Dihydroxyacetone phosphate	dhap_d2
+I_orientalis	Dihydroxyacetone phosphate	dhap_i
+I_orientalis	FAD	fad_m
+I_orientalis	Fructose 1,6-bisphosphate	fdp_c
+I_orientalis	Fructose 1,6-bisphosphate	fdp_d1
+I_orientalis	Fructose 1,6-bisphosphate	fdp_d2
+I_orientalis	Fructose 1,6-bisphosphate	fdp_i
+I_orientalis	Fructose 6-phosphate	f6p_c
+I_orientalis	Fumaric acid	fum_c
+I_orientalis	Fumaric acid	fum_d1
+I_orientalis	Fumaric acid	fum_d2
+I_orientalis	Fumaric acid	fum_i
+I_orientalis	Fumaric acid	fum_m
+I_orientalis	Gamma-Aminobutyric acid	4abut_c
+I_orientalis	Glucose 1-phosphate	g1p_c
+I_orientalis	Glucose 6-phosphate	g6p_c
+I_orientalis	Glucose 6-phosphate	g6p_d1
+I_orientalis	Glucose 6-phosphate	g6p_d2
+I_orientalis	Glucose 6-phosphate	g6p_i
+I_orientalis	Glutathione	gthrd_c
+I_orientalis	Glycerol	glyc_c
+I_orientalis	Glycerol	glyc_e
+I_orientalis	Glycerol 3-phosphate	glyc3p_c
+I_orientalis	Glycerol 3-phosphate	glyc3p_d1
+I_orientalis	Glycerol 3-phosphate	glyc3p_d2
+I_orientalis	Glycerol 3-phosphate	glyc3p_i
+I_orientalis	Glycine	gly_c
+I_orientalis	Glycine	gly_d1
+I_orientalis	Glycine	gly_d2
+I_orientalis	Glycine	gly_i
+I_orientalis	Glycine	gly_m
+I_orientalis	Glyoxylic acid	glx_c
+I_orientalis	Homocysteine	hcys__L_c
+I_orientalis	L-Alanine	ala__L_c
+I_orientalis	L-Alanine	ala__L_d1
+I_orientalis	L-Alanine	ala__L_d2
+I_orientalis	L-Alanine	ala__L_i
+I_orientalis	L-Alanine	ala__L_m
+I_orientalis	L-Arginine	arg__L_c
+I_orientalis	L-Arginine	arg__L_d1
+I_orientalis	L-Arginine	arg__L_d2
+I_orientalis	L-Arginine	arg__L_i
+I_orientalis	L-Asparagine	asn__L_c
+I_orientalis	L-Aspartic acid	asp__L_c
+I_orientalis	L-Aspartic acid	asp__L_d1
+I_orientalis	L-Aspartic acid	asp__L_d2
+I_orientalis	L-Aspartic acid	asp__L_i
+I_orientalis	L-Aspartic acid	asp__L_m
+I_orientalis	L-Cystathionine	cyst__L_c
+I_orientalis	L-Cysteine	cys__L_c
+I_orientalis	L-Glutamic acid	glu__L_c
+I_orientalis	L-Glutamic acid	glu__L_d1
+I_orientalis	L-Glutamic acid	glu__L_d2
+I_orientalis	L-Glutamic acid	glu__L_i
+I_orientalis	L-Glutamic acid	glu__L_m
+I_orientalis	L-Glutamine	gln__L_c
+I_orientalis	L-Glutamine	gln__L_d1
+I_orientalis	L-Glutamine	gln__L_d2
+I_orientalis	L-Glutamine	gln__L_i
+I_orientalis	L-Histidine	his__L_c
+I_orientalis	L-Histidine	his__L_d1
+I_orientalis	L-Histidine	his__L_d2
+I_orientalis	L-Histidine	his__L_i
+I_orientalis	L-Histidinol	histd_c
+I_orientalis	L-Homoserine	hom__L_c
+I_orientalis	L-Isoleucine	ile__L_c
+I_orientalis	L-Isoleucine	ile__L_d1
+I_orientalis	L-Isoleucine	ile__L_d2
+I_orientalis	L-Isoleucine	ile__L_i
+I_orientalis	L-Isoleucine	ile__L_m
+I_orientalis	L-Kynurenine	Lkynr_c
+I_orientalis	L-Leucine	leu__L_c
+I_orientalis	L-Leucine	leu__L_d1
+I_orientalis	L-Leucine	leu__L_d2
+I_orientalis	L-Leucine	leu__L_i
+I_orientalis	L-Lysine	lys__L_c
+I_orientalis	L-Lysine	lys__L_d1
+I_orientalis	L-Lysine	lys__L_d2
+I_orientalis	L-Lysine	lys__L_i
+I_orientalis	L-Malic acid	mal__L_c
+I_orientalis	L-Malic acid	mal__L_d1
+I_orientalis	L-Malic acid	mal__L_d2
+I_orientalis	L-Malic acid	mal__L_i
+I_orientalis	L-Malic acid	mal__L_m
+I_orientalis	L-Methionine	met__L_c
+I_orientalis	L-Methionine	met__L_d1
+I_orientalis	L-Methionine	met__L_d2
+I_orientalis	L-Methionine	met__L_i
+I_orientalis	L-Phenylalanine	phe__L_c
+I_orientalis	L-Phenylalanine	phe__L_d1
+I_orientalis	L-Phenylalanine	phe__L_d2
+I_orientalis	L-Phenylalanine	phe__L_i
+I_orientalis	L-Proline	pro__L_c
+I_orientalis	L-Proline	pro__L_d1
+I_orientalis	L-Proline	pro__L_d2
+I_orientalis	L-Proline	pro__L_i
+I_orientalis	L-Proline	pro__L_m
+I_orientalis	L-Serine	ser__L_c
+I_orientalis	L-Serine	ser__L_d1
+I_orientalis	L-Serine	ser__L_d2
+I_orientalis	L-Serine	ser__L_i
+I_orientalis	L-Serine	ser__L_m
+I_orientalis	L-Threonine	thr__L_c
+I_orientalis	L-Threonine	thr__L_d1
+I_orientalis	L-Threonine	thr__L_d2
+I_orientalis	L-Threonine	thr__L_i
+I_orientalis	L-Threonine	thr__L_m
+I_orientalis	L-Tryptophan	trp__L_c
+I_orientalis	L-Tryptophan	trp__L_d1
+I_orientalis	L-Tryptophan	trp__L_d2
+I_orientalis	L-Tryptophan	trp__L_i
+I_orientalis	L-Tyrosine	tyr__L_c
+I_orientalis	L-Tyrosine	tyr__L_d1
+I_orientalis	L-Tyrosine	tyr__L_d2
+I_orientalis	L-Tyrosine	tyr__L_i
+I_orientalis	L-Valine	val__L_c
+I_orientalis	L-Valine	val__L_d1
+I_orientalis	L-Valine	val__L_d2
+I_orientalis	L-Valine	val__L_i
+I_orientalis	L-Valine	val__L_m
+I_orientalis	Linoleic acid	linoea_c
+I_orientalis	Mannose 6-phosphate	man6p_c
+I_orientalis	NAD	nad_c
+I_orientalis	NAD	nad_m
+I_orientalis	NADH	nadh_c
+I_orientalis	NADH	nadh_m
+I_orientalis	NADP	nadp_c
+I_orientalis	NADP	nadp_m
+I_orientalis	NADPH	nadph_c
+I_orientalis	NADPH	nadph_m
+I_orientalis	Ornithine	orn_c
+I_orientalis	Ornithine	orn_d1
+I_orientalis	Ornithine	orn_d2
+I_orientalis	Ornithine	orn_i
+I_orientalis	Ornithine	orn_m
+I_orientalis	Orotic acid	orot_c
+I_orientalis	Oxoglutaric acid	akg_c
+I_orientalis	Oxoglutaric acid	akg_d1
+I_orientalis	Oxoglutaric acid	akg_d2
+I_orientalis	Oxoglutaric acid	akg_i
+I_orientalis	Oxoglutaric acid	akg_m
+I_orientalis	Phosphoenolpyruvic acid	pep_c
+I_orientalis	Phosphoenolpyruvic acid	pep_d1
+I_orientalis	Phosphoenolpyruvic acid	pep_d2
+I_orientalis	Phosphoenolpyruvic acid	pep_i
+I_orientalis	Propionyl-CoA	ppcoa_c
+I_orientalis	Propionyl-CoA	ppcoa_m
+I_orientalis	Pyruvic acid	pyr_c
+I_orientalis	Pyruvic acid	pyr_d1
+I_orientalis	Pyruvic acid	pyr_d2
+I_orientalis	Pyruvic acid	pyr_i
+I_orientalis	Pyruvic acid	pyr_m
+I_orientalis	Sedoheptulose 7-phosphate	s7p_c
+I_orientalis	Sedoheptulose 7-phosphate	s7p_d1
+I_orientalis	Sedoheptulose 7-phosphate	s7p_d2
+I_orientalis	Sedoheptulose 7-phosphate	s7p_i
+I_orientalis	Shikimic acid	skm_c
+I_orientalis	Succinic acid	succ_c
+I_orientalis	Succinic acid	succ_d1
+I_orientalis	Succinic acid	succ_d2
+I_orientalis	Succinic acid	succ_e
+I_orientalis	Succinic acid	succ_i
+I_orientalis	Succinic acid	succ_m
+I_orientalis	Trehalose	tre_c
+I_orientalis	cis-Aconitic acid	acon_C_m
+I_orientalis	dCDP	dcdp_c
+I_orientalis	dCTP	dctp_c
+I_orientalis	dGDP	dgdp_c
+I_orientalis	dTDP	dtdp_c
+I_orientalis	dUMP	dump_c
+I_orientalis	myo-Inositol	inost_c
+S_cerevisiae	2-Isopropylmalic acid	3c3hmp_c
+S_cerevisiae	3-Hydroxy-3-methylglutaryl-CoA	hmgcoa_c
+S_cerevisiae	3-Phosphoglyceric acid	3pg_c
+S_cerevisiae	3-dehydroshikimate	3dhsk_c
+S_cerevisiae	5-Methyltetrahydrofolic acid	5mthf_c
+S_cerevisiae	ADP	adp_c
+S_cerevisiae	ADP	adp_m
+S_cerevisiae	AICAR	aicar_c
+S_cerevisiae	Acetoacetyl-CoA	aacoa_c
+S_cerevisiae	Acetyl-CoA	accoa_c
+S_cerevisiae	Acetyl-CoA	accoa_m
+S_cerevisiae	Adenosine	adn_c
+S_cerevisiae	CDP	cdp_c
+S_cerevisiae	Citric acid	cit_c
+S_cerevisiae	Citric acid	cit_m
+S_cerevisiae	Citrulline	citr__L_c
+S_cerevisiae	Coenzyme A	coa_c
+S_cerevisiae	Coenzyme A	coa_m
+S_cerevisiae	D-Erythrose 4-phosphate	e4p_c
+S_cerevisiae	D-Glucose	glc__D_c
+S_cerevisiae	D-Glucose	glc__D_e
+S_cerevisiae	D-Glyceraldehyde 3-phosphate	g3p_c
+S_cerevisiae	D-Ribose 5-phosphate	r5p_c
+S_cerevisiae	Dihydroxyacetone phosphate	dhap_c
+S_cerevisiae	Dihydroxyacetone phosphate	dhap_m
+S_cerevisiae	FAD	fad_c
+S_cerevisiae	FAD	fad_m
+S_cerevisiae	Fructose 1,6-bisphosphate	fdp_c
+S_cerevisiae	Fructose 6-phosphate	f6p_c
+S_cerevisiae	Fumaric acid	fum_c
+S_cerevisiae	Fumaric acid	fum_m
+S_cerevisiae	Gamma-Aminobutyric acid	4abut_c
+S_cerevisiae	Glucose 1-phosphate	g1p_c
+S_cerevisiae	Glucose 6-phosphate	g6p_c
+S_cerevisiae	Glutathione	gthrd_c
+S_cerevisiae	Glycerol	glyc_c
+S_cerevisiae	Glycerol	glyc_e
+S_cerevisiae	Glycerol 3-phosphate	glyc3p_c
+S_cerevisiae	Glycerol 3-phosphate	glyc3p_m
+S_cerevisiae	Glycine	gly_c
+S_cerevisiae	Glycine	gly_m
+S_cerevisiae	Glyoxylic acid	glx_c
+S_cerevisiae	Homocysteine	hcys__L_c
+S_cerevisiae	L-Alanine	ala__L_c
+S_cerevisiae	L-Alanine	ala__L_m
+S_cerevisiae	L-Arginine	arg__L_c
+S_cerevisiae	L-Asparagine	asn__L_c
+S_cerevisiae	L-Aspartic acid	asp__L_c
+S_cerevisiae	L-Aspartic acid	asp__L_m
+S_cerevisiae	L-Cystathionine	cyst__L_c
+S_cerevisiae	L-Cysteine	cys__L_c
+S_cerevisiae	L-Glutamic acid	glu__L_c
+S_cerevisiae	L-Glutamic acid	glu__L_m
+S_cerevisiae	L-Glutamine	gln__L_c
+S_cerevisiae	L-Histidine	his__L_c
+S_cerevisiae	L-Histidinol	histd_c
+S_cerevisiae	L-Homoserine	hom__L_c
+S_cerevisiae	L-Isoleucine	ile__L_c
+S_cerevisiae	L-Isoleucine	ile__L_m
+S_cerevisiae	L-Kynurenine	Lkynr_c
+S_cerevisiae	L-Leucine	leu__L_c
+S_cerevisiae	L-Lysine	lys__L_c
+S_cerevisiae	L-Malic acid	mal__L_c
+S_cerevisiae	L-Malic acid	mal__L_m
+S_cerevisiae	L-Methionine	met__L_c
+S_cerevisiae	L-Phenylalanine	phe__L_c
+S_cerevisiae	L-Proline	pro__L_c
+S_cerevisiae	L-Proline	pro__L_m
+S_cerevisiae	L-Serine	ser__L_c
+S_cerevisiae	L-Serine	ser__L_m
+S_cerevisiae	L-Threonine	thr__L_c
+S_cerevisiae	L-Threonine	thr__L_m
+S_cerevisiae	L-Tryptophan	trp__L_c
+S_cerevisiae	L-Tyrosine	tyr__L_c
+S_cerevisiae	L-Valine	val__L_c
+S_cerevisiae	L-Valine	val__L_m
+S_cerevisiae	Mannose 6-phosphate	man6p_c
+S_cerevisiae	NAD	nad_c
+S_cerevisiae	NAD	nad_m
+S_cerevisiae	NADH	nadh_c
+S_cerevisiae	NADH	nadh_m
+S_cerevisiae	NADP	nadp_c
+S_cerevisiae	NADP	nadp_m
+S_cerevisiae	NADPH	nadph_c
+S_cerevisiae	NADPH	nadph_m
+S_cerevisiae	Ornithine	orn_c
+S_cerevisiae	Ornithine	orn_m
+S_cerevisiae	Orotic acid	orot_c
+S_cerevisiae	Oxoglutaric acid	akg_c
+S_cerevisiae	Oxoglutaric acid	akg_m
+S_cerevisiae	Phosphoenolpyruvic acid	pep_c
+S_cerevisiae	Pyruvic acid	pyr_c
+S_cerevisiae	Pyruvic acid	pyr_m
+S_cerevisiae	Sedoheptulose 7-phosphate	s7p_c
+S_cerevisiae	Shikimic acid	skm_c
+S_cerevisiae	Succinic acid	succ_c
+S_cerevisiae	Succinic acid	succ_m
+S_cerevisiae	Trehalose	tre_c
+S_cerevisiae	cis-Aconitic acid	acon_C_m
+S_cerevisiae	dCDP	dcdp_c
+S_cerevisiae	dCTP	dctp_c
+S_cerevisiae	dGDP	dgdp_c
+S_cerevisiae	dTDP	dtdp_c
+S_cerevisiae	dUMP	dump_c
+S_cerevisiae	myo-Inositol	inost_c
+R_toruloides	2-Isopropylmalic acid	3c3hmp_c
+R_toruloides	3-Hydroxy-3-methylglutaryl-CoA	hmgcoa_c
+R_toruloides	3-Phosphoglyceric acid	3pg_c
+R_toruloides	3-dehydroshikimate	3dhsk_c
+R_toruloides	5-Methyltetrahydrofolic acid	5mthf_c
+R_toruloides	ADP	adp_c
+R_toruloides	ADP	adp_m
+R_toruloides	AICAR	aicar_c
+R_toruloides	Acetoacetyl-CoA	aacoa_c
+R_toruloides	Acetyl-CoA	accoa_c
+R_toruloides	Acetyl-CoA	accoa_m
+R_toruloides	Acetylphosphate	actp_c
+R_toruloides	Adenosine	adn_c
+R_toruloides	CDP	cdp_c
+R_toruloides	Citric acid	cit_c
+R_toruloides	Citric acid	cit_m
+R_toruloides	Citrulline	citr__L_c
+R_toruloides	Coenzyme A	coa_c
+R_toruloides	Coenzyme A	coa_m
+R_toruloides	D-Erythrose 4-phosphate	e4p_c
+R_toruloides	D-Glucose	glc__D_c
+R_toruloides	D-Glucose	glc__D_e
+R_toruloides	D-Glyceraldehyde 3-phosphate	g3p_c
+R_toruloides	D-Ribose 5-phosphate	r5p_c
+R_toruloides	Dihydroxyacetone phosphate	dhap_c
+R_toruloides	Dihydroxyacetone phosphate	dhap_m
+R_toruloides	FAD	fad_c
+R_toruloides	FAD	fad_m
+R_toruloides	Fructose 1,6-bisphosphate	fdp_c
+R_toruloides	Fructose 6-phosphate	f6p_c
+R_toruloides	Fumaric acid	fum_c
+R_toruloides	Fumaric acid	fum_m
+R_toruloides	Gamma-Aminobutyric acid	4abut_c
+R_toruloides	Gamma-Aminobutyric acid	4abut_m
+R_toruloides	Glucose 1-phosphate	g1p_c
+R_toruloides	Glucose 6-phosphate	g6p_c
+R_toruloides	Glutathione	gthrd_c
+R_toruloides	Glycerol 3-phosphate	glyc3p_c
+R_toruloides	Glycerol 3-phosphate	glyc3p_m
+R_toruloides	Glycine	gly_c
+R_toruloides	Glycine	gly_m
+R_toruloides	Glyoxylic acid	glx_c
+R_toruloides	Homocysteine	hcys__L_c
+R_toruloides	L-Alanine	ala__L_c
+R_toruloides	L-Alanine	ala__L_m
+R_toruloides	L-Arginine	arg__L_c
+R_toruloides	L-Asparagine	asn__L_c
+R_toruloides	L-Aspartic acid	asp__L_c
+R_toruloides	L-Aspartic acid	asp__L_m
+R_toruloides	L-Cystathionine	cyst__L_c
+R_toruloides	L-Cysteine	cys__L_c
+R_toruloides	L-Glutamic acid	glu__L_c
+R_toruloides	L-Glutamic acid	glu__L_m
+R_toruloides	L-Glutamine	gln__L_c
+R_toruloides	L-Histidine	his__L_c
+R_toruloides	L-Histidinol	histd_c
+R_toruloides	L-Homoserine	hom__L_c
+R_toruloides	L-Isoleucine	ile__L_c
+R_toruloides	L-Isoleucine	ile__L_m
+R_toruloides	L-Kynurenine	Lkynr_c
+R_toruloides	L-Leucine	leu__L_c
+R_toruloides	L-Lysine	lys__L_c
+R_toruloides	L-Malic acid	mal__L_c
+R_toruloides	L-Malic acid	mal__L_m
+R_toruloides	L-Methionine	met__L_c
+R_toruloides	L-Phenylalanine	phe__L_c
+R_toruloides	L-Proline	pro__L_c
+R_toruloides	L-Proline	pro__L_m
+R_toruloides	L-Serine	ser__L_c
+R_toruloides	L-Serine	ser__L_m
+R_toruloides	L-Threonine	thr__L_c
+R_toruloides	L-Threonine	thr__L_m
+R_toruloides	L-Tryptophan	trp__L_c
+R_toruloides	L-Tyrosine	tyr__L_c
+R_toruloides	L-Valine	val__L_c
+R_toruloides	L-Valine	val__L_m
+R_toruloides	Mannose 6-phosphate	man6p_c
+R_toruloides	NAD	nad_c
+R_toruloides	NAD	nad_m
+R_toruloides	NADH	nadh_c
+R_toruloides	NADH	nadh_m
+R_toruloides	NADP	nadp_c
+R_toruloides	NADP	nadp_m
+R_toruloides	NADPH	nadph_c
+R_toruloides	NADPH	nadph_m
+R_toruloides	Ornithine	orn_c
+R_toruloides	Ornithine	orn_m
+R_toruloides	Orotic acid	orot_c
+R_toruloides	Oxoglutaric acid	akg_c
+R_toruloides	Oxoglutaric acid	akg_m
+R_toruloides	Phosphoenolpyruvic acid	pep_c
+R_toruloides	Pyruvic acid	pyr_c
+R_toruloides	Pyruvic acid	pyr_m
+R_toruloides	Sedoheptulose 7-phosphate	s7p_c
+R_toruloides	Shikimic acid	skm_c
+R_toruloides	Succinic acid	succ_c
+R_toruloides	Succinic acid	succ_m
+R_toruloides	Trehalose	tre_c
+R_toruloides	cis-Aconitic acid	acon_C_m
+R_toruloides	dCDP	dcdp_c
+R_toruloides	dCTP	dctp_c
+R_toruloides	dGDP	dgdp_c
+R_toruloides	dTDP	dtdp_c
+R_toruloides	dUMP	dump_c
+R_toruloides	myo-Inositol	inost_c
+M_musculus_T_Cell	3-Phosphoglyceric acid	3pg_c
+M_musculus_T_Cell	ADP	adp_c
+M_musculus_T_Cell	ADP	adp_m
+M_musculus_T_Cell	AICAR	aicar_c
+M_musculus_T_Cell	Acetyl-CoA	accoa_c
+M_musculus_T_Cell	Acetyl-CoA	accoa_m
+M_musculus_T_Cell	CDP	cdp_c
+M_musculus_T_Cell	Citric acid	cit_c
+M_musculus_T_Cell	Citric acid	cit_m
+M_musculus_T_Cell	Citrulline	citr__L_c
+M_musculus_T_Cell	Citrulline	citr__L_m
+M_musculus_T_Cell	Coenzyme A	coa_c
+M_musculus_T_Cell	Coenzyme A	coa_m
+M_musculus_T_Cell	D-Erythrose 4-phosphate	e4p_c
+M_musculus_T_Cell	D-Glucose	glc__D_c
+M_musculus_T_Cell	D-Glucose	glc__D_e
+M_musculus_T_Cell	D-Glyceraldehyde 3-phosphate	g3p_c
+M_musculus_T_Cell	D-Ribose 5-phosphate	r5p_c
+M_musculus_T_Cell	Dihydroxyacetone phosphate	dhap_c
+M_musculus_T_Cell	Fructose 1,6-bisphosphate	fdp_c
+M_musculus_T_Cell	Fructose 6-phosphate	f6p_c
+M_musculus_T_Cell	Fumaric acid	fum_c
+M_musculus_T_Cell	Fumaric acid	fum_m
+M_musculus_T_Cell	Glucose 6-phosphate	g6p_c
+M_musculus_T_Cell	Glycerol 3-phosphate	glyc3p_c
+M_musculus_T_Cell	Glycine	gly_c
+M_musculus_T_Cell	Glycine	gly_e
+M_musculus_T_Cell	Glycine	gly_m
+M_musculus_T_Cell	L-Alanine	ala__L_c
+M_musculus_T_Cell	L-Alanine	ala__L_e
+M_musculus_T_Cell	L-Alanine	ala__L_m
+M_musculus_T_Cell	L-Arginine	arg__L_c
+M_musculus_T_Cell	L-Arginine	arg__L_e
+M_musculus_T_Cell	L-Asparagine	asn__L_c
+M_musculus_T_Cell	L-Asparagine	asn__L_e
+M_musculus_T_Cell	L-Aspartic acid	asp__L_c
+M_musculus_T_Cell	L-Aspartic acid	asp__L_e
+M_musculus_T_Cell	L-Aspartic acid	asp__L_m
+M_musculus_T_Cell	L-Cysteine	cys__L_c
+M_musculus_T_Cell	L-Cysteine	cys__L_e
+M_musculus_T_Cell	L-Glutamic acid	glu__L_c
+M_musculus_T_Cell	L-Glutamic acid	glu__L_e
+M_musculus_T_Cell	L-Glutamic acid	glu__L_m
+M_musculus_T_Cell	L-Glutamine	gln__L_c
+M_musculus_T_Cell	L-Glutamine	gln__L_e
+M_musculus_T_Cell	L-Glutamine	gln__L_m
+M_musculus_T_Cell	L-Histidine	his__L_c
+M_musculus_T_Cell	L-Histidine	his__L_e
+M_musculus_T_Cell	L-Isoleucine	ile__L_c
+M_musculus_T_Cell	L-Isoleucine	ile__L_e
+M_musculus_T_Cell	L-Lactic acid	lac__L_c
+M_musculus_T_Cell	L-Lactic acid	lac__L_e
+M_musculus_T_Cell	L-Lactic acid	lac__L_m
+M_musculus_T_Cell	L-Leucine	leu__L_c
+M_musculus_T_Cell	L-Leucine	leu__L_e
+M_musculus_T_Cell	L-Lysine	lys__L_c
+M_musculus_T_Cell	L-Lysine	lys__L_e
+M_musculus_T_Cell	L-Malic acid	mal__L_c
+M_musculus_T_Cell	L-Malic acid	mal__L_m
+M_musculus_T_Cell	L-Methionine	met__L_c
+M_musculus_T_Cell	L-Methionine	met__L_e
+M_musculus_T_Cell	L-Phenylalanine	phe__L_c
+M_musculus_T_Cell	L-Phenylalanine	phe__L_e
+M_musculus_T_Cell	L-Proline	pro__L_c
+M_musculus_T_Cell	L-Proline	pro__L_e
+M_musculus_T_Cell	L-Proline	pro__L_m
+M_musculus_T_Cell	L-Serine	ser__L_c
+M_musculus_T_Cell	L-Serine	ser__L_e
+M_musculus_T_Cell	L-Serine	ser__L_m
+M_musculus_T_Cell	L-Threonine	thr__L_c
+M_musculus_T_Cell	L-Threonine	thr__L_e
+M_musculus_T_Cell	L-Tryptophan	trp__L_c
+M_musculus_T_Cell	L-Tryptophan	trp__L_e
+M_musculus_T_Cell	L-Tyrosine	tyr__L_c
+M_musculus_T_Cell	L-Tyrosine	tyr__L_e
+M_musculus_T_Cell	L-Valine	val__L_c
+M_musculus_T_Cell	L-Valine	val__L_e
+M_musculus_T_Cell	NAD	nad_c
+M_musculus_T_Cell	NAD	nad_m
+M_musculus_T_Cell	NADH	nadh_c
+M_musculus_T_Cell	NADH	nadh_m
+M_musculus_T_Cell	NADP	nadp_c
+M_musculus_T_Cell	NADP	nadp_m
+M_musculus_T_Cell	NADPH	nadph_c
+M_musculus_T_Cell	NADPH	nadph_m
+M_musculus_T_Cell	Ornithine	orn_c
+M_musculus_T_Cell	Ornithine	orn_m
+M_musculus_T_Cell	Orotic acid	orot_c
+M_musculus_T_Cell	Oxoglutaric acid	akg_c
+M_musculus_T_Cell	Oxoglutaric acid	akg_m
+M_musculus_T_Cell	Phosphoenolpyruvic acid	pep_c
+M_musculus_T_Cell	Pyruvic acid	pyr_c
+M_musculus_T_Cell	Pyruvic acid	pyr_m
+M_musculus_T_Cell	Sedoheptulose 7-phosphate	s7p_c
+M_musculus_T_Cell	Succinic acid	succ_m
+M_musculus_T_Cell	cis-Aconitic acid	acon_C_m
+M_musculus_T_Cell	dCDP	dcdp_c
+M_musculus_T_Cell	dCTP	dctp_c
+M_musculus_T_Cell	dGDP	dgdp_c
+M_musculus_T_Cell	dTDP	dtdp_c
+M_musculus_T_Cell	dUMP	dump_c
+E_coli	3-Phosphoglyceric acid	3pg_c
+E_coli	4,5-Dihydroorotic acid	dhor-S_c
+E_coli	ADP	adp_c
+E_coli	AICAR	aicar_c
+E_coli	Acetyl-CoA	accoa_c
+E_coli	Acetylphosphate	actp_c
+E_coli	Adenine	ade_c
+E_coli	Adenosine monophosphate	amp_c
+E_coli	Adenosine triphosphate	atp_c
+E_coli	CDP	cdp_c
+E_coli	Citric acid	cit_c
+E_coli	Citrulline	citr-L_c
+E_coli	Coenzyme A	coa_c
+E_coli	Cytidine	cytd_c
+E_coli	Cytidine	cytd_p
+E_coli	Cytidine monophosphate	cmp_c
+E_coli	Cytidine triphosphate	ctp_c
+E_coli	D-Erythrose 4-phosphate	e4p_c
+E_coli	D-Glucose	glc-D_c
+E_coli	D-Glucose	glc-D_e
+E_coli	D-Glucose	glc-D_p
+E_coli	D-Glyceraldehyde 3-phosphate	g3p_c
+E_coli	D-Ribose 5-phosphate	r5p_c
+E_coli	Deoxyadenosine	dad-2_c
+E_coli	Deoxyinosine	din_c
+E_coli	Dephospho-CoA	dpcoa_c
+E_coli	Dihydroxyacetone phosphate	dhap_c
+E_coli	Flavin Mononucleotide	fmn_c
+E_coli	Fructose 1,6-bisphosphate	fdp_c
+E_coli	Fructose 6-phosphate	f6p_c
+E_coli	Fumaric acid	fum_c
+E_coli	Fumaric acid	fum_e
+E_coli	Fumaric acid	fum_p
+E_coli	Glucosamine 6-phosphate	gam6p_c
+E_coli	Glucose 6-phosphate	g6p_c
+E_coli	Glutathione	gthrd_c
+E_coli	Glutathione	gthrd_p
+E_coli	Glycerol	glyc_c
+E_coli	Glycerol	glyc_p
+E_coli	Glycerol 3-phosphate	glyc3p_c
+E_coli	Glycine	gly_c
+E_coli	Glycolic acid	glyclt_c
+E_coli	Glyoxylic acid	glx_c
+E_coli	Guanine	gua_c
+E_coli	Guanine	gua_p
+E_coli	Guanosine diphosphate	gdp_c
+E_coli	Guanosine monophosphate	gmp_c
+E_coli	Guanosine triphosphate	gtp_c
+E_coli	Homocysteine	hcys-L_c
+E_coli	Hypoxanthine	hxan_c
+E_coli	Inosine	ins_c
+E_coli	Inosine	ins_p
+E_coli	Inosinic acid	imp_c
+E_coli	Isopentenyl pyrophosphate	ipdp_c
+E_coli	L-Alanine	ala-L_c
+E_coli	L-Arginine	arg-L_c
+E_coli	L-Arginine	arg-L_p
+E_coli	L-Asparagine	asn-L_c
+E_coli	L-Asparagine	asn-L_p
+E_coli	L-Aspartic acid	asp-L_c
+E_coli	L-Cysteine	cys-L_c
+E_coli	L-Cysteine	cys-L_e
+E_coli	L-Cysteine	cys-L_p
+E_coli	L-Glutamic acid	glu-L_c
+E_coli	L-Glutamic acid	glu-L_e
+E_coli	L-Glutamic acid	glu-L_p
+E_coli	L-Glutamine	gln-L_c
+E_coli	L-Histidine	his-L_c
+E_coli	L-Histidine	his-L_p
+E_coli	L-Isoleucine	ile-L_c
+E_coli	L-Isoleucine	ile-L_e
+E_coli	L-Isoleucine	ile-L_p
+E_coli	L-Leucine	leu-L_c
+E_coli	L-Leucine	leu-L_e
+E_coli	L-Leucine	leu-L_p
+E_coli	L-Lysine	lys-L_c
+E_coli	L-Lysine	lys-L_p
+E_coli	L-Methionine	met-L_c
+E_coli	L-Phenylalanine	phe-L_c
+E_coli	L-Proline	pro-L_c
+E_coli	L-Proline	pro-L_p
+E_coli	L-Serine	ser-L_c
+E_coli	L-Serine	ser-L_e
+E_coli	L-Serine	ser-L_p
+E_coli	L-Threonine	thr-L_c
+E_coli	L-Threonine	thr-L_p
+E_coli	L-Tryptophan	trp-L_c
+E_coli	L-Tyrosine	tyr-L_c
+E_coli	L-Valine	val-L_c
+E_coli	L-Valine	val-L_e
+E_coli	L-Valine	val-L_p
+E_coli	Malonyl-CoA	malcoa_c
+E_coli	NAD	nad_c
+E_coli	NADH	nadh_c
+E_coli	NADP	nadp_c
+E_coli	NADPH	nadph_c
+E_coli	Ornithine	orn_c
+E_coli	Ornithine	orn_p
+E_coli	Orotic acid	orot_c
+E_coli	Pantothenic acid	pnto-R_c
+E_coli	Phosphoenolpyruvic acid	pep_c
+E_coli	Propionyl-CoA	ppcoa_c
+E_coli	Pyridoxal 5'-phosphate	pydx5p_c
+E_coli	Pyruvic acid	pyr_c
+E_coli	Pyruvic acid	pyr_e
+E_coli	Pyruvic acid	pyr_p
+E_coli	Riboflavin	ribflv_c
+E_coli	S-Adenosylhomocysteine	ahcys_c
+E_coli	S-Adenosylmethionine	amet_c
+E_coli	Shikimic acid	skm_c
+E_coli	Spermine	spmd_c
+E_coli	Succinic acid	succ_c
+E_coli	Succinic acid	succ_e
+E_coli	Succinic acid	succ_p
+E_coli	Thiamine monophosphate	thmmp_c
+E_coli	Thiamine pyrophosphate	thmpp_c
+E_coli	Uracil	ura_c
+E_coli	Uracil	ura_p
+E_coli	Uridine	uri_c
+E_coli	Uridine	uri_p
+E_coli	Uridine 5'-diphosphate	udp_c
+E_coli	Uridine 5'-monophosphate	ump_c
+E_coli	Uridine diphosphate glucose	udpg_c
+E_coli	Uridine diphosphate-N-acetylglucosamine	uacgam_c
+E_coli	Uridine triphosphate	utp_c
+E_coli	Xanthine	xan_c
+E_coli	Xanthine	xan_p
+E_coli	cis-Aconitic acid	acon-C_c
+E_coli	dCDP	dcdp_c
+E_coli	dCTP	dctp_c
+E_coli	dGDP	dgdp_c
+E_coli	dTDP	dtdp_c
+E_coli	dUMP	dump_c
+E_coli_core	2-Keto-3-deoxy-D-gluconic acid	KDPG
+E_coli_core	3-Phosphoglyceric acid	3PG
+E_coli_core	6-Phosphogluconic acid	6PG
+E_coli_core	Acetyl-CoA	AcCoA
+E_coli_core	Adenosine triphosphate	ATP
+E_coli_core	Citric acid	Cit
+E_coli_core	D-Erythrose 4-phosphate	E4P
+E_coli_core	D-Glucose	Gluc_e
+E_coli_core	D-Glucose	Gluc_pre
+E_coli_core	D-Glyceraldehyde 3-phosphate	GAP
+E_coli_core	D-Ribose 5-phosphate	R5P
+E_coli_core	Diaminopimelic acid	LLDAP
+E_coli_core	Dihydroxyacetone phosphate	DHAP
+E_coli_core	Fructose 1,6-bisphosphate	FBP
+E_coli_core	Fructose 6-phosphate	F6P
+E_coli_core	Fumaric acid	Fum
+E_coli_core	Glucose 6-phosphate	G6P
+E_coli_core	Glycine	Gly
+E_coli_core	Glyoxylic acid	Glx
+E_coli_core	L-Alanine	Ala
+E_coli_core	L-Arginine	Arg
+E_coli_core	L-Asparagine	Asn
+E_coli_core	L-Aspartic acid	Asp
+E_coli_core	L-Cysteine	Cys
+E_coli_core	L-Glutamic acid	Glu
+E_coli_core	L-Glutamine	Gln
+E_coli_core	L-Histidine	His
+E_coli_core	L-Isoleucine	Ile
+E_coli_core	L-Leucine	Leu
+E_coli_core	L-Lysine	Lys
+E_coli_core	L-Malic acid	Mal
+E_coli_core	L-Methionine	Met
+E_coli_core	L-Phenylalanine	Phe
+E_coli_core	L-Proline	Pro
+E_coli_core	L-Serine	Ser
+E_coli_core	L-Threonine	Thr
+E_coli_core	L-Tryptophan	Trp
+E_coli_core	L-Tyrosine	Tyr
+E_coli_core	L-Valine	Val
+E_coli_core	NADH	NADH
+E_coli_core	NADPH	NADPH
+E_coli_core	Oxoglutaric acid	AKG
+E_coli_core	Phosphoenolpyruvic acid	PEP
+E_coli_core	Pyruvic acid	Pyr
+E_coli_core	Sedoheptulose 7-phosphate	S7P
+E_coli_core	Succinic acid	Suc

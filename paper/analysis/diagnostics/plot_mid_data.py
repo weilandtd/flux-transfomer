@@ -35,7 +35,9 @@ mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
 # Same per-condition base colours as the predicted-flux panels.
-CONDITION_COLORS = {"C": "#f3c47f", "N": "#7fb3d5", "P": "#2c9c8f"}
+# C/N/P are the yeast nutrient limitations; A is the activated T cell, whose
+# counterpart N doubles as naive. Condition letters are scoped per organism.
+CONDITION_COLORS = {"C": "#f3c47f", "N": "#7fb3d5", "P": "#2c9c8f", "A": "#c17429"}
 COLORS = {"error": "#444444"}
 
 CONFIG_DIR = _REPO_ROOT / "paper" / "configs"
@@ -66,7 +68,7 @@ def parse_args():
     p.add_argument("--organism", default="i_orientalis", choices=ORGANISM_KEYS)
     p.add_argument("--compound", default="Mal", help="Compound name as it appears in the xlsx")
     p.add_argument("--tracer", default="U-13C glucose (50%)", help="Sheet name of the tracer")
-    p.add_argument("--condition", default="C", choices=["C", "N", "P"])
+    p.add_argument("--condition", default="C", choices=["C", "N", "P", "A"])
     p.add_argument("--mode", default="mid", choices=["mid", "noise"],
                    help="mid: one compound's MID; noise: replicate-SD distribution over "
                         "every measurement in every organism/condition/tracer")

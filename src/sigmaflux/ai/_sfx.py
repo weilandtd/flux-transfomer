@@ -98,11 +98,13 @@ def sha256_bytes(data):
 
 def check_schema(manifest, *, source="<bytes>"):
     """Validate the format marker and schema version, upgrading in place if needed.
+    Bump the schema version only when an entry is renamed/removed or a field's
+    meaning changes — adding new keys does not require one, since readers ignore
+    unknown keys.
 
-    Forward compatibility is by convention: readers ignore unknown keys and
-    tolerate missing optional ones, so adding an entry or a field does not need
-    a version bump. Bump only when an entry is renamed or removed, or a field
-    changes meaning — and register an upgrader so older files keep loading.
+    Args:
+        manifest: parsed manifest.json contents.
+        source: label used in error messages (e.g. the file path).
     """
     if manifest.get("format") != FORMAT:
         raise SfxFormatError(
@@ -133,11 +135,8 @@ def check_schema(manifest, *, source="<bytes>"):
 
 
 def read_manifest(path):
-    """Return the manifest of *path*, reading nothing else.
-
-    Cheap by construction: the manifest is the first entry and is STORED, so this
-    inflates nothing and touches no weights.
-    """
+    """Return the manifest of *path*, reading nothing else — cheap since the
+    manifest is the first entry and is STORED, so nothing is inflated."""
     with zipfile.ZipFile(path) as zf:
         try:
             raw = zf.read(MANIFEST)
@@ -150,6 +149,10 @@ class SfxWriter:
     """Write a ``.sfx``. Use as a context manager; the manifest is written first."""
 
     def __init__(self, path, manifest):
+        """Args:
+            path: destination file path.
+            manifest: manifest dict; ``"entries"`` is filled in on close.
+        """
         self.path = path
         self.manifest = manifest
         self._entries = {}
@@ -164,7 +167,13 @@ class SfxWriter:
         return self
 
     def write_bytes(self, name, data, *, store=False):
-        """Add a raw entry and record its size and checksum."""
+        """Add a raw entry and record its size and checksum.
+
+        Args:
+            name: zip entry name.
+            data: raw bytes to write.
+            store: write uncompressed (STORED) instead of deflated.
+        """
         self._zf.writestr(
             name, data,
             compress_type=zipfile.ZIP_STORED if store else zipfile.ZIP_DEFLATED,
@@ -176,7 +185,12 @@ class SfxWriter:
         return self.write_bytes(name, json.dumps(obj, indent=1, sort_keys=True).encode("utf-8"))
 
     def write_array(self, name, array):
-        """Store a numpy array as a `.npy` payload (no pickle)."""
+        """Store a numpy array as a `.npy` payload (no pickle).
+
+        Args:
+            name: zip entry name.
+            array: array to serialize.
+        """
         import io
         buf = io.BytesIO()
         np.save(buf, np.ascontiguousarray(array), allow_pickle=False)
@@ -195,11 +209,13 @@ class SfxWriter:
 
 
 def _replace_manifest(path, payload):
-    """Rewrite the archive with the real manifest first and STORED.
+    """Rewrite the archive with the real manifest first and STORED. ``zipfile``
+    cannot update an entry in place, so the whole archive is rebuilt once;
+    everything else is copied compressed-as-is (no recompression).
 
-    ``zipfile`` cannot update an entry in place, so the archive is rebuilt once.
-    Everything except the manifest is copied compressed-as-is, so this costs a
-    copy but no recompression.
+    Args:
+        path: archive to rewrite, in place.
+        payload: finalized manifest bytes (JSON, including entry checksums).
     """
     import os
     import shutil
@@ -254,6 +270,10 @@ class SfxReader:
         return name in self._zf.namelist()
 
     def read_bytes(self, name, *, verify=True):
+        """Args:
+            name: zip entry name.
+            verify: check the entry's sha256 against the manifest.
+        """
         try:
             data = self._zf.read(name)
         except KeyError:
@@ -282,11 +302,9 @@ class SfxReader:
         return np.load(io.BytesIO(self.read_bytes(name)), allow_pickle=False)
 
     def member_arrays(self, index):
-        """Every trained tensor of member *index*, as ``{name: ndarray}``.
-
-        One read plus ``frombuffer`` slices; the per-tensor layout is shared, so
-        it is described once in the manifest rather than per member.
-        """
+        """Every trained tensor of member *index*, as ``{name: ndarray}`` — one read
+        plus ``frombuffer`` slices, using the per-tensor layout shared across
+        members in the manifest."""
         blob = self.read_bytes(MEMBER_FMT.format(index))
         expected = self.manifest.get("member_nbytes")
         if expected is not None and len(blob) != expected:

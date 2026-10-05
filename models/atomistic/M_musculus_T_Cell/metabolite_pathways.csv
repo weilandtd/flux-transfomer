@@ -1,0 +1,199 @@
+metabolite_id,metabolite_name,subsystem,coarse_subsystem
+10fthf_c,10-formyl-THF,Purine metabolism,Nucleotide metabolism
+10fthf_m,10-formyl-THF,Other,Other
+13dpg_c,"1,3-bisphospho-D-glycerate",Glycolysis / Gluconeogenesis,Central carbon metabolism
+1pyr5c_m,1-pyrroline-5-carboxylate,Arginine and proline metabolism,Amino acid metabolism
+25aics_c,5'-phosphoribosyl-4-(N-succinocarboxamide)-5-aminoimidazole,Purine metabolism,Nucleotide metabolism
+2pg_c,2-phospho-D-glyceric acid,Glycolysis / Gluconeogenesis,Central carbon metabolism
+3pg_c,3-phosphoglycerate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+3php_c,3-phospho-hydroxypyruvate,Glycine and serine metabolism,Amino acid metabolism
+5aizc_c,phosphoribosyl-carboxy-aminoimidazole,Purine metabolism,Nucleotide metabolism
+6pgc_c,6-phospho-D-gluconate,Pentose phosphate pathway,Central carbon metabolism
+6pgl_c,"6-O-phosphono-D-glucono-1,5-lactone",Pentose phosphate pathway,Central carbon metabolism
+accoa_c,acetyl-CoA,Acetyl-CoA synthesis,Central carbon metabolism
+accoa_m,acetyl-CoA,Acetyl-CoA synthesis,Central carbon metabolism
+acon_C_m,cis-aconitate,Citric acid cycle,Central carbon metabolism
+adp_c,ADP,Purine metabolism,Nucleotide metabolism
+adp_m,ADP,Arginine and proline metabolism,Amino acid metabolism
+aicar_c,AICAR,Purine metabolism,Nucleotide metabolism
+air_c,5'-phosphoribosyl-5-aminoimidazole,Purine metabolism,Nucleotide metabolism
+akg_c,2-oxoglutarate,Aspartate metabolism,Amino acid metabolism
+akg_m,2-oxoglutarate,Citric acid cycle,Central carbon metabolism
+ala__L_c,L-alanine,Transport,Transport
+ala__L_e,L-alanine,Exchange,Transport
+ala__L_m,L-alanine,Alanine metabolism,Amino acid metabolism
+amp_c,AMP,Other,Other
+arg__L_c,L-arginine,Arginine and proline metabolism,Amino acid metabolism
+arg__L_e,L-arginine,Exchange,Transport
+argsuc_c,(N(omega)-L-arginino)succinic acid,Arginine and proline metabolism,Amino acid metabolism
+asn__L_c,L-asparagine,Asparagine biosynthesis,Amino acid metabolism
+asn__L_e,L-asparagine,Exchange,Transport
+asp__L_c,L-aspartate,Purine metabolism,Nucleotide metabolism
+asp__L_e,L-aspartate,Exchange,Transport
+asp__L_m,L-aspartate,Aspartate metabolism,Amino acid metabolism
+atp_c,ATP,Purine metabolism,Nucleotide metabolism
+atp_m,ATP,Arginine and proline metabolism,Amino acid metabolism
+bm_dna_c,DNA_c biomass precursor,Other,Other
+bm_lipid_c,LIPID_c biomass precursor,Other,Other
+bm_protein_c,PROTEIN_c biomass precursor,Other,Other
+bm_rna_c,RNA_c biomass precursor,Other,Other
+cbasp_c,N-carbamoyl-L-aspartate,Pyrimidine metabolism,Nucleotide metabolism
+cbp_c,carbamoyl phosphate,Pyrimidine metabolism,Nucleotide metabolism
+cbp_m,carbamoyl phosphate,Arginine and proline metabolism,Amino acid metabolism
+cdp_c,CDP,Purine metabolism,Nucleotide metabolism
+cit_c,citrate,Acetyl-CoA synthesis,Central carbon metabolism
+cit_m,citrate,Citric acid cycle,Central carbon metabolism
+citr__L_c,L-citrulline,Arginine and proline metabolism,Amino acid metabolism
+citr__L_m,L-citrulline,Arginine and proline metabolism,Amino acid metabolism
+co2_c,carbon dioxide,Pyrimidine metabolism,Nucleotide metabolism
+co2_e,carbon dioxide,Exchange,Transport
+co2_m,carbon dioxide,Citric acid cycle,Central carbon metabolism
+coa_c,coenzyme A,Acetyl-CoA synthesis,Central carbon metabolism
+coa_m,coenzyme A,Citric acid cycle,Central carbon metabolism
+ctp_c,CTP,Other,Other
+cys__L_c,L-cysteine,Other,Other
+cys__L_e,L-cysteine,Exchange,Transport
+dadp_c,dADP,Purine metabolism,Nucleotide metabolism
+datp_c,dATP,Purine metabolism,Nucleotide metabolism
+dcamp_c,adenylo-succinate,Purine metabolism,Nucleotide metabolism
+dcdp_c,dCDP,Purine metabolism,Nucleotide metabolism
+dctp_c,dCTP,Other,Other
+dgdp_c,dGDP,Purine metabolism,Nucleotide metabolism
+dgtp_c,dGTP,Other,Other
+dhap_c,dihydroxyacetone phosphate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+dhf_c,dihydrofolic acid,Folate metabolism,Cofactor & sulfur metabolism
+dhor__S_c,(S)-dihydroorotate,Pyrimidine metabolism,Nucleotide metabolism
+dtdp_c,dTDP,Purine metabolism,Nucleotide metabolism
+dtmp_c,dTMP,Pyrimidine metabolism,Nucleotide metabolism
+dttp_c,dTTP,Other,Other
+dudp_c,dUDP,Purine metabolism,Nucleotide metabolism
+dump_c,dUMP,Pyrimidine metabolism,Nucleotide metabolism
+dutp_c,dUTP,Purine metabolism,Nucleotide metabolism
+e4p_c,D-erythrose 4-phosphate,Pentose phosphate pathway,Central carbon metabolism
+f6p_c,D-fructose 6-phosphate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+fdp_c,"D-fructose 1,6-bisphosphate",Glycolysis / Gluconeogenesis,Central carbon metabolism
+fgam_c,5'-phosphoribosyl-N-formylglycineamide,Purine metabolism,Nucleotide metabolism
+ficytC_m,ferricytochrome c,Oxidative phosphorylation,Central carbon metabolism
+focytC_m,ferrocytochrome c,Oxidative phosphorylation,Central carbon metabolism
+for_c,formate,Other,Other
+fpram_c,5'-phosphoribosyl-N-formylglycineamidine,Purine metabolism,Nucleotide metabolism
+fprica_c,phosphoribosyl-formamido-carboxamide,Purine metabolism,Nucleotide metabolism
+fum_c,fumarate,Purine metabolism,Nucleotide metabolism
+fum_m,fumarate,Citric acid cycle,Central carbon metabolism
+g3p_c,glyceraldehyde 3-phosphate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+g6p_c,D-glucose 6-phosphate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+gar_c,5-phospho-ribosyl-glycineamide,Purine metabolism,Nucleotide metabolism
+gdp_c,GDP,Purine metabolism,Nucleotide metabolism
+glc__D_c,D-glucose,Glycolysis / Gluconeogenesis,Central carbon metabolism
+glc__D_e,D-glucose,Exchange,Transport
+gln__L_c,L-glutamine,Purine metabolism,Nucleotide metabolism
+gln__L_e,L-glutamine,Exchange,Transport
+gln__L_m,L-glutamine,Glutamine metabolism,Amino acid metabolism
+glu5p_m,L-gamma-glutamyl phosphate,Arginine and proline metabolism,Amino acid metabolism
+glu5sa_m,L-glutamic 5-semialdehyde,Arginine and proline metabolism,Amino acid metabolism
+glu__L_c,L-glutamate,Purine metabolism,Nucleotide metabolism
+glu__L_e,L-glutamate,Exchange,Transport
+glu__L_m,L-glutamate,Arginine and proline metabolism,Amino acid metabolism
+gly_c,L-glycine,Transport,Transport
+gly_e,L-glycine,Exchange,Transport
+gly_m,L-glycine,Glycine and serine metabolism,Amino acid metabolism
+glyc3p_c,glycerol 3-phosphate,Lipid biosynthesis,Lipid metabolism
+gmp_c,GMP,Purine metabolism,Nucleotide metabolism
+gtp_c,GTP,Purine metabolism,Nucleotide metabolism
+h2o_c,H2O,Purine metabolism,Nucleotide metabolism
+h2o_e,H2O,Exchange,Transport
+h2o_m,H2O,Citric acid cycle,Central carbon metabolism
+h_c,H+,Purine metabolism,Nucleotide metabolism
+h_e,H+,Transport,Transport
+h_m,H+,Oxidative phosphorylation,Central carbon metabolism
+hco3_c,bicarbonate,Pyrimidine metabolism,Nucleotide metabolism
+hco3_m,bicarbonate,Anaplerotic reaction,Central carbon metabolism
+his__L_c,L-histidine,Other,Other
+his__L_e,L-histidine,Exchange,Transport
+icit_c,isocitrate,Citric acid cycle,Central carbon metabolism
+icit_m,isocitrate,Citric acid cycle,Central carbon metabolism
+ile__L_c,L-isoleucine,Other,Other
+ile__L_e,L-isoleucine,Exchange,Transport
+imp_c,IMP,Purine metabolism,Nucleotide metabolism
+lac__L_c,L-lactate,Transport,Transport
+lac__L_e,L-lactate,Exchange,Transport
+lac__L_m,L-lactate,Lactate production,Central carbon metabolism
+leu__L_c,L-leucine,Other,Other
+leu__L_e,L-leucine,Exchange,Transport
+lys__L_c,L-lysine,Other,Other
+lys__L_e,L-lysine,Exchange,Transport
+mal__L_c,(S)-malate,Glyoxylate metabolism,Central carbon metabolism
+mal__L_m,(S)-malate,Citric acid cycle,Central carbon metabolism
+met__L_c,L-methionine,Other,Other
+met__L_e,L-methionine,Exchange,Transport
+methf_c,"5,10-methenyl-THF",Folate metabolism,Cofactor & sulfur metabolism
+methf_m,"5,10-methenyl-THF",Other,Other
+mlthf_c,"5,10-methylenetetrahydrofolate",Folate metabolism,Cofactor & sulfur metabolism
+mlthf_m,"5,10-methylenetetrahydrofolate",Glycine and serine metabolism,Amino acid metabolism
+nad_c,NAD,Glycine and serine metabolism,Amino acid metabolism
+nad_m,NAD,Citric acid cycle,Central carbon metabolism
+nadh_c,NADH,Glycine and serine metabolism,Amino acid metabolism
+nadh_m,NADH,Citric acid cycle,Central carbon metabolism
+nadp_c,NADP(+),Folate metabolism,Cofactor & sulfur metabolism
+nadp_m,NADP(+),Arginine and proline metabolism,Amino acid metabolism
+nadph_c,NADPH,Folate metabolism,Cofactor & sulfur metabolism
+nadph_m,NADPH,Arginine and proline metabolism,Amino acid metabolism
+nh4_c,ammonium,Other,Other
+nh4_m,ammonium,Arginine and proline metabolism,Amino acid metabolism
+o2_c,oxygen,Transport,Transport
+o2_e,oxygen,Exchange,Transport
+o2_m,oxygen,Oxidative phosphorylation,Central carbon metabolism
+o2_use1_c,Oxygen usage for NADPH oxidation,Pseudoreaction,Other
+oaa_c,oxaloacetate,Acetyl-CoA synthesis,Central carbon metabolism
+oaa_m,oxaloacetate,Citric acid cycle,Central carbon metabolism
+orn_c,ornithine,Arginine and proline metabolism,Amino acid metabolism
+orn_m,ornithine,Arginine and proline metabolism,Amino acid metabolism
+orot5p_c,orotidine 5'-(dihydrogen phosphate),Pyrimidine metabolism,Nucleotide metabolism
+orot_c,orotate,Pyrimidine metabolism,Nucleotide metabolism
+pep_c,phosphoenolpyruvate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+phe__L_c,L-phenylalanine,Other,Other
+phe__L_e,L-phenylalanine,Exchange,Transport
+pi_c,phosphate,Purine metabolism,Nucleotide metabolism
+pi_e,phosphate,Exchange,Transport
+pi_m,phosphate,Arginine and proline metabolism,Amino acid metabolism
+ppi_c,diphosphate,Other,Other
+ppi_m,diphosphate,Oxidative phosphorylation,Central carbon metabolism
+pram_c,5-phosphoribosylamine,Purine metabolism,Nucleotide metabolism
+pro__L_c,L-proline,Transport,Transport
+pro__L_e,L-proline,Exchange,Transport
+pro__L_m,L-proline,Arginine and proline metabolism,Amino acid metabolism
+protonleak_m,proton leak - ATP synthase coupling factor,Oxidative phosphorylation,Central carbon metabolism
+prpp_c,PRPP,Purine metabolism,Nucleotide metabolism
+pser__L_c,3-phospho-serine,Glycine and serine metabolism,Amino acid metabolism
+pyr_c,pyruvate,Glycolysis / Gluconeogenesis,Central carbon metabolism
+pyr_m,pyruvate,Citric acid cycle,Central carbon metabolism
+q9_m,ubiquinone-9,Oxidative phosphorylation,Central carbon metabolism
+q9h2_m,ubiquinol-9,Oxidative phosphorylation,Central carbon metabolism
+r5p_c,ribose-5-phosphate,Pentose phosphate pathway,Central carbon metabolism
+ru5p__D_c,D-ribulose 5-phosphate,Pentose phosphate pathway,Central carbon metabolism
+s7p_c,sedoheptulose 7-phosphate,Pentose phosphate pathway,Central carbon metabolism
+ser__L_c,L-serine,Glycine and serine metabolism,Amino acid metabolism
+ser__L_e,L-serine,Exchange,Transport
+ser__L_m,L-serine,Glycine and serine metabolism,Amino acid metabolism
+succ_m,succinate,Citric acid cycle,Central carbon metabolism
+succoa_m,succinyl-CoA,Citric acid cycle,Central carbon metabolism
+thf_c,THF,Purine metabolism,Nucleotide metabolism
+thf_m,THF,Glycine and serine metabolism,Amino acid metabolism
+thr__L_c,L-threonine,Other,Other
+thr__L_e,L-threonine,Exchange,Transport
+tktc2_c,C2 keto fragment in transketolase,Pentose phosphate pathway,Central carbon metabolism
+trdox_c,TRX1 disulphide,Purine metabolism,Nucleotide metabolism
+trdrd_c,TRX1,Purine metabolism,Nucleotide metabolism
+trp__L_c,L-tryptophan,Other,Other
+trp__L_e,L-tryptophan,Exchange,Transport
+tyr__L_c,L-tyrosine,Other,Other
+tyr__L_e,L-tyrosine,Exchange,Transport
+udp_c,UDP,Pyrimidine metabolism,Nucleotide metabolism
+ump_c,UMP,Pyrimidine metabolism,Nucleotide metabolism
+urea_c,urea,Arginine and proline metabolism,Amino acid metabolism
+urea_e,urea,Exchange,Transport
+utp_c,UTP,Other,Other
+val__L_c,L-valine,Other,Other
+val__L_e,L-valine,Exchange,Transport
+xmp_c,xanthosine-5-phosphate,Purine metabolism,Nucleotide metabolism
+xu5p__D_c,D-xylulose 5-phosphate,Pentose phosphate pathway,Central carbon metabolism

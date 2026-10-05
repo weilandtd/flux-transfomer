@@ -8,14 +8,22 @@ model**: inference-only, self-describing, and loadable with nothing but the file
     from sigmaflux.ai import export_model, load_model
 
     export_model("run/ensemble", name="i_orientalis", model_version="1.0.0")
-    sf = load_model("i_orientalis-v1.0.0.sfx")
+    sf = load_model("i_orientalis-v1.2.0.sfx")
     sf.predict(df_L, df_Vm)
 
 What is stored
 --------------
 Once, shared by every member: the vocabularies, null-space basis, token index,
 output names, model config, flux normalization, the resolved tracer-name map,
-and (optionally) the validation split. Per member: **only the trained weights**.
+the prepared COBRA network, and (optionally) the validation split. Per member:
+**only the trained weights**.
+
+The network is the MFA-prepared model the run was trained on — the one whose
+reaction order matches ``flux_names``, not the annotated model it came from. It
+costs ~30 KB packed and is what lets a consumer check ``S @ v ≈ 0``, look up a
+reaction's metabolites or subsystem, and draw a map, none of which the names
+alone support. :func:`read_stoichiometry` returns it already aligned to the
+model's outputs.
 
 What is dropped, because it is regenerable or is training-only ballast: the 14
 frozen tensors (all five radial embedding tables plus buffers that duplicate
@@ -70,8 +78,15 @@ __all__ = [
     "export_model",
     "inspect_model",
     "load_model",
+    "read_cobra_model",
+    "read_stoichiometry",
     "validate_model",
 ]
+
+#: Entry holding the prepared COBRA network, as written by ``sigmaflux-sample-flux``.
+NETWORK_ENTRY = "shared/cobra_model.json"
+#: Filename of the prepared network inside a training run directory.
+PREPARED_MODEL_JSON = "model_prepared_for_mfa.json"
 
 #: Weight tensors above this magnitude fall back to float32 (fp16 max is 65504).
 _FP16_SAFE_MAX = 6.0e4
@@ -83,10 +98,16 @@ _FP16_SAFE_MAX = 6.0e4
 _REGENERATED = (
     "compound_emb.weight", "label_emb.weight", "tracer_emb.weight",
     "reaction_emb.weight", "_token_type_emb.weight",
-    "Z_full", "token_experiment_ids", "fixed_idx_t",
+    "Z_full", "flux_offset", "token_experiment_ids", "fixed_idx_t",
     "flux_norm_mean", "flux_norm_std",
     "y_norm_mean", "y_norm_std", "rev_norm_mean", "rev_norm_std",
 )
+
+#: Regenerated buffers added after the shipped bundles were written. Each defaults to a
+#: neutral value -- ``flux_offset`` to zeros, which is exactly what a model trained with
+#: no pinned basis directions had implicitly -- so a manifest that predates one is still
+#: a match. Only these are forgiven, so a *renamed* key is still caught.
+_OPTIONAL_REGENERATED = frozenset({"flux_offset"})
 
 #: Keys that must agree across ensemble members.
 _SHARED_KEYS = (
@@ -94,17 +115,22 @@ _SHARED_KEYS = (
     "token_index", "h_reaction", "h_type", "val_indices",
 )
 
-_NULL_SPACE_FLOAT = ("Z_free", "y_mean", "y_std", "rev_log_mean", "rev_log_std", "obs_weights")
+_NULL_SPACE_FLOAT = ("Z_free", "flux_offset", "y_mean", "y_std", "rev_log_mean",
+                     "rev_log_std", "obs_weights")
 _NULL_SPACE_INT = ("free_idx", "fixed_idx", "rev_variable_idx")
 
 
 # ── Source discovery ──────────────────────────────────────────────────────────
 
 def _discover_members(source):
-    """Resolve *source* to an ordered list of member checkpoint paths.
+    """Resolve *source* to an ordered list of member checkpoint paths: an ``ensemble/`` directory,
+    a run directory containing one, a single ``.pt``, or an explicit sequence of ``.pt`` paths.
 
-    Accepts an ``ensemble/`` directory, a run directory containing one, a single
-    ``.pt``, or an explicit sequence of ``.pt`` paths.
+    Parameters
+    ----------
+    source : path or sequence of paths
+        An ``ensemble/`` directory, a run directory containing one, a single ``.pt``,
+        or an explicit sequence of ``.pt`` paths.
     """
     if isinstance(source, (str, os.PathLike)):
         source = [source]
@@ -134,10 +160,16 @@ def _discover_members(source):
 def _check_members_agree(checkpoints, paths):
     """Refuse to package members that were not trained as one ensemble.
 
-    Returns ``True`` when every member shares one null-space basis. A seed-varied
-    ICA basis (``null_space_type: targeted_ica``) legitimately differs per member
-    — the decoded fluxes are physical either way — so that case is reported
-    rather than rejected, and the basis is then stored per member.
+    Parameters
+    ----------
+    checkpoints : list of dict
+        Loaded checkpoint dicts for every member.
+    paths : list of str
+        Matching checkpoint file paths, for error messages.
+
+    Returns ``True`` when every member shares one null-space basis; a seed-varied
+    ICA basis legitimately differs per member, so that case is reported (not rejected)
+    and the basis is then stored per member.
     """
     first = checkpoints[0]
     for ckpt, path in zip(checkpoints[1:], paths[1:]):
@@ -201,7 +233,15 @@ def _sha256_file(path):
 # ── Weight layout ─────────────────────────────────────────────────────────────
 
 def _tensor_layout(state_dict, precision):
-    """Describe the trained tensors and their byte offsets within a member blob."""
+    """Describe the trained tensors and their byte offsets within a member blob.
+
+    Parameters
+    ----------
+    state_dict : dict
+        Model state dict to lay out.
+    precision : {"fp16", "fp32"}
+        Storage precision; finite fp32 tensors within range are downcast to fp16.
+    """
     layout, offset = [], 0
     for name, tensor in state_dict.items():
         if name in _REGENERATED:
@@ -226,7 +266,15 @@ def _tensor_layout(state_dict, precision):
 
 
 def _member_blob(state_dict, layout):
-    """Concatenate a member's trained tensors into one little-endian buffer."""
+    """Concatenate a member's trained tensors into one little-endian buffer.
+
+    Parameters
+    ----------
+    state_dict : dict
+        Model state dict holding the tensors.
+    layout : list of dict
+        Tensor layout from :func:`_tensor_layout`.
+    """
     chunks = []
     for spec in layout:
         arr = state_dict[spec["name"]].detach().cpu().numpy()
@@ -234,18 +282,91 @@ def _member_blob(state_dict, layout):
     return b"".join(chunks)
 
 
+# ── Prepared network ──────────────────────────────────────────────────────────
+
+def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=None):
+    """Locate the prepared COBRA network for a checkpoint. The run directory's
+    ``model_prepared_for_mfa.json`` is preferred over the checkpoint's ``model_json``, since
+    only the prepared model's reaction order and set match ``flux_names``.
+
+    Parameters
+    ----------
+    ckpt : dict
+        Loaded checkpoint dict.
+    model_json : str, optional
+        Explicit network path, tried first.
+    data_dir : str, optional
+        Run directory to look for the prepared network in.
+    config : path, optional
+        Training YAML, to resolve ``model_file`` as a last resort.
+    root : path, optional
+        Root for resolving *config*'s relative paths.
+    """
+    candidates = [model_json]
+    run_dir = data_dir or ckpt.get("data_dir")
+    if run_dir:
+        candidates.append(os.path.join(run_dir, PREPARED_MODEL_JSON))
+    candidates.append(ckpt.get("model_json"))
+    if config is not None:
+        from ..pipeline._paths import load_config, resolve_path
+        cfg, cfg_root = load_config(config, root)
+        candidates.append(resolve_path(cfg.get("model_file"), cfg_root))
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _read_network(path, flux_names):
+    """Read a COBRA JSON; returns ``(payload, block)`` where *payload* is the raw file bytes and
+    *block* is the manifest entry. ``block["covers_flux_names"]`` decides usability: without
+    every predicted reaction present, a consumer cannot build ``S`` for the prediction vector.
+
+    Parameters
+    ----------
+    path : str
+        Path to the COBRA network JSON.
+    flux_names : list of str
+        Predicted reaction ids, checked for coverage against the network.
+    """
+    with open(path, "rb") as fh:
+        payload = fh.read()
+    doc = json.loads(payload.decode("utf-8"))
+    reaction_ids = [r["id"] for r in doc.get("reactions", [])]
+
+    return payload, {
+        "included": True,
+        "source": os.path.basename(path),
+        "sha256": _sfx.sha256_bytes(payload),
+        "n_reactions": len(reaction_ids),
+        "n_metabolites": len(doc.get("metabolites", [])),
+        "covers_flux_names": set(flux_names) <= set(reaction_ids),
+        # False is fine — read_stoichiometry reorders — but it flags an export
+        # built from a model other than the one training actually used.
+        "reaction_order_matches": reaction_ids == list(flux_names),
+    }
+
+
 # ── Validation payload ────────────────────────────────────────────────────────
 
 def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
-    """The validation split's MID inputs and targets, in training token order.
+    """The validation split's MID inputs and targets, in training token order — the only step
+    that touches the training HDF5. Returns ``(fractions, flux_actuals, rev_actuals)``, or
+    ``(None, None, None)`` when the training data is unreachable.
 
-    This is the only step that touches the training HDF5. Reading the flux
-    targets here rather than lifting them out of ``val_correlations`` means the
-    export does not depend on training diagnostics it otherwise drops, and works
-    for checkpoints that never recorded them.
-
-    Returns ``(fractions, flux_actuals, rev_actuals)``, or ``(None, None, None)``
-    when the training data is unreachable.
+    Parameters
+    ----------
+    ckpt : dict
+        Loaded checkpoint dict.
+    spec : ModelSpec
+        Model spec, for the token index and output names.
+    val_indices : array-like
+        Sample columns making up the validation split.
+    data_dir : str, optional
+        Override the training data directory recorded in *ckpt*.
+    max_samples : int, optional
+        Cap the number of validation samples read.
     """
     from .data import load_data
     resolved = data_dir or ckpt.get("data_dir")
@@ -279,10 +400,10 @@ def _read_val_data(ckpt, spec, val_indices, data_dir=None, max_samples=None):
 
 def export_model(source, out_path=None, *, name=None, model_version,
                  precision="fp16", config=None, root=None, description=None,
-                 with_validation=True, with_val_inputs="auto", data_dir=None,
-                 model_json=None, max_members=None, max_val_samples=None,
+                 with_validation=True, with_val_inputs="auto", with_network="auto",
+                 data_dir=None, model_json=None, max_members=None, max_val_samples=None,
                  metrics=True, overwrite=False, verbose=True):
-    """Package trained checkpoints into a single ``.sfx`` model.
+    """Package trained checkpoints into a single ``.sfx`` model; returns the written path.
 
     Parameters
     ----------
@@ -300,15 +421,29 @@ def export_model(source, out_path=None, *, name=None, model_version,
     config : path, optional
         Training YAML. Supplies the human-readable tracer names and the
         inference batch size; without it tracer names fall back to internal ids.
+    root : path, optional
+        Root for resolving *config*'s relative paths.
+    description : str, optional
+        Free-text description recorded in the manifest.
     with_validation, with_val_inputs :
         Store the validation split, and (``"auto"``/True/False) the MID inputs
-        needed to recompute R² from the export alone. Reading the inputs is the
-        only step that touches the training HDF5.
-
-    Returns
-    -------
-    pathlib.Path
-        The written file.
+        needed to recompute R² from the export alone.
+    with_network : {"auto", True, False}
+        Store the prepared COBRA network (default ``"auto"``: embed it when found
+        and covering every predicted reaction, else warn and carry on). ``True``
+        makes a missing/mismatched network an error; ``False`` skips it.
+    data_dir, model_json : path, optional
+        Override the network/training-data paths recorded in the checkpoint.
+    max_members : int, optional
+        Cap the number of ensemble members packaged.
+    max_val_samples : int, optional
+        Cap the number of validation samples stored.
+    metrics : bool
+        Record each member's reported validation R² in the manifest.
+    overwrite : bool
+        Allow replacing an existing file at *out_path*.
+    verbose : bool
+        Print progress and the final artifact size.
     """
     if precision not in ("fp16", "fp32"):
         raise ValueError(f"precision must be 'fp16' or 'fp32', got {precision!r}")
@@ -352,6 +487,33 @@ def export_model(source, out_path=None, *, name=None, model_version,
     # silently leave the commit null exactly when provenance matters most.
     git_commit, git_dirty = _git_state(Path(__file__).parent)
     ck0 = checkpoints[0]
+
+    network_payload, network = None, {"included": False}
+    if with_network is not False:
+        found = _find_network_json(ck0, model_json=model_json, data_dir=data_dir,
+                                   config=config, root=root)
+        if found is None:
+            if with_network is True:
+                raise FileNotFoundError(
+                    f"with_network=True but no COBRA network was found; pass "
+                    f"model_json=..., or data_dir=... containing {PREPARED_MODEL_JSON}"
+                )
+            print("  network: skipped (no prepared COBRA JSON found)")
+        else:
+            network_payload, candidate = _read_network(found, spec.flux_names)
+            if candidate["covers_flux_names"]:
+                network = candidate
+            elif with_network is True:
+                raise ValueError(
+                    f"{found} is missing reactions this model predicts, so it cannot "
+                    f"describe its output: it has {candidate['n_reactions']} reactions "
+                    f"and the model predicts {len(spec.flux_names)}. Point model_json "
+                    f"at the run's {PREPARED_MODEL_JSON}."
+                )
+            else:
+                network_payload = None
+                print(f"  network: skipped ({os.path.basename(found)} does not cover "
+                      f"every predicted reaction)")
 
     from .. import __version__ as sigmaflux_version
     manifest = {
@@ -401,6 +563,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
         },
         "tracers": spec.tracer_display_names,
         "tracers_source": "config" if spec.tracer_display_names else "identity",
+        "network": network,
         "tensors": layout,
         "member_nbytes": member_nbytes,
         "regenerated_tensors": [k for k in _REGENERATED
@@ -439,10 +602,19 @@ def export_model(source, out_path=None, *, name=None, model_version,
             if nsd.get(key) is not None:
                 w.write_array(f"shared/null_space/{key}.npy",
                               np.asarray(nsd[key], dtype=np.int32))
+        if spec.flux_bounds:
+            # float64: the projection's ratio test divides by the slack to a bound, and
+            # float32 rounding there can put a state marginally outside the bound it was
+            # just projected onto.
+            for key in ("lb", "ub"):
+                w.write_array(f"shared/flux_bounds/{key}.npy",
+                              np.asarray(spec.flux_bounds[key], dtype=np.float64))
         if spec.flux_norm_stats:
             for key in ("mean", "std"):
                 w.write_array(f"shared/flux_norm/{key}.npy",
                               np.asarray(spec.flux_norm_stats[key], dtype=np.float32))
+        if network_payload is not None:
+            w.write_bytes(NETWORK_ENTRY, network_payload)
 
         # ── validation ────────────────────────────────────────────────────────
         vblock = {"included": False, "n_val": 0, "inputs_included": False,
@@ -518,11 +690,16 @@ def export_model(source, out_path=None, *, name=None, model_version,
 
 
 def load_model(path, *, device=None):
-    """Load a packaged ``.sfx`` model.
+    """Load a packaged ``.sfx`` model. Always returns an
+    :class:`~sigmaflux.ai.inference.EnsembleSigmaFlux`, even for a one-member export, so callers
+    have a single shape to handle. Needs no config YAML, run directory, or COBRA JSON.
 
-    Always returns an :class:`~sigmaflux.ai.inference.EnsembleSigmaFlux`, even for
-    a one-member export, so callers have a single shape to handle. Needs no
-    config YAML, run directory or COBRA JSON.
+    Parameters
+    ----------
+    path : str
+        Path to the ``.sfx`` file.
+    device : optional
+        Device to load member weights onto.
     """
     with SfxReader(path) as r:
         m = r.manifest
@@ -542,6 +719,21 @@ def load_model(path, *, device=None):
             flux_norm_stats = {"mean": r.read_array("shared/flux_norm/mean.npy"),
                                "std": r.read_array("shared/flux_norm/std.npy")}
 
+        # Bounds are required to predict. An export written before they were stored can
+        # still supply them from the prepared network it embeds, which is the same file
+        # they were read off in the first place.
+        flux_bounds = None
+        if r.has("shared/flux_bounds/lb.npy"):
+            flux_bounds = {"lb": r.read_array("shared/flux_bounds/lb.npy"),
+                           "ub": r.read_array("shared/flux_bounds/ub.npy")}
+        elif r.has(NETWORK_ENTRY):
+            from cobra.io.json import from_json
+
+            from .inference import bounds_from_cobra
+            flux_bounds = bounds_from_cobra(
+                from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8")),
+                names["flux_names"], source=f"{path}'s embedded network")
+
         spec = ModelSpec(
             model_config         = m["model"]["model_config"],
             vocabs               = {k: vocabs[k] for k in
@@ -554,6 +746,7 @@ def load_model(path, *, device=None):
             reversibility_names  = names["reversibility_names"],
             measured_fluxes      = names["measured_fluxes"],
             null_space_data      = nsd,
+            flux_bounds          = flux_bounds,
             flux_norm_stats      = flux_norm_stats,
             norm_stats           = r.read_json("shared/norm_stats.json", default={}),
             h_reaction           = m["model"]["h_reaction"],
@@ -585,7 +778,7 @@ def load_model(path, *, device=None):
     model._adopt(members, split_source=None)
     # strict=False would also hide a renamed key, so check the difference exactly.
     expected = set(model.members[0]._model.state_dict()) - set(state_dicts[0])
-    if expected != regenerated:
+    if expected - _OPTIONAL_REGENERATED != regenerated - _OPTIONAL_REGENERATED:
         raise SfxFormatError(
             f"{path}: weights do not match the model. Missing but not listed as "
             f"regenerated: {sorted(expected - regenerated)}; listed but present: "
@@ -604,11 +797,56 @@ def inspect_model(path):
     return read_manifest(path)
 
 
-def validate_model(path, *, device=None, per_member=False):
-    """Recompute validation R² from the export alone.
+def read_cobra_model(path):
+    """The prepared COBRA network stored in *path*, as a :class:`cobra.Model`; needs no run
+    directory. Raises :class:`SfxFormatError` if the model was exported without one — check
+    ``inspect_model(path)["network"]["included"]`` first to branch without catching.
+    """
+    from cobra.io.json import from_json
 
-    Requires an export written with the validation inputs (``with_val_inputs``);
+    with SfxReader(path) as r:
+        if not r.has(NETWORK_ENTRY):
+            raise SfxFormatError(
+                f"{path} carries no COBRA network. Re-export it with with_network=True."
+            )
+        return from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8"))
+
+
+def read_stoichiometry(path):
+    """``(S, metabolite_ids, cobra_model)`` with ``S`` columns reindexed to ``flux_names`` order,
+    so a consumer can multiply straight into a prediction (``S @ predicted_fluxes ≈ 0``).
+    """
+    from cobra.util.array import create_stoichiometric_matrix
+
+    model = read_cobra_model(path)
+    with SfxReader(path) as r:
+        flux_names = r.read_json("shared/names.json")["flux_names"]
+
+    S = create_stoichiometric_matrix(model, array_type="dense")
+    order = {rxn.id: i for i, rxn in enumerate(model.reactions)}
+    missing = [name for name in flux_names if name not in order]
+    if missing:
+        raise SfxFormatError(
+            f"{path}: the stored network is missing {len(missing)} predicted "
+            f"reaction(s), e.g. {missing[:5]}"
+        )
+    return (S[:, [order[name] for name in flux_names]],
+            [met.id for met in model.metabolites],
+            model)
+
+
+def validate_model(path, *, device=None, per_member=False):
+    """Recompute validation R² from the export alone (requires ``with_val_inputs`` at export time);
     reproduces the number training reported, in training token order.
+
+    Parameters
+    ----------
+    path : str
+        Path to the ``.sfx`` file.
+    device : optional
+        Device to run inference on.
+    per_member : bool
+        Also return each ensemble member's per-reaction R² as extra columns.
     """
     import pandas as pd
 

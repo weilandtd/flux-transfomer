@@ -47,12 +47,17 @@ CONDITION_COLORS = {
     'C': '#f3c47f',   # golden (MFA-like)
     'N': '#7fb3d5',   # light blue
     'P': '#2c9c8f',   # teal / green
+    'A': '#c17429',   # burnt orange — activated T cell (matches plot_mid_data)
+    'B': '#9b7fb3',   # muted purple — batch condition (i_orientalis, m_musculus_t_cell,
+                      # s_cerevisiae, and now e_coli_core all report one); was missing
+                      # from this list entirely, so no organism's batch data ever
+                      # reached these panels before.
 }
 COLORS = {
     'reference': '#888888',   # identity line
     'zero':      '#cccccc',   # annotation box edge
 }
-CONDITIONS = ['C', 'N', 'P']
+CONDITIONS = ['C', 'N', 'P', 'A', 'B']
 
 # Reactions with |flux| below this are excluded from the log-log plot.
 FLUX_MIN_ABS = 1e-6
@@ -96,28 +101,43 @@ def _organism_path(org: dict, *parts) -> pathlib.Path:
     return pathlib.Path(resolve_path(os.path.join(*parts), org['root']))
 
 
-def _ref_by_gc(ref_path: pathlib.Path, condition: str) -> pd.DataFrame:
-    """Reference MFA fluxes for one condition, wide DataFrame indexed by reaction id,
-    columns = growth-condition int. Matches '<cond><n>_mfa' and bare '<cond>_mfa' (→ 1)."""
+def _ref_by_gc(ref_path: pathlib.Path, condition: str, suffix: str = '_mfa') -> pd.DataFrame | None:
+    """Reference values for one condition, wide DataFrame indexed by reaction id, columns =
+    growth-condition int. Matches '<cond><n>{suffix}' and bare '<cond>{suffix}' (→ 1).
+
+    ``suffix`` defaults to the point MFA value ('_mfa'); pass '_mfaLB'/'_mfaUB' to pull the
+    published confidence bounds instead, for figure2.py's error bars. Returns None when the
+    workbook has no column matching this suffix (older workbooks, or organisms/panels without
+    bounds) so callers can treat "no bound" as a first-class, NaN-filled case.
+    """
     ref = pd.read_excel(ref_path).set_index('id')
-    pat = re.compile(rf'^{re.escape(condition)}(\d*)_mfa$')
+    pat = re.compile(rf'^{re.escape(condition)}(\d*){re.escape(suffix)}$')
     cols, gcs = [], []
     for c in ref.columns:
         m = pat.match(str(c))
         if m:
             cols.append(c)
             gcs.append(int(m.group(1)) if m.group(1) else 1)
+    if not cols:
+        return None
     out = ref[cols].copy()
     out.columns = gcs
     return out
 
 
-def _pred_by_gc(pred_path: str) -> pd.DataFrame:
-    """Predicted flux per (growth condition, reaction), mean over bio-reps. Wide:
-    index = reaction id, columns = growth-condition int."""
+def _pred_by_gc(pred_path: str, value_col: str = 'Value') -> pd.DataFrame | None:
+    """Predicted value per (growth condition, reaction), mean over bio-reps. Wide:
+    index = reaction id, columns = growth-condition int.
+
+    ``value_col`` defaults to the point prediction ('Value'); pass 'Value_lo'/'Value_hi' to
+    pull the ensemble's 95% interval bounds instead, once those columns exist. Returns None
+    when the CSV predates that column (so the point-prediction path is unaffected).
+    """
     df = pd.read_csv(pred_path)
     df = df[df['Type'] == 'flux']
-    return (df.groupby(['GrowthCondition', 'Flux Name'])['Value']
+    if value_col not in df.columns:
+        return None
+    return (df.groupby(['GrowthCondition', 'Flux Name'])[value_col]
               .mean().unstack('GrowthCondition'))
 
 
@@ -196,7 +216,13 @@ def _label_deviations(fig, ax, sub: pd.DataFrame, mark: pd.DataFrame, max_labels
 
 def build_plot_df(run_dir: pathlib.Path, org: dict, panel_rxns: set) -> pd.DataFrame:
     """Tidy DataFrame of |pred| vs |ref| per (condition, growth condition, reaction),
-    restricted to SigmaFlux-identifiable reactions and finite positive values."""
+    restricted to SigmaFlux-identifiable reactions and finite positive values.
+
+    Also carries the published MFA confidence bounds (``ref_lo``/``ref_hi``) and the
+    SigmaFlux ensemble's 95% interval (``pred_lo``/``pred_hi``) alongside the point
+    ``ref``/``pred`` values, NaN-filled when unavailable (older reference workbooks or
+    predictions CSVs) so callers can always assume the columns exist.
+    """
     ref_path = _organism_path(org, org['data'], org['reference'])
     parts = []
 
@@ -206,8 +232,15 @@ def build_plot_df(run_dir: pathlib.Path, org: dict, panel_rxns: set) -> pd.DataF
         if not hits:
             print(f"  condition {cond}: no predictions CSV — skipping")
             continue
-        pred = _pred_by_gc(hits[-1])
-        ref  = _ref_by_gc(ref_path, cond)
+        pred    = _pred_by_gc(hits[-1])
+        pred_lo = _pred_by_gc(hits[-1], 'Value_lo')
+        pred_hi = _pred_by_gc(hits[-1], 'Value_hi')
+        ref     = _ref_by_gc(ref_path, cond)
+        if ref is None:
+            print(f"  condition {cond}: no reference column — skipping")
+            continue
+        ref_lo  = _ref_by_gc(ref_path, cond, suffix='_mfaLB')
+        ref_hi  = _ref_by_gc(ref_path, cond, suffix='_mfaUB')
         # Growth rate D = the biomass reaction flux per growth condition (h⁻¹).
         rates = (ref.loc['BIOMASS'].abs().round(2).to_dict()
                  if 'BIOMASS' in ref.index else {})
@@ -218,13 +251,31 @@ def build_plot_df(run_dir: pathlib.Path, org: dict, panel_rxns: set) -> pd.DataF
                 shared = [r for r in shared if r in panel_rxns]
             if not shared:
                 continue
+
+            def _get(frame, col):
+                if frame is None or col not in frame.columns:
+                    return np.full(len(shared), np.nan)
+                return frame.reindex(shared)[col].to_numpy(dtype=float)
+
+            ref_v, pred_v = ref.loc[shared, gc].to_numpy(dtype=float), pred.loc[shared, gc].to_numpy(dtype=float)
+            ref_lo_v, ref_hi_v = _get(ref_lo, gc), _get(ref_hi, gc)
+            # ref/pred are stored as abs() values, but a published LB/UB pair for a
+            # negative flux can have abs(LB) > abs(UB) after sign-flipping -- reorder
+            # after abs(), not before, or the interval inverts. No-op when signs don't flip.
+            ref_lo_abs = np.minimum(np.abs(ref_lo_v), np.abs(ref_hi_v))
+            ref_hi_abs = np.maximum(np.abs(ref_lo_v), np.abs(ref_hi_v))
+
             parts.append(pd.DataFrame({
                 'condition': cond,
                 'gc':        gc,
                 'D':         rates.get(gc, float(gc)),
                 'reaction':  shared,
-                'ref':       np.abs(ref.loc[shared, gc].values),
-                'pred':      np.abs(pred.loc[shared, gc].values),
+                'ref':       np.abs(ref_v),
+                'pred':      np.abs(pred_v),
+                'ref_lo':    ref_lo_abs,
+                'ref_hi':    ref_hi_abs,
+                'pred_lo':   _get(pred_lo, gc),   # pred already |.|-valued upstream
+                'pred_hi':   _get(pred_hi, gc),
             }))
 
     df = pd.concat(parts, ignore_index=True)
@@ -240,7 +291,11 @@ def plot_panels(df: pd.DataFrame, out_path: pathlib.Path, max_labels: int = 5):
     for ax, cond in zip(axes, CONDITIONS):
         sub = df[df['condition'] == cond]
         if not sub.empty:
-            cmap = sns.color_palette(f"dark:{CONDITION_COLORS[cond]}_r", as_cmap=True)
+            # Discrete rather than as_cmap: seaborn treats a few-valued hue as
+            # categorical and refuses a colormap there (the T cell has one D per
+            # condition, chemostats have many). The legend below is discrete anyway.
+            cmap = sns.color_palette(f"dark:{CONDITION_COLORS[cond]}_r",
+                                     n_colors=max(sub['D'].nunique(), 1))
             sns.scatterplot(data=sub, x='ref', y='pred', hue='D', ax=ax,
                             palette=cmap, s=18, edgecolor='none', legend='full')
             # One horizontal row above the axes. Inside the panel it sat on top of the

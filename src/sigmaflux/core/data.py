@@ -155,10 +155,20 @@ def get_model_flux_data(model, with_std=False, exp_ix=None):
     if exp_ix is None:
         exp_ix = range(len(model.experiments))
 
-    #for e_ix, e in enumerate(model.experiments):
+    # A measured flux is a property of the culture, not of the tracer, so the same
+    # FluxData is attached to every per-tracer Experiment. Without this guard each
+    # measurement enters once per experiment -- 22 measured fluxes became 66 rows
+    # on the 3-tracer T-cell setup. The fit itself is nearly immune (the objective
+    # divides the flux block by its own count), but every raw chi-square built from
+    # these indices was 3x over-weighted, and so was the n_fluxes that sets the
+    # acceptance threshold's effective degrees of freedom.
+    seen = set()
     for e_ix, _e_ix in enumerate(exp_ix):
         e = model.experiments[_e_ix]
         for f in e.fluxes:
+            if f.reaction.id in seen:
+                continue
+            seen.add(f.reaction.id)
             f_ix = model._flux_hash[f.reaction.id]
             indices.append(f_ix)
             fluxes.append(f._mean)

@@ -10,10 +10,14 @@ them to the benchmark predictions. Produces SVG figures:
 Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
-All R² are plain (unfiltered). run_mfa_benchmark.py already rejects fits that fail
-the reduced-χ² acceptance bound and writes them as NaN, so every MFA sample reaching
-this script is a statistically acceptable fit; the spread that remains is genuine
-flux non-identifiability, not numerical failure, and must not be filtered away.
+**All R² are plain and unfiltered — do not add an outlier cut here.** The benchmark
+already drops every sample whose fit is not statistically acceptable (fails the standard
+¹³C-MFA χ² goodness-of-fit test, Antoniewicz et al. 2006 — see `converged_samples`), so
+what reaches this script is the set of solutions each method actually stands behind. The
+spread that remains is genuine flux non-identifiability, and filtering it measures how a
+method does on the samples it happened to get right — which is exactly the selection bias
+the benchmark exists to expose. Two such filters have been tried and removed: an NMAD cut,
+and a Q-Q tail extrapolation.
 
 Usage:
     python paper/analysis/plot_test_performance.py paper/.results/i_orientalis_20260614
@@ -29,16 +33,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import norm
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
 
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
-R2_THRESHOLD = 0.8
-QQ_ALPHA = 0.1                 # expected number of samples beyond the outlier cut under the
-                               # bulk model, per reaction; smaller = more conservative cut
+R2_THRESHOLD = 0.9
 # Clip floor sits on the 0.2 tick grid so every interval on the axis is 0.2 wide and the
 # ticks are at their true data positions. The earlier −0.1 floor labelled "≤0" made the
 # first interval 0.3 against 0.2 for the rest, and mislabelled its own position.
@@ -70,75 +71,131 @@ def parse_args():
     return p.parse_args()
 
 
-def load_benchmark(bench_dir: pathlib.Path,
-                   flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def converged_samples(bench_dir: pathlib.Path) -> set | None:
+    """Samples whose fit is statistically acceptable, from the benchmark's own record.
+
+    ``sigmaflux-benchmark-mfa`` writes ``*_convergence.csv`` holding, per sample, whether
+    the best fit found passed the standard ¹³C-MFA goodness-of-fit test (Antoniewicz,
+    Kelleher & Stephanopoulos 2006): SSR at or under the χ²(dof) bound at the run's
+    ``--chi2-alpha`` (``reached_optimum``, see ``chi2_acceptance`` in
+    ``run_mfa_benchmark.py``). This is the criterion MFA practice itself uses to call a
+    fit good — not a benchmark-only heuristic — so scoring R² over these samples is what a
+    working MFA pipeline would report.
+
+    Returns None when no record exists (the AI arm, or an older MFA run), and the caller
+    then scores everything.
+    """
+    records = sorted(bench_dir.glob("pred_*_convergence.csv"))
+    if not records:
+        return None
+    df = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
+    return set(df.loc[df["reached_optimum"], "sample"].astype(int))
+
+
+def _sample_columns(pred_df):
+    """Yield ``(sample_ix, prediction)`` for every column of a predictions frame.
+
+    An ensemble AI benchmark's columns are a ``(sample, member)`` MultiIndex — every
+    member's own raw prediction for a sample is a separate column. MFA and a
+    single-checkpoint AI benchmark write one column per sample instead. Either way,
+    this yields one ``(sample_ix, prediction)`` pair per column.
+    """
+    if isinstance(pred_df.columns, pd.MultiIndex):
+        for col, ix in zip(pred_df.columns, pred_df.columns.get_level_values("sample")):
+            yield int(ix), pred_df[col]
+    else:
+        for ix in pred_df.columns:
+            yield int(ix), pred_df[ix]
+
+
+def drop_pool_reactions(flux_df: pd.DataFrame, run_dir: pathlib.Path) -> pd.DataFrame:
+    """Drop measurement-pool reactions from a flux frame before it is scored.
+
+    A pool's drain is pinned at 1 and its mixing legs sum to 1, so they are trivially
+    predictable and are compartment fractions rather than rates. Scoring them would
+    inflate every aggregate against a reference MFA fit that has no such reactions.
+
+    Args:
+        flux_df: fluxes indexed by reaction id.
+        run_dir: training run directory holding ``model_prepared_for_mfa.json``.
+    """
+    prepared = pathlib.Path(run_dir) / "model_prepared_for_mfa.json"
+    if not prepared.is_file():
+        return flux_df
+    from cobra.io.json import load_json_model
+
+    from sigmaflux.core.measurement_pools import pool_reaction_ids
+    pool_ids = set(pool_reaction_ids(load_json_model(str(prepared))))
+    keep = [r for r in flux_df.index if r not in pool_ids]
+    if len(keep) < flux_df.shape[0]:
+        print(f"Excluded {flux_df.shape[0] - len(keep)} measurement-pool reactions "
+              f"from scoring")
+    return flux_df.loc[keep]
+
+
+def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
+                   require_converged: bool = True) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
+    An ensemble AI benchmark's predictions are *raw* (unprojected): every member's
+    own column for a sample (see :func:`_sample_columns`) is combined here by the
+    per-reaction *median across whatever columns that sample has*, so aggregation
+    happens at evaluation time and can be changed without rerunning inference. MFA
+    and a single-checkpoint AI benchmark give each sample exactly one column, so this
+    degenerates to "median of one", i.e. themselves.
+
     Returns the paired long frame and the number of samples the method failed to
-    solve. run_mfa_benchmark.py writes all-NaN fluxes for samples where no restart
-    cleared the reduced-χ² acceptance bound; those samples drop out here and never
-    count against the method's R², so the failure count must be reported alongside it.
+    solve. A sample counts as failed when its fit did not pass the goodness-of-fit test
+    (``reached_optimum`` is False, see :func:`converged_samples`) or every column's
+    value for it was unusable. Either way it is excluded from R² and reported
+    alongside it, so a method is never credited for samples it did not actually solve.
+
+    Args:
+        require_converged: when False, skip the χ²-acceptance filter and score every
+            fit the MFA arm wrote (still dropping samples with no usable value at
+            all). Used by the uncertainty benchmark, where a 100-sample condition
+            can leave too few χ²-accepted fits to say anything (some organisms
+            accept under 10% of their fits at the default noise level) — the
+            resulting R² is therefore not comparable to this function's default,
+            accepted-only numbers; report the χ²-acceptance rate alongside it.
     """
     bench_dir = pathlib.Path(bench_dir)
-    frames, n_failed = [], 0
+    converged = converged_samples(bench_dir) if require_converged else None
+
+    by_sample = {}
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
-        pred_df = _read_hdf(h5_path, "fluxes")  # rows=reaction_ids, cols=absolute sample_ix
-        for ix in pred_df.columns:
-            ix = int(ix)
+        pred_df = _read_hdf(h5_path, "fluxes")  # rows=reaction_ids
+        for ix, pred in _sample_columns(pred_df):
             if ix >= flux_df.shape[1]:
                 continue
-            gt   = flux_df[ix]
-            pred = pred_df[ix].reindex(gt.index)
-            chunk = pd.DataFrame({
-                "sample":   ix,
-                "reaction": gt.index,
-                "gt":       gt.values,
-                "pred":     pred.values,
-            }).dropna()
-            if chunk.empty:
-                n_failed += 1
-            else:
-                frames.append(chunk)
+            by_sample.setdefault(ix, []).append(pred)
+
+    frames, n_failed = [], 0
+    for ix, preds in sorted(by_sample.items()):
+        if converged is not None and ix not in converged:
+            n_failed += 1
+            continue
+        gt   = flux_df[ix]
+        # median(axis=1) skips NaN per row, so one member's failed sample does not
+        # drop the whole reaction for that sample as long as another member has it.
+        pred = pd.concat(preds, axis=1).reindex(gt.index).median(axis=1)
+        chunk = pd.DataFrame({
+            "sample":   ix,
+            "reaction": gt.index,
+            "gt":       gt.values,
+            "pred":     pred.values,
+        }).dropna()
+        if chunk.empty:
+            n_failed += 1
+        else:
+            frames.append(chunk)
     if not frames:
         raise FileNotFoundError(f"No pred_*_flux.h5 files found in {bench_dir}")
     return pd.concat(frames, ignore_index=True), n_failed
 
 
-def _robust_scale(resid: np.ndarray) -> float:
-    """Scale of the bulk of a residual distribution, read off its central quantiles.
-
-    IQR/1.349 is the σ a normal would need to produce the observed Q1..Q3, so it is
-    set by the middle half of the samples and is unaffected by the tail.
-    """
-    q1, q3 = np.percentile(resid, [25, 75])
-    return (q3 - q1) / 1.349
-
-
-def qq_inlier_mask(resid: np.ndarray, alpha: float = QQ_ALPHA) -> np.ndarray:
-    """Outlier cut obtained by extrapolating the central quantiles into the tail.
-
-    Fit the bulk scale from Q1..Q3 (`_robust_scale`), then cut at the quantile where
-    that fitted model expects only `alpha` samples out of n to remain — i.e. where the
-    observed tail departs from the straight line of the normal Q-Q plot. Unlike a fixed
-    n-MAD rule the cut widens with n, so it does not get more aggressive as samples are
-    added. Degenerate spread (IQR == 0) keeps everything.
-    """
-    n = len(resid)
-    scale = _robust_scale(resid)
-    if scale <= 0 or n < 2:
-        return np.ones(n, dtype=bool)
-    z_cut = norm.ppf(1.0 - alpha / (2.0 * n))
-    return np.abs(resid - np.median(resid)) <= z_cut * scale
-
-
-def per_flux_r2(df: pd.DataFrame, exclude_outliers: bool = True) -> pd.Series:
-    """R² for each reaction across samples.
-
-    With `exclude_outliers`, samples outside the Q-Q extrapolated bulk (see
-    `qq_inlier_mask`) are dropped first. This measures how well a method does when it
-    lands on a sensible solution, and must always be reported next to the unfiltered R²
-    and the exclusion rate from `outlier_fraction` — the excluded MFA fits are not
-    numerical failures, they clear the benchmark's own reduced-χ² acceptance bound.
+def per_flux_r2(df: pd.DataFrame) -> pd.Series:
+    """R² for each reaction across every sample the method solved.
 
     Reactions whose GT is constant across samples carry no variance to explain and
     yield NaN; they are dropped.
@@ -146,9 +203,6 @@ def per_flux_r2(df: pd.DataFrame, exclude_outliers: bool = True) -> pd.Series:
     def _r2(g):
         gt   = g["gt"].to_numpy()
         pred = g["pred"].to_numpy()
-        if exclude_outliers:
-            keep = qq_inlier_mask(pred - gt)
-            gt, pred = gt[keep], pred[keep]
         if len(gt) < 2:
             return np.nan
         ss_res = ((pred - gt) ** 2).sum()
@@ -157,27 +211,48 @@ def per_flux_r2(df: pd.DataFrame, exclude_outliers: bool = True) -> pd.Series:
     return df.groupby("reaction").apply(_r2, include_groups=False).dropna()
 
 
-def outlier_fraction(df: pd.DataFrame) -> pd.Series:
-    """Fraction of samples the Q-Q cut removes, per reaction."""
-    def _frac(g):
-        return float(1.0 - qq_inlier_mask(g["pred"].to_numpy() - g["gt"].to_numpy()).mean())
-    return df.groupby("reaction").apply(_frac, include_groups=False).dropna()
+def per_flux_rmse(df: pd.DataFrame) -> pd.Series:
+    """RMSE for each reaction across every sample the method solved.
 
-
-def standardized_residuals(df: pd.DataFrame) -> np.ndarray:
-    """Per-reaction residuals divided by that reaction's bulk scale, pooled.
-
-    Standardising per reaction makes reactions with different flux magnitudes
-    comparable, so a single Q-Q plot can show whether one common bulk model describes
-    them all — and where it stops holding.
+    Unlike per_flux_r2, well-defined for any n >= 1 (no variance term needed), so a
+    reaction with too little spread for R2 (dropped there) can still carry an RMSE here.
     """
-    out = []
-    for _, g in df.groupby("reaction"):
-        r = g["pred"].to_numpy() - g["gt"].to_numpy()
-        scale = _robust_scale(r)
-        if scale > 0:
-            out.append((r - np.median(r)) / scale)
-    return np.concatenate(out) if out else np.empty(0)
+    def _rmse(g):
+        gt, pred = g["gt"].to_numpy(), g["pred"].to_numpy()
+        return float(np.sqrt(np.mean((pred - gt) ** 2)))
+    return df.groupby("reaction").apply(_rmse, include_groups=False)
+
+
+def per_flux_rms(flux_df: pd.DataFrame) -> pd.Series:
+    """Root-mean-square flux of each reaction over the ground-truth population.
+
+    The denominator of :func:`per_flux_nrmse`, so the reported error is a fraction of the
+    flux the reaction typically carries rather than of the one extreme sample it reaches.
+
+    Taken over the whole population rather than over the samples one method solved: the
+    MFA arm is chi2-gated to a fraction of the split while the AI arm keeps all of it, and
+    a per-method denominator would put the two violins on different scales.
+
+    Not ``std(gt)``, which would make the result exactly ``sqrt(1 - R2)`` and so a
+    reparametrisation of the R2 panel; the mean is deliberately not subtracted.
+    """
+    return np.sqrt((flux_df.astype(float) ** 2).mean(axis=1))
+
+
+def per_flux_nrmse(df: pd.DataFrame, denom: pd.Series) -> pd.Series:
+    """:func:`per_flux_rmse` divided by each reaction's own ``denom`` entry.
+
+    Dimensionless, so reactions and organisms spanning orders of magnitude in flux are
+    on one scale. Reactions missing from ``denom``, or whose denominator is zero, drop
+    out.
+
+    Args:
+        df: paired long frame from :func:`load_benchmark`.
+        denom: per-reaction normalizer, e.g. :func:`per_flux_rms`.
+    """
+    rmse = per_flux_rmse(df)
+    scale = denom.reindex(rmse.index).replace(0.0, np.nan)
+    return (rmse / scale).dropna()
 
 
 def overall_r2(df: pd.DataFrame) -> float:
@@ -199,55 +274,10 @@ def identifiability_table(r2_mfa: pd.Series, r2_ai: pd.Series) -> pd.DataFrame:
     # Explicit per-method flags for downstream selectors. The predicted-flux panels use
     # mfa_identifiable: those panels compare against the reference MFA fluxes, so where MFA
     # cannot determine a flux the reference value itself is unreliable and the comparison is
-    # meaningless regardless of how SigmaFlux does. Note both flags use the Q-Q-filtered R²
-    # — on the unfiltered R² MFA clears the bar for no reaction at all and the panels would
-    # be empty.
+    # meaningless regardless of how SigmaFlux does.
     tbl["sf_identifiable"] = ai_id
     tbl["mfa_identifiable"] = mfa_id
     return tbl.sort_values(["identifiable_by", "r2_ai"], ascending=[True, False])
-
-
-def _cut_z(n_per_reaction: int, alpha: float = QQ_ALPHA) -> float:
-    """The standardized-residual cut `qq_inlier_mask` applies to a reaction of n samples."""
-    return float(norm.ppf(1.0 - alpha / (2.0 * n_per_reaction)))
-
-
-def plot_qq(resid: dict, n_per_reaction: dict, output_dir: pathlib.Path,
-            filename: str = "qq_residuals.svg", n_points: int = 600, ylim: float = 12.0):
-    """Normal Q-Q plot of pooled standardized residuals, with the outlier cut marked.
-
-    This is the audit for `qq_inlier_mask`: the bulk of each method should track the
-    diagonal (the model fitted from its own central quantiles), and the cut sits where
-    the observed tail lifts off that line. Everything outside the dashed lines is what
-    the filtered R² drops. The cut is set by the per-reaction sample count, not the
-    pooled count, so it matches what the mask actually applies.
-    """
-    probs = (np.arange(n_points) + 0.5) / n_points
-    theo  = norm.ppf(probs)
-
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
-    lim = float(np.abs(theo).max()) * 1.05
-    ax.plot([-lim, lim], [-lim, lim], color="#AAAAAA", lw=0.8, zorder=0)
-
-    for key, vals in resid.items():
-        if len(vals) == 0:
-            continue
-        z_cut = _cut_z(n_per_reaction[key])
-        ax.plot(theo, np.quantile(vals, probs), color=COLORS[key], lw=1.8,
-                label=f"{LABEL[key]} — {100 * np.mean(np.abs(vals) > z_cut):.1f}% cut")
-        for s in (-1, 1):
-            ax.axhline(s * z_cut, color=COLORS[key], lw=0.7, ls="--", alpha=0.6, zorder=0)
-
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-ylim, ylim)
-    ax.set_xlabel("Normal quantile")
-    ax.set_ylabel("Standardized residual\n(per-reaction, IQR-scaled)")
-    ax.legend(frameon=False, fontsize=9, loc="upper left")
-    sns.despine(ax=ax)
-
-    fig.savefig(output_dir / filename, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {output_dir / filename}")
 
 
 def plot_metric_cdf(series: dict, xlabel: str, ylabel: str, filename: str,
@@ -383,6 +413,7 @@ def main():
 
     print(f"Loading ground-truth data from: {run_dir}")
     labeling_df, flux_df, _ = load_data(str(run_dir))
+    flux_df = drop_pool_reactions(flux_df, run_dir)
     flux_df.columns     = range(flux_df.shape[1])
     labeling_df.columns = range(labeling_df.shape[1])
     print(f"  {flux_df.shape[0]} reactions × {flux_df.shape[1]} samples")
@@ -410,26 +441,16 @@ def main():
     print(f"  {len(df_ai):,} pairs from {df_ai['reaction'].nunique()} reactions "
           f"({df_ai['sample'].nunique()} samples, {n_failed_ai} unsolved)")
 
-    r2_mfa,   r2_ai   = per_flux_r2(df_mfa), per_flux_r2(df_ai)
-    raw_mfa,  raw_ai  = (per_flux_r2(df_mfa, exclude_outliers=False),
-                         per_flux_r2(df_ai,  exclude_outliers=False))
-    out_mfa,  out_ai  = outlier_fraction(df_mfa), outlier_fraction(df_ai)
+    r2_mfa, r2_ai = per_flux_r2(df_mfa), per_flux_r2(df_ai)
 
-    # The filtered R² answers "how well does the method do when it lands on a sensible
-    # solution". It is only interpretable next to the unfiltered R² and the exclusion
-    # rate, because the two differ enormously for MFA and barely at all for SigmaFlux —
-    # the excluded MFA fits still clear the benchmark's reduced-χ² acceptance bound.
-    for name, r2, raw, out, df, n_failed in [
-            ("MFA", r2_mfa, raw_mfa, out_mfa, df_mfa, n_failed_mfa),
-            ("SigmaFlux", r2_ai, raw_ai, out_ai, df_ai, n_failed_ai)]:
+    for name, r2, df, n_failed in [
+            ("MFA", r2_mfa, df_mfa, n_failed_mfa),
+            ("SigmaFlux", r2_ai, df_ai, n_failed_ai)]:
         n_total = df["sample"].nunique() + n_failed
-        print(f"\n{name:9s} — median R²: {r2.median():+.3f} after Q-Q outlier cut "
-              f"(α={QQ_ALPHA:g}) | {raw.median():+.3f} unfiltered")
-        print(f"            reactions R² > {R2_THRESHOLD}: {int((r2 > R2_THRESHOLD).sum())} "
-              f"of {len(r2)} | {int((raw > R2_THRESHOLD).sum())} unfiltered")
-        print(f"            samples cut as outliers: {100 * out.mean():.1f}% "
-              f"(median {100 * out.median():.1f}% per reaction)")
-        print(f"            overall R² (pooled, unfiltered): {overall_r2(df):.3f}")
+        print(f"\n{name:9s} — median R²: {r2.median():+.3f}")
+        print(f"            reactions R² > {R2_THRESHOLD}: "
+              f"{int((r2 > R2_THRESHOLD).sum())} of {len(r2)}")
+        print(f"            overall R² (pooled): {overall_r2(df):.3f}")
         print(f"            samples with no acceptable solution: "
               f"{n_failed} of {n_total} ({100 * n_failed / n_total:.1f}%)")
 
@@ -452,9 +473,6 @@ def main():
                     "Per-reaction flux R²", "Fraction of reactions",
                     "r2_cdf_mfa.svg", output_dir,
                     ticks=X_TICKS, tick_labels=X_LABELS)
-    plot_qq({"mfa": standardized_residuals(df_mfa), "ai": standardized_residuals(df_ai)},
-            {"mfa": df_mfa["sample"].nunique(), "ai": df_ai["sample"].nunique()},
-            output_dir)
     plot_scatter(df_mfa, df_ai, output_dir)
 
 

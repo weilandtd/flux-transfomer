@@ -73,7 +73,7 @@ class CalcLabeling(torch.autograd.Function):
             end_time = time.time()
             logger.debug(f"Completed forward of subnet {subnet} in {end_time - start_time:.5f} seconds")
        
-        labeling = get_labeling(forward_dict["metabolite_hash"], emu_states, forward_dict["emu_met_filter"], forward_dict["core_met_ix"], device=device, dtype=dtype)
+        labeling = get_labeling(forward_dict["metabolite_hash"], emu_states, forward_dict["emu_met_filter"], forward_dict["core_met_ix"], device=device, dtype=dtype, boundary_inputs=tracer_boundary_inputs)
         return labeling, all_X, all_Y, emu_states
 
     @staticmethod 

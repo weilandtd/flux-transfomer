@@ -5,8 +5,8 @@ Reads only the manifest — no weights, no torch, no COBRA — so it is instant 
 works anywhere numpy is available.
 
 Example:
-    sigmaflux-inspect i_orientalis-v1.0.0.sfx
-    sigmaflux-inspect i_orientalis-v1.0.0.sfx --verify
+    sigmaflux-inspect i_orientalis-v1.4.0.sfx
+    sigmaflux-inspect i_orientalis-v1.4.0.sfx --verify
 """
 
 import argparse
@@ -32,6 +32,12 @@ def build_parser():
 
 
 def _summary(m, path):
+    """Print a human-readable summary of a model manifest.
+
+    Args:
+        m: parsed manifest dict.
+        path: path to the .sfx file (used only to report its size).
+    """
     prov, model, val = m.get("provenance", {}), m.get("model", {}), m.get("validation", {})
     import os
     print(f"{m['name']}  v{m['model_version']}   ({os.path.getsize(path)/1e6:.1f} MB)")
@@ -54,6 +60,13 @@ def _summary(m, path):
         print(f"  validation    : included ({detail})")
     else:
         print("  validation    : omitted")
+    net = m.get("network", {})
+    if net.get("included"):
+        order = "" if net.get("reaction_order_matches", True) else ", reordered on read"
+        print(f"  network       : {net['n_reactions']} reactions, "
+              f"{net['n_metabolites']} metabolites ({net.get('source')}{order})")
+    else:
+        print("  network       : omitted (no stoichiometry available)")
     reported = val.get("reported") or []
     medians = [r["flux_median"] for r in reported if "flux_median" in r]
     if medians:

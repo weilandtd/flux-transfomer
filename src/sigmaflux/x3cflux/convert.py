@@ -1,0 +1,814 @@
+"""Convert the prepared cobra model into an x3cflux NetworkData.
+
+The hard part is that x3cflux's ``Reaction`` carries no stoichiometric
+coefficients -- multiplicity is expressed by repeating a metabolite name -- while
+x3cflux derives the steady-state matrix S automatically from the declared pools.
+Our cobra S has nullity 25; restricted to the 155 carbon pools it has nullity 50.
+So the non-carbon balances must be reproduced too, or Ipopt gets a flux space
+twice as large as the one our fit searches.
+
+Three devices make that work:
+
+  * **0-atom pools.** ``Metabolite(name, 0, {Carbon: 0})`` and 0-atom reactions
+    are legal and enter S as ordinary balance rows, so all 188 cobra pools and all
+    203 reactions can be declared.
+  * **Name repetition** for integer coefficients (ATPS_m 3x adp/atp, CBPS_c 2x atp).
+  * **Splitting** for non-integer coefficients, which name repetition cannot
+    express: each participant becomes a unit half-reaction and the pieces are tied
+    back together by equality LinearConstraints carrying the exact cobra ratios
+    (emitted by :mod:`~sigmaflux.x3cflux.build_config`). Affects PROTEIN_c, RNA_c,
+    DNA_c, LIPID_c and Ht_c_m. FECOOR_m and NADPHBAL_c instead become all-integer
+    when scaled by 2, which is cheaper and keeps them as single reactions.
+
+Two further deviations from a naive reading of the cobra model, both required to
+match our EMU forward model rather than to satisfy x3cflux:
+
+  * **Backward-only reactions** (ub <= 0; 15 of them, all EX_ uptakes) are flipped,
+    because x3cflux with ``bidirectional=False`` only builds forward labeling edges
+    while our AtomMapping keys off ``lower_bound < 0`` and builds reverse ones.
+    Flipping records scale = -1.
+  * **Symmetric pools** (fum_c, fum_m, succ_m) have no native x3cflux flag. Our
+    expansion adds both the natural and the reversed origin set, each weighted
+    ``1/(1+len(symmetries))`` = 1/2, so every reaction producing such a pool is
+    split into two half-flux copies, one per orientation.
+
+  * **Measurement pools** (``pyr`` from ``pyr_c`` + ``pyr_m``) are written in cobra with
+    a *zero* stoichiometric coefficient on the compartment they observe, which x3cflux
+    cannot express: multiplicity there is name repetition, and zero copies means absent.
+    But x3cflux has a rule nobody wrote down -- it announces it and then obeys it::
+
+        Reaction "POOL_pyr_c" both requires and produces metabolite "pyr_c". This is
+        not yet supported. Thus, the reaction is omitted from the balance equations
+        of the metabolic pool.
+
+    Omitted from **mass and label**. That is a coefficient of zero, and it needs only
+    the right reaction shape::
+
+        member(abc) + carrier(def)  ->  pool(abc) + member(def)
+
+    Read it right to left: the pool takes the member's atoms, and the member -- being on
+    both sides -- vanishes from its own balance, neither consumed nor perturbed. The
+    carrier is a dummy substrate that exists only because ``Reaction`` carries one atom
+    count for both sides and the permutation must be a bijection, so the atoms the pool
+    took need a partner. Its labeling, its flux, and whether pools share one carrier are
+    all numerically irrelevant, and it never appears in S. With the products ordered
+    ``[pool, member]`` the permutation is the identity over ``2n``.
+
+    The drain is then emitted plainly and **pinned at 1** (see
+    :func:`~sigmaflux.x3cflux.build_config.build_constraints`), so the taps sum to one
+    and each tap's *net* flux is its compartment fraction, read directly with no
+    transformation. It also fixes the counting -- a k-member pool has k-1 free
+    parameters, not k -- and makes flux-starvation unreachable: the earlier encoding
+    pinned each leg's net flux to zero and carried the weight on the exchange, so a start
+    with the exchanges at zero left the pool with no inflow and a singular EMU row, which
+    is what killed every Ipopt start at ``iter = 0``.
+"""
+
+import json
+import re
+import warnings
+from collections import OrderedDict
+
+import x3cflux as x
+
+from sigmaflux.core.measurement_pools import POOL_DRAIN_PREFIX, POOL_PREFIX
+from sigmaflux.expansion.utils import atom_pattern_regex
+
+CARBON = x.TracerElement.Carbon
+INT_TOL = 1e-9
+#: How far a produced pool may exceed the consumed pools of its own carbon count before
+#: the mismatch counts as a modelling error rather than rounding. Measured need: 1.5e-4
+#: on I. orientalis. A real error -- a missing educt, a mistyped coefficient -- is O(1)
+#: of the pool, so 1e-3 separates the two by nearly an order of magnitude on each side.
+CARRIER_REL_TOL = 1e-3
+SRC_SUFFIX = "__src"
+
+
+# ── atom-mapping parsing ──────────────────────────────────────────────────────
+
+def parse_atom_mapping(map_str, stoich):
+    """Split an ``atom_mapping`` annotation into educt and product letter strings.
+
+    Mirrors :func:`sigmaflux.expansion.atom_mapping.parse_mapping_string`: a
+    metabolite listed twice in the map yields two mappings; names absent from the
+    stoichiometry are ignored, and stoichiometry entries with no parenthesised group
+    get no atoms.
+
+    Args:
+        map_str: the reaction's ``atom_mapping`` annotation string.
+        stoich: cobra stoichiometry dict for the reaction.
+    """
+    if not map_str.startswith(" "):
+        map_str = " " + map_str
+    educts, products = [], []
+    for met, coef in stoich.items():
+        pattern = atom_pattern_regex(met)
+        for m in re.findall(pattern, map_str):
+            (educts if coef < 0 else products).append((met, m))
+    return educts, products
+
+
+def _bit_positions(entries):
+    """letter -> global bit index, over a concatenation of (met, pattern) entries.
+
+    x3cflux indexes atoms by bitset bit index with bit 0 rightmost, so pattern
+    letter s[j] (s[0] = C1) lands at bit n-1-j; offsets accumulate in storage order.
+    """
+    pos, off = {}, 0
+    for _, pat in entries:
+        n = len(pat)
+        for j, letter in enumerate(pat):
+            pos[letter] = off + (n - 1 - j)
+        off += n
+    return pos, off
+
+
+def build_permutation(educts, products, rxn_id):
+    """``perm[educt_bit] = product_bit``, matched by letter.
+
+    Returns ``(perm, n_atoms, n_void)``. ``n_void`` counts educt atoms with no
+    matching product letter; since x3cflux needs a bijection, these are absorbed
+    into a per-reaction void pool drained by a dedicated efflux, adding one row and
+    one column to S so the nullspace dimension is unchanged.
+
+    Args:
+        educts: (metabolite, pattern) entries on the educt side.
+        products: (metabolite, pattern) entries on the product side.
+        rxn_id: reaction id, used only in error messages.
+    """
+    e_pos, n_e = _bit_positions(educts)
+    p_pos, n_p = _bit_positions(products)
+
+    orphan_products = sorted(set(p_pos) - set(e_pos))
+    if orphan_products:
+        raise ValueError(f"{rxn_id}: product letters {orphan_products} have no educt; "
+                         f"this would need a void *source*, which is not implemented")
+
+    # Unmatched educt letters, in educt-concatenation order, land in the void pool.
+    unmatched = sorted((ei, letter) for letter, ei in e_pos.items() if letter not in p_pos)
+    for k, (_, letter) in enumerate(unmatched):
+        p_pos[letter] = n_p + (len(unmatched) - 1 - k)
+
+    perm = [0] * n_e
+    for letter, ei in e_pos.items():
+        perm[ei] = p_pos[letter]
+    return perm, n_e, len(unmatched)
+
+
+def apply_symmetry(products, sym_map):
+    """Rewrite product letter strings for one symmetry orientation.
+
+    ``sym_map`` maps metabolite id -> (orig, image); permutes each product's pattern
+    the same way ``compute_origin_emu_set`` does: ``index_map[i] = image.index(orig[i])``.
+
+    Args:
+        products: (metabolite, pattern) entries to rewrite.
+        sym_map: metabolite id -> (orig, image) symmetry pair.
+    """
+    out = []
+    for met, pat in products:
+        if met in sym_map:
+            orig, image = sym_map[met]
+            if len(orig) != len(pat):
+                raise ValueError(f"symmetry {orig}.{image} does not fit pattern {pat} "
+                                 f"of {met}")
+            idx = [image.index(c) for c in orig]
+            pat = "".join(pat[i] for i in idx)
+        out.append((met, pat))
+    return out
+
+
+# ── stoichiometry helpers ─────────────────────────────────────────────────────
+
+def expand_names(stoich, sign):
+    """Metabolite names repeated |coef| times, for integer coefficients.
+
+    Args:
+        stoich: cobra stoichiometry dict for the reaction.
+        sign: +1 for products, -1 for educts.
+    """
+    names = []
+    for met, coef in stoich.items():
+        if coef * sign <= 0:
+            continue
+        names.extend([met] * int(round(abs(coef))))
+    return names
+
+
+def integer_scale(stoich):
+    """Smallest factor in {1, 2} making every coefficient integral, else None."""
+    for f in (1, 2):
+        if all(abs(c * f - round(c * f)) < INT_TOL for c in stoich.values()):
+            return f
+    return None
+
+
+# ── the converter ─────────────────────────────────────────────────────────────
+
+class VoidPoolError(ValueError):
+    """A reaction drops carbon into a void pool, so mass is vanishing."""
+
+
+class Converted:
+    """NetworkData plus the bookkeeping needed to map fluxes in and out.
+
+    Attributes
+    ----------
+    network_data : x3cflux.NetworkData
+    scale : dict[str, float]
+        x3cflux flux ``u_r = scale[r] * v_r`` (-1 for flipped reactions, 2 for rescaled).
+    parents : OrderedDict[str, list[tuple[str, float]]]
+        cobra reaction -> [(sub-reaction, coefficient)]; coefficient is the sub-flux
+        when the parent flux is 1.
+    reversible : dict[str, bool]
+        cobra reaction -> whether its exchange parameter should stay free.
+    """
+
+    def __init__(self, network_data, scale, parents, reversible, x3c_reactions,
+                 void_pools, symmetric, sources, atom_free_reverse, extra_sources,
+                 pool_drains=None, pool_carriers=None):
+        """Store the conversion outputs; see the class docstring for the mapping.
+
+        Parameters
+        ----------
+        network_data : x3cflux.NetworkData
+            the built network.
+        scale : dict[str, float]
+            cobra reaction -> x3cflux flux scale factor.
+        parents : OrderedDict[str, list[tuple[str, float]]]
+            cobra reaction -> [(sub-reaction, coefficient)].
+        reversible : dict[str, bool]
+            cobra reaction -> whether its exchange parameter should stay free.
+        x3c_reactions : list[str]
+            every x3cflux reaction name, including split/symmetry sub-reactions.
+        void_pools : list[str]
+            names of void pools created to absorb unmatched educt atoms.
+        symmetric : list[str]
+            metabolite ids with a declared symmetry.
+        sources : dict[str, str]
+            EMU input metabolite -> its upstream source pool (see
+            :func:`input_source_pools`).
+        atom_free_reverse : list[str]
+            reactions forced unidirectional because their reverse direction carries
+            no atoms.
+        extra_sources : dict[str, int]
+            unlabeled source pool -> atom count, for from-nothing influxes.
+        pool_drains : dict[str, str]
+            measurement-pool drain -> its pool. build_config pins each one at 1, which
+            is what puts the taps on the unit simplex and makes each tap's net flux its
+            compartment fraction.
+        pool_carriers : dict[str, int]
+            dummy carrier pool -> atom count, one per distinct member carbon count. It
+            only balances the atom ledger of a tap; see the module docstring.
+        """
+        self.network_data = network_data
+        self.scale = scale
+        self.parents = parents
+        self.reversible = reversible
+        self.x3c_reactions = x3c_reactions
+        self.void_pools = void_pools
+        self.symmetric = symmetric
+        self.sources = sources
+        self.atom_free_reverse = atom_free_reverse
+        self.extra_sources = extra_sources
+        self.pool_drains = pool_drains or {}
+        self.pool_carriers = pool_carriers or {}
+
+
+def input_source_pools(facts):
+    """EMU input metabolite -> upstream source pool that carries its labeling.
+
+    A pool declared as a ConstantSubstrate must have no producer, or
+    ``create_simulator_from_data`` walks off the end and segfaults. So the
+    substrate is moved one step upstream (e.g. ``glc__D_e__src -> glc__D_e`` via
+    the existing EX_ reaction): the pool stays an ordinary balanced pool and keeps
+    its cobra row.
+
+    Found structurally: a carbon-carrying pool touched by exactly one reaction,
+    which produces it unidirectionally and nothing else -- checked against every
+    reaction, not just single-participant ones, so a metabolite with an additional
+    reversible transporter is correctly excluded rather than mistaken for a pure
+    input.
+    """
+    mets_by_id = {m["id"]: m for m in facts["metabolites"]}
+
+    def produces(coef, r):
+        return (coef > 0 and r["upper_bound"] > 0) or (coef < 0 and r["lower_bound"] < 0)
+
+    # atom_mapping required: an unmapped reaction carries no labeling information,
+    # so it cannot supply a metabolite's MID even if it structurally balances mass
+    # -- the same gate EMU._is_boundary uses in-house. Skipping it wrongly
+    # disqualified 1-10 metabolites per organism (found across every cached
+    # model) from a legitimate source classification via a reaction that could
+    # never have traced their label anyway.
+    # A measurement pool's mixing leg is not a network input, but it looks exactly like
+    # one: its only *stoichiometric* participant is the pool it produces, since the
+    # compartment it draws label from is carried at coefficient zero. Left in, every
+    # pool would be handed a __src substrate that nothing then consumes -- 50 orphan
+    # pools on I. orientalis, which check_network rejects.
+    real = [r for r in facts["reactions"] if not r["id"].startswith(POOL_PREFIX)]
+
+    producers = {}
+    for r in real:
+        if not r.get("atom_mapping"):
+            continue
+        for met, coef in r["stoichiometry"].items():
+            if produces(coef, r):
+                producers.setdefault(met, []).append(r["id"])
+
+    sources = {}
+    for r in real:
+        stoich = r["stoichiometry"]
+        if len(stoich) != 1:
+            continue
+        (met, coef), = stoich.items()
+        if not mets_by_id.get(met, {}).get("atom_pattern"):
+            continue
+        if not produces(coef, r):
+            continue
+        if producers.get(met) != [r["id"]]:
+            continue  # some other reaction also produces it -- not a pure input
+        sources[met] = met + SRC_SUFFIX
+    return sources
+
+
+def convert(facts, symmetry=True, allow_void=None):
+    """Build a :class:`Converted` from ``model_facts.json``.
+
+    *symmetry* emulates our symmetric pools with half-flux orientation pairs;
+    disable only for debugging, since x3cflux segfaults on it in the full network.
+
+    A void pool means a reaction's atom map moves carbon into a product the model
+    does not contain, so mass silently vanishes -- this raises
+    :class:`VoidPoolError` unless the reaction is named in *allow_void* (empty by
+    default); deliberate label boundaries belong in the workbook's Terminal sheet
+    instead.
+
+    Args:
+        facts: ``model_facts.json`` dict.
+        symmetry: emulate symmetric pools with half-flux orientation pairs.
+        allow_void: reaction ids allowed to strand carbon in a void pool.
+    """
+    allow_void = set() if allow_void is None else set(allow_void)
+    mets_by_id = {m["id"]: m for m in facts["metabolites"]}
+    # A pool declared terminal in the AMM is where the model stops following the label,
+    # so it carries no atoms: carbon reaching it leaves the labelled network instead of
+    # having to be carried into a product that cannot represent it. That is a curation
+    # decision, which is why it is read from the workbook rather than decided here.
+    #
+    # This has to be the *only* answer to "how many atoms does this pool have". Sizing
+    # the permutations off the untouched atom_pattern while declaring the pool with zero
+    # leaves x3cflux reading atom offsets past the end of the permutation -- a segfault,
+    # not an exception -- and check_network catches it only as
+    # "num_atoms=212 but product_names carry 180 atoms".
+    atoms = {m["id"]: 0 if m.get("terminal") else len(m["atom_pattern"])
+             for m in facts["metabolites"]}
+    sources = input_source_pools(facts)
+    for met, src in sources.items():
+        atoms[src] = atoms[met]
+
+    metabolites = [x.Metabolite(m["id"], atoms[m["id"]], {CARBON: atoms[m["id"]]})
+                   for m in facts["metabolites"]]
+
+    # Symmetric pools: 'abcd.dcba' -> ('abcd', 'dcba')
+    symmetric = {m["id"]: tuple(m["symmetries"][0].split("."))
+                 for m in facts["metabolites"] if m["symmetries"]}
+
+    reactions, scale, parents, reversible = [], {}, OrderedDict(), {}
+    void_pools, void_effluxes, atom_free_reverse = {}, [], []
+    extra_sources = {}
+    pool_drains, pool_carriers = {}, {}
+
+    for r in facts["reactions"]:
+        rid, stoich = r["id"], dict(r["stoichiometry"])
+
+        # Measurement pools. Both reactions are ordinary irreversible net-flux
+        # reactions at scale 1, so nothing downstream needs a special case for them.
+        if rid.startswith(POOL_DRAIN_PREFIX):
+            (pool,) = stoich                         # POOL_SK_<pool>: {pool: -1}
+            n = atoms[pool]
+            reactions.append(x.Reaction(rid, n, False, x.Permutation(n), [pool], []))
+            scale[rid] = 1.0
+            reversible[rid] = False
+            pool_drains[rid] = pool
+            continue
+        if rid.startswith(POOL_PREFIX):
+            # The zero coefficient cobra cannot store, expressed as reaction shape:
+            #   member(abc) + carrier(def) -> pool(abc) + member(def)
+            # member is on both sides, so x3cflux drops this reaction from its balance
+            # entirely -- mass and label alike. The carrier only balances the atom
+            # ledger; its own labeling never reaches anything. Identity permutation
+            # over 2n: educt block [member | carrier] -> product block [pool | member].
+            (pool,) = stoich                         # POOL_<member>: {pool: +1}
+            (member,) = r["zero_stoichiometry"]
+            n = atoms[member]
+            carrier = f"__pool_carrier_{n}"
+            pool_carriers.setdefault(carrier, n)
+            reactions.append(x.Reaction(rid, 2 * n, False, x.Permutation(2 * n),
+                                        [member, carrier], [pool, member]))
+            scale[rid] = 1.0
+            reversible[rid] = False
+            continue
+
+        lb, ub = r["lower_bound"], r["upper_bound"]
+        rev = r["reversible"]
+        reversible[rid] = rev
+
+        # Backward-only: flip so x3cflux's forward labeling edges are the ones our
+        # AtomMapping builds via lower_bound < 0.
+        flip = ub <= 0
+        sgn = -1.0 if flip else 1.0
+
+        # A reaction the AMM declares terminal joins the non-integer reactions on the
+        # split path whatever its coefficients look like: its carbon leaves the labelled
+        # network, so it drains as unit half-reactions rather than needing an atom map.
+        terminal_rxn = bool(r.get("terminal"))
+        f = None if terminal_rxn else integer_scale(stoich)
+        if f is None:
+            # Non-integer: split into unit half-reactions, tied by build_config.
+            parents[rid] = []
+            carriers = carbon_carriers(stoich, mets_by_id, sgn, rid,
+                                       drop_unpaired=terminal_rxn)
+            for met, coef in stoich.items():
+                if met in carriers["skip"]:
+                    continue        # emitted below, paired with its carbon partner
+                sub = f"{rid}__{met}"
+                n = len(mets_by_id[met]["atom_pattern"])
+                # Consumed -> efflux (empty products); produced -> influx.
+                educts, products = ([met], []) if coef * sgn < 0 else ([], [met])
+                reactions.append(x.Reaction(sub, n, False, x.Permutation(n),
+                                            educts, products))
+                parents[rid].append((sub, abs(coef)))
+                reversible[sub] = False
+
+            # Carbon the reaction carries straight through -- ATP hydrolysis in the
+            # biomass lumps, where the AMP produced *is* the consumed ATP's
+            # adenosine. Emitting the two halves separately would leave the product
+            # side needing an unlabeled source, and biomass would then inject M+0
+            # carbon into a measured pool: 56.9 flux units of unlabeled AMP against
+            # a 0.29 de novo route, which pins ATP/ADP near unlabeled. Pairing them
+            # into one unit reaction keeps biomass a strict sink -- atoms leave and
+            # nothing is invented -- and the label simply follows its own carbons.
+            for spec in carriers["emit"]:
+                if spec[0] == "pair":
+                    _, educt, product, n, share = spec
+                    sub = f"{rid}__{educt}_{product}"
+                    educts, products = [educt], [product]
+                else:
+                    _, met, n, share, consumed = spec
+                    sub = f"{rid}__{met}"
+                    educts, products = ([met], []) if consumed else ([], [met])
+                reactions.append(x.Reaction(sub, n, False, x.Permutation(n),
+                                            educts, products))
+                parents[rid].append((sub, share))
+                reversible[sub] = False
+            scale[rid] = sgn
+            continue
+
+        # Coefficients were multiplied by f, so the flux must be divided by it:
+        # sum(f*coef * u) == sum(coef * v)  =>  u = v/f.
+        scale[rid] = sgn / f
+        scaled = {m: c * f * sgn for m, c in stoich.items()}
+        educt_names = expand_names(scaled, -1)
+        product_names = expand_names(scaled, +1)
+
+        mapping = r["atom_mapping"]
+        if mapping:
+            educts, products = parse_atom_mapping(mapping, stoich)
+            educts = _cap_to_stoichiometry(educts, stoich, rid)
+            products = _cap_to_stoichiometry(products, stoich, rid)
+            if flip:
+                educts, products = products, educts
+            # Put the atom-carrying names first, in the storage order x3cflux will
+            # index against, then the atom-free ones (no indices of their own).
+            mapped_e = [m for m, _ in educts]
+            mapped_p = [m for m, _ in products]
+            educt_names = mapped_e + _remainder(educt_names, mapped_e)
+            product_names = mapped_p + _remainder(product_names, mapped_p)
+
+            # Re-attach patterns over the FULL name lists, so every atom x3cflux
+            # will index has a letter (see assign_patterns).
+            atom_count = dict(atoms)
+            educts, spare = assign_patterns(educt_names, educts, atom_count)
+            products, _ = assign_patterns(product_names, products, atom_count, spare)
+            educts = [(m, p) for m, p in educts if p]
+            products = [(m, p) for m, p in products if p]
+
+            if not educts and not products:
+                # Annotated, but nothing on either side carries atoms -- the toy
+                # model's water shuttle (``H2O_src -> H2O``) is written this way.
+                # Identical to an unmapped reaction: keep the balance rows and trace
+                # no label. Falling through would index an empty educt list.
+                reactions.append(x.Reaction(rid, 0, rev, x.Permutation(0),
+                                            educt_names, product_names))
+                continue
+
+            if not educts and products:
+                # Pure influx: draw from the upstream source pool so the produced
+                # pool stays balanced and traceable (see input_source_pools).
+                (met, pat) = products[0]
+                src = sources.get(met)
+                if src is None:
+                    raise ValueError(f"{rid} produces {met} from nothing but {met} "
+                                     f"is not an EMU network input")
+                n_atoms = len(pat)
+                reactions.append(x.Reaction(rid, n_atoms, rev, x.Permutation(n_atoms),
+                                            [src], product_names))
+                continue
+
+            if not products:
+                # Pure efflux: nothing produced, so there is nothing to permute.
+                n_atoms = sum(len(p) for _, p in educts)
+                (met, _) = educts[0]
+                src = sources.get(met)
+                if src and len(educts) == 1:
+                    # An input whose EX_ is written as secretion (met ->, e.g.
+                    # EX_ser__L_e). It must still be emitted in *influx* form,
+                    # src -> met: a ConstantSubstrate pool may never be produced by
+                    # any reaction, or the EMU builder dies in
+                    # ReductionOrdering::getSystemIndex. Writing it as met -> src
+                    # would produce the substrate on forward flux. The reaction
+                    # direction is therefore reversed with respect to cobra, hence
+                    # scale = -1, and it is unidirectional for the same reason MDH_c
+                    # is: our expansion builds no edge for the reverse either (empty
+                    # origin set), so the exchange flux is unidentifiable in both.
+                    scale[rid] = -sgn
+                    if rev:
+                        atom_free_reverse.append(rid)
+                        reversible[rid] = False
+                    reactions.append(x.Reaction(rid, n_atoms, False,
+                                                x.Permutation(n_atoms),
+                                                [src], educt_names))
+                    continue
+                names_p = product_names
+                # A reaction whose product side carries no atoms must be declared
+                # unidirectional even when cobra calls it reversible: running it
+                # backwards would mean permuting n_atoms out of a side that has none,
+                # which is an out-of-bounds read (MDH_c is the case that found this
+                # -- mal__L_c in, only h_c/nadh_c out, lb < 0 < ub). Our expansion
+                # reaches the same place from the other side: the reverse origin set
+                # is empty, so no edge is built either way, and the exchange flux is
+                # unidentifiable in both models.
+                one_sided = not names_p or all(atoms[m] == 0 for m in names_p)
+                if one_sided and rev:
+                    atom_free_reverse.append(rid)
+                    reversible[rid] = False
+                reactions.append(x.Reaction(rid, n_atoms, rev and not one_sided,
+                                            x.Permutation(n_atoms),
+                                            educt_names, names_p))
+                continue
+
+            # Our expansion symmetrises on *production* of a symmetric pool (the
+            # target EMU's own symmetries), which for a bidirectional reaction
+            # includes the reverse direction -- FUM_m produces fum_m when run
+            # backwards. So a symmetric educt of a reversible reaction counts too.
+            #
+            # Exactly one side is flipped. SUCDq9_m has symmetric pools on both
+            # sides (succ_m -> fum_m) and flipping both would compose to the
+            # identity, collapsing the two orientations into one. Flipping one is
+            # also sufficient: the other pool's own producers already symmetrise it,
+            # and mirroring an already-symmetric MID is a no-op.
+            sym_p = ({m: symmetric[m] for m, _ in products if m in symmetric}
+                     if symmetry else {})
+            sym_e = ({m: symmetric[m] for m, _ in educts if m in symmetric}
+                     if rev and symmetry else {})
+            orientations = [(educts, products)]
+            if sym_p:
+                orientations.append((educts, apply_symmetry(products, sym_p)))
+            elif sym_e:
+                orientations.append((apply_symmetry(educts, sym_e), products))
+            sym_here = sym_p or sym_e
+
+            for k, (educts_k, prods) in enumerate(orientations):
+                perm, n_atoms, n_void = build_permutation(educts_k, prods, rid)
+                names_p = list(product_names)
+                if n_void:
+                    void = f"__void_{rid}"
+                    if void not in void_pools:
+                        void_pools[void] = n_void
+                        # Drain it, so the pool balances and S keeps its rank.
+                        void_effluxes.append((void, n_void))
+                    names_p = names_p + [void]
+                if sym_here:
+                    # Two half-flux orientations, matching the 1/(1+len(symmetries))
+                    # = 1/2 our expansion weights each orientation with.
+                    sub = f"{rid}__sym{k}"
+                    # Both copies must be the same reaction stoichiometrically.
+                    assert len(orientations) == 2
+                    parents.setdefault(rid, []).append((sub, 0.5))
+                    reversible[sub] = rev
+                else:
+                    sub = rid
+                reactions.append(x.Reaction(sub, n_atoms, rev, x.Permutation(perm),
+                                            educt_names, names_p))
+        else:
+            # No atom mapping: stoichiometry only, no labeling edges. Our expansion
+            # skips such reactions outright, which is why pools produced solely by
+            # them end up as EMU network inputs. Declaring 0 atoms reproduces that
+            # while keeping the balance rows.
+            reactions.append(x.Reaction(rid, 0, rev, x.Permutation(0),
+                                        educt_names, product_names))
+
+    for met, src in sources.items():
+        n = atoms[met]
+        metabolites.append(x.Metabolite(src, n, {CARBON: n}))
+    for src, n in extra_sources.items():
+        metabolites.append(x.Metabolite(src, n, {CARBON: n}))
+    for void, n in void_pools.items():
+        metabolites.append(x.Metabolite(void, n, {CARBON: n}))
+    for carrier, n in pool_carriers.items():
+        metabolites.append(x.Metabolite(carrier, n, {CARBON: n}))
+    for void, n in void_effluxes:
+        drain = f"{void}__drain"
+        reactions.append(x.Reaction(drain, n, False, x.Permutation(n), [void], []))
+        reversible[drain] = False
+
+    # Carbon that ends in a pool the AMM declares terminal is not lost by accident --
+    # that pool is where the model stops following the label -- so those reactions are
+    # expected to strand atoms and are not reported as errors.
+    terminal_ids = {m["id"] for m in facts["metabolites"] if m.get("terminal")}
+    to_terminal = {r["id"] for r in facts["reactions"]
+                   if any(m in terminal_ids and c > 0
+                          for m, c in r["stoichiometry"].items())}
+    unexpected = sorted(v[len("__void_"):] for v in void_pools
+                        if v[len("__void_"):] not in allow_void | to_terminal)
+    if unexpected:
+        raise VoidPoolError(
+            f"{len(unexpected)} reaction(s) lose carbon into a void pool: "
+            f"{unexpected}. Their atom maps name products the model no longer "
+            f"contains, so mass vanishes. Regenerate the model -- stranded pools "
+            f"now get a demand instead of being deleted -- or pass allow_void to "
+            f"accept it deliberately.")
+
+    return Converted(x.NetworkData(metabolites, reactions), scale, parents,
+                     reversible, [rr.name for rr in reactions],
+                     sorted(void_pools), list(symmetric), sources,
+                     atom_free_reverse, extra_sources,
+                     pool_drains=pool_drains, pool_carriers=pool_carriers)
+
+
+def carbon_carriers(stoich, mets_by_id, sgn, rxn_id, drop_unpaired=False):
+    """Pair each produced carbon pool with a consumed one of the same size.
+
+    Only used on the non-integer split path, where every participant becomes a unit
+    half-reaction so large biomass coefficients need no repeated names.
+
+    Returns ``{"skip": set of metabolites handled here, "emit": list of specs}``,
+    where a spec is ``("pair", educt, product, n_atoms, share)`` or ``("half", met,
+    n_atoms, share, consumed)`` for whatever coefficient the pairing leaves over.
+
+    Args:
+        stoich: cobra stoichiometry dict for the reaction.
+        mets_by_id: metabolite id -> its ``model_facts.json`` entry.
+        sgn: -1 if the reaction is flipped, else +1.
+        rxn_id: reaction id, used in warnings and errors.
+        drop_unpaired: drop an unpairable product instead of erroring (terminal reactions).
+    """
+    def n_of(met):
+        return len(mets_by_id[met]["atom_pattern"])
+
+    consumed = {m: abs(c) for m, c in stoich.items() if c * sgn < 0 and n_of(m)}
+    produced = {m: abs(c) for m, c in stoich.items() if c * sgn > 0 and n_of(m)}
+    if not produced:
+        return {"skip": set(), "emit": []}
+
+    emit, skip = [], set(consumed) | set(produced)
+    for product in sorted(produced):
+        size, remaining = n_of(product), produced[product]
+        for educt in sorted(consumed):
+            if remaining <= INT_TOL:
+                break
+            if n_of(educt) != size or consumed[educt] <= INT_TOL:
+                continue
+            share = min(remaining, consumed[educt])
+            emit.append(("pair", educt, product, size, share))
+            consumed[educt] -= share
+            remaining -= share
+        if remaining > INT_TOL:
+            # No consumed pool of the same size to draw from: the carbon would have to be
+            # invented, which is the unlabeled-source problem this avoids. A sliver of it
+            # is rounding in the biomass coefficients rather than a modelling error --
+            # I. orientalis' PROTEIN_c, LIPID_c and CARB_c each overshoot their ATP pool
+            # by the same 1.48e-4, which is a scaling artifact, not five independent
+            # mistakes. Drop the surplus (the pool is a cofactor, never a measured
+            # metabolite) and say so, rather than inventing carbon or failing the run.
+            # Measured against the whole same-size pool, not against this one product.
+            # Products are drained in name order, so the last one absorbs the entire
+            # deficit: I. orientalis' PROTEIN_c is short 0.034, which is 0.69% of amp_c
+            # but 0.015% of the atp/adp/amp pool it actually came from -- and it would
+            # have landed on adp_c instead had the names sorted the other way. Judging a
+            # rounding artifact by an alphabetical accident is not a criterion.
+            pool = sum(v for p, v in produced.items() if n_of(p) == size)
+            if drop_unpaired:
+                # Declared terminal: the product is simply not emitted, so its carbon
+                # leaves with the educts instead of being drawn from an unlabeled source.
+                print(f"  {rxn_id}: {product} ({size} C) not carried — declared terminal")
+            elif remaining <= CARRIER_REL_TOL * pool:
+                print(f"  {rxn_id}: {product} exceeds its {size}-carbon educts by "
+                      f"{remaining:g} ({100 * remaining / pool:.4f}% of the pool) — "
+                      f"rounding in the coefficients; surplus dropped")
+            else:
+                raise ValueError(
+                    f"{rxn_id}: produces {remaining:g} {product} ({size} carbons) with no "
+                    f"consumed pool of the same size to carry them "
+                    f"({100 * remaining / pool:.2f}% of the pool, above the "
+                    f"{100 * CARRIER_REL_TOL:g}% rounding tolerance); a source pool here "
+                    f"would inject unlabeled carbon into a measured metabolite")
+
+    for met, left in consumed.items():
+        if left > INT_TOL:
+            emit.append(("half", met, n_of(met), left, True))
+    return {"skip": skip, "emit": emit}
+
+
+def assign_patterns(names, parsed, atoms, spare=None):
+    """Attach an atom pattern to every name in ``names``, in storage order.
+
+    x3cflux computes atom offsets from the full name list, so every copy of a
+    metabolite needs a pattern even if the atom map names it fewer times than the
+    stoichiometry -- an uncovered copy is an out-of-bounds read (segfault), not an
+    error.
+
+    Uncovered copies get freshly minted private-use letters, collected into
+    ``spare`` on the educt side and drawn from it in order on the product side,
+    pairing the k-th uncovered product atom with the k-th uncovered educt atom.
+    Educt atoms with no product partner fall through to the void pool; the reverse
+    is rejected.
+
+    Args:
+        names: metabolite names in storage order (educt or product side).
+        parsed: (metabolite, pattern) entries already covered by the atom map.
+        atoms: metabolite id -> atom count.
+        spare: uncovered educt-side letters to draw from; None mints new ones.
+    """
+    pool = {}
+    for met, pat in parsed:
+        pool.setdefault(met, []).append(pat)
+    minting = spare is None
+    spare = [] if minting else list(spare)
+    out, minted = [], []
+    for met in names:
+        n = atoms[met]
+        if n == 0:
+            out.append((met, ""))
+            continue
+        if pool.get(met):
+            out.append((met, pool[met].pop(0)))
+            continue
+        if minting:
+            pat = "".join(chr(0x100 + len(minted) + i) for i in range(n))
+            minted.extend(pat)
+        else:
+            if len(spare) < n:
+                raise ValueError(f"uncovered product atoms for {met} have no educt "
+                                 f"partner; this would need a void source")
+            pat, spare = "".join(spare[:n]), spare[n:]
+        out.append((met, pat))
+    return out, (minted if minting else spare)
+
+
+def _cap_to_stoichiometry(entries, stoich, rxn_id=None):
+    """Keep at most |coefficient| mapped copies of each metabolite.
+
+    If this actually drops a copy, the atom-mapping spreadsheet disagrees with the
+    stoichiometry, so it warns rather than silently truncating.
+
+    Args:
+        entries: (metabolite, pattern) entries to filter.
+        stoich: cobra stoichiometry dict for the reaction.
+        rxn_id: reaction id, used only in the warning message.
+    """
+    seen, out, dropped = {}, [], []
+    for met, pat in entries:
+        limit = max(int(round(abs(stoich[met]))), 1)
+        if seen.get(met, 0) < limit:
+            seen[met] = seen.get(met, 0) + 1
+            out.append((met, pat))
+        else:
+            dropped.append(met)
+    if dropped:
+        warnings.warn(
+            f"{rxn_id or '<reaction>'}: atom map names {sorted(set(dropped))} more "
+            f"times than the stoichiometry allows; extra copies dropped. The map and "
+            f"the stoichiometry disagree.", RuntimeWarning, stacklevel=2)
+    return out
+
+
+def _remainder(all_names, used):
+    """Names in *all_names* left over after removing one copy of each in *used*.
+
+    Args:
+        all_names: full name list to filter.
+        used: names to remove one copy of each.
+    """
+    rest = list(all_names)
+    for u in used:
+        if u in rest:
+            rest.remove(u)
+    return rest
+
+
+def load_facts(path):
+    """Read a ``model_facts.json`` written by :mod:`sigmaflux.x3cflux.facts`."""
+    with open(path) as fh:
+        return json.load(fh)
