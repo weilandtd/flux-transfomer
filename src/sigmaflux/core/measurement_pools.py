@@ -312,7 +312,10 @@ def add_fragment_pools(model, fragments):
         retained = "".join(member_pattern[c - 1] for c in carbons)
         pattern = member_pattern[:len(carbons)]
         frag = cobra.Metabolite(frag_id, compartment="")
-        frag.name = f"{member.name or member_id} C{','.join(map(str, carbons))}"
+        member_name = str(member.name).strip() if member.name is not None else ""
+        if not member_name or member_name.lower() == "nan":
+            member_name = member_id
+        frag.name = f"{member_name} C{','.join(map(str, carbons))}"
         frag.annotation = {"atom_pattern": pattern, POOL_MEMBERS_KEY: [member_id],
                            FRAGMENT_CARBONS_KEY: carbons}
         model.add_metabolites([frag])
