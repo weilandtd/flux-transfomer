@@ -571,38 +571,6 @@
 }
 },
 {
-"id":"Asn159",
-"name":"nan C2,3,4",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abc",
-"fragment_carbons":[
-2,
-3,
-4
-],
-"measurement_pool":[
-"Asn"
-]
-}
-},
-{
-"id":"Asp160",
-"name":"nan C2,3,4",
-"compartment":"",
-"annotation":{
-"atom_pattern":"abc",
-"fragment_carbons":[
-2,
-3,
-4
-],
-"measurement_pool":[
-"Asp"
-]
-}
-},
-{
 "id":"Asp302",
 "name":"nan C1,2",
 "compartment":"",
@@ -3896,64 +3864,6 @@
 "gene_reaction_rule":"",
 "annotation":{
 "atom_mapping":" Ala260 (abc) -> "
-}
-},
-{
-"id":"POOL_Asn159",
-"name":"",
-"metabolites":{
-"Asn159":1.0
-},
-"lower_bound":0.0,
-"upper_bound":1.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"Asn (abcd) -> Asn159 (bcd)",
-"zero_stoichiometry":[
-"Asn"
-]
-}
-},
-{
-"id":"POOL_SK_Asn159",
-"name":"",
-"metabolites":{
-"Asn159":-1.0
-},
-"lower_bound":1.0,
-"upper_bound":1.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":" Asn159 (abc) -> "
-}
-},
-{
-"id":"POOL_Asp160",
-"name":"",
-"metabolites":{
-"Asp160":1.0
-},
-"lower_bound":0.0,
-"upper_bound":1.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":"Asp (abcd) -> Asp160 (bcd)",
-"zero_stoichiometry":[
-"Asp"
-]
-}
-},
-{
-"id":"POOL_SK_Asp160",
-"name":"",
-"metabolites":{
-"Asp160":-1.0
-},
-"lower_bound":1.0,
-"upper_bound":1.0,
-"gene_reaction_rule":"",
-"annotation":{
-"atom_mapping":" Asp160 (abc) -> "
 }
 },
 {

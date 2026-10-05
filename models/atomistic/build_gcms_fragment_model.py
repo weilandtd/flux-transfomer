@@ -51,8 +51,8 @@ WORKBOOK = ROOT / "data/E_coli_GC_MS/EColi_B.xlsx"
 
 def fragment_id(raw):
     """Model id for a knowns ``Fragment ID``, or None if it names no single ion."""
-    first = raw.split("/")[0].strip()
-    return first if re.fullmatch(r"[A-Za-z0-9_]+\d[A-Za-z0-9_]*", first) else None
+    raw = raw.strip()
+    return raw if re.fullmatch(r"[A-Za-z0-9_]+\d[A-Za-z0-9_]*", raw) else None
 
 
 def carbon_set(raw):
