@@ -3,9 +3,8 @@ One heatmap of which labeling tokens inform which fluxes, and which way, every t
 by side, from the total Sobol index and its sign (sobol_naive.py).
 
 A cell is the token's total Sobol index for the flux: the share of the flux's variance over the
-model's simulated validation samples that goes when the token alone is randomized, with every
-interaction it takes part in (``ST`` from sobol_sensitivity.py). Unlike the attention contributions of plot_cross_attention.py it is 0 for a token that is the same
-in every sample, however strongly attended. Every token that varies is scored, measured in the
+input population represented by the selected Sobol result, including every interaction involving
+that token (``ST``). By default, ``sobol_naive.py`` supplies an independent synthetic population.
 experiments or not, so a sensitive token is an informative one. Rows are the flux columns
 (identical fluxes merged, a merged column read at its first reaction) some token informs, with an
 index reaching ``MIN_INDEX``, below which it is not resolved from zero; columns are the tokens of
