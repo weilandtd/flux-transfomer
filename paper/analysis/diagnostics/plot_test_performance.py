@@ -10,14 +10,13 @@ them to the benchmark predictions. Produces SVG figures:
 Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
-**All R² are plain and unfiltered — do not add an outlier cut here.** The benchmark
-already drops every sample whose fit is not statistically acceptable (fails the standard
-¹³C-MFA χ² goodness-of-fit test, Antoniewicz et al. 2006 — see `converged_samples`), so
-what reaches this script is the set of solutions each method actually stands behind. The
-spread that remains is genuine flux non-identifiability, and filtering it measures how a
+**All R² are plain and unfiltered — do not add an outlier cut here.** Every sample a
+method returned a prediction for is scored: MFA's best fit of its restarts, SigmaFlux's
+prediction. The spread is genuine flux non-identifiability, and filtering it measures how a
 method does on the samples it happened to get right — which is exactly the selection bias
-the benchmark exists to expose. Two such filters have been tried and removed: an NMAD cut,
-and a Q-Q tail extrapolation.
+the benchmark exists to expose. Three such filters have been tried and removed: an NMAD
+cut, a Q-Q tail extrapolation, and the χ² goodness-of-fit acceptance of MFA fits, which
+barely moved MFA's R² once its parameter count was corrected.
 
 Usage:
     python paper/analysis/plot_test_performance.py paper/.results/i_orientalis_20260614
@@ -71,27 +70,6 @@ def parse_args():
     return p.parse_args()
 
 
-def converged_samples(bench_dir: pathlib.Path) -> set | None:
-    """Samples whose fit is statistically acceptable, from the benchmark's own record.
-
-    ``sigmaflux-benchmark-mfa`` writes ``*_convergence.csv`` holding, per sample, whether
-    the best fit found passed the standard ¹³C-MFA goodness-of-fit test (Antoniewicz,
-    Kelleher & Stephanopoulos 2006): SSR at or under the χ²(dof) bound at the run's
-    ``--chi2-alpha`` (``reached_optimum``, see ``chi2_acceptance`` in
-    ``run_mfa_benchmark.py``). This is the criterion MFA practice itself uses to call a
-    fit good — not a benchmark-only heuristic — so scoring R² over these samples is what a
-    working MFA pipeline would report.
-
-    Returns None when no record exists (the AI arm, or an older MFA run), and the caller
-    then scores everything.
-    """
-    records = sorted(bench_dir.glob("pred_*_convergence.csv"))
-    if not records:
-        return None
-    df = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
-    return set(df.loc[df["reached_optimum"], "sample"].astype(int))
-
-
 def _sample_columns(pred_df):
     """Yield ``(sample_ix, prediction)`` for every column of a predictions frame.
 
@@ -133,8 +111,7 @@ def drop_pool_reactions(flux_df: pd.DataFrame, run_dir: pathlib.Path) -> pd.Data
     return flux_df.loc[keep]
 
 
-def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
-                   require_converged: bool = True) -> tuple[pd.DataFrame, int]:
+def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     """Load benchmark flux predictions and pair with GT from training H5 data.
 
     An ensemble AI benchmark's predictions are *raw* (unprojected): every member's
@@ -144,23 +121,11 @@ def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
     and a single-checkpoint AI benchmark give each sample exactly one column, so this
     degenerates to "median of one", i.e. themselves.
 
-    Returns the paired long frame and the number of samples the method failed to
-    solve. A sample counts as failed when its fit did not pass the goodness-of-fit test
-    (``reached_optimum`` is False, see :func:`converged_samples`) or every column's
-    value for it was unusable. Either way it is excluded from R² and reported
-    alongside it, so a method is never credited for samples it did not actually solve.
-
-    Args:
-        require_converged: when False, skip the χ²-acceptance filter and score every
-            fit the MFA arm wrote (still dropping samples with no usable value at
-            all). Used by the uncertainty benchmark, where a 100-sample condition
-            can leave too few χ²-accepted fits to say anything (some organisms
-            accept under 10% of their fits at the default noise level) — the
-            resulting R² is therefore not comparable to this function's default,
-            accepted-only numbers; report the χ²-acceptance rate alongside it.
+    Returns the paired long frame and the number of samples with no usable prediction
+    (every column's value NaN, e.g. every MFA start crashed), which are excluded from R²
+    and reported alongside it.
     """
     bench_dir = pathlib.Path(bench_dir)
-    converged = converged_samples(bench_dir) if require_converged else None
 
     by_sample = {}
     for h5_path in sorted(bench_dir.glob("pred_*_flux.h5")):
@@ -172,9 +137,6 @@ def load_benchmark(bench_dir: pathlib.Path, flux_df: pd.DataFrame,
 
     frames, n_failed = [], 0
     for ix, preds in sorted(by_sample.items()):
-        if converged is not None and ix not in converged:
-            n_failed += 1
-            continue
         gt   = flux_df[ix]
         # median(axis=1) skips NaN per row, so one member's failed sample does not
         # drop the whole reaction for that sample as long as another member has it.
@@ -229,9 +191,9 @@ def per_flux_rms(flux_df: pd.DataFrame) -> pd.Series:
     The denominator of :func:`per_flux_nrmse`, so the reported error is a fraction of the
     flux the reaction typically carries rather than of the one extreme sample it reaches.
 
-    Taken over the whole population rather than over the samples one method solved: the
-    MFA arm is chi2-gated to a fraction of the split while the AI arm keeps all of it, and
-    a per-method denominator would put the two violins on different scales.
+    Taken over the whole population rather than over the samples one method was run on: the
+    MFA arm covers only part of the split for some organisms while the AI arm covers all
+    of it, and a per-method denominator would put the two violins on different scales.
 
     Not ``std(gt)``, which would make the result exactly ``sqrt(1 - R2)`` and so a
     reparametrisation of the R2 panel; the mean is deliberately not subtracted.
@@ -434,12 +396,12 @@ def main():
     print(f"Loading MFA benchmark from: {mfa_dir}")
     df_mfa, n_failed_mfa = load_benchmark(mfa_dir, flux_df)
     print(f"  {len(df_mfa):,} pairs from {df_mfa['reaction'].nunique()} reactions "
-          f"({df_mfa['sample'].nunique()} samples, {n_failed_mfa} unsolved)")
+          f"({df_mfa['sample'].nunique()} samples, {n_failed_mfa} without a prediction)")
 
     print(f"Loading AI benchmark from: {ai_dir}")
     df_ai, n_failed_ai = load_benchmark(ai_dir, flux_df)
     print(f"  {len(df_ai):,} pairs from {df_ai['reaction'].nunique()} reactions "
-          f"({df_ai['sample'].nunique()} samples, {n_failed_ai} unsolved)")
+          f"({df_ai['sample'].nunique()} samples, {n_failed_ai} without a prediction)")
 
     r2_mfa, r2_ai = per_flux_r2(df_mfa), per_flux_r2(df_ai)
 
@@ -451,7 +413,7 @@ def main():
         print(f"            reactions R² > {R2_THRESHOLD}: "
               f"{int((r2 > R2_THRESHOLD).sum())} of {len(r2)}")
         print(f"            overall R² (pooled): {overall_r2(df):.3f}")
-        print(f"            samples with no acceptable solution: "
+        print(f"            samples without a prediction: "
               f"{n_failed} of {n_total} ({100 * n_failed / n_total:.1f}%)")
 
     tbl = identifiability_table(r2_mfa, r2_ai)
