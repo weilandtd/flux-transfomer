@@ -118,18 +118,19 @@ def test_manifest_is_readable_and_current(sfx_path):
 
 
 def test_reported_validation_is_healthy(sfx_path):
-    """Every member's stored validation R² is release-grade.
+    """No member's stored validation R² median is broken.
 
-    Guards against shipping an undertrained or mismatched artifact: the number is
-    read straight from the manifest, so this costs nothing and still fails loudly
-    if a bad export replaces a good one.
+    The median runs over every reaction, unidentifiable ones included, so it sits
+    well below 0.9 for a genome-scale network (S. cerevisiae ~0.4-0.7); the floor
+    only catches an undertrained or mismatched artifact. It is read straight from
+    the manifest, so this costs nothing.
     """
     val = inspect_model(sfx_path).get("validation", {})
     assert val.get("included"), "release models must carry their validation block"
 
     medians = [r["flux_median"] for r in val["reported"]]
     assert len(medians) == inspect_model(sfx_path)["n_members"]
-    assert min(medians) > 0.9, f"member flux R² median dropped to {min(medians):.4f}"
+    assert min(medians) > 0.3, f"member flux R² median dropped to {min(medians):.4f}"
 
 
 def test_inspect_cli_reads_every_model(sfx_path, capsys):
