@@ -167,6 +167,10 @@ def build_parser():
                         "σ is optimistic because renormalising each group to sum to one "
                         "shrinks the residual, and an unscaled test accepts ~100%% of "
                         "fits. Pass 1.0 to take σ at face value.")
+    p.add_argument("--all-starts", action="store_true",
+                   help="Run every one of --max-starts restarts instead of stopping at the "
+                        "first acceptable fit, and write each start's SSR and fluxes to "
+                        "pred_<tag>_starts.csv / pred_<tag>_starts_flux.h5")
     p.add_argument("--accept-ratio", type=float, default=1.0,
                    help="Only with --accept-rule ratio: accept when SSR <= this multiple "
                         "of the SSR the TRUE flux achieves against the same noise. Note "
@@ -721,6 +725,7 @@ def main(args):
 
     # ── Benchmark loop ────────────────────────────────────────────────────────
     pred_lab_data, pred_flux_data, sample_indices = [], [], []
+    start_rows, start_fluxes = [], []   # --all-starts only
     diagnostics = []
     pred_base = os.path.join(output_dir, f"pred_{tag}")
 
@@ -872,6 +877,10 @@ def main(args):
                     crashed_starts += 1
                     print(f"  start {start + 1}/{args.max_starts}: CRASHED "
                           f"({info.get('crashed')})")
+                    if args.all_starts:
+                        start_rows.append({"sample": global_ix, "start": start + 1,
+                                           "ssr_fit": np.nan, "ssr_true": ssr_true})
+                        start_fluxes.append(np.full(len(reaction_ids), np.nan))
                     continue
                 # Put the fitted flux into the model, so everything downstream --
                 # scoring, acceptance, the snapshot, the HDF5 -- is the native path.
@@ -908,11 +917,15 @@ def main(args):
                   f"(χ² accept≤{chi2_bound:.1f}, dof={chi2_dof}) ratio={ratio:.3f} "
                   f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
                   f"iter={res['n_iter'] if res['n_iter'] is not None else 'n/a'}")
+            if args.all_starts:
+                start_rows.append({"sample": global_ix, "start": start + 1,
+                                   "ssr_fit": ssr_fit, "ssr_true": ssr_true})
+                start_fluxes.append(mfa_model.fluxes.detach().cpu().numpy().copy())
             if args.accept_rule == "chi2":
-                accepted = ssr_fit <= chi2_bound
+                accepted = accepted or ssr_fit <= chi2_bound
             else:
-                accepted = ssr_fit <= args.accept_ratio * ssr_true
-            if accepted:
+                accepted = accepted or ssr_fit <= args.accept_ratio * ssr_true
+            if accepted and not args.all_starts:
                 break
 
         # ── Step 4: record the best solution found, plus how far it is from optimal ──
@@ -962,6 +975,11 @@ def main(args):
         # Convergence diagnostics travel with the predictions: without them a reader
         # cannot tell an optimal fit from one that merely stopped.
         pd.DataFrame(diagnostics).to_csv(f"{pred_base}_convergence.csv", index=False)
+        if args.all_starts:
+            pd.DataFrame(start_rows).to_csv(f"{pred_base}_starts.csv", index=False)
+            keys = pd.MultiIndex.from_frame(pd.DataFrame(start_rows)[["sample", "start"]])
+            pd.DataFrame(np.array(start_fluxes).T, index=reaction_ids, columns=keys).to_hdf(
+                f"{pred_base}_starts_flux.h5", key="fluxes", mode="w")
         write_predictions(pred_base, pred_lab_data, labeling_index, pred_flux_data,
                           reaction_ids, sample_indices)
         print(f"  Saved ({run_ix + 1}/{n_runs})")
