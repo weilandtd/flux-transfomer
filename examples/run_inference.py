@@ -11,7 +11,7 @@ from sigmaflux.pipeline.run_inference_workflow import predict_draws
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-MODEL = ROOT / "models/pretrained/i_orientalis-v1.4.0.sfx"
+MODEL = ROOT / "models/pretrained/i_orientalis-v1.4.1.sfx"
 NAME_MAP = ROOT / "models/atomistic/I_orientalis/I_orientalis_experiment_mapping.csv"
 N_BOOTSTRAP = 200
 
