@@ -195,10 +195,10 @@ def benchmark_metrics(model, run_suffix=None):
     plot_test_performance.py having been run first -- and on the same run directory.
 
     Every metric comes from the same ``load_benchmark()`` call per method, so they share
-    the identical chi2-accepted sample set -- no second, differently-filtered pass. The
-    NRMSE denominator is the exception: it is each reaction's root-mean-square flux over
-    the *whole* population, shared by both methods, because the two arms accept different
-    sample sets and a per-method denominator would not be one scale. The final
+    one sample set -- no second, differently-filtered pass. The NRMSE denominator is each
+    reaction's root-mean-square flux over the *whole* population, shared by both methods,
+    because the two arms cover different sample sets and a per-method denominator would
+    not be one scale. The final
     ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also dropped from
     the RMSE columns, keeping one reaction population across every column.
     """
@@ -221,7 +221,7 @@ def benchmark_metrics(model, run_suffix=None):
         df, n_failed = load_benchmark(run / sub, flux_df)
         n = df["sample"].nunique()
         print(f"  {model['label']:26s} {LABEL[method]:10s} "
-              f"{n} samples ({n_failed} unsolved), {df['reaction'].nunique()} reactions")
+              f"{n} samples ({n_failed} without a prediction), {df['reaction'].nunique()} reactions")
         out[f"r2_{method}"] = per_flux_r2(df)
         out[f"rmse_{method}"] = per_flux_rmse(df)
         out[f"nrmse_{method}"] = per_flux_nrmse(df, denom)

@@ -28,9 +28,9 @@ Every metric here (``per_flux_r2``/``per_flux_rmse``/``per_flux_nrmse`` in
 plot_test_performance.py) is computed in plain linear space over the benchmark HDF5s
 directly -- not read from output/identifiability.csv -- so this script has one source of
 truth and does not depend on plot_test_performance.py having been run first against the
-same run directory. They share the same chi2-accepted ("statistically acceptable") sample
-set -- see ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for one
-model describe the identical reaction population.
+same run directory. They share one sample set -- every sample each method returned a
+prediction for, see ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for
+one model describe the identical reaction population.
 
 Usage:
     python paper/scripts/plot_mfa_benchmark.py

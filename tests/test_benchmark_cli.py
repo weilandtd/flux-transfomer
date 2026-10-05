@@ -8,18 +8,21 @@ end-to-end on the ``toy_run`` fixture and assert that schema, plus the propertie
 the shared helpers exist to guarantee.
 """
 
+import json
 import os
 
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats
 
 from sigmaflux.pipeline import run_ai_benchmark, run_mfa_benchmark
 from sigmaflux.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, noisy_measurements
 from sigmaflux.pipeline._paths import load_config
 from sigmaflux.pipeline.run_mfa_benchmark import (
-    acceptance_threshold, build_noisy_experiments, make_init_fluxes,
-    make_measured_flux_data, measured_flux_ids,
+    EFFECTIVE_DOF_FILE, acceptance_threshold, build_noisy_experiments, chi2_acceptance,
+    effective_parameter_count, fitted_parameter_count, make_init_fluxes,
+    make_measured_flux_data, measured_flux_ids, rescore_acceptance,
 )
 
 from conftest import TOY_CONFIG_YAML as _TOY_CONFIG_YAML
@@ -140,6 +143,60 @@ def test_acceptance_threshold_tightens_with_information():
     assert acceptance_threshold(50, 0, z=1.645) == pytest.approx(
         1.0 + 1.645 * np.sqrt(2.0 / 50)
     )
+
+
+def test_chi2_acceptance_blends_the_block_scales():
+    """dof is measurements minus parameters; the labeling scale is weighted by block size."""
+    bound, dof, scale = chi2_acceptance(300, 100, 50, scale_labeling=0.8)
+    assert dof == 350
+    assert scale == pytest.approx((0.8 * 300 + 100) / 400)
+    assert bound == pytest.approx(scale * stats.chi2.ppf(0.95, 350))
+
+
+def _effective_count(toy_run, noise_std, flux_noise_std=0.05):
+    cfg, root = load_config(toy_run["config"])
+    cobra_model, mapped, _, flux_df, rev_df = load_benchmark_inputs(toy_run["dir"], cfg, root)
+    mfa_model, _, _, labeling_to, labeling_index = build_mfa_context(
+        cobra_model, cfg["labeling"]["tracers"], flux_df.iloc[:, 0], "test", with_backward=False)
+    scored = labeling_index.get_level_values("Metabolite").isin(mapped)
+    flux_ids = measured_flux_ids(toy_run["measured_fluxes"], flux_df.iloc[:, 0])
+    gamma, lam = effective_parameter_count(
+        mfa_model, labeling_to, scored, flux_df, rev_df, flux_ids, noise_std, flux_noise_std, 1.0,
+        n_states=3)
+    return gamma, lam, fitted_parameter_count(mfa_model, mapped)
+
+
+def test_effective_parameter_count_is_bounded_by_the_structural_count(toy_run):
+    """Each direction counts between 0 and 1, so γ never exceeds the directions fitted."""
+    gamma, lam, structural = _effective_count(toy_run, 0.01)
+    assert 0.0 <= gamma <= len(lam) <= structural
+    assert (lam >= 0).all()
+
+
+def test_effective_parameter_count_grows_as_the_noise_shrinks(toy_run):
+    """Less noise determines more directions; noise swamping every signal determines none."""
+    swamped = _effective_count(toy_run, 1e3, flux_noise_std=1e6)[0]
+    counts = [_effective_count(toy_run, s)[0] for s in (1e-2, 1e-4)]
+    assert swamped < 0.05
+    assert swamped < counts[0] < counts[1]
+
+
+def test_rescore_acceptance_rejudges_with_the_effective_count(tmp_path):
+    """Each row keeps its scale; only the dof moves, so the bound loosens and fits between
+    the old and new bound flip to accepted."""
+    scale, dof = 0.8, 300
+    old = scale * stats.chi2.ppf(0.95, dof)
+    conv = pd.DataFrame({"sample": [0, 1, 2], "ssr_fit": [old - 1, old + 5, old + 500],
+                         "reached_optimum": [True, False, False], "accept_rule": "chi2",
+                         "chi2_dof": dof, "chi2_bound": old})
+    assert rescore_acceptance(conv, str(tmp_path)).equals(conv)   # no record, no change
+
+    (tmp_path / EFFECTIVE_DOF_FILE).write_text(json.dumps(
+        {"p_eff": 20.0, "n_measurements": 350, "alpha": 0.05}))
+    out = rescore_acceptance(conv, str(tmp_path))
+    assert (out["chi2_dof"] == 330).all()
+    assert out["chi2_bound"].iloc[0] == pytest.approx(scale * stats.chi2.ppf(0.95, 330))
+    assert out["reached_optimum"].tolist() == [True, True, False]
 
 
 def test_make_init_fluxes_is_a_random_feasible_sample():
