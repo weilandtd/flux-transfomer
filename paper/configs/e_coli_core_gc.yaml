@@ -71,10 +71,13 @@ labeling:
       labeling: [1, 1, 0, 0, 0, 0]
       enrichment: 1.0
       name: "1,2-13C glucose"
+    # Long & Antoniewicz ran [1,2-13C] and [1,6-13C]glucose in parallel; the workbooks'
+    # second sheet was labelled U-13C until check_fragments_at_reference.py showed it
+    # fits [1,6-13C] (median fragment RMSE 0.02 vs 0.60).
     - tracer_id: Gluc_e
-      labeling: [1, 1, 1, 1, 1, 1]
+      labeling: [1, 0, 0, 0, 0, 1]
       enrichment: 1.0
-      name: "U-13C glucose"
+      name: "1,6-13C glucose"
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
