@@ -209,10 +209,12 @@ def labeling_r2(run):
 
     A state whose EMU solve failed has no labeling and gets NaN.
     """
-    tokens = pd.read_csv(run / "ko_labeling" / "tokens.csv").dropna(subset=["sim"])
-    r2 = (tokens.groupby(["gc", "method"])
-                .apply(lambda d: _r2_linear(d["sim"], d["measured"]), include_groups=False))
-    return r2.unstack("method")
+    tokens = pd.read_csv(run / "ko_labeling" / "tokens.csv")
+    expected = pd.MultiIndex.from_frame(tokens[["gc", "method"]].drop_duplicates())
+    valid = tokens.dropna(subset=["sim"])
+    r2 = (valid.groupby(["gc", "method"])
+               .apply(lambda d: _r2_linear(d["sim"], d["measured"]), include_groups=False))
+    return r2.reindex(expected).unstack("method")
 
 
 def plot_labeling_summary(r2, out_dir):
