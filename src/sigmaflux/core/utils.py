@@ -905,7 +905,7 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
         source_id = f"{met_id}{suffix}"
         if source_id in model.metabolites:
             continue
-        source = cobra.Metabolite(source_id, compartment=met.compartment)
+        source = cobra.Metabolite(source_id, name=met.name, compartment=met.compartment)
         source.annotation = {"atom_pattern": pattern}
         model.add_metabolites([source])
 
