@@ -141,8 +141,9 @@ _check_mappings({
     'M_musculus_T_Cell': (model_mm,
                           ['M_musculus_T_Cell/M_musculus_T_Cell_mapping.csv',
                            'M_musculus_T_Cell/M_musculus_T_Cell_experiment_mapping.csv']),
-    'E_coli_core': (model_ec_core, ['E_coli_core/E_coli_core_mapping.csv',
-                                    'E_coli_core/E_coli_core_fragment_mapping.csv']),
+    # E_coli_core_fragment_mapping.csv names fragment pools, so build_gcms_fragment_model.py
+    # checks it against the GC/MS model it builds.
+    'E_coli_core': (model_ec_core, ['E_coli_core/E_coli_core_mapping.csv']),
     'E_coli': (model_ec, ['E_coli/E_coli_mapping.csv',
                           'E_coli/E_coli_fragment_mapping.csv']),
 })
