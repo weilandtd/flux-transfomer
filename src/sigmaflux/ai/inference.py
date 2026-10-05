@@ -1251,6 +1251,27 @@ class EnsembleSigmaFlux:
             preds[0], values.mean(axis=0), n_flux, n_rev, self.members[0]._model, ko_idx,
             weights)
 
+    def project_knockouts(self, flux_blocks, knockout_rxn_ids):
+        """FBApro every member's flux states onto ``{S x = 0} ∩ {x[ko] = 0}``.
+
+        Same inverse-member-variance weights as :meth:`predict_knockout`; the projection
+        is linear, so the member mean of the result is what that method returns.
+
+        Parameters
+        ----------
+        flux_blocks : array, shape (n_members, n_samples, n_fluxes)
+            Raw member predictions, fluxes in :attr:`flux_names` order.
+        knockout_rxn_ids : list of str
+            Reaction ids to force to zero; empty projects onto ``S x = 0`` alone.
+        """
+        flux_blocks = np.asarray(flux_blocks, dtype=np.float64)
+        vfixed = np.full(flux_blocks.shape[-1], np.nan)
+        vfixed[_knockout_indices(self.flux_names, knockout_rxn_ids)] = 0.0
+        flat = _fbapro_decoder(self.members[0]._model,
+                               flux_blocks.reshape(-1, flux_blocks.shape[-1]), vfixed,
+                               _inverse_member_variance(flux_blocks))
+        return flat.reshape(flux_blocks.shape)
+
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
     def expected_tracers(self):         return self.members[0].expected_tracers()
