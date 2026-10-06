@@ -31,6 +31,8 @@ import re
 
 import pandas as pd
 
+from _bigg_name_fallback import E_COLI_BIGG_NAMES, E_COLI_CORE_NAMES, fill_missing_names
+
 REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 CONFIGS = [
@@ -45,6 +47,13 @@ CONFIGS = [
         amm='models/atomistic/E_coli/iAF1260_AMM.xlsx',
     ),
 ]
+
+# Both GEMs ship an empty `metname` column; fill it from the vetted name tables.
+# Core ids carry no compartment suffix, iAF1260's BiGG ids do.
+NAME_TABLES = {
+    'E_coli_core': (E_COLI_CORE_NAMES, False),
+    'E_coli': (E_COLI_BIGG_NAMES, True),
+}
 
 # Column headings that differ from the Maranas workbooks.
 RENAME_REACTIONS = {'Rxn Formula': 'Reaction Formula', 'Rxn name': 'Rxn Name'}
@@ -251,6 +260,7 @@ def curate(name, gem, amm):
     reactions['Reaction Formula'] = reactions['Reaction Formula'].map(to_canonical)
     metabolites = sheets['Metabolites'].copy()
     metabolites['metid'] = metabolites['metid'].map(to_canonical)
+    metabolites = fill_missing_names(metabolites, 'metid', 'metname', *NAME_TABLES[name])
     reactions = canonicalise_boundaries(name, reactions, metabolites)
 
     # Dropping the dilution sub-network strands the pools it fed -- Ala_d, Ala_x and

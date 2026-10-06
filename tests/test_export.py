@@ -36,6 +36,7 @@ from sigmaflux.ai.export import (
     inspect_model,
     load_model,
     read_cobra_model,
+    read_metabolites,
     read_stoichiometry,
     validate_model,
 )
@@ -179,13 +180,51 @@ def test_mass_balance_from_the_export_alone(toy_sfx):
     assert np.abs(S @ flux).max() < 1e-4
 
 
+def test_metabolite_list_covers_the_network(toy_sfx):
+    """One row per network metabolite, in network order; observable means a token metabolite."""
+    mets = read_metabolites(toy_sfx)
+    cobra_model = read_cobra_model(toy_sfx)
+    model = load_model(toy_sfx, device="cpu")
+
+    assert list(mets.columns) == ["metabolite_id", "description", "observable"]
+    assert mets["metabolite_id"].tolist() == [m.id for m in cobra_model.metabolites]
+    assert set(mets.loc[mets["observable"], "metabolite_id"]) == set(model.expected_metabolites())
+    assert mets["description"].tolist() == [m.name for m in cobra_model.metabolites]
+
+    block = inspect_model(toy_sfx)["metabolites"]
+    assert block == {"included": True, "n_metabolites": len(mets),
+                     "n_observable": int(mets["observable"].sum())}
+
+
+def test_metabolite_names_come_from_the_config_model(toy_run, tmp_path):
+    """The config's model_file supplies the names, in the list and the embedded network alike."""
+    renamed = json.loads(Path(toy_run["model_json"]).read_text())
+    for met in renamed["metabolites"]:
+        met["name"] = f"name of {met['id']}"
+    model_file = tmp_path / "renamed.json"
+    model_file.write_text(json.dumps(renamed))
+    config = tmp_path / "config.yaml"
+    config.write_text(Path(toy_run["config"]).read_text().replace(
+        "models/atomistic/toy/one_carbon_annotated.json", str(model_file)))
+
+    path = _export(toy_run, tmp_path, config=str(config))
+
+    mets = read_metabolites(path)
+    assert (mets["description"] == "name of " + mets["metabolite_id"]).all()
+    assert all(m.name == f"name of {m.id}" for m in read_cobra_model(path).metabolites)
+    assert inspect_model(path)["network"]["names_source"] == "renamed.json"
+
+
 def test_network_can_be_omitted(toy_run, tmp_path):
     """--no-model-json leaves it out, and reading it then fails with a way forward."""
     path = _export(toy_run, tmp_path, with_network=False)
 
     assert inspect_model(path)["network"] == {"included": False}
+    assert inspect_model(path)["metabolites"] == {"included": False}
     with pytest.raises(SfxFormatError, match="with_network=True"):
         read_cobra_model(path)
+    with pytest.raises(SfxFormatError, match="no metabolite list"):
+        read_metabolites(path)
 
 
 def test_network_missing_a_predicted_reaction_is_refused(toy_run, tmp_path):

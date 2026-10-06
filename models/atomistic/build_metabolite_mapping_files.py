@@ -14,10 +14,6 @@ LC/MS-platform-measurable subset of the model -- what one experiment happened to
 report plays no part in it. It is used by prepare_experiment_data.py and
 run_inference.py via --mapping-csv.
 
-An entry whose GEM xlsx carries no metabolite names (E_coli, E_coli_core) supplies
-`name_fallback`, a BiGG-id -> name table from _bigg_name_fallback.py, used to fill
-the gap before matching.
-
 **The `*_fragment_mapping.csv` files are NOT built here, and need rebuilding.** GC/MS
 measures TBDMS-derivatised *fragments* -- Ala260, Glu432, a named ion carrying a known
 subset of a molecule's carbons -- not whole molecules, so they cannot be matched against
@@ -39,7 +35,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from sigmaflux.utils import match_lcms_knowns
 from sigmaflux.utils.carbon_coverage import filter_by_carbon_coverage, formulas_from_knowns
-from _bigg_name_fallback import E_COLI_BIGG_NAMES, E_COLI_CORE_NAMES, fill_missing_names
 
 LCMS_KNOWNS = "data/HILIC_LCMS_knowns.csv"
 
@@ -75,24 +70,16 @@ ORGANISMS = [
         "gem_xlsx":   "models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx",
     },
     {
-        # iAF1260_GEM.xlsx's metname column is entirely empty, so name matching needs
-        # the BiGG-id fallback table.
         "name": "E_coli",
         "output_csv": "models/atomistic/E_coli/E_coli_mapping.csv",
         "model_json": "models/atomistic/E_coli/iAF1260_annotated.json",
         "gem_xlsx":   "models/atomistic/E_coli/iAF1260_GEM.xlsx",
-        "name_fallback": E_COLI_BIGG_NAMES,
-        "strip_compartment": True,
     },
     {
-        # Same gap as E_coli, but example_GEM.xlsx's ids carry no compartment suffix
-        # and don't follow BiGG spelling, hence the separate table.
         "name": "E_coli_core",
         "output_csv": "models/atomistic/E_coli_core/E_coli_core_mapping.csv",
         "model_json": "models/atomistic/E_coli_core/e_coli_core_annotated.json",
         "gem_xlsx":   "models/atomistic/E_coli_core/example_GEM.xlsx",
-        "name_fallback": E_COLI_CORE_NAMES,
-        "strip_compartment": False,
     },
 ]
 
@@ -112,9 +99,6 @@ def _build_platform_mapping(org, root):
 
     gem_xlsx = os.path.join(root, org["gem_xlsx"])
     metabolites = pd.read_excel(gem_xlsx, sheet_name='Metabolites', usecols=['metid', 'metname'])
-    if org.get("name_fallback"):
-        metabolites = fill_missing_names(
-            metabolites, 'metid', 'metname', org["name_fallback"], org["strip_compartment"])
 
     model = load_json_model(os.path.join(root, org["model_json"]))
     mapping = match_lcms_knowns(

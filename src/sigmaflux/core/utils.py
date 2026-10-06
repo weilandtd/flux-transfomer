@@ -402,7 +402,8 @@ def convert_mfa_maranas(path_to_cobra, path_to_atom_map_xls, path_to_output=None
 
     model = cobra.Model()
     for _, row in gem['Metabolites'].iterrows():
-        model.add_metabolites([cobra.Metabolite(id=str(row['metid']), name=str(row['metname']))])
+        name = '' if pd.isna(row['metname']) else str(row['metname'])
+        model.add_metabolites([cobra.Metabolite(id=str(row['metid']), name=name)])
     for _, row in reactions.iterrows():
         rxn = cobra.Reaction(str(row['Rxn ID']), lower_bound=row['Lower bound'], upper_bound=row['Upper bound'])
         model.add_reactions([rxn])
@@ -904,7 +905,7 @@ def add_dilution_inputs(model, metabolite_ids, suffix="_env"):
         source_id = f"{met_id}{suffix}"
         if source_id in model.metabolites:
             continue
-        source = cobra.Metabolite(source_id, compartment=met.compartment)
+        source = cobra.Metabolite(source_id, name=met.name, compartment=met.compartment)
         source.annotation = {"atom_pattern": pattern}
         model.add_metabolites([source])
 

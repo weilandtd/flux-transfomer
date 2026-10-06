@@ -25,6 +25,12 @@ reaction's metabolites or subsystem, and draw a map, none of which the names
 alone support. :func:`read_stoichiometry` returns it already aligned to the
 model's outputs.
 
+Alongside it, ``shared/metabolites.json`` lists every network metabolite with its
+name and whether it is *observable* -- a metabolite the model takes MIDs for, i.e.
+one in the token index. :func:`read_metabolites` returns it as a table. Given the
+training config, names are refreshed from its ``model_file``, so a run prepared
+before a model's names were fixed still exports the current ones.
+
 What is dropped, because it is regenerable or is training-only ballast: the 14
 frozen tensors (all five radial embedding tables plus buffers that duplicate
 ``null_space_data``/``flux_norm_stats``), and ``val_predictions``, ``log``,
@@ -79,12 +85,15 @@ __all__ = [
     "inspect_model",
     "load_model",
     "read_cobra_model",
+    "read_metabolites",
     "read_stoichiometry",
     "validate_model",
 ]
 
 #: Entry holding the prepared COBRA network, as written by ``sigmaflux-sample-flux``.
 NETWORK_ENTRY = "shared/cobra_model.json"
+#: Entry listing every network metabolite: id, name, and whether it is observable.
+METABOLITES_ENTRY = "shared/metabolites.json"
 #: Filename of the prepared network inside a training run directory.
 PREPARED_MODEL_JSON = "model_prepared_for_mfa.json"
 
@@ -319,8 +328,8 @@ def _find_network_json(ckpt, model_json=None, data_dir=None, config=None, root=N
 
 
 def _read_network(path, flux_names):
-    """Read a COBRA JSON; returns ``(payload, block)`` where *payload* is the raw file bytes and
-    *block* is the manifest entry. ``block["covers_flux_names"]`` decides usability: without
+    """Read a COBRA JSON; returns ``(payload, block, doc)`` where *payload* is the raw file bytes,
+    *block* is the manifest entry and *doc* the parsed network. ``block["covers_flux_names"]`` decides usability: without
     every predicted reaction present, a consumer cannot build ``S`` for the prediction vector.
 
     Parameters
@@ -345,7 +354,54 @@ def _read_network(path, flux_names):
         # False is fine — read_stoichiometry reorders — but it flags an export
         # built from a model other than the one training actually used.
         "reaction_order_matches": reaction_ids == list(flux_names),
-    }
+    }, doc
+
+
+def _refresh_metabolite_names(doc, config, root):
+    """Overwrite *doc*'s metabolite names, by id, with those of *config*'s ``model_file``.
+    Returns the model file's basename, or ``None`` when *config* names no readable model.
+
+    Parameters
+    ----------
+    doc : dict
+        Parsed COBRA network, modified in place.
+    config : path
+        Training YAML whose ``model_file`` is the annotated source model.
+    root : path, optional
+        Root for resolving *config*'s relative paths.
+    """
+    from ..pipeline._paths import load_config, resolve_path
+    cfg, cfg_root = load_config(config, root)
+    path = resolve_path(cfg.get("model_file"), cfg_root)
+    if not path or not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as fh:
+        names = {m["id"]: m.get("name", "") for m in json.load(fh).get("metabolites", [])}
+    for met in doc.get("metabolites", []):
+        if met["id"] in names:
+            met["name"] = names[met["id"]]
+    return os.path.basename(path)
+
+
+def _metabolite_rows(doc, token_index):
+    """One ``{metabolite_id, description, observable}`` record per network metabolite, in network
+    order; observable means the metabolite appears in the token index.
+
+    Parameters
+    ----------
+    doc : dict
+        Parsed COBRA network.
+    token_index : list of tuple
+        ``(Tracer, Metabolite, Isotopomer)`` tokens the model was trained on.
+    """
+    observed = {t[1] for t in token_index}
+    met_ids = [m["id"] for m in doc.get("metabolites", [])]
+    missing = sorted(observed - set(met_ids))
+    if missing:
+        raise ValueError(f"token metabolites missing from the network: {missing}")
+    return [{"metabolite_id": m["id"], "description": m.get("name", ""),
+             "observable": m["id"] in observed}
+            for m in doc.get("metabolites", [])]
 
 
 # ── Validation payload ────────────────────────────────────────────────────────
@@ -488,7 +544,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
     git_commit, git_dirty = _git_state(Path(__file__).parent)
     ck0 = checkpoints[0]
 
-    network_payload, network = None, {"included": False}
+    network_payload, network, network_doc = None, {"included": False}, None
     if with_network is not False:
         found = _find_network_json(ck0, model_json=model_json, data_dir=data_dir,
                                    config=config, root=root)
@@ -500,7 +556,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
                 )
             print("  network: skipped (no prepared COBRA JSON found)")
         else:
-            network_payload, candidate = _read_network(found, spec.flux_names)
+            network_payload, candidate, network_doc = _read_network(found, spec.flux_names)
             if candidate["covers_flux_names"]:
                 network = candidate
             elif with_network is True:
@@ -511,9 +567,21 @@ def export_model(source, out_path=None, *, name=None, model_version,
                     f"at the run's {PREPARED_MODEL_JSON}."
                 )
             else:
-                network_payload = None
+                network_payload = network_doc = None
                 print(f"  network: skipped ({os.path.basename(found)} does not cover "
                       f"every predicted reaction)")
+
+    metabolite_rows, metabolites = None, {"included": False}
+    if network_doc is not None:
+        names_source = (_refresh_metabolite_names(network_doc, config, root)
+                        if config is not None else None)
+        if names_source is not None:
+            network_payload = json.dumps(network_doc).encode("utf-8")
+            network["sha256"] = _sfx.sha256_bytes(network_payload)
+        network["names_source"] = names_source or "network"
+        metabolite_rows = _metabolite_rows(network_doc, spec.token_index)
+        metabolites = {"included": True, "n_metabolites": len(metabolite_rows),
+                       "n_observable": sum(r["observable"] for r in metabolite_rows)}
 
     from .. import __version__ as sigmaflux_version
     manifest = {
@@ -564,6 +632,7 @@ def export_model(source, out_path=None, *, name=None, model_version,
         "tracers": spec.tracer_display_names,
         "tracers_source": "config" if spec.tracer_display_names else "identity",
         "network": network,
+        "metabolites": metabolites,
         "tensors": layout,
         "member_nbytes": member_nbytes,
         "regenerated_tensors": [k for k in _REGENERATED
@@ -615,6 +684,8 @@ def export_model(source, out_path=None, *, name=None, model_version,
                               np.asarray(spec.flux_norm_stats[key], dtype=np.float32))
         if network_payload is not None:
             w.write_bytes(NETWORK_ENTRY, network_payload)
+        if metabolite_rows is not None:
+            w.write_json(METABOLITES_ENTRY, metabolite_rows)
 
         # ── validation ────────────────────────────────────────────────────────
         vblock = {"included": False, "n_val": 0, "inputs_included": False,
@@ -810,6 +881,23 @@ def read_cobra_model(path):
                 f"{path} carries no COBRA network. Re-export it with with_network=True."
             )
         return from_json(r.read_bytes(NETWORK_ENTRY).decode("utf-8"))
+
+
+def read_metabolites(path):
+    """Every network metabolite of *path* as a DataFrame with columns ``metabolite_id``,
+    ``description`` and ``observable`` (the model takes MIDs for it). Raises
+    :class:`SfxFormatError` if the model was exported without the list.
+    """
+    import pandas as pd
+
+    with SfxReader(path) as r:
+        if not r.has(METABOLITES_ENTRY):
+            raise SfxFormatError(
+                f"{path} carries no metabolite list. Re-export it with a current sigmaflux "
+                f"and with_network=True."
+            )
+        return pd.DataFrame(r.read_json(METABOLITES_ENTRY),
+                            columns=["metabolite_id", "description", "observable"])
 
 
 def read_stoichiometry(path):

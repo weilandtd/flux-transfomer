@@ -2,7 +2,7 @@
 "metabolites":[
 {
 "id":"10fthf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -10,7 +10,7 @@
 },
 {
 "id":"12ppd-R_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -18,7 +18,7 @@
 },
 {
 "id":"12ppd-R_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -26,7 +26,7 @@
 },
 {
 "id":"12ppd-R_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -34,7 +34,7 @@
 },
 {
 "id":"13dpg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -42,7 +42,7 @@
 },
 {
 "id":"1hdec9eg3p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrs"
@@ -50,7 +50,7 @@
 },
 {
 "id":"1hdecg3p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrs"
@@ -58,7 +58,7 @@
 },
 {
 "id":"1odec11eg3p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -66,7 +66,7 @@
 },
 {
 "id":"1pyr5c_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -74,7 +74,7 @@
 },
 {
 "id":"23ddhb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -82,7 +82,7 @@
 },
 {
 "id":"23dhb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -90,7 +90,7 @@
 },
 {
 "id":"23dhba_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -98,7 +98,7 @@
 },
 {
 "id":"23dhdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -106,7 +106,7 @@
 },
 {
 "id":"23dhmb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -114,7 +114,7 @@
 },
 {
 "id":"23dhmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -122,7 +122,7 @@
 },
 {
 "id":"25aics_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklm"
@@ -130,7 +130,7 @@
 },
 {
 "id":"25drapp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -138,7 +138,7 @@
 },
 {
 "id":"26dap-LL_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg",
@@ -149,7 +149,7 @@
 },
 {
 "id":"26dap-M_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg",
@@ -160,7 +160,7 @@
 },
 {
 "id":"2ahbut_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -168,7 +168,7 @@
 },
 {
 "id":"2aobut_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -176,7 +176,7 @@
 },
 {
 "id":"2cpr5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -184,7 +184,7 @@
 },
 {
 "id":"2dda7p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -192,7 +192,7 @@
 },
 {
 "id":"2ddg6p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -200,7 +200,7 @@
 },
 {
 "id":"2dhp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -208,7 +208,7 @@
 },
 {
 "id":"2dmmql8_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"
@@ -216,7 +216,7 @@
 },
 {
 "id":"2dr1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -224,7 +224,7 @@
 },
 {
 "id":"2h3oppan_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -232,7 +232,7 @@
 },
 {
 "id":"2ippm_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -240,7 +240,7 @@
 },
 {
 "id":"2kmb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -248,7 +248,7 @@
 },
 {
 "id":"2mahmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -256,7 +256,7 @@
 },
 {
 "id":"2mcacn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -264,7 +264,7 @@
 },
 {
 "id":"2mcit_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -272,7 +272,7 @@
 },
 {
 "id":"2me4p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -280,7 +280,7 @@
 },
 {
 "id":"2mecdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -288,7 +288,7 @@
 },
 {
 "id":"2obut_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -296,7 +296,7 @@
 },
 {
 "id":"2ohph_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"
@@ -304,7 +304,7 @@
 },
 {
 "id":"2ombzl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"
@@ -312,7 +312,7 @@
 },
 {
 "id":"2omhmbl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
@@ -320,7 +320,7 @@
 },
 {
 "id":"2ommbl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
@@ -328,7 +328,7 @@
 },
 {
 "id":"2omph_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"
@@ -336,7 +336,7 @@
 },
 {
 "id":"2oph_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"
@@ -344,7 +344,7 @@
 },
 {
 "id":"2p4c2me_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -352,7 +352,7 @@
 },
 {
 "id":"2pg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -360,7 +360,7 @@
 },
 {
 "id":"2shchc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -368,7 +368,7 @@
 },
 {
 "id":"34hpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -376,7 +376,7 @@
 },
 {
 "id":"3c2hmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -384,7 +384,7 @@
 },
 {
 "id":"3c3hmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -392,7 +392,7 @@
 },
 {
 "id":"3c4mop_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -400,7 +400,7 @@
 },
 {
 "id":"3dhq_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -408,7 +408,7 @@
 },
 {
 "id":"3dhsk_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -416,7 +416,7 @@
 },
 {
 "id":"3haACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -424,7 +424,7 @@
 },
 {
 "id":"3hcddec5eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -432,7 +432,7 @@
 },
 {
 "id":"3hcmrs7eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -440,7 +440,7 @@
 },
 {
 "id":"3hcpalm9eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -448,7 +448,7 @@
 },
 {
 "id":"3hcvac11eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqr"
@@ -456,7 +456,7 @@
 },
 {
 "id":"3hddecACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -464,7 +464,7 @@
 },
 {
 "id":"3hdecACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -472,7 +472,7 @@
 },
 {
 "id":"3hhexACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -480,7 +480,7 @@
 },
 {
 "id":"3hmrsACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -488,7 +488,7 @@
 },
 {
 "id":"3hoctACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -496,7 +496,7 @@
 },
 {
 "id":"3hpalmACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -504,7 +504,7 @@
 },
 {
 "id":"3ig3p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -512,7 +512,7 @@
 },
 {
 "id":"3mob_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -520,7 +520,7 @@
 },
 {
 "id":"3mop_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -528,7 +528,7 @@
 },
 {
 "id":"3ocddec5eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -536,7 +536,7 @@
 },
 {
 "id":"3ocmrs7eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -544,7 +544,7 @@
 },
 {
 "id":"3ocpalm9eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -552,7 +552,7 @@
 },
 {
 "id":"3ocvac11eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqr"
@@ -560,7 +560,7 @@
 },
 {
 "id":"3oddecACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -568,7 +568,7 @@
 },
 {
 "id":"3odecACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -576,7 +576,7 @@
 },
 {
 "id":"3ohexACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -584,7 +584,7 @@
 },
 {
 "id":"3omrsACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -592,7 +592,7 @@
 },
 {
 "id":"3ooctACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -600,7 +600,7 @@
 },
 {
 "id":"3opalmACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -608,7 +608,7 @@
 },
 {
 "id":"3ophb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTU"
@@ -616,7 +616,7 @@
 },
 {
 "id":"3pg_c",
-"name":"nan",
+"name":"3-Phosphoglyceric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -624,7 +624,7 @@
 },
 {
 "id":"3php_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -632,7 +632,7 @@
 },
 {
 "id":"3psme_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -640,7 +640,7 @@
 },
 {
 "id":"4abut_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -648,7 +648,7 @@
 },
 {
 "id":"4abut_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -656,7 +656,7 @@
 },
 {
 "id":"4abut_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -664,7 +664,7 @@
 },
 {
 "id":"4abutn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -672,7 +672,7 @@
 },
 {
 "id":"4abz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -680,7 +680,7 @@
 },
 {
 "id":"4adcho_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -688,7 +688,7 @@
 },
 {
 "id":"4ampm_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -696,7 +696,7 @@
 },
 {
 "id":"4c2me_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -704,7 +704,7 @@
 },
 {
 "id":"4hba_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -712,7 +712,7 @@
 },
 {
 "id":"4hbz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -720,7 +720,7 @@
 },
 {
 "id":"4mop_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -728,7 +728,7 @@
 },
 {
 "id":"4mpetz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -736,7 +736,7 @@
 },
 {
 "id":"4pasp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -744,7 +744,7 @@
 },
 {
 "id":"4per_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -752,7 +752,7 @@
 },
 {
 "id":"4ppan_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -760,7 +760,7 @@
 },
 {
 "id":"4ppcys_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -768,7 +768,7 @@
 },
 {
 "id":"4r5au_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -776,7 +776,7 @@
 },
 {
 "id":"5aizc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -784,7 +784,7 @@
 },
 {
 "id":"5aop_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -792,7 +792,7 @@
 },
 {
 "id":"5aprbu_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -800,7 +800,7 @@
 },
 {
 "id":"5apru_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -808,7 +808,7 @@
 },
 {
 "id":"5caiz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -816,7 +816,7 @@
 },
 {
 "id":"5mdr1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -824,7 +824,7 @@
 },
 {
 "id":"5mdru1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -832,7 +832,7 @@
 },
 {
 "id":"5mta_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -840,7 +840,7 @@
 },
 {
 "id":"5mthf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -848,7 +848,7 @@
 },
 {
 "id":"5mtr_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -856,7 +856,7 @@
 },
 {
 "id":"6hmhpt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -864,7 +864,7 @@
 },
 {
 "id":"6hmhptpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -872,7 +872,7 @@
 },
 {
 "id":"6pgc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -880,7 +880,7 @@
 },
 {
 "id":"6pgl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -888,7 +888,7 @@
 },
 {
 "id":"aact_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -896,7 +896,7 @@
 },
 {
 "id":"ac_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -904,7 +904,7 @@
 },
 {
 "id":"ac_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -912,7 +912,7 @@
 },
 {
 "id":"ac_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -920,7 +920,7 @@
 },
 {
 "id":"acACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -928,7 +928,7 @@
 },
 {
 "id":"acald_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -936,7 +936,7 @@
 },
 {
 "id":"accoa_c",
-"name":"nan",
+"name":"Acetyl-CoA",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvw"
@@ -944,7 +944,7 @@
 },
 {
 "id":"acetol_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -952,7 +952,7 @@
 },
 {
 "id":"acg5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -960,7 +960,7 @@
 },
 {
 "id":"acg5sa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -968,7 +968,7 @@
 },
 {
 "id":"acgam1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -976,7 +976,7 @@
 },
 {
 "id":"acglu_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -984,7 +984,7 @@
 },
 {
 "id":"acon-C_c",
-"name":"nan",
+"name":"cis-Aconitic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -992,7 +992,7 @@
 },
 {
 "id":"acorn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1000,12 +1000,12 @@
 },
 {
 "id":"ACP_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"acser_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1013,7 +1013,7 @@
 },
 {
 "id":"acser_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1021,7 +1021,7 @@
 },
 {
 "id":"acser_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1029,7 +1029,7 @@
 },
 {
 "id":"actACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1037,7 +1037,7 @@
 },
 {
 "id":"actp_c",
-"name":"nan",
+"name":"Acetylphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -1045,7 +1045,7 @@
 },
 {
 "id":"ade_c",
-"name":"nan",
+"name":"Adenine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1053,7 +1053,7 @@
 },
 {
 "id":"adocbl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9"
@@ -1061,7 +1061,7 @@
 },
 {
 "id":"adp_c",
-"name":"nan",
+"name":"ADP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1069,7 +1069,7 @@
 },
 {
 "id":"adpglc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -1077,7 +1077,7 @@
 },
 {
 "id":"adphep-DD_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -1085,7 +1085,7 @@
 },
 {
 "id":"adphep-LD_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -1093,7 +1093,7 @@
 },
 {
 "id":"agm_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1101,7 +1101,7 @@
 },
 {
 "id":"ahcys_c",
-"name":"nan",
+"name":"S-Adenosylhomocysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -1109,7 +1109,7 @@
 },
 {
 "id":"ahdt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1117,7 +1117,7 @@
 },
 {
 "id":"aicar_c",
-"name":"nan",
+"name":"AICAR",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1125,7 +1125,7 @@
 },
 {
 "id":"air_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -1133,7 +1133,7 @@
 },
 {
 "id":"akg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1141,7 +1141,7 @@
 },
 {
 "id":"ala-B_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1149,7 +1149,7 @@
 },
 {
 "id":"ala-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1157,7 +1157,7 @@
 },
 {
 "id":"ala-D_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1165,7 +1165,7 @@
 },
 {
 "id":"ala-D_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1173,7 +1173,7 @@
 },
 {
 "id":"ala-L_c",
-"name":"nan",
+"name":"L-Alanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1181,7 +1181,7 @@
 },
 {
 "id":"alaala_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1189,7 +1189,7 @@
 },
 {
 "id":"alaala_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1197,7 +1197,7 @@
 },
 {
 "id":"alac-S_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1205,7 +1205,7 @@
 },
 {
 "id":"amet_c",
-"name":"nan",
+"name":"S-Adenosylmethionine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -1213,7 +1213,7 @@
 },
 {
 "id":"ametam_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -1221,7 +1221,7 @@
 },
 {
 "id":"amp_c",
-"name":"nan",
+"name":"Adenosine monophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1229,7 +1229,7 @@
 },
 {
 "id":"anth_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1237,7 +1237,7 @@
 },
 {
 "id":"aps_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1245,7 +1245,7 @@
 },
 {
 "id":"ara5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1253,7 +1253,7 @@
 },
 {
 "id":"arbtn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1261,7 +1261,7 @@
 },
 {
 "id":"arbtn_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1269,7 +1269,7 @@
 },
 {
 "id":"arbtn_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1277,7 +1277,7 @@
 },
 {
 "id":"arbtn-fe3_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1285,7 +1285,7 @@
 },
 {
 "id":"arbtn-fe3_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1293,7 +1293,7 @@
 },
 {
 "id":"arbtn-fe3_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuv"
@@ -1301,7 +1301,7 @@
 },
 {
 "id":"arg-L_c",
-"name":"nan",
+"name":"L-Arginine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1309,7 +1309,7 @@
 },
 {
 "id":"arg-L_p",
-"name":"nan",
+"name":"L-Arginine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1317,7 +1317,7 @@
 },
 {
 "id":"argsuc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1325,7 +1325,7 @@
 },
 {
 "id":"asn-L_c",
-"name":"nan",
+"name":"L-Asparagine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1333,7 +1333,7 @@
 },
 {
 "id":"asn-L_p",
-"name":"nan",
+"name":"L-Asparagine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1341,7 +1341,7 @@
 },
 {
 "id":"asp-L_c",
-"name":"nan",
+"name":"L-Aspartic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1349,7 +1349,7 @@
 },
 {
 "id":"aspsa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1357,7 +1357,7 @@
 },
 {
 "id":"atp_c",
-"name":"nan",
+"name":"Adenosine triphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1365,7 +1365,7 @@
 },
 {
 "id":"but2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1373,7 +1373,7 @@
 },
 {
 "id":"butACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1381,22 +1381,22 @@
 },
 {
 "id":"ca2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"ca2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"ca2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cbasp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1404,7 +1404,7 @@
 },
 {
 "id":"cbl1_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1412,7 +1412,7 @@
 },
 {
 "id":"cbl1_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1420,7 +1420,7 @@
 },
 {
 "id":"cbl1_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -1428,7 +1428,7 @@
 },
 {
 "id":"cbp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1436,7 +1436,7 @@
 },
 {
 "id":"cddec5eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -1444,7 +1444,7 @@
 },
 {
 "id":"cdec3eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1452,12 +1452,12 @@
 },
 {
 "id":"cdil",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cdp_c",
-"name":"nan",
+"name":"CDP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1465,7 +1465,7 @@
 },
 {
 "id":"cdpdhdec9eg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"
@@ -1473,7 +1473,7 @@
 },
 {
 "id":"cdpdhdecg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR"
@@ -1481,7 +1481,7 @@
 },
 {
 "id":"cdpdodec11eg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUV"
@@ -1489,7 +1489,7 @@
 },
 {
 "id":"chor_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1497,7 +1497,7 @@
 },
 {
 "id":"cit_c",
-"name":"nan",
+"name":"Citric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1505,7 +1505,7 @@
 },
 {
 "id":"citr-L_c",
-"name":"nan",
+"name":"Citrulline",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1513,7 +1513,7 @@
 },
 {
 "id":"ckdo_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -1521,22 +1521,22 @@
 },
 {
 "id":"cl_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cl_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cl_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"clpn160_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca"
@@ -1544,7 +1544,7 @@
 },
 {
 "id":"clpn161_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca"
@@ -1552,7 +1552,7 @@
 },
 {
 "id":"clpn181_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2"
@@ -1560,7 +1560,7 @@
 },
 {
 "id":"cmp_c",
-"name":"nan",
+"name":"Cytidine monophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1568,7 +1568,7 @@
 },
 {
 "id":"co2_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1576,7 +1576,7 @@
 },
 {
 "id":"co2_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1584,7 +1584,7 @@
 },
 {
 "id":"co2_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1592,7 +1592,7 @@
 },
 {
 "id":"co2_x",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1600,7 +1600,7 @@
 },
 {
 "id":"coa_c",
-"name":"nan",
+"name":"Coenzyme A",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -1608,22 +1608,22 @@
 },
 {
 "id":"cobalt2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cobalt2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cobalt2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"colipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
@@ -1631,7 +1631,7 @@
 },
 {
 "id":"colipa_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
@@ -1639,7 +1639,7 @@
 },
 {
 "id":"colipa_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c\u012d\u012e\u012f\u0130\u0131\u0132\u0133"
@@ -1647,7 +1647,7 @@
 },
 {
 "id":"cpppg3_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJ"
@@ -1655,7 +1655,7 @@
 },
 {
 "id":"crn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1663,7 +1663,7 @@
 },
 {
 "id":"crn_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1671,7 +1671,7 @@
 },
 {
 "id":"crn-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1679,7 +1679,7 @@
 },
 {
 "id":"crn-D_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1687,7 +1687,7 @@
 },
 {
 "id":"ctbt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1695,7 +1695,7 @@
 },
 {
 "id":"ctbt_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1703,7 +1703,7 @@
 },
 {
 "id":"ctp_c",
-"name":"nan",
+"name":"Cytidine triphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1711,22 +1711,22 @@
 },
 {
 "id":"cu2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cu2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cu2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"cynt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1734,7 +1734,7 @@
 },
 {
 "id":"cynt_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1742,7 +1742,7 @@
 },
 {
 "id":"cynt_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -1750,7 +1750,7 @@
 },
 {
 "id":"cys-L_c",
-"name":"nan",
+"name":"L-Cysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1758,7 +1758,7 @@
 },
 {
 "id":"cys-L_e",
-"name":"nan",
+"name":"L-Cysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1766,7 +1766,7 @@
 },
 {
 "id":"cys-L_p",
-"name":"nan",
+"name":"L-Cysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1774,7 +1774,7 @@
 },
 {
 "id":"cyst-L_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -1782,7 +1782,7 @@
 },
 {
 "id":"cytd_c",
-"name":"nan",
+"name":"Cytidine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1790,7 +1790,7 @@
 },
 {
 "id":"cytd_p",
-"name":"nan",
+"name":"Cytidine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1798,7 +1798,7 @@
 },
 {
 "id":"dad-2_c",
-"name":"nan",
+"name":"Deoxyadenosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1806,7 +1806,7 @@
 },
 {
 "id":"dadp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1814,7 +1814,7 @@
 },
 {
 "id":"datp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1822,7 +1822,7 @@
 },
 {
 "id":"db4p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -1830,7 +1830,7 @@
 },
 {
 "id":"dcaACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1838,7 +1838,7 @@
 },
 {
 "id":"dcamp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -1846,7 +1846,7 @@
 },
 {
 "id":"dcdp_c",
-"name":"nan",
+"name":"dCDP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1854,7 +1854,7 @@
 },
 {
 "id":"dctp_c",
-"name":"nan",
+"name":"dCTP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1862,7 +1862,7 @@
 },
 {
 "id":"ddcaACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -1870,7 +1870,7 @@
 },
 {
 "id":"dgdp_c",
-"name":"nan",
+"name":"dGDP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1878,7 +1878,7 @@
 },
 {
 "id":"dgtp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1886,7 +1886,7 @@
 },
 {
 "id":"dha_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1894,7 +1894,7 @@
 },
 {
 "id":"dhap_c",
-"name":"nan",
+"name":"Dihydroxyacetone phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -1902,7 +1902,7 @@
 },
 {
 "id":"dhf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrs"
@@ -1910,7 +1910,7 @@
 },
 {
 "id":"dhna_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -1918,7 +1918,7 @@
 },
 {
 "id":"dhnpt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1926,7 +1926,7 @@
 },
 {
 "id":"dhor-S_c",
-"name":"nan",
+"name":"4,5-Dihydroorotic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1934,7 +1934,7 @@
 },
 {
 "id":"dhpmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -1942,7 +1942,7 @@
 },
 {
 "id":"dhpt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -1950,7 +1950,7 @@
 },
 {
 "id":"dhptd_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1958,7 +1958,7 @@
 },
 {
 "id":"din_c",
-"name":"nan",
+"name":"Deoxyinosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -1966,7 +1966,7 @@
 },
 {
 "id":"dkmpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -1974,7 +1974,7 @@
 },
 {
 "id":"dmlz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklm"
@@ -1982,7 +1982,7 @@
 },
 {
 "id":"dmpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -1990,7 +1990,7 @@
 },
 {
 "id":"dnad_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -1998,7 +1998,7 @@
 },
 {
 "id":"dpcoa_c",
-"name":"nan",
+"name":"Dephospho-CoA",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -2006,7 +2006,7 @@
 },
 {
 "id":"dscl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -2014,7 +2014,7 @@
 },
 {
 "id":"dtdp_c",
-"name":"nan",
+"name":"dTDP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2022,7 +2022,7 @@
 },
 {
 "id":"dtdp4d6dg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -2030,7 +2030,7 @@
 },
 {
 "id":"dtdp4d6dm_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -2038,7 +2038,7 @@
 },
 {
 "id":"dtdpglu_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -2046,7 +2046,7 @@
 },
 {
 "id":"dtdprmn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -2054,7 +2054,7 @@
 },
 {
 "id":"dtmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2062,7 +2062,7 @@
 },
 {
 "id":"dttp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2070,7 +2070,7 @@
 },
 {
 "id":"dudp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -2078,7 +2078,7 @@
 },
 {
 "id":"dump_c",
-"name":"nan",
+"name":"dUMP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -2086,7 +2086,7 @@
 },
 {
 "id":"dxyl5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2094,7 +2094,7 @@
 },
 {
 "id":"e4p_c",
-"name":"nan",
+"name":"D-Erythrose 4-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2102,7 +2102,7 @@
 },
 {
 "id":"eig3p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2110,7 +2110,7 @@
 },
 {
 "id":"enter_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCD"
@@ -2118,7 +2118,7 @@
 },
 {
 "id":"etoh_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2126,7 +2126,7 @@
 },
 {
 "id":"etoh_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2134,7 +2134,7 @@
 },
 {
 "id":"etoh_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2142,7 +2142,7 @@
 },
 {
 "id":"f6p_c",
-"name":"nan",
+"name":"Fructose 6-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2150,7 +2150,7 @@
 },
 {
 "id":"fad_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzA"
@@ -2158,7 +2158,7 @@
 },
 {
 "id":"fadh2_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzA"
@@ -2166,7 +2166,7 @@
 },
 {
 "id":"fdp_c",
-"name":"nan",
+"name":"Fructose 1,6-bisphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2174,37 +2174,37 @@
 },
 {
 "id":"fe2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fe2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fe2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fe3_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fe3_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fe3_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"fgam_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2212,7 +2212,7 @@
 },
 {
 "id":"fmn_c",
-"name":"nan",
+"name":"Flavin Mononucleotide",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -2220,7 +2220,7 @@
 },
 {
 "id":"for_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -2228,7 +2228,7 @@
 },
 {
 "id":"for_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -2236,7 +2236,7 @@
 },
 {
 "id":"fpram_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2244,7 +2244,7 @@
 },
 {
 "id":"fprica_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2252,7 +2252,7 @@
 },
 {
 "id":"frdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -2260,7 +2260,7 @@
 },
 {
 "id":"fum_c",
-"name":"nan",
+"name":"Fumaric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd",
@@ -2271,7 +2271,7 @@
 },
 {
 "id":"fum_e",
-"name":"nan",
+"name":"Fumaric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2279,7 +2279,7 @@
 },
 {
 "id":"fum_p",
-"name":"nan",
+"name":"Fumaric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2287,7 +2287,7 @@
 },
 {
 "id":"g1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2295,7 +2295,7 @@
 },
 {
 "id":"g3p_c",
-"name":"nan",
+"name":"D-Glyceraldehyde 3-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -2303,7 +2303,7 @@
 },
 {
 "id":"g6p_c",
-"name":"nan",
+"name":"Glucose 6-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2311,7 +2311,7 @@
 },
 {
 "id":"gagicolipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120"
@@ -2319,7 +2319,7 @@
 },
 {
 "id":"gam1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2327,7 +2327,7 @@
 },
 {
 "id":"gam6p_c",
-"name":"nan",
+"name":"Glucosamine 6-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2335,7 +2335,7 @@
 },
 {
 "id":"gar_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -2343,7 +2343,7 @@
 },
 {
 "id":"gcald_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2351,7 +2351,7 @@
 },
 {
 "id":"gdp_c",
-"name":"nan",
+"name":"Guanosine diphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2359,7 +2359,7 @@
 },
 {
 "id":"gg4abut_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -2367,7 +2367,7 @@
 },
 {
 "id":"ggagicolipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126"
@@ -2375,7 +2375,7 @@
 },
 {
 "id":"ggbutal_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -2383,7 +2383,7 @@
 },
 {
 "id":"gggagicolipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a\u011b\u011c\u011d\u011e\u011f\u0120\u0121\u0122\u0123\u0124\u0125\u0126\u0127\u0128\u0129\u012a\u012b\u012c"
@@ -2391,7 +2391,7 @@
 },
 {
 "id":"ggptrc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -2399,7 +2399,7 @@
 },
 {
 "id":"gicolipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114\u0115\u0116\u0117\u0118\u0119\u011a"
@@ -2407,7 +2407,7 @@
 },
 {
 "id":"glc-D_c",
-"name":"nan",
+"name":"D-Glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2415,7 +2415,7 @@
 },
 {
 "id":"glc-D_e",
-"name":"nan",
+"name":"D-Glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2423,7 +2423,7 @@
 },
 {
 "id":"glc-D_p",
-"name":"nan",
+"name":"D-Glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2431,7 +2431,7 @@
 },
 {
 "id":"gln-L_c",
-"name":"nan",
+"name":"L-Glutamine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2439,7 +2439,7 @@
 },
 {
 "id":"glu-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2447,7 +2447,7 @@
 },
 {
 "id":"glu-L_c",
-"name":"nan",
+"name":"L-Glutamic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2455,7 +2455,7 @@
 },
 {
 "id":"glu-L_e",
-"name":"nan",
+"name":"L-Glutamic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2463,7 +2463,7 @@
 },
 {
 "id":"glu-L_p",
-"name":"nan",
+"name":"L-Glutamic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2471,7 +2471,7 @@
 },
 {
 "id":"glu1sa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2479,7 +2479,7 @@
 },
 {
 "id":"glu5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2487,7 +2487,7 @@
 },
 {
 "id":"glu5sa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2495,7 +2495,7 @@
 },
 {
 "id":"glucys_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2503,7 +2503,7 @@
 },
 {
 "id":"glutrna_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2511,7 +2511,7 @@
 },
 {
 "id":"glx_c",
-"name":"nan",
+"name":"Glyoxylic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2519,7 +2519,7 @@
 },
 {
 "id":"gly_c",
-"name":"nan",
+"name":"Glycine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2527,7 +2527,7 @@
 },
 {
 "id":"glyc_c",
-"name":"nan",
+"name":"Glycerol",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -2535,7 +2535,7 @@
 },
 {
 "id":"glyc_p",
-"name":"nan",
+"name":"Glycerol",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -2543,7 +2543,7 @@
 },
 {
 "id":"glyc-R_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -2551,7 +2551,7 @@
 },
 {
 "id":"glyc3p_c",
-"name":"nan",
+"name":"Glycerol 3-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -2559,7 +2559,7 @@
 },
 {
 "id":"glyclt_c",
-"name":"nan",
+"name":"Glycolic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -2567,7 +2567,7 @@
 },
 {
 "id":"glycogen_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2575,7 +2575,7 @@
 },
 {
 "id":"gmhep17bp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -2583,7 +2583,7 @@
 },
 {
 "id":"gmhep1p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -2591,7 +2591,7 @@
 },
 {
 "id":"gmhep7p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -2599,7 +2599,7 @@
 },
 {
 "id":"gmp_c",
-"name":"nan",
+"name":"Guanosine monophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2607,7 +2607,7 @@
 },
 {
 "id":"grdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2615,7 +2615,7 @@
 },
 {
 "id":"gthrd_c",
-"name":"nan",
+"name":"Glutathione",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2623,7 +2623,7 @@
 },
 {
 "id":"gthrd_p",
-"name":"nan",
+"name":"Glutathione",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2631,7 +2631,7 @@
 },
 {
 "id":"gtp_c",
-"name":"nan",
+"name":"Guanosine triphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2639,7 +2639,7 @@
 },
 {
 "id":"gua_c",
-"name":"nan",
+"name":"Guanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2647,7 +2647,7 @@
 },
 {
 "id":"gua_p",
-"name":"nan",
+"name":"Guanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2655,37 +2655,37 @@
 },
 {
 "id":"h_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2mb4p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2693,32 +2693,32 @@
 },
 {
 "id":"h2o_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2o_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2o_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2o2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"h2s_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"hco3_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -2726,7 +2726,7 @@
 },
 {
 "id":"hcys-L_c",
-"name":"nan",
+"name":"Homocysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2734,7 +2734,7 @@
 },
 {
 "id":"hdeACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -2742,7 +2742,7 @@
 },
 {
 "id":"hemeO_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"
@@ -2750,7 +2750,7 @@
 },
 {
 "id":"hexACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2758,7 +2758,7 @@
 },
 {
 "id":"hhlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff"
@@ -2766,7 +2766,7 @@
 },
 {
 "id":"his-L_c",
-"name":"nan",
+"name":"L-Histidine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2774,7 +2774,7 @@
 },
 {
 "id":"his-L_p",
-"name":"nan",
+"name":"L-Histidine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2782,7 +2782,7 @@
 },
 {
 "id":"hisp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2790,7 +2790,7 @@
 },
 {
 "id":"histd_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2798,7 +2798,7 @@
 },
 {
 "id":"hlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8"
@@ -2806,7 +2806,7 @@
 },
 {
 "id":"hmbil_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
@@ -2814,7 +2814,7 @@
 },
 {
 "id":"hmfurn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2822,7 +2822,7 @@
 },
 {
 "id":"hom-L_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2830,7 +2830,7 @@
 },
 {
 "id":"hphhlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106"
@@ -2838,7 +2838,7 @@
 },
 {
 "id":"hxan_c",
-"name":"nan",
+"name":"Hypoxanthine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2846,7 +2846,7 @@
 },
 {
 "id":"iasp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -2854,7 +2854,7 @@
 },
 {
 "id":"ichor_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2862,7 +2862,7 @@
 },
 {
 "id":"icit_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2870,7 +2870,7 @@
 },
 {
 "id":"icolipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e\u010f\u0110\u0111\u0112\u0113\u0114"
@@ -2878,7 +2878,7 @@
 },
 {
 "id":"ile-L_c",
-"name":"nan",
+"name":"L-Isoleucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2886,7 +2886,7 @@
 },
 {
 "id":"ile-L_e",
-"name":"nan",
+"name":"L-Isoleucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2894,7 +2894,7 @@
 },
 {
 "id":"ile-L_p",
-"name":"nan",
+"name":"L-Isoleucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2902,7 +2902,7 @@
 },
 {
 "id":"imacp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -2910,7 +2910,7 @@
 },
 {
 "id":"imp_c",
-"name":"nan",
+"name":"Inosinic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2918,7 +2918,7 @@
 },
 {
 "id":"indole_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2926,7 +2926,7 @@
 },
 {
 "id":"indole_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2934,7 +2934,7 @@
 },
 {
 "id":"ins_c",
-"name":"nan",
+"name":"Inosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2942,7 +2942,7 @@
 },
 {
 "id":"ins_p",
-"name":"nan",
+"name":"Inosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -2950,7 +2950,7 @@
 },
 {
 "id":"ipdp_c",
-"name":"nan",
+"name":"Isopentenyl pyrophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -2958,22 +2958,22 @@
 },
 {
 "id":"k_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"k_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"k_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"kdo_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -2981,7 +2981,7 @@
 },
 {
 "id":"kdo2lipid4_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5"
@@ -2989,7 +2989,7 @@
 },
 {
 "id":"kdo2lipid4L_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2"
@@ -2997,7 +2997,7 @@
 },
 {
 "id":"kdo8p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -3005,7 +3005,7 @@
 },
 {
 "id":"kdolipid4_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd"
@@ -3013,7 +3013,7 @@
 },
 {
 "id":"kphphhlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106\u0107\u0108\u0109\u010a\u010b\u010c\u010d\u010e"
@@ -3021,7 +3021,7 @@
 },
 {
 "id":"lac-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3029,7 +3029,7 @@
 },
 {
 "id":"lac-D_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3037,7 +3037,7 @@
 },
 {
 "id":"lac-D_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3045,7 +3045,7 @@
 },
 {
 "id":"lald-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3053,7 +3053,7 @@
 },
 {
 "id":"leu-L_c",
-"name":"nan",
+"name":"L-Leucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3061,7 +3061,7 @@
 },
 {
 "id":"leu-L_e",
-"name":"nan",
+"name":"L-Leucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3069,7 +3069,7 @@
 },
 {
 "id":"leu-L_p",
-"name":"nan",
+"name":"L-Leucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3077,7 +3077,7 @@
 },
 {
 "id":"lgt-S_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklm"
@@ -3085,7 +3085,7 @@
 },
 {
 "id":"lipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0"
@@ -3093,7 +3093,7 @@
 },
 {
 "id":"lipidA_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
@@ -3101,7 +3101,7 @@
 },
 {
 "id":"lipidAds_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
@@ -3109,7 +3109,7 @@
 },
 {
 "id":"lipidX_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGH"
@@ -3117,7 +3117,7 @@
 },
 {
 "id":"lys-L_c",
-"name":"nan",
+"name":"L-Lysine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3125,7 +3125,7 @@
 },
 {
 "id":"lys-L_p",
-"name":"nan",
+"name":"L-Lysine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3133,7 +3133,7 @@
 },
 {
 "id":"mal-L_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -3141,7 +3141,7 @@
 },
 {
 "id":"malACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3149,7 +3149,7 @@
 },
 {
 "id":"malcoa_c",
-"name":"nan",
+"name":"Malonyl-CoA",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwx"
@@ -3157,7 +3157,7 @@
 },
 {
 "id":"met-L_c",
-"name":"nan",
+"name":"L-Methionine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3165,7 +3165,7 @@
 },
 {
 "id":"methf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -3173,22 +3173,22 @@
 },
 {
 "id":"mg2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mg2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mg2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"micit_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -3196,7 +3196,7 @@
 },
 {
 "id":"mlthf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -3204,7 +3204,7 @@
 },
 {
 "id":"mmcoa-R_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxy"
@@ -3212,7 +3212,7 @@
 },
 {
 "id":"mmcoa-S_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxy"
@@ -3220,37 +3220,37 @@
 },
 {
 "id":"mn2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mn2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mn2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mobd_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mobd_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mobd_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"mql8_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"
@@ -3258,7 +3258,7 @@
 },
 {
 "id":"mqn8_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXY"
@@ -3266,7 +3266,7 @@
 },
 {
 "id":"mthgxl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3274,7 +3274,7 @@
 },
 {
 "id":"murein3p3p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5"
@@ -3282,7 +3282,7 @@
 },
 {
 "id":"murein3px4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8"
@@ -3290,7 +3290,7 @@
 },
 {
 "id":"murein4p3p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8"
@@ -3298,7 +3298,7 @@
 },
 {
 "id":"murein4p4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
@@ -3306,7 +3306,7 @@
 },
 {
 "id":"murein4px4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
@@ -3314,7 +3314,7 @@
 },
 {
 "id":"murein4px4px4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1"
@@ -3322,7 +3322,7 @@
 },
 {
 "id":"murein5p3p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb"
@@ -3330,7 +3330,7 @@
 },
 {
 "id":"murein5p4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce"
@@ -3338,7 +3338,7 @@
 },
 {
 "id":"murein5p5p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1"
@@ -3346,7 +3346,7 @@
 },
 {
 "id":"murein5p5p5p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb"
@@ -3354,7 +3354,7 @@
 },
 {
 "id":"murein5px4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce"
@@ -3362,7 +3362,7 @@
 },
 {
 "id":"murein5px4px4p_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4"
@@ -3370,7 +3370,7 @@
 },
 {
 "id":"myrsACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -3378,17 +3378,17 @@
 },
 {
 "id":"na1_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"na1_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"nad_c",
-"name":"nan",
+"name":"NAD",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -3396,7 +3396,7 @@
 },
 {
 "id":"nadh_c",
-"name":"nan",
+"name":"NADH",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -3404,7 +3404,7 @@
 },
 {
 "id":"nadp_c",
-"name":"nan",
+"name":"NADP",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -3412,7 +3412,7 @@
 },
 {
 "id":"nadph_c",
-"name":"nan",
+"name":"NADPH",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstu"
@@ -3420,32 +3420,32 @@
 },
 {
 "id":"nh4_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"nh4_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"nh4_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"ni2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"ni2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"nicrnt_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -3453,22 +3453,22 @@
 },
 {
 "id":"o2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"o2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"o2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"oaa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -3476,7 +3476,7 @@
 },
 {
 "id":"ocACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -3484,7 +3484,7 @@
 },
 {
 "id":"octdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
@@ -3492,7 +3492,7 @@
 },
 {
 "id":"octeACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqr"
@@ -3500,7 +3500,7 @@
 },
 {
 "id":"ohpb_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -3508,7 +3508,7 @@
 },
 {
 "id":"orn_c",
-"name":"nan",
+"name":"Ornithine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3516,7 +3516,7 @@
 },
 {
 "id":"orn_p",
-"name":"nan",
+"name":"Ornithine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3524,7 +3524,7 @@
 },
 {
 "id":"orot_c",
-"name":"nan",
+"name":"Orotic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3532,7 +3532,7 @@
 },
 {
 "id":"orot5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -3540,7 +3540,7 @@
 },
 {
 "id":"pa160_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"
@@ -3548,7 +3548,7 @@
 },
 {
 "id":"pa161_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"
@@ -3556,7 +3556,7 @@
 },
 {
 "id":"pa181_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLM"
@@ -3564,7 +3564,7 @@
 },
 {
 "id":"palmACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -3572,7 +3572,7 @@
 },
 {
 "id":"pan4p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -3580,7 +3580,7 @@
 },
 {
 "id":"pant-R_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -3588,7 +3588,7 @@
 },
 {
 "id":"pap_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -3596,7 +3596,7 @@
 },
 {
 "id":"paps_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -3604,7 +3604,7 @@
 },
 {
 "id":"pdx5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -3612,7 +3612,7 @@
 },
 {
 "id":"pe160_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"
@@ -3620,7 +3620,7 @@
 },
 {
 "id":"pe160_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"
@@ -3628,7 +3628,7 @@
 },
 {
 "id":"pe161_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"
@@ -3636,7 +3636,7 @@
 },
 {
 "id":"pe161_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJK"
@@ -3644,7 +3644,7 @@
 },
 {
 "id":"pe181_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"
@@ -3652,7 +3652,7 @@
 },
 {
 "id":"pe181_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"
@@ -3660,7 +3660,7 @@
 },
 {
 "id":"pep_c",
-"name":"nan",
+"name":"Phosphoenolpyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3668,7 +3668,7 @@
 },
 {
 "id":"pg160_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3676,7 +3676,7 @@
 },
 {
 "id":"pg160_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3684,7 +3684,7 @@
 },
 {
 "id":"pg161_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3692,7 +3692,7 @@
 },
 {
 "id":"pg161_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3700,7 +3700,7 @@
 },
 {
 "id":"pg181_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -3708,7 +3708,7 @@
 },
 {
 "id":"pg181_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -3716,7 +3716,7 @@
 },
 {
 "id":"pgp160_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3724,7 +3724,7 @@
 },
 {
 "id":"pgp160_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3732,7 +3732,7 @@
 },
 {
 "id":"pgp161_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3740,7 +3740,7 @@
 },
 {
 "id":"pgp161_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3748,7 +3748,7 @@
 },
 {
 "id":"pgp181_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -3756,7 +3756,7 @@
 },
 {
 "id":"pgp181_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -3764,7 +3764,7 @@
 },
 {
 "id":"phe-L_c",
-"name":"nan",
+"name":"L-Phenylalanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -3772,7 +3772,7 @@
 },
 {
 "id":"pheme_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGH"
@@ -3780,7 +3780,7 @@
 },
 {
 "id":"phhlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff"
@@ -3788,7 +3788,7 @@
 },
 {
 "id":"phom_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -3796,7 +3796,7 @@
 },
 {
 "id":"phphhlipa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u00e6\u00e7\u00e8\u00e9\u00ea\u00eb\u00ec\u00ed\u00ee\u00ef\u00f0\u00f1\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u00f9\u00fa\u00fb\u00fc\u00fd\u00fe\u00ff\u0100\u0101\u0102\u0103\u0104\u0105\u0106"
@@ -3804,7 +3804,7 @@
 },
 {
 "id":"phpyr_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -3812,7 +3812,7 @@
 },
 {
 "id":"phthr_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -3820,22 +3820,22 @@
 },
 {
 "id":"pi_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"pi_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"pi_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"pnto-R_c",
-"name":"nan",
+"name":"Pantothenic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -3843,7 +3843,7 @@
 },
 {
 "id":"ppbng_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -3851,7 +3851,7 @@
 },
 {
 "id":"ppcoa_c",
-"name":"nan",
+"name":"Propionyl-CoA",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwx"
@@ -3859,7 +3859,7 @@
 },
 {
 "id":"pphn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -3867,12 +3867,12 @@
 },
 {
 "id":"ppi_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"ppp9_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGH"
@@ -3880,7 +3880,7 @@
 },
 {
 "id":"pppg9_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGH"
@@ -3888,12 +3888,12 @@
 },
 {
 "id":"pppi_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"pram_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3901,7 +3901,7 @@
 },
 {
 "id":"pran_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -3909,7 +3909,7 @@
 },
 {
 "id":"prbamp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -3917,7 +3917,7 @@
 },
 {
 "id":"prbatp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -3925,7 +3925,7 @@
 },
 {
 "id":"prfp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -3933,7 +3933,7 @@
 },
 {
 "id":"prlp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -3941,7 +3941,7 @@
 },
 {
 "id":"pro-L_c",
-"name":"nan",
+"name":"L-Proline",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3949,7 +3949,7 @@
 },
 {
 "id":"pro-L_p",
-"name":"nan",
+"name":"L-Proline",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3957,7 +3957,7 @@
 },
 {
 "id":"prpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -3965,7 +3965,7 @@
 },
 {
 "id":"ps160_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3973,7 +3973,7 @@
 },
 {
 "id":"ps161_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKL"
@@ -3981,7 +3981,7 @@
 },
 {
 "id":"ps181_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -3989,7 +3989,7 @@
 },
 {
 "id":"pser-L_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -3997,7 +3997,7 @@
 },
 {
 "id":"ptrc_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4005,7 +4005,7 @@
 },
 {
 "id":"ptrc_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4013,7 +4013,7 @@
 },
 {
 "id":"ptrc_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4021,7 +4021,7 @@
 },
 {
 "id":"pydx5p_c",
-"name":"nan",
+"name":"Pyridoxal 5'-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -4029,7 +4029,7 @@
 },
 {
 "id":"pyr_c",
-"name":"nan",
+"name":"Pyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4037,7 +4037,7 @@
 },
 {
 "id":"pyr_e",
-"name":"nan",
+"name":"Pyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4045,7 +4045,7 @@
 },
 {
 "id":"pyr_p",
-"name":"nan",
+"name":"Pyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4053,7 +4053,7 @@
 },
 {
 "id":"q8_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"
@@ -4061,7 +4061,7 @@
 },
 {
 "id":"q8h2_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW"
@@ -4069,7 +4069,7 @@
 },
 {
 "id":"quln_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4077,7 +4077,7 @@
 },
 {
 "id":"r5p_c",
-"name":"nan",
+"name":"D-Ribose 5-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4085,7 +4085,7 @@
 },
 {
 "id":"rhcys_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4093,7 +4093,7 @@
 },
 {
 "id":"ribflv_c",
-"name":"nan",
+"name":"Riboflavin",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -4101,7 +4101,7 @@
 },
 {
 "id":"ru5p-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4109,7 +4109,7 @@
 },
 {
 "id":"s7p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4117,7 +4117,7 @@
 },
 {
 "id":"sbzcoa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEF"
@@ -4125,7 +4125,7 @@
 },
 {
 "id":"scl_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -4133,7 +4133,7 @@
 },
 {
 "id":"ser-L_c",
-"name":"nan",
+"name":"L-Serine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4141,7 +4141,7 @@
 },
 {
 "id":"ser-L_e",
-"name":"nan",
+"name":"L-Serine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4149,7 +4149,7 @@
 },
 {
 "id":"ser-L_p",
-"name":"nan",
+"name":"L-Serine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -4157,7 +4157,7 @@
 },
 {
 "id":"seramp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklm"
@@ -4165,7 +4165,7 @@
 },
 {
 "id":"sheme_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP"
@@ -4173,7 +4173,7 @@
 },
 {
 "id":"sink_4hba_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "terminal":true
@@ -4181,7 +4181,7 @@
 },
 {
 "id":"sink_hmfurn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "terminal":true
@@ -4189,7 +4189,7 @@
 },
 {
 "id":"skm_c",
-"name":"nan",
+"name":"Shikimic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4197,7 +4197,7 @@
 },
 {
 "id":"skm5p_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4205,7 +4205,7 @@
 },
 {
 "id":"sl26da_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -4213,7 +4213,7 @@
 },
 {
 "id":"sl2a6o_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -4221,27 +4221,27 @@
 },
 {
 "id":"so3_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"so4_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"so4_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"so4_p",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"spmd_c",
-"name":"nan",
+"name":"Spermine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4249,7 +4249,7 @@
 },
 {
 "id":"ssaltpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -4257,7 +4257,7 @@
 },
 {
 "id":"sucarg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -4265,7 +4265,7 @@
 },
 {
 "id":"sucbz_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -4273,7 +4273,7 @@
 },
 {
 "id":"succ_c",
-"name":"nan",
+"name":"Succinic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd",
@@ -4284,7 +4284,7 @@
 },
 {
 "id":"succ_e",
-"name":"nan",
+"name":"Succinic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4292,7 +4292,7 @@
 },
 {
 "id":"succ_p",
-"name":"nan",
+"name":"Succinic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4300,7 +4300,7 @@
 },
 {
 "id":"succoa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxy"
@@ -4308,7 +4308,7 @@
 },
 {
 "id":"sucglu_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4316,7 +4316,7 @@
 },
 {
 "id":"sucgsa_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4324,7 +4324,7 @@
 },
 {
 "id":"suchms_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -4332,7 +4332,7 @@
 },
 {
 "id":"sucorn_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4340,7 +4340,7 @@
 },
 {
 "id":"sucsal_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4348,7 +4348,7 @@
 },
 {
 "id":"t3c11vaceACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqr"
@@ -4356,7 +4356,7 @@
 },
 {
 "id":"t3c5ddeceACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -4364,7 +4364,7 @@
 },
 {
 "id":"t3c7mrseACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -4372,7 +4372,7 @@
 },
 {
 "id":"t3c9palmeACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -4380,7 +4380,7 @@
 },
 {
 "id":"tddec2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -4388,7 +4388,7 @@
 },
 {
 "id":"tdeACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -4396,7 +4396,7 @@
 },
 {
 "id":"tdec2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -4404,7 +4404,7 @@
 },
 {
 "id":"thdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -4412,7 +4412,7 @@
 },
 {
 "id":"thex2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -4420,7 +4420,7 @@
 },
 {
 "id":"thf_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrs"
@@ -4428,7 +4428,7 @@
 },
 {
 "id":"thmmp_c",
-"name":"nan",
+"name":"Thiamine monophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -4436,7 +4436,7 @@
 },
 {
 "id":"thmpp_c",
-"name":"nan",
+"name":"Thiamine pyrophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijkl"
@@ -4444,7 +4444,7 @@
 },
 {
 "id":"thr-L_c",
-"name":"nan",
+"name":"L-Threonine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4452,7 +4452,7 @@
 },
 {
 "id":"thr-L_p",
-"name":"nan",
+"name":"L-Threonine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4460,7 +4460,7 @@
 },
 {
 "id":"thymd_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -4468,7 +4468,7 @@
 },
 {
 "id":"thymd_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -4476,7 +4476,7 @@
 },
 {
 "id":"tmrs2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmn"
@@ -4484,7 +4484,7 @@
 },
 {
 "id":"toct2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefgh"
@@ -4492,7 +4492,7 @@
 },
 {
 "id":"tpalm2eACP_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnop"
@@ -4500,22 +4500,22 @@
 },
 {
 "id":"trdox_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"trdrd_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"trnaglu_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"trp-L_c",
-"name":"nan",
+"name":"L-Tryptophan",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -4523,7 +4523,7 @@
 },
 {
 "id":"tyr-L_c",
-"name":"nan",
+"name":"L-Tyrosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4531,7 +4531,7 @@
 },
 {
 "id":"u23ga_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"
@@ -4539,7 +4539,7 @@
 },
 {
 "id":"u3aga_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDE"
@@ -4547,7 +4547,7 @@
 },
 {
 "id":"u3hga_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABC"
@@ -4555,7 +4555,7 @@
 },
 {
 "id":"uaagmda_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9\u00da\u00db\u00dc\u00dd\u00de\u00df\u00e0\u00e1"
@@ -4563,7 +4563,7 @@
 },
 {
 "id":"uaccg_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -4571,7 +4571,7 @@
 },
 {
 "id":"uacgam_c",
-"name":"nan",
+"name":"Uridine diphosphate-N-acetylglucosamine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopq"
@@ -4579,7 +4579,7 @@
 },
 {
 "id":"uagmda_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\u00c0\u00c1\u00c2\u00c3\u00c4\u00c5\u00c6\u00c7\u00c8\u00c9\u00ca\u00cb\u00cc\u00cd\u00ce\u00cf\u00d0\u00d1\u00d2\u00d3\u00d4\u00d5\u00d6\u00d8\u00d9"
@@ -4587,7 +4587,7 @@
 },
 {
 "id":"uama_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvw"
@@ -4595,7 +4595,7 @@
 },
 {
 "id":"uamag_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzAB"
@@ -4603,7 +4603,7 @@
 },
 {
 "id":"uamr_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrst"
@@ -4611,7 +4611,7 @@
 },
 {
 "id":"udcpdp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"
@@ -4619,7 +4619,7 @@
 },
 {
 "id":"udcpp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012"
@@ -4627,7 +4627,7 @@
 },
 {
 "id":"udp_c",
-"name":"nan",
+"name":"Uridine 5'-diphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4635,7 +4635,7 @@
 },
 {
 "id":"udpg_c",
-"name":"nan",
+"name":"Uridine diphosphate glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmno"
@@ -4643,7 +4643,7 @@
 },
 {
 "id":"ugmd_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHI"
@@ -4651,7 +4651,7 @@
 },
 {
 "id":"ugmda_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO"
@@ -4659,7 +4659,7 @@
 },
 {
 "id":"ump_c",
-"name":"nan",
+"name":"Uridine 5'-monophosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4667,7 +4667,7 @@
 },
 {
 "id":"uppg3_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN"
@@ -4675,7 +4675,7 @@
 },
 {
 "id":"ura_c",
-"name":"nan",
+"name":"Uracil",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4683,7 +4683,7 @@
 },
 {
 "id":"ura_p",
-"name":"nan",
+"name":"Uracil",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -4691,7 +4691,7 @@
 },
 {
 "id":"urea_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -4699,7 +4699,7 @@
 },
 {
 "id":"urea_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -4707,7 +4707,7 @@
 },
 {
 "id":"urea_p",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -4715,7 +4715,7 @@
 },
 {
 "id":"uri_c",
-"name":"nan",
+"name":"Uridine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4723,7 +4723,7 @@
 },
 {
 "id":"uri_p",
-"name":"nan",
+"name":"Uridine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4731,7 +4731,7 @@
 },
 {
 "id":"utp_c",
-"name":"nan",
+"name":"Uridine triphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -4739,7 +4739,7 @@
 },
 {
 "id":"val-L_c",
-"name":"nan",
+"name":"L-Valine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4747,7 +4747,7 @@
 },
 {
 "id":"val-L_e",
-"name":"nan",
+"name":"L-Valine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4755,7 +4755,7 @@
 },
 {
 "id":"val-L_p",
-"name":"nan",
+"name":"L-Valine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4763,7 +4763,7 @@
 },
 {
 "id":"xan_c",
-"name":"nan",
+"name":"Xanthine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4771,7 +4771,7 @@
 },
 {
 "id":"xan_p",
-"name":"nan",
+"name":"Xanthine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4779,7 +4779,7 @@
 },
 {
 "id":"xmp_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghij"
@@ -4787,7 +4787,7 @@
 },
 {
 "id":"xu5p-D_c",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -4795,17 +4795,17 @@
 },
 {
 "id":"zn2_c",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"zn2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"zn2_p",
-"name":"nan",
+"name":"",
 "compartment":""
 }
 ],

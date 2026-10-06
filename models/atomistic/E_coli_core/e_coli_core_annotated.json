@@ -2,7 +2,7 @@
 "metabolites":[
 {
 "id":"3PG",
-"name":"nan",
+"name":"3-Phosphoglyceric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -10,7 +10,7 @@
 },
 {
 "id":"6PG",
-"name":"nan",
+"name":"6-Phosphogluconic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -18,7 +18,7 @@
 },
 {
 "id":"Ac",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -26,7 +26,7 @@
 },
 {
 "id":"Ac_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -34,7 +34,7 @@
 },
 {
 "id":"AcCoA",
-"name":"nan",
+"name":"Acetyl-CoA",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -42,7 +42,7 @@
 },
 {
 "id":"AKG",
-"name":"nan",
+"name":"Oxoglutaric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -50,7 +50,7 @@
 },
 {
 "id":"Ala",
-"name":"nan",
+"name":"L-Alanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -58,7 +58,7 @@
 },
 {
 "id":"Arg",
-"name":"nan",
+"name":"L-Arginine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -66,7 +66,7 @@
 },
 {
 "id":"Asn",
-"name":"nan",
+"name":"L-Asparagine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -74,7 +74,7 @@
 },
 {
 "id":"Asp",
-"name":"nan",
+"name":"L-Aspartic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -82,17 +82,17 @@
 },
 {
 "id":"ATP",
-"name":"nan",
+"name":"Adenosine triphosphate",
 "compartment":""
 },
 {
 "id":"Biomass",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"Cit",
-"name":"nan",
+"name":"Citric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -100,7 +100,7 @@
 },
 {
 "id":"CO2",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -108,7 +108,7 @@
 },
 {
 "id":"CO2_e",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -116,7 +116,7 @@
 },
 {
 "id":"Cys",
-"name":"nan",
+"name":"L-Cysteine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -124,7 +124,7 @@
 },
 {
 "id":"DHAP",
-"name":"nan",
+"name":"Dihydroxyacetone phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -132,7 +132,7 @@
 },
 {
 "id":"E4P",
-"name":"nan",
+"name":"D-Erythrose 4-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -140,7 +140,7 @@
 },
 {
 "id":"F6P",
-"name":"nan",
+"name":"Fructose 6-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -148,12 +148,12 @@
 },
 {
 "id":"FADH2",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"FBP",
-"name":"nan",
+"name":"Fructose 1,6-bisphosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -161,7 +161,7 @@
 },
 {
 "id":"FTHF",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -169,7 +169,7 @@
 },
 {
 "id":"Fum",
-"name":"nan",
+"name":"Fumaric acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd",
@@ -180,7 +180,7 @@
 },
 {
 "id":"G6P",
-"name":"nan",
+"name":"Glucose 6-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -188,7 +188,7 @@
 },
 {
 "id":"GAP",
-"name":"nan",
+"name":"D-Glyceraldehyde 3-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -196,7 +196,7 @@
 },
 {
 "id":"Gln",
-"name":"nan",
+"name":"L-Glutamine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -204,7 +204,7 @@
 },
 {
 "id":"Glu",
-"name":"nan",
+"name":"L-Glutamic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -212,7 +212,7 @@
 },
 {
 "id":"Gluc_e",
-"name":"nan",
+"name":"D-Glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -220,7 +220,7 @@
 },
 {
 "id":"Gluc_pre",
-"name":"nan",
+"name":"D-Glucose",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -228,7 +228,7 @@
 },
 {
 "id":"Glx",
-"name":"nan",
+"name":"Glyoxylic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -236,7 +236,7 @@
 },
 {
 "id":"Gly",
-"name":"nan",
+"name":"Glycine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"ab"
@@ -244,7 +244,7 @@
 },
 {
 "id":"His",
-"name":"nan",
+"name":"L-Histidine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -252,7 +252,7 @@
 },
 {
 "id":"ICit",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -260,7 +260,7 @@
 },
 {
 "id":"Ile",
-"name":"nan",
+"name":"L-Isoleucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -268,7 +268,7 @@
 },
 {
 "id":"KDPG",
-"name":"nan",
+"name":"2-Keto-3-deoxy-D-gluconic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -276,7 +276,7 @@
 },
 {
 "id":"Leu",
-"name":"nan",
+"name":"L-Leucine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -284,7 +284,7 @@
 },
 {
 "id":"LLDAP",
-"name":"nan",
+"name":"Diaminopimelic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg",
@@ -295,7 +295,7 @@
 },
 {
 "id":"Lys",
-"name":"nan",
+"name":"L-Lysine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdef"
@@ -303,7 +303,7 @@
 },
 {
 "id":"Mal",
-"name":"nan",
+"name":"L-Malic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -311,7 +311,7 @@
 },
 {
 "id":"MEETHF",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -319,7 +319,7 @@
 },
 {
 "id":"Met",
-"name":"nan",
+"name":"L-Methionine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -327,7 +327,7 @@
 },
 {
 "id":"METHF",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"a"
@@ -335,37 +335,37 @@
 },
 {
 "id":"NADH",
-"name":"nan",
+"name":"NADH",
 "compartment":""
 },
 {
 "id":"NADPH",
-"name":"nan",
+"name":"NADPH",
 "compartment":""
 },
 {
 "id":"NH3",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"NH3_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"O2",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"O2_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"OAC",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -373,7 +373,7 @@
 },
 {
 "id":"PEP",
-"name":"nan",
+"name":"Phosphoenolpyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -381,7 +381,7 @@
 },
 {
 "id":"Phe",
-"name":"nan",
+"name":"L-Phenylalanine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -389,7 +389,7 @@
 },
 {
 "id":"Pro",
-"name":"nan",
+"name":"L-Proline",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -397,7 +397,7 @@
 },
 {
 "id":"Pyr",
-"name":"nan",
+"name":"Pyruvic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -405,7 +405,7 @@
 },
 {
 "id":"R5P",
-"name":"nan",
+"name":"D-Ribose 5-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -413,7 +413,7 @@
 },
 {
 "id":"Ru5P",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -421,7 +421,7 @@
 },
 {
 "id":"S7P",
-"name":"nan",
+"name":"Sedoheptulose 7-phosphate",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefg"
@@ -429,7 +429,7 @@
 },
 {
 "id":"Ser",
-"name":"nan",
+"name":"L-Serine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abc"
@@ -437,22 +437,22 @@
 },
 {
 "id":"sink",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"SO4",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"SO4_e",
-"name":"nan",
+"name":"",
 "compartment":""
 },
 {
 "id":"Suc",
-"name":"nan",
+"name":"Succinic acid",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd",
@@ -463,7 +463,7 @@
 },
 {
 "id":"SucCoA",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -471,7 +471,7 @@
 },
 {
 "id":"Thr",
-"name":"nan",
+"name":"L-Threonine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcd"
@@ -479,7 +479,7 @@
 },
 {
 "id":"Trp",
-"name":"nan",
+"name":"L-Tryptophan",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghijk"
@@ -487,7 +487,7 @@
 },
 {
 "id":"Tyr",
-"name":"nan",
+"name":"L-Tyrosine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcdefghi"
@@ -495,7 +495,7 @@
 },
 {
 "id":"Val",
-"name":"nan",
+"name":"L-Valine",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"
@@ -503,7 +503,7 @@
 },
 {
 "id":"X5P",
-"name":"nan",
+"name":"",
 "compartment":"",
 "annotation":{
 "atom_pattern":"abcde"

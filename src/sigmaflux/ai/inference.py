@@ -38,6 +38,7 @@ from .data import (
 )
 from .model import FluxDecoder, MISSING_LABEL_VALUE
 from .uncertainty import _medoid_weights
+from ..core.fbapro import fbapro
 
 
 def bounds_from_cobra(model, flux_names, source="model"):
@@ -301,6 +302,30 @@ class ModelSpec:
 #: A simulated mass fraction may sit this far outside [0, 1] and still be rounding rather
 #: than a failed solve. The real failures overshoot by many orders of magnitude.
 MID_TOL = 1e-6
+def _knockout_indices(flux_names, knockout_rxn_ids):
+    """Map knockout reaction ids to flux-vector indices, erroring on unknown ids."""
+    missing = [r for r in knockout_rxn_ids if r not in flux_names]
+    if missing:
+        raise ValueError(f"unknown reaction id(s) for knockout: {missing}")
+    return [flux_names.index(r) for r in knockout_rxn_ids]
+
+
+def _cleaned_knockout_df(base_df, full_values, n_flux, n_rev, Z, ko_idx, weights):
+    """Replace the flux block of a prediction with its knockout-cleaned projection.
+
+    ``full_values`` is the long-format 'Value' column (flux then reversibility per sample);
+    only the flux block is projected onto {S x = 0, x[ko] = 0} via
+    :func:`~sigmaflux.core.fbapro.fbapro` (knockouts pinned to 0 through ``vfixed``).
+    Reversibilities are left untouched. Returns a copy of ``base_df`` with a new 'Value'.
+    """
+    stride = n_flux + n_rev
+    grid = np.asarray(full_values, dtype=np.float64).reshape(-1, stride).copy()
+    vfixed = np.full(n_flux, np.nan)
+    vfixed[list(ko_idx)] = 0.0
+    grid[:, :n_flux] = fbapro(grid[:, :n_flux], Z=Z, vfixed=vfixed, weights=weights)
+    out = base_df.copy()
+    out['Value'] = grid.reshape(-1)
+    return out
 
 
 class SigmaFlux:
@@ -727,6 +752,43 @@ class SigmaFlux:
             note = "  <-- tracer not measured at all" if row['sum'] == 0 else ""
             print(f"  {tracer}: {int(row['sum'])}/{int(row['count'])}{note}")
 
+    def predict_knockout(self, df_L, knockout_rxn_ids, df_Vm=None, weights=None):
+        """Predict fluxes for a knockout, forcing the knocked-out reactions to exactly zero.
+
+        Runs :meth:`predict` and then projects the predicted flux onto
+        ``{S x = 0} ∩ {x[ko] = 0}`` (minimal, inverse-variance-weighted adjustment), so the
+        knocked-out reactions are exactly zero while the rest stay close to the model's
+        estimate. A single model has no ensemble spread to weight by, so ``weights`` is
+        required here; :class:`EnsembleSigmaFlux` derives them from the member spread
+        automatically. See :func:`~sigmaflux.core.fbapro.fbapro`.
+
+        Parameters
+        ----------
+        df_L, df_Vm
+            Labeling data and measured exchange fluxes; see :meth:`predict`.
+        knockout_rxn_ids : list of str
+            Reaction ids to force to zero (must be in :attr:`flux_names`).
+        weights : array-like, shape (n_fluxes,)
+            Per-reaction non-negative weights (e.g. inverse variance); larger = held closer
+            to the prediction. Required for a single model.
+
+        Returns
+        -------
+        pd.DataFrame with the same columns as :meth:`predict`, knockouts at exactly 0.
+        """
+        if weights is None:
+            raise ValueError(
+                "predict_knockout on a single SigmaFlux needs per-reaction `weights` "
+                "(inverse-variance); the weighting normally comes from the ensemble "
+                "spread -- use EnsembleSigmaFlux, or pass weights explicitly.")
+        pred = self.predict(df_L, df_Vm=df_Vm)
+        ko_idx = _knockout_indices(self.flux_names, knockout_rxn_ids)
+        Z = self._model.Z_full.detach().cpu().numpy().astype(np.float64)
+        return _cleaned_knockout_df(
+            pred, pred['Value'].to_numpy(), len(self.flux_names),
+            len(self.reversibility_names), Z, ko_idx,
+            np.asarray(weights, dtype=np.float64))
+
     # ── Introspection helpers ─────────────────────────────────────────────────
 
     def expected_metabolites(self):
@@ -1139,6 +1201,38 @@ class EnsembleSigmaFlux:
                              f"x ({n_flux} fluxes + {n_rev} reversibilities)")
         wide = out['Value'].to_numpy().reshape(len(samples), block)
         return wide[:, :n_flux], wide[:, n_flux:], samples
+    def predict_knockout(self, df_L, knockout_rxn_ids, df_Vm=None):
+        """Ensemble prediction with the knocked-out reactions forced to exactly zero.
+
+        Projects the ensemble-mean flux onto ``{S x = 0}∩{x[ko] = 0}`` weighted by the
+        inverse variance across members: the rerouting needed to zero the knockout is
+        absorbed by the reactions the ensemble is least certain about, keeping the confident
+        ones close to their predicted values. Returns the same long DataFrame as
+        :meth:`predict`. See :func:`~sigmaflux.core.fbapro.fbapro`.
+
+        Parameters
+        ----------
+        df_L, df_Vm
+            Labeling data and measured exchange fluxes; see :meth:`SigmaFlux.predict`.
+        knockout_rxn_ids : list of str
+            Reaction ids to force to zero (must be in :attr:`flux_names`).
+        """
+        preds  = [m.predict(df_L, df_Vm=df_Vm) for m in self.members]
+        values = np.stack([p['Value'].to_numpy(dtype=np.float64) for p in preds], axis=0)
+        n_flux = len(self.flux_names or [])
+        n_rev  = len(self.reversibility_names or [])
+        stride = n_flux + n_rev
+        n_members, n_rows = values.shape
+        n_samples = n_rows // stride
+
+        # inverse-variance weight per reaction: member disagreement, pooled over samples
+        flux_blocks = values.reshape(n_members, n_samples, stride)[:, :, :n_flux]
+        weights = 1.0 / (flux_blocks.var(axis=0).mean(axis=0) + 1e-8)
+
+        ko_idx = _knockout_indices(self.flux_names, knockout_rxn_ids)
+        Z = self.members[0]._model.Z_full.detach().cpu().numpy().astype(np.float64)
+        return _cleaned_knockout_df(
+            preds[0], values.mean(axis=0), n_flux, n_rev, Z, ko_idx, weights)
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()
