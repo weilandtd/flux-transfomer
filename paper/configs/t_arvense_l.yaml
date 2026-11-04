@@ -20,7 +20,7 @@ experiment:
   data_dir: data/T_arvense_L_GC_MS
   gem_xlsx: models/atomistic/T_arvense_L/taGEM.xlsx
   mapping_csv: models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv
-  ext_flux: T_arvense_L_ExtFlux.xlsx
+  ext_flux: data/T_arvense_L_GC_MS/T_arvense_L_ExtFlux.xlsx
   n_bootstrap: 200
 
 # No BIOMASS: the FTBL drains each measured biomass product separately.
