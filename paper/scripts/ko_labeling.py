@@ -28,8 +28,7 @@ from sigmaflux.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, _inspect_growth_conditions,
     load_condition_inputs)
 
-from _figure_common import _REPO_ROOT, resolve_organism
-from plot_experimental_predictions import _r2_linear
+from _figure_common import _REPO_ROOT, r2_linear, resolve_organism
 
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from validate_inferred_fluxes import agreement, measured_table  # noqa: E402
@@ -95,7 +94,7 @@ def main():
     summary = (tokens.dropna(subset=["sim"]).groupby(["gc", "method"])
                      .apply(lambda d: pd.Series({
                          "rmse_mol%": 100 * np.sqrt(np.mean(d["error"] ** 2)),
-                         "r2": _r2_linear(d["sim"], d["measured"])}))
+                         "r2": r2_linear(d["sim"], d["measured"])}))
                      .unstack("method")
                      .reindex(sorted(tokens["gc"].unique())))
     pd.set_option("display.width", 200)

@@ -31,7 +31,7 @@ both first:
 
 R² is scored per strain on the reactions SigmaFlux predicts with R² > 0.9 in its own
 simulation benchmark (``<run>/ai_benchmark``), with the same linear, signed definition as
-plot_experimental_predictions.py. Intervals are the ones inference reports; the published
+plot_experimental.py. Intervals are the ones inference reports; the published
 ones are the fit's 95% bounds.
 
 Usage:
@@ -48,9 +48,8 @@ import seaborn as sns
 from scipy.stats import norm
 
 from _figure_common import (UNBOUNDED_FLUX, _REPO_ROOT, apply_style, drop_pool_reactions,
-                            load_benchmark, load_data, per_flux_r2, reference_path,
-                            resolve_organism, save_figure)
-from plot_experimental_predictions import _r2_linear
+                            load_benchmark, load_data, per_flux_r2, r2_linear,
+                            reference_path, resolve_organism, save_figure)
 from sigmaflux.utils import (pair_fluxes, read_predicted_fluxes, read_reference_fluxes,
                              reference_orientation)
 
@@ -213,7 +212,7 @@ def labeling_r2(run):
     expected = pd.MultiIndex.from_frame(tokens[["gc", "method"]].drop_duplicates())
     valid = tokens.dropna(subset=["sim"])
     r2 = (valid.groupby(["gc", "method"])
-               .apply(lambda d: _r2_linear(d["sim"], d["measured"]), include_groups=False))
+               .apply(lambda d: r2_linear(d["sim"], d["measured"]), include_groups=False))
     return r2.reindex(expected).unstack("method")
 
 
@@ -281,7 +280,7 @@ def main():
     scored = paired(args.run, org, reactions)
     scored = scored[scored["method"] == "sigmaflux"]
     r2 = (scored.groupby("gc")
-                .apply(lambda g: pd.Series({"r2": _r2_linear(g["pred"], g["ref"]),
+                .apply(lambda g: pd.Series({"r2": r2_linear(g["pred"], g["ref"]),
                                             "n": len(g)}), include_groups=False)
                 .reset_index()
                 .assign(strain=lambda d: d["gc"].map(strains)))

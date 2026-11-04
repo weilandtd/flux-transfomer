@@ -2,8 +2,8 @@
 Shared plumbing for the Figure 2 scripts: model registry, run-dir resolution,
 per-reaction R² loading, and plot styling.
 
-Both paper/scripts/plot_mfa_benchmark.py and paper/scripts/plot_experimental_predictions.py
-import from here so they share exactly one source of truth for "what a model is" and
+Both paper/scripts/plot_mfa_benchmark.py and paper/scripts/plot_experimental.py import
+from here so they share exactly one source of truth for "what a model is" and
 "how its benchmark R² is computed" -- the benchmark HDF5s, not output/identifiability.csv,
 so neither script silently depends on plot_test_performance.py having been run first
 against the same run directory.
@@ -119,6 +119,32 @@ CONDITION_LABEL = {
     "m_musculus_t_cell": {"N": "naive", "A": "activated"},
 }
 
+#: Letter -> name for the organisms CONDITION_LABEL says nothing about, whose letters are
+#: nutrient limitations.
+LIMITATION_NAME = {"B": "batch", "C": "C-limited", "N": "N-limited", "P": "P-limited"}
+
+#: Organism as written in a panel name.
+ORGANISM_SHORT = {
+    "e_coli_core": "E. coli",
+    "s_cerevisiae": "S. cerevisiae",
+    "i_orientalis": "I. orientalis",
+    "m_musculus_t_cell": "T cell",
+}
+
+
+def condition_name(key, condition):
+    """How this organism names the condition, e.g. ('m_musculus_t_cell', 'N') -> naive."""
+    named = CONDITION_LABEL.get(key, {})
+    if condition in named:
+        return named[condition]
+    return LIMITATION_NAME.get(condition, condition)
+
+
+def panel_name(key, condition):
+    """Organism and condition, e.g. ('s_cerevisiae', 'C') -> 'S. cerevisiae C-limited'."""
+    return f"{ORGANISM_SHORT.get(key, MODELS_BY_KEY[key]['label'])} " \
+           f"{condition_name(key, condition)}"
+
 # Literature-style names for the tracer metabolite ids seen in tracer strings below.
 _TRACER_METABOLITE_NAMES = {
     "glc__D_e": "glucose", "Gluc_e": "glucose", "gln__L_e": "glutamine",
@@ -147,6 +173,20 @@ def tracer_label(tracer_str):
     pct = f"{float(enrichment) * 100:.0f}%"
     tag = "U" if len(positions) == len(pattern) else ",".join(str(p) for p in positions)
     return f"{tag}-¹³C-{name} ({pct})"
+
+
+def r2_linear(pred, ref):
+    """Signed R² in linear space; NaN when the reference carries no variance.
+
+    Signed, not magnitudes: a flux predicted in the wrong direction is wrong, and scoring
+    |v| would credit it as a perfect hit. The same definition as ``per_flux_r2`` in the
+    simulation benchmark, so R² means one thing across the paper.
+    """
+    if len(ref) < 2:
+        return float("nan")
+    ss_res = ((pred - ref) ** 2).sum()
+    ss_tot = ((ref - ref.mean()) ** 2).sum()
+    return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
 
 
 def apply_style():
@@ -362,14 +402,18 @@ def axis_floor(*series, decades=0.5, floor=FLUX_MIN_ABS):
     return max(floor, float(positive.min()) / 10.0 ** decades)
 
 
-def save_figure(fig, path, extra_artists=()):
-    """Write the figure, trimmed to its content.
+def save_figure(fig, path, extra_artists=(), tight=True):
+    """Write the figure, trimmed to its content unless ``tight`` is False, in which case
+    it keeps exactly its figsize and the caller owns the margins.
 
     ``extra_artists`` are artists that sit outside the axes and are not the axes' own
     legend -- a second legend added with ``add_artist`` is not seen by ``bbox_inches="tight"``
     and gets cropped away silently, which looks exactly like never having drawn it.
     """
-    fig.savefig(path, bbox_inches="tight",
-                bbox_extra_artists=tuple(extra_artists) or None)
+    if tight:
+        fig.savefig(path, bbox_inches="tight",
+                    bbox_extra_artists=tuple(extra_artists) or None)
+    else:
+        fig.savefig(path)
     plt.close(fig)
     print(f"Saved: {path}")
