@@ -15,6 +15,15 @@ Also writes E_coli_core_fragment_mapping.csv, mapping the Long & Antoniewicz (20
 workbook's fragment names onto the fragment ids with the formula and backbone carbon
 count that ``read_xlsx_mid_data`` needs to correct the raw MIDs for natural isotopes.
 
+T. arvense (Pennycress)
+-----------------------
+The ions and their carbon sets come from the MASS_SPECTROMETRY block of the Shi et al.
+FTBL, transcribed to T_arvense_L/T_arvense_L_fragments.csv. Their parents are the FTBL
+``*_bm`` measurement pools. The published MIDs are already corrected for the derivative's
+atoms but not for natural 13C on the backbone (the FTBL simulated it with natural-abundance
+inputs, which curate_pennycress_workbooks.py drops), so the mapping's formula is the
+backbone alone, ``C<n>``, and the loader removes exactly that.
+
 Run this whenever its inputs or the annotated models change:
 
     python models/atomistic/build_gcms_fragment_model.py
@@ -114,11 +123,28 @@ def plan_e_coli_core(model):
     return fragments, lambda: workbook_mapping(knowns, fragments)
 
 
+def plan_t_arvense(model):
+    """Fragments from the FTBL carbon sets, with backbone-only natural-isotope formulas."""
+    table = pd.read_csv(ROOT / "models/atomistic/T_arvense_L/T_arvense_L_fragments.csv")
+    fragments = {row.fragment_id: (row.parent, carbon_set(row.carbons))
+                 for row in table.itertuples()}
+
+    def mapping():
+        return pd.DataFrame([{"experimental_id": frag, "model_id": frag,
+                              "formula": f"C{len(carbons)}", "n_backbone": len(carbons)}
+                             for frag, (_, carbons) in fragments.items()])
+    return fragments, mapping
+
+
 CONFIGS = [
     dict(name="E_coli_core", plan=plan_e_coli_core,
          model_in="models/atomistic/E_coli_core/e_coli_core_annotated.json",
          model_out="models/atomistic/E_coli_core/e_coli_core_gcms_annotated.json",
          mapping_out="models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv"),
+    dict(name="T_arvense_L", plan=plan_t_arvense,
+         model_in="models/atomistic/T_arvense_L/ta_annotated.json",
+         model_out="models/atomistic/T_arvense_L/ta_gcms_annotated.json",
+         mapping_out="models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv"),
 ]
 
 
