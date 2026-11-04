@@ -3,7 +3,7 @@ Simulate SigmaFlux's predicted labeling for the experimental panels.
 
 The expensive half of the isotopologue comparison: for every growth condition the paper
 plots, this predicts the flux state from the measured data, pushes each draw through the
-EMU forward pass, and writes the per-token table paper/scripts/plot_experimental_mid.py
+EMU forward pass, and writes the per-token table paper/scripts/plot_experimental.py
 draws. Splitting the two means a plotting choice -- a different floor, a different
 annotation -- costs a second, not another pass over the whole bootstrap.
 
@@ -78,7 +78,7 @@ TOKENS_SUBDIR = "experimental_mid"
 
 
 def tokens_path(run):
-    """The per-run token table :mod:`plot_experimental_mid` reads."""
+    """The per-run token table :mod:`plot_experimental` reads."""
     return run / TOKENS_SUBDIR / "tokens.csv"
 
 
