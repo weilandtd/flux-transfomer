@@ -1,0 +1,171 @@
+# SigmaFlux training configuration — Thlaspi arvense (pennycress), developing embryos, GC/MS
+#
+# The Shi et al. influx_s FTBL network (Schwender lab), curated by
+# models/atomistic/curate_pennycress_workbooks.py into cytosol (_c), plastid (_h) and
+# mitochondrion (_m), with the FTBL scrambling pairs as symmetric metabolites, and one
+# fragment pool per GC/MS ion (models/atomistic/build_gcms_fragment_model.py) read from the
+# FTBL `*_bm` measurement pools. The FTBL's natural-13C inputs into those pools are
+# replaced by natural-abundance correction of the MIDs.
+name: T_arvense_L
+model_file: models/atomistic/T_arvense_L/ta_gcms_annotated.json
+# Backbone-only formulas (C<n>): the published MIDs are already corrected for the
+# derivative atoms but keep natural 13C on the backbone, which the loader removes.
+mapping_csv: models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv
+seed: 42
+device: auto  # auto | cpu | cuda
+
+# Three parallel labeling experiments x {WT (P1), WD3 (P2)}, one replicate each;
+# strain_index.csv names the lines.
+experiment:
+  data_dir: data/T_arvense_L_GC_MS
+  gem_xlsx: models/atomistic/T_arvense_L/taGEM.xlsx
+  mapping_csv: models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv
+  ext_flux: T_arvense_L_ExtFlux.xlsx
+  n_bootstrap: 200
+
+# No BIOMASS: the FTBL drains each measured biomass product separately.
+skip_constraints: []
+
+# ── Flux sampling (sample_flux.py) ──────────────────────────────────────────
+sampling:
+  n_samples: 10000
+  thinning: 100
+  processes: 8
+  method: optgp
+  fva: true
+  ko: false
+
+  stratified_sampling:
+    enabled: true
+    n_subsamples: auto
+    n_bins: 20
+    reactions: null               # null → training.measured_fluxes
+
+  # The FTBL has no unlabeled medium reservoir beyond the medium itself.
+  dilution: false
+
+  # Units of the ExtFlux workbook (glucose uptake ~7-8). Negative = uptake.
+  media:
+    EX_Glc_e:    {lb: -15.0, ub: 0.0}
+    EX_Ala_e:    {lb: -5.0,  ub: 0.0}
+    EX_Gln_e:    {lb: -5.0,  ub: 0.0}
+
+  # The network has stoichiometric loops the FTBL closed only with labeling and weak
+  # zero-flux priors: the oxidative PPP / Rubisco CO2-refixation cycle, the hexose,
+  # triose and PEP shuttles between cytosol and plastid, and the reversible fumarase.
+  # Left at the workbook's 1000 they reach it and swamp every
+  # other flux (~10), so they are capped at ~4x glucose uptake.
+  reaction_bounds:
+    vAldo_c:  {lb: -30.0, ub: 30.0}
+    vGAPDH_c: {lb: -30.0, ub: 30.0}
+    vPGM_c:   {lb: -30.0, ub: 30.0}
+    vGPT:     {lb: -30.0, ub: 30.0}
+    vTPT:     {lb: -30.0, ub: 30.0}
+    vPPT:     {lb: -30.0, ub: 30.0}
+    vPPepi_c: {lb: -30.0, ub: 30.0}
+    vXPT:     {lb: -30.0, ub: 30.0}
+    vTA_p:    {lb: -30.0, ub: 30.0}
+    vPPepi_p: {lb: -30.0, ub: 30.0}
+    vAldo_p:  {lb: -30.0, ub: 30.0}
+    vGAPDH_p: {lb: -30.0, ub: 30.0}
+    vPGM_p:   {lb: -30.0, ub: 30.0}
+    vFM:      {lb: -30.0, ub: 30.0}
+    vG6PDH_c: {lb: 0.0,   ub: 30.0}
+    vG6PDH_p: {lb: 0.0,   ub: 30.0}
+    vSaldo_p: {lb: 0.0,   ub: 30.0}
+    vRub_p:   {lb: 0.0,   ub: 30.0}
+
+# ── Isotope labeling simulation (generate_training_data.py) ─────────────────
+# `name` is the workbook sheet name. Entries sharing a name are one tracer mixture.
+# Purities from the FTBL LABEL_INPUT blocks.
+labeling:
+  batch_size: 512
+  tracers:
+    # 80% unlabeled + 10% [1,2-13C] + 10% [U-13C] glucose, unlabeled Ala and Gln (WT-G)
+    - tracer_id: Glc_e
+      labeling: [1, 1, 0, 0, 0, 0]
+      enrichment: 0.1
+      name: "Glc 80-10-10 (1,2-13C + U-13C)"
+    - tracer_id: Glc_e
+      labeling: [1, 1, 1, 1, 1, 1]
+      enrichment: 0.1
+      name: "Glc 80-10-10 (1,2-13C + U-13C)"
+    # [2,3-13C]alanine, unlabeled glucose (WT-A1)
+    - tracer_id: Ala_e
+      labeling: [0, 1, 1]
+      enrichment: 0.99
+      name: "2,3-13C alanine"
+    # [1-13C]alanine, unlabeled glucose (WT-A2)
+    - tracer_id: Ala_e
+      labeling: [1, 0, 0]
+      enrichment: 0.99
+      name: "1-13C alanine"
+
+# ── Feature selection (extract_informative_features.py) ─────────────────────
+features:
+  restrict_to_mapped: true          # only the fragments the GC/MS data reports
+  exclude_extracellular: true
+  token_selection_method: all
+
+# ── Transformer training (train_ai_model.py) ─────────────────────────────────
+training:
+  output_model: t_arvense_transformer.pt
+  ensemble_size: 20
+  epochs: 1000
+  early_stopping_patience: 10
+  batch_size: 256
+  learning_rate: 0.001
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  scheduler: true
+  val_fraction: 0.1
+  max_samples: 10000
+
+  combined_dim: 256
+  num_attn_heads: 8
+  num_transformer_layers: 4
+  dropout: 0.2
+
+  h_compound: 7
+  h_label: 5
+  h_tracer: 1
+  h_reaction: 7
+  h_type: 2
+
+  flux_token_dropout: 0.2
+  labeling_token_dropout: 0.2
+  normalize_mids: false
+
+  # Every flux the ExtFlux workbook reports: substrate uptake and each biomass output.
+  measured_fluxes:
+    - vHex_HPc
+    - vuptAla
+    - vuptGln
+    - vAlaP
+    - vGluP
+    - vGlnP
+    - vSerP
+    - vGlyP
+    - vHisP
+    - vPheP
+    - vTyrP
+    - vValP
+    - vLeuP
+    - vIleP
+    - vThrP
+    - vAsxP
+    - vLysP
+    - vGlyc_out
+    - vSt_out
+    - vFAEc
+    - vFASp
+    - vHPc_out
+    - vGlc_out
+    - vCit_out
+
+  flux_noise_std: 0.05
+  labeling_noise_std: 0.01
+  loss: variance
+  null_space_type: targeted_ica
+  flux_loss_space: basis
+  variance_min_cutoff: 0.1
