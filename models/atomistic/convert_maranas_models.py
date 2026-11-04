@@ -12,6 +12,7 @@ extract -- and pooling it would mix the tracer inlet (``glc__D_e``) into a measu
 ``_p`` is not a real compartment either: the outer membrane is porous, so the periplasm
 equilibrates with the medium rather than being its own labeled space. The E. coli models
 therefore get no pools at all and their mapping CSVs name intracellular ``_c`` ids only.
+That is also why the Pennycress plastid is ``_h`` (curate_pennycress_workbooks.py).
 
 Usage:
     python models/atomistic/convert_maranas_models.py
@@ -41,6 +42,25 @@ def _print_model_summary(label: str, model) -> None:
     # These models carry a single aggregate BIOMASS; build_hierarchical_models.py
     # splits it into the five component reactions afterwards.
     print(f"  BIOMASS present (expected True): {'BIOMASS' in rxn_ids}")
+
+
+def _annotate_compartments(model, names, out):
+    """Set each metabolite's compartment from its id suffix and re-save *model*.
+
+    Args:
+        model: the converted COBRA model, modified in place.
+        names: ``{suffix letter: compartment name}``; other ids stay compartment-less.
+        out: output JSON path, relative to this file's directory.
+    """
+    import cobra
+
+    from sigmaflux.core.measurement_pools import _compartment
+
+    for met in model.metabolites:
+        suffix = _compartment(met.id)
+        met.compartment = suffix if suffix in names else ''
+    model.compartments = names
+    cobra.io.save_json_model(model, str(_MODELS / out))
 
 
 def _check_mappings(by_organism):
@@ -112,6 +132,19 @@ model_mm = convert('M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
                    biomass_id='BIOMASS_c',
                    measurement_pools=True)
 _print_model_summary("M_musculus_T_Cell", model_mm)
+
+# T_arvense_L — Pennycress embryo FTBL model; the workbooks are canonicalised by
+# curate_pennycress_workbooks.py first. No BIOMASS: the FTBL drains each measured
+# product separately, so there is no hierarchical step either. No pools: every GC/MS
+# ion is read from a compartment-less *_bm pool, so a whole-cell pool would only add
+# mixing fractions no measurement can see.
+model_ta = convert('T_arvense_L/taGEM.xlsx', 'T_arvense_L/taAMM.xlsx',
+                   'T_arvense_L/ta_annotated.json',
+                   measurement_pools=False)
+_annotate_compartments(model_ta, {'c': 'cytosol', 'h': 'plastid', 'm': 'mitochondrion',
+                                  'e': 'extracellular'},
+                       'T_arvense_L/ta_annotated.json')
+_print_model_summary("T_arvense_L", model_ta)
 
 # E_coli_core / E_coli — the workbooks are normalised in place by
 # curate_e_coli_workbooks.py first; run that before this if either xlsx changes.
