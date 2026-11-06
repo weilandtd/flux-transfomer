@@ -170,7 +170,10 @@ def tracer_label(tracer_str):
     ``'glc__D_e_[1, 1, 1, 1, 1, 1]_0.5'`` -> ``'U-¹³C-glucose (50%)'``.
     Falls back to the raw string for anything that doesn't match the
     ``<metabolite>_[<pattern>]_<enrichment>`` shape this codebase generates tracer ids in.
+    A ``|``-joined mixture is labelled part by part.
     """
+    if "|" in str(tracer_str):
+        return " + ".join(tracer_label(t) for t in str(tracer_str).split("|"))
     m = re.match(r"^(.+?)_\[([\d,\s]+)\]_([\d.]+)$", str(tracer_str))
     if not m:
         return str(tracer_str)
