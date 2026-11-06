@@ -27,7 +27,9 @@ orientations differ by reversing carbons 3-7. ``vGlyc_out`` (measured) is the gl
 synthesis step.
 
 The GC/MS data are rewritten to the loader's ``<Prefix><n>_Rep<k>`` / ``<Prefix><n>``
-convention: P1 is WT, P2 is the WD3 line (strain_index.csv).
+convention: P1 is WT, P2 is the WD3 line (strain_index.csv). The published wild-type
+fluxes (Shi et al. S15) become the reference workbook, under the curated reaction ids;
+an S15 sum over a scrambling pair is the merged reaction's flux.
 
 The source workbooks are left untouched; the canonical copies are written next to them.
 
@@ -217,6 +219,17 @@ def curate_data():
         .to_csv(DATA_DIR / 'strain_index.csv', index=False)
 
 
+def curate_reference():
+    """Wild-type Shi et al. S15 net fluxes as the reference workbook (P1 only)."""
+    shi = pd.read_excel(DATA_DIR / 'Shi_et_al_flux_data.xlsx').set_index('id')
+    ref = shi[['WT_mfa', 'WT_mfaLB', 'WT_mfaUB']].set_axis(['P1_mfa', 'P1_mfaLB', 'P1_mfaUB'], axis=1)
+    # DAP and Glyc_c carry the same flux onwards.
+    aliases = ref.loc[['vLys', 'vGlyc_out']].set_axis(['vDAP', 'vGlycP'])
+    pd.concat([ref, aliases]).rename_axis('id').reset_index().to_excel(
+        DATA_DIR / 'T_arvense_L_reference_flux.xlsx', index=False)
+    return len(ref) + len(aliases)
+
+
 def main():
     gem, amm, outputs, natural_in = curate(pd.read_excel(GEM_IN, sheet_name=None),
                                            pd.read_excel(AMM_IN, sheet_name=None))
@@ -229,8 +242,10 @@ def main():
           f"dropped {len(outputs)} output pools and {len(natural_in)} natural-13C legs, "
           f"merged {len(MERGES) + 1} scrambling pairs")
     curate_data()
+    n_ref = curate_reference()
     print(f"Wrote {DATA_DIR.relative_to(REPO_ROOT)}/Pennycress_P.xlsx, "
-          f"T_arvense_L_ExtFlux.xlsx, strain_index.csv")
+          f"T_arvense_L_ExtFlux.xlsx, strain_index.csv, "
+          f"T_arvense_L_reference_flux.xlsx ({n_ref} wild-type fluxes)")
 
 
 if __name__ == '__main__':
