@@ -21,6 +21,9 @@ experiment:
   gem_xlsx: models/atomistic/T_arvense_L/taGEM.xlsx
   mapping_csv: models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv
   ext_flux: data/T_arvense_L_GC_MS/T_arvense_L_ExtFlux.xlsx
+  # Shi et al. S15 best fit, wild type only (P1); already signed in the model convention.
+  reference_flux: data/T_arvense_L_GC_MS/T_arvense_L_reference_flux.xlsx
+  reference_signed: true
   n_bootstrap: 200
 
 # No BIOMASS: the FTBL drains each measured biomass product separately.
