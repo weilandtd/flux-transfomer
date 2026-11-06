@@ -42,16 +42,20 @@ sampling:
     enabled: true
     n_subsamples: auto
     n_bins: 20
-    reactions: null               # null → training.measured_fluxes
+    # The three uptakes only: stratifying all 24 measured fluxes jointly is unsatisfiable
+    # and leaves the uptakes piled at their bounds.
+    reactions: [vHex_HPc, vuptAla, vuptGln]
 
   # The FTBL has no unlabeled medium reservoir beyond the medium itself.
   dilution: false
 
-  # Units of the ExtFlux workbook (glucose uptake ~7-8). Negative = uptake.
+  # Units of the ExtFlux workbook. Negative = uptake. Each range holds both genotypes'
+  # measured uptakes (glucose 7.1-7.6, alanine 0.5-0.8, glutamine 0.6-0.9) well inside it,
+  # so the measured state is not at the edge of what training samples.
   media:
-    EX_Glc_e:    {lb: -15.0, ub: 0.0}
-    EX_Ala_e:    {lb: -5.0,  ub: 0.0}
-    EX_Gln_e:    {lb: -5.0,  ub: 0.0}
+    EX_Glc_e:    {lb: -10.0, ub: 0.0}
+    EX_Ala_e:    {lb: -2.0,  ub: 0.0}
+    EX_Gln_e:    {lb: -2.0,  ub: 0.0}
 
   # The network has stoichiometric loops the FTBL closed only with labeling and weak
   # zero-flux priors: the oxidative PPP / Rubisco CO2-refixation cycle, the hexose,
