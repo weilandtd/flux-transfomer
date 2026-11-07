@@ -8,10 +8,15 @@ Per (organism, condition):
   experimental_mid_<key>_<cond>.svg    predicted vs measured isotopologue fraction, one
                                         point per (growth condition, tracer, metabolite,
                                         isotopomer)
+  experimental_mid_mfa_<key>_<cond>.svg  the same for the flux transformer and the
+                                        ¹³C-flux refit together, for MID_COMPARE only
 Across all models:
-  r2_flux.svg                          flux R² vs traditional MFA, one bar per condition
+  r2_flux.svg                          flux R² vs published MFA, one bar per condition
   r2_labeling.svg                      labeling R² vs measurement, one bar per condition,
-                                        length = median over that condition's tracers
+                                        height = median over that condition's tracers
+  r2_labeling_mfa.svg                  the same, with the ¹³C-flux refit beside each bar:
+                                        the published fluxes pinned, everything else refit
+                                        to the measured labeling (experimental_mid_mfa.py)
   experimental_flux_summary.csv        per-(model, condition) R², interval overlap, point
                                         count, reaction count
   experimental_mid_summary.csv         per-(model, condition, growth condition) R², RMSE,
@@ -19,7 +24,7 @@ Across all models:
                                         spread, fraction inside one replicate SD and inside
                                         the predicted interval
   experimental_mid_tokens.csv          every plotted token, all models pooled
-  r2_labeling_per_tracer.csv           the per-tracer R² behind r2_labeling.svg
+  r2_labeling_per_tracer.csv           the per-tracer R² behind both labeling charts
 
 Two views of the same predictions, answering different questions. The flux panels ask
 whether we agree with a *second estimate* of the fluxes -- a published MFA fit, with its own
@@ -64,6 +69,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 from sigmaflux.utils import magnitude_bounds
 
@@ -73,6 +80,7 @@ from _figure_common import (
     build_reference_comparison, condition_name, error_offsets, panel_name, r2_linear,
     resolve_organism, run_dir_for, save_figure, selected_models, tracer_label)
 from experimental_mid import tokens_path
+from experimental_mid_mfa import mfa_tokens_path
 
 apply_style()
 
@@ -85,7 +93,15 @@ HIGHLIGHT = ("i_orientalis", "B")
 SPECIES_TEALS = [("#4F9893", "white"), ("#7DB4AF", "#1a1a1a"),
                  ("#A9CFCB", "#1a1a1a"), ("#D2E8E5", "#1a1a1a")]
 
+#: The MFA amber lightened by the same amounts, so each organism's two bars match.
+SPECIES_AMBERS = ["#D19961", "#DDB48B", "#E9CEB3", "#F4E6D9"]
+
 FLUX_UNITS = r"[mmol gDW$^{-1}$ h$^{-1}$]"
+
+#: (organism, condition) drawn as one scatter of both methods' labeling against the
+#: measurement.
+MID_COMPARE = [("m_musculus_t_cell", "N"), ("e_coli_core", "B"),
+               *(("i_orientalis", c) for c in "CNPB")]
 
 #: Fixed margins (figure fraction) so every scatter panel has the same axes box.
 SCATTER_MARGINS = dict(left=0.27, right=0.93, bottom=0.24, top=0.9)
@@ -258,7 +274,7 @@ def plot_flux_panel(model, cond, grp, out_dir):
     ax.set_aspect("equal")
     # Mathtext, not a literal Unicode superscript: Arial has no glyph for U+207B and
     # silently falls back to a "Last Resort" placeholder box in the saved SVG.
-    ax.set_xlabel("Traditional MFA\n" + FLUX_UNITS)
+    ax.set_xlabel("Published MFA\n" + FLUX_UNITS)
     ax.set_ylabel("Flux transformer\n" + FLUX_UNITS)
     _panel_title(ax, model["key"], cond)
     sns.despine(ax=ax)
@@ -303,6 +319,40 @@ def plot_mid_panel(model, cond, grp, marker, out_dir):
     save_figure(fig, out_dir / f"experimental_mid_{model['key']}_{cond}.svg", tight=False)
 
 
+def plot_mid_compare(model, cond, sf, mfa, marker, out_dir):
+    """Flux transformer and ¹³C-flux refit isotopologue fractions against the measured
+    ones for one condition, each labelled with its median-over-tracers R²; shape is
+    tracer."""
+    series = [("Flux transformer", sf, TEAL), (r"$^{13}$C-flux refit", mfa,
+                                               METHOD_COLORS["mfa"])]
+    lim_hi = max(float(max(d["measured"].max(), d["sim"].max())) for _, d, _ in series) * 1.05
+    fig, ax = plt.subplots(figsize=(3.5, 3.5), gridspec_kw=SCATTER_MARGINS)
+    ax.plot([0, lim_hi], [0, lim_hi], color=COLORS["reference"], lw=1.0, ls="--", zorder=1)
+    for z, (label, d, color) in enumerate(series[::-1]):
+        for tracer, g in d.groupby(d["Tracer"].map(tracer_label)):
+            ax.scatter(g["measured"], g["sim"], s=14, marker=marker[tracer], color=color,
+                       linewidth=0, alpha=0.8, zorder=2 + z)
+    methods = [Line2D([], [], ls="", marker="o", markersize=3.5, color=color,
+                      label=f"{label} ($R^2$ = "
+                            f"{labeling_r2_per_tracer(model, d)['r2'].median():.2f})")
+               for label, d, color in series]
+    tracers = [Line2D([], [], ls="", marker=marker[t], markersize=3.5,
+                      color=COLORS["reference"], label=t)
+               for t in sorted(sf["Tracer"].map(tracer_label).unique())]
+    ax.set_xlim(0, lim_hi)
+    ax.set_ylim(0, lim_hi)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Measured isotopologue fraction")
+    ax.set_ylabel("Predicted isotopologue fraction")
+    _panel_title(ax, model["key"], cond)
+    ax.add_artist(ax.legend(handles=tracers, frameon=False, fontsize=6, loc="upper left",
+                            bbox_to_anchor=(0, 0.92)))
+    ax.legend(handles=methods, frameon=False, fontsize=7, loc="lower right")
+    sns.despine(ax=ax)
+    save_figure(fig, out_dir / f"experimental_mid_mfa_{model['key']}_{cond}.svg",
+                tight=False)
+
+
 # ── R² bars ───────────────────────────────────────────────────────────────────
 
 def bar_order(df):
@@ -313,32 +363,80 @@ def bar_order(df):
     return [(r.key, r.condition) for r in rows]
 
 
-def plot_r2(df, order, xlabel, path):
-    """One horizontal bar per (organism, condition) in ``order``, its name written on
-    the bar; pairs missing from ``order`` follow in their own bar_order."""
+def ordered_rows(df, order):
+    """Rows of *df* in ``order``; pairs missing from it follow in their own bar_order."""
     order = order + [o for o in bar_order(df) if o not in order]
-    rows = list(df.set_index(["key", "condition"]).reindex(order).dropna(subset=["r2"])
+    return list(df.set_index(["key", "condition"]).reindex(order).dropna(subset=["r2"])
                 .reset_index().itertuples())
+
+
+def bar_colors(rows, shades=SPECIES_TEALS, darkest=(TEAL, "white")):
+    """Color per (organism, condition): one shade per organism, the highlight
+    darkest."""
     species = list(dict.fromkeys(r.key for r in rows))
-    shade = {k: SPECIES_TEALS[i % len(SPECIES_TEALS)] for i, k in enumerate(species)}
-    height = 0.42 * len(rows) + 0.85
-    fig, ax = plt.subplots(figsize=(3.0, height), gridspec_kw=dict(
-        left=0.07, right=0.92, bottom=0.85 / height, top=1 - 0.1 / height))
-    for y, r in enumerate(rows):
-        fill, text = (TEAL, "white") if (r.key, r.condition) == HIGHLIGHT else shade[r.key]
-        ax.barh(y, r.r2, height=0.8, color=fill, linewidth=0)
-        ax.text(0.02, y, panel_name(r.key, r.condition), transform=ax.get_yaxis_transform(),
-                ha="left", va="center", fontsize=8, color=text)
-    ax.invert_yaxis()
-    ax.set_yticks([])
-    # Never clip a negative R²: an arm that predicts worse than the mean is what this
-    # figure exists to show.
-    lo = min(0.0, float(df["r2"].min()) * 1.1)
-    ax.set_xlim(lo, 1.0)
+    shade = {k: shades[i % len(shades)] for i, k in enumerate(species)}
+    return {(r.key, r.condition): darkest if (r.key, r.condition) == HIGHLIGHT
+            else shade[r.key] for r in rows}
+
+
+def r2_axes(n_slots, slot_in, r2_values, ylabel, top=0.1):
+    """Vertical R² axes, ``slot_in`` inches per bar slot and ``top`` inches above them,
+    y from the lowest R² (never clipped: a negative R² is what this figure exists to
+    show) to 1."""
+    margin = dict(left=0.95, right=0.1, bottom=0.1, top=top)
+    width = margin["left"] + slot_in * n_slots + margin["right"]
+    fig, ax = plt.subplots(figsize=(width, 3.5), gridspec_kw=dict(
+        left=margin["left"] / width, right=1 - margin["right"] / width,
+        bottom=margin["bottom"] / 3.5, top=1 - margin["top"] / 3.5))
+    lo = min(0.0, float(np.nanmin(r2_values)) * 1.1)
+    ax.set_ylim(lo, 1.0)
     if lo < 0:
-        ax.axvline(0.0, color=COLORS["reference"], lw=0.8, zorder=0)
-    ax.set_xlabel(xlabel)
-    sns.despine(ax=ax, left=True)
+        ax.axhline(0.0, color=COLORS["reference"], lw=0.8, zorder=0)
+    ax.set_xlim(-0.6, n_slots - 0.4)
+    ax.set_xticks([])
+    ax.set_ylabel(ylabel)
+    sns.despine(ax=ax, bottom=True)
+    return fig, ax
+
+
+def bar_name(ax, x, key, cond, color):
+    """The (organism, condition) name written up the bar from its base."""
+    ax.annotate(panel_name(key, cond), (x, 0.0), xytext=(0, 3), textcoords="offset points",
+                rotation=90, ha="center", va="bottom", fontsize=8, color=color)
+
+
+def plot_r2(df, order, ylabel, path):
+    """One vertical bar per (organism, condition) in ``order``, its name on the bar."""
+    rows = ordered_rows(df, order)
+    colors = bar_colors(rows)
+    fig, ax = r2_axes(len(rows), 0.4, df["r2"], ylabel)
+    for x, r in enumerate(rows):
+        fill, text = colors[(r.key, r.condition)]
+        ax.bar(x, r.r2, width=0.8, color=fill, linewidth=0)
+        bar_name(ax, x, r.key, r.condition, text)
+    save_figure(fig, path, tight=False)
+
+
+def plot_r2_paired(df, mfa, order, ylabel, path):
+    """Flux transformer and ¹³C-flux refit bars side by side per (organism, condition) in
+    ``order``, the name on the flux transformer's bar; a condition without an MFA refit
+    has no MFA bar."""
+    rows = ordered_rows(df, order)
+    colors = bar_colors(rows)
+    ambers = bar_colors(rows, SPECIES_AMBERS, METHOD_COLORS["mfa"])
+    mfa = mfa.set_index(["key", "condition"])["r2"]
+    fig, ax = r2_axes(len(rows), 0.45, pd.concat([df["r2"], mfa]), ylabel, top=0.35)
+    for x, r in enumerate(rows):
+        fill, text = colors[(r.key, r.condition)]
+        ax.bar(x - 0.2, r.r2, width=0.4, color=fill, linewidth=0)
+        bar_name(ax, x - 0.2, r.key, r.condition, text)
+        if (r.key, r.condition) in mfa.index:
+            ax.bar(x + 0.2, mfa[(r.key, r.condition)], width=0.4,
+                   color=ambers[(r.key, r.condition)], linewidth=0)
+    ax.legend(handles=[Patch(color=TEAL, label="Flux transformer"),
+                       Patch(color=METHOD_COLORS["mfa"], label=r"$^{13}$C-flux refit")],
+              frameon=False, fontsize=8, loc="lower left", bbox_to_anchor=(0, 1.0),
+              ncol=2, handlelength=1, columnspacing=1)
     save_figure(fig, path, tight=False)
 
 
@@ -391,7 +489,17 @@ def main():
             plot_mid_panel(model, cond, grp, marker, out_dir)
         mid_rows.extend(mid_summary(model, df))
         tokens.append(df.assign(model=model["label"], key=model["key"]))
-        per_tracer.append(labeling_r2_per_tracer(model, df))
+        per_tracer.append(labeling_r2_per_tracer(model, df).assign(method="sigmaflux"))
+        mfa_path = mfa_tokens_path(run_dir_for(model, args.run_suffix))
+        if mfa_path.is_file():
+            mfa_df, _ = drop_unplottable(pd.read_csv(mfa_path), args.min_fraction)
+            per_tracer.append(labeling_r2_per_tracer(model, mfa_df).assign(method="mfa"))
+            for key, cond in MID_COMPARE:
+                if key == model["key"]:
+                    plot_mid_compare(model, cond, df[df["condition"] == cond],
+                                     mfa_df[mfa_df["condition"] == cond], marker, out_dir)
+        else:
+            print(f"  {model['label']}: no ¹³C-flux refit labeling — no {mfa_path}")
 
     if flux_rows:
         flux = pd.DataFrame(flux_rows)
@@ -402,7 +510,7 @@ def main():
         flux.to_csv(path, index=False)
         print(f"Saved: {path}")
         order = bar_order(flux)
-        plot_r2(flux, order, "Flux transformer vs.\n" r"traditional MFA $R^2$",
+        plot_r2(flux, order, "Flux transformer vs.\n" r"published MFA $R^2$",
                 out_dir / "r2_flux.svg")
     else:
         print("No model had usable prediction data — no flux outputs written.")
@@ -410,8 +518,9 @@ def main():
     if mid_rows:
         lab = pd.concat(per_tracer, ignore_index=True)
         print("\n── Labeling R² per tracer ──")
-        for (model, cond), g in lab.groupby(["model", "name"], sort=False):
-            print(f"  {model:20s} {cond:11s} median {g['r2'].median():7.4f}  "
+        for (model, cond, method), g in lab.groupby(["model", "name", "method"],
+                                                    sort=False):
+            print(f"  {model:20s} {cond:11s} {method:9s} median {g['r2'].median():7.4f}  "
                   f"({len(g)} tracers: {', '.join(f'{v:.3f}' for v in g['r2'])})")
         for name, frame in (("experimental_mid_summary.csv", pd.DataFrame(mid_rows)),
                             ("experimental_mid_tokens.csv",
@@ -419,10 +528,14 @@ def main():
                             ("r2_labeling_per_tracer.csv", lab)):
             frame.to_csv(out_dir / name, index=False)
             print(f"Saved: {out_dir / name}")
-        median = lab.groupby(["key", "condition"], sort=False)["r2"].median().reset_index()
+        median = (lab.groupby(["method", "key", "condition"], sort=False)["r2"].median()
+                  .reset_index())
+        sigmaflux = median[median["method"] == "sigmaflux"]
         # Same bar order as the flux plot, so the two read side by side.
-        plot_r2(median, order, "Flux transformer vs.\n" r"measured labeling $R^2$",
+        plot_r2(sigmaflux, order, "Flux transformer vs.\n" r"measured labeling $R^2$",
                 out_dir / "r2_labeling.svg")
+        plot_r2_paired(sigmaflux, median[median["method"] == "mfa"], order,
+                       r"Labeling $R^2$ vs. measurement", out_dir / "r2_labeling_mfa.svg")
     else:
         print("No model had a token table — no labeling outputs written.")
 
