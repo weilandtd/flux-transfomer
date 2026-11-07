@@ -2,24 +2,24 @@
 SigmaFlux on the Long & Antoniewicz (2019) E. coli knockout panel, with and without FBApro.
 
   ko_r2.svg              SigmaFlux R² against the published MFA fit, one bar per
-                         strain, darker where the deletion removes a core reaction
-  ko_flux_<gene>.svg     one narrow panel per gene experiment.knockouts pins: its
-                         reaction's flux in wild type and knockout, from the published MFA,
-                         SigmaFlux and SigmaFlux + FBApro (knockout only), with intervals
+                         strain whose gene is in the network (GENE_REACTIONS), sorted by
+                         R², dark where the deletion knocks down a core reaction, light
+                         where an isozyme takes over
+  ko_flux_scatter.svg    each deleted gene's reaction (GENE_REACTIONS): its SF flux in
+                         wild type against in the knockout on a linear axis broken at the
+                         same place on x and y, with intervals,
+                         dark for a reaction knockdown (belongs on y = 0), light for an
+                         isozyme (belongs near y = x)
+  ko_labeling_<gene>.svg predicted against measured isotopologue fraction in the
+                         knockouts of LABELING_GENES, SF and SF + FBApro
   ko_labeling.svg        R² of the labeling the SF and SF + FBApro flux states imply
                          against the measured MIDs, over all strains (from
                          ko_labeling.py; a state whose EMU solve fails is left out)
-  ko_labeling_<gene>.svg the same in wild type and each pinned gene's knockout, laid out
-                         like ko_flux_<gene>.svg
-                         (n/a where the EMU solve fails)
+  ko_labeling_r2.svg     the same labeling R² for each reaction-knockdown strain, SF and
+                         SF + FBApro side by side, sorted by SF R²; a failed EMU solve
+                         is marked n/a
   ko_r2.csv, ko_flux.csv, ko_labeling.csv
                          the numbers behind them
-  ko_flux_tests.csv      the within-group tests behind the flux annotations
-
-Within each group every prediction is tested against the published MFA value with a
-two-sided z-test on the difference, each side's standard error read off its 95% interval
-as (hi - lo) / 3.92. A pinned FBApro zero carries no uncertainty of its own, so its test
-rests on the MFA interval alone. Stars: * p < 0.05, ** p < 0.01, *** p < 0.001.
 
 Reads the two sets of sigmaflux-infer output the GC/MS E. coli core run carries:
 ``predictions/`` (plain) and ``predictions_fbapro/`` (``--fbapro``, which projects every
@@ -42,14 +42,14 @@ import argparse
 import pathlib
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from scipy.stats import norm
 
-from _figure_common import (UNBOUNDED_FLUX, _REPO_ROOT, apply_style, drop_pool_reactions,
-                            load_benchmark, load_data, per_flux_r2, r2_linear,
-                            reference_path, resolve_organism, save_figure)
+from _figure_common import (METHOD_COLORS, UNBOUNDED_FLUX, _REPO_ROOT, apply_style,
+                            drop_pool_reactions, load_benchmark, load_data, per_flux_r2,
+                            r2_linear, reference_path, resolve_organism, save_figure)
 from sigmaflux.utils import (pair_fluxes, read_predicted_fluxes, read_reference_fluxes,
                              reference_orientation)
 
@@ -60,16 +60,52 @@ BENCHMARK_R2 = 0.9
 METHODS = {"sigmaflux": "predictions", "fbapro": "predictions_fbapro"}
 
 COLORS = {
-    "published": "#CCCCCC",
-    "sigmaflux": "#839E9E",
-    "unpinned":  "#D3DEDE",
-    "fbapro":    "#315E5D",
+    "knockdown": METHOD_COLORS["ai"],   # flux transformer teal
+    "isozyme":   "#A9CFCB",             # light teal
+    "sigmaflux": METHOD_COLORS["ai"],
+    "fbapro":    "#A9CFCB",
     "reference": "#AAAAAA",
     "error":     "#333333",
 }
-#: Legend label per flux source, in plotting order.
-SOURCES = {"published": "MFA", "sigmaflux": "SF", "fbapro": "SF + FBApro"}
+#: Legend label per R² bar category, in legend order.
+CATEGORIES = {"knockdown": "Reaction knockdown",
+              "isozyme": "Alternative isozyme",
+              "wild_type": "Wild type"}
+#: Legend label per prediction method.
+SOURCES = {"sigmaflux": "FT", "fbapro": "FT + FBApro"}
 WILD_TYPE_GC = 1
+UNITS = r"[mmol gDW$^{-1}$ h$^{-1}$]"
+#: R² bar plot size and margins (figure fractions); the scatter matches its axes height.
+R2_FIGSIZE = (3.5, 6)
+R2_MARGINS = dict(left=0.2, right=0.95, bottom=0.3, top=0.98)
+#: Scatter margins in inches: room for tick and axis labels on the left and bottom.
+SCATTER_MARGINS_IN = dict(left=0.62, right=0.1, bottom=0.58, top=0.1)
+#: Knockouts SF alone leaves clearly above zero; each gets a labeling scatter.
+LABELING_GENES = ("tpiA", "gnd", "zwf")
+# Label offset (points) of each knockdown in the flux scatter, clear of its neighbours.
+KNOCKDOWN_LABEL_OFFSET = {"pgl": (4, 2), "gnd": (-14, 4), "zwf": (4, -6),
+                          "edd": (-16, 3), "eda": (4, -6)}
+#: Gene-reaction rules of the e_coli_core (BiGG) reactions behind each core reaction id;
+#: R8 lumps G6PDH (zwf) with the lactonase (pgl). pgm (G6P <-> G1P) and glk (lumped into
+#: gluc_up) have no reaction of their own in the network, so neither appears.
+GPR = {
+    "R1": "pgi", "R2": "pfkA or pfkB", "R2x": "fbp or glpX", "R3": "fbaA or fbaB",
+    "R4": "tpiA", "R8": "zwf and pgl", "R9": "gnd", "R10": "rpe or sgcE",
+    "R11": "rpiA or rpiB", "R12": "tktA or tktB", "R13": "talA or talB",
+    "R14": "tktA or tktB", "R15": "edd", "R16": "eda",
+}
+#: Reactions each gene takes part in.
+GENE_REACTIONS = {}
+for _rxn, _rule in GPR.items():
+    for _gene in _rule.split():
+        if _gene not in ("and", "or"):
+            GENE_REACTIONS.setdefault(_gene, []).append(_rxn)
+
+
+def is_knockdown(gene):
+    """Whether deleting *gene* alone switches off a reaction it takes part in."""
+    genes = {g: g != gene for g in GENE_REACTIONS}
+    return any(not eval(GPR[rxn], {}, genes) for rxn in GENE_REACTIONS[gene])
 
 apply_style()
 
@@ -115,100 +151,126 @@ def strain_names(org):
     return {int(c[len(CONDITION):]): s for c, s in zip(index["condition"], index["strain"])}
 
 
-def plot_r2(r2, pinned, out_dir):
-    """SigmaFlux R² bar per strain; *pinned* is the set of growth conditions with knockouts.
-
-    A strain whose deletion removes a core reaction is drawn in the SF color, the rest in
-    a paler tint.
-    """
-    r2 = r2.assign(removed=r2["gc"].isin(pinned)).sort_values("gc")
-    fig, ax = plt.subplots(figsize=(3.5, 6))
-    sns.barplot(data=r2, y="strain", x="r2", hue="removed", orient="h", dodge=False,
-                palette={True: COLORS["sigmaflux"], False: COLORS["unpinned"]}, ax=ax)
+def plot_r2(r2, knockdown, out_dir):
+    """SigmaFlux R² bar per strain in the network, sorted by R²; *knockdown* is the set of
+    growth conditions whose deletion knocks down a core reaction."""
+    r2 = r2[(r2["gc"] == WILD_TYPE_GC) | r2["strain"].isin(GENE_REACTIONS)]
+    category = np.where(r2["gc"] == WILD_TYPE_GC, "wild_type",
+                        np.where(r2["gc"].isin(knockdown), "knockdown", "isozyme"))
+    r2 = r2.assign(category=category).sort_values("r2", ascending=False)
+    fig, ax = plt.subplots(figsize=R2_FIGSIZE, gridspec_kw=R2_MARGINS)
+    sns.barplot(data=r2, y="strain", x="r2", hue="category", hue_order=list(CATEGORIES),
+                orient="h", dodge=False, saturation=1,
+                palette={"knockdown": COLORS["knockdown"], "isozyme": COLORS["isozyme"],
+                         "wild_type": COLORS["reference"]}, ax=ax)
     ax.axvline(0.0, color=COLORS["reference"], linewidth=0.8)
     ax.set_ylabel("")
-    ax.set_xlabel("R² vs published MFA")
+    ax.set_xlabel("Flux transformer vs.\n" r"published MFA $R^2$")
     for label in ax.get_yticklabels():
         label.set(fontstyle="italic")
     handles, _ = ax.get_legend_handles_labels()
-    legend = ax.legend(handles[::-1], ["Core reaction deleted", "No core reaction deleted"],
-                       frameon=False, loc="upper left", bbox_to_anchor=(0.0, -0.1))
+    ax.legend(handles, list(CATEGORIES.values()), frameon=False, fontsize=9,
+              loc="upper left", bbox_to_anchor=(-0.2, -0.19))
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / "ko_r2.svg", extra_artists=[legend])
+    save_figure(fig, out_dir / "ko_r2.svg", tight=False)
 
 
-def z_test(a, b):
-    """Two-sided p-value that *a* and *b* (rows with value/lo/hi, 95% intervals) differ."""
-    se = np.hypot((a["hi"] - a["lo"]) / (2 * 1.96), (b["hi"] - b["lo"]) / (2 * 1.96))
-    return 2 * norm.sf(abs(a["value"] - b["value"]) / se) if se > 0 else np.nan
-
-
-def stars(p):
-    if not np.isfinite(p):
-        return "n/a"
-    return next((mark for cut, mark in ((0.001, "***"), (0.01, "**"), (0.05, "*"))
-                 if p < cut), "ns")
-
-
-def flux_tests(flux):
-    """Every prediction against the published MFA value of the same gene and group."""
+def ko_flux(run, strains, knockdown):
+    """SF flux of each deleted gene's reaction in wild type and in its knockout."""
+    pred = predictions(run, "sigmaflux")
+    gc_of = {strain: gc for gc, strain in strains.items()}
     rows = []
-    for (gene, wild_type), g in flux.groupby(["ko", "wild_type"], sort=False):
-        g = g.set_index("source")
-        for source in [s for s in SOURCES if s != "published" and s in g.index]:
-            p = z_test(g.loc["published"], g.loc[source])
-            rows.append({"ko": gene, "wild_type": wild_type, "source": source,
-                         "p": p, "stars": stars(p)})
+    # GPR also names partner genes outside the deletion panel (fbaA, glpX, rpiA).
+    for gene, rxns in GENE_REACTIONS.items():
+        if gene not in gc_of:
+            continue
+        gc = gc_of[gene]
+        for rxn in rxns:
+            row = {"gene": gene, "reaction": rxn, "knockdown": gc in knockdown}
+            for prefix, strain_gc in (("wt", WILD_TYPE_GC), ("ko", gc)):
+                for key, suffix in (("value", ""), ("lo", "_lo"), ("hi", "_hi")):
+                    row[prefix + suffix] = pred[key].loc[rxn, strain_gc]
+            rows.append(row)
     return pd.DataFrame(rows)
 
 
-def plot_ko_flux(flux, tests, gene, out_dir):
-    """*gene*'s reaction flux in wild type and knockout, one bar per source."""
-    groups = {True: "WT", False: "KO"}
-    width = 0.8 / len(SOURCES)
-    fig, ax = plt.subplots(figsize=(1.5, 3.5))
-    top = np.nanmax(flux[["value", "hi"]].to_numpy())
-    step = 0.08 * top
-    for g, wild_type in enumerate(groups):
-        d = flux[flux["wild_type"] == wild_type].set_index("source")
-        present = [src for src in SOURCES if src in d.index]
-        x = {src: g + (i - (len(present) - 1) / 2) * width for i, src in enumerate(present)}
-        for source in present:
-            row = d.loc[source]
-            ax.bar(x[source], row["value"], width=width, color=COLORS[source],
-                   label=SOURCES[source] if not wild_type else None,
-                   yerr=[[row["value"] - row["lo"]], [row["hi"] - row["value"]]],
-                   error_kw=dict(ecolor=COLORS["error"], capsize=2, linewidth=0.8))
-            # A pinned FBApro flux has no bar to see; print its value instead.
-            if source == "fbapro" and row["value"] == 0.0:
-                ax.text(x[source], step / 4, "0", ha="center", va="bottom", fontsize=12,
-                        color=COLORS[source])
-        # One bracket per test, from MFA to the prediction, stacked above the group.
-        y = np.nanmax(d[["value", "hi"]].to_numpy()) + step
-        group_tests = tests[tests["wild_type"] == wild_type].set_index("source")
-        for source in [s for s in present if s in group_tests.index]:
-            x0, x1 = x["published"], x[source]
-            ax.plot([x0, x0, x1, x1], [y, y + step / 3, y + step / 3, y],
-                    color=COLORS["error"], linewidth=0.8)
-            ax.text((x0 + x1) / 2, y + step / 3, group_tests.loc[source, "stars"],
-                    ha="center", va="bottom", fontsize=9)
-            y += 1.5 * step
-    ax.axhline(0.0, color=COLORS["reference"], linewidth=0.8, zorder=0)
-    ax.set_xticks(np.arange(len(groups)), list(groups.values()))
-    ax.set_ylabel("Flux (mmol/gDW/h)")
-    name = ax.text(0.5, 1.02, gene, transform=ax.transAxes, ha="center", va="bottom",
-                   fontstyle="italic")
-    legend = ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-    sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"ko_flux_{gene}.svg", extra_artists=[name, legend])
+def axis_segments(values, pad=0.05):
+    """Two linear axis segments split at the largest gap in *values*, each padded."""
+    v = np.sort(np.append(values, 0.0))
+    k = np.argmax(np.diff(v))
+    low, high = (v[0], v[k]), (v[k + 1], v[-1])
+    return [(a - pad * (b - a), b + pad * (b - a)) for a, b in (low, high)]
 
 
-def labeling_r2(run):
+def plot_ko_scatter(flux, out_dir):
+    """Wild-type against knockout SF flux of each deleted gene's reaction, on a linear axis
+    broken at the same place on x and y, with y = x (no effect) and y = 0 (reaction gone);
+    hue is the knockout category."""
+    low, high = axis_segments(flux[["wt", "ko", "wt_lo", "wt_hi", "ko_lo", "ko_hi"]]
+                              .to_numpy().ravel())
+    # One set of ticks per segment, shared by x and y.
+    ticks = [[t for t in MaxNLocator(nbins=4, steps=[1, 2, 5, 10]).tick_values(*seg) if seg[0] <= t <= seg[1]]
+             for seg in (low, high)]
+    ratios = [2, 1]
+    # Square axes block as tall as the R² bar plot's axes.
+    side = R2_FIGSIZE[1] * (R2_MARGINS["top"] - R2_MARGINS["bottom"])
+    m = SCATTER_MARGINS_IN
+    width, height = m["left"] + side + m["right"], m["bottom"] + side + m["top"]
+    fig, axes = plt.subplots(2, 2, figsize=(width, height), gridspec_kw=dict(
+        width_ratios=ratios, height_ratios=ratios[::-1], wspace=0.06, hspace=0.06,
+        left=m["left"] / width, right=1 - m["right"] / width,
+        bottom=m["bottom"] / height, top=1 - m["top"] / height))
+    for row, ylim in ((0, high), (1, low)):
+        for col, xlim in ((0, low), (1, high)):
+            ax = axes[row, col]
+            ax.plot([low[0], high[1]], [low[0], high[1]], color=COLORS["reference"],
+                    linewidth=0.8, linestyle="--", zorder=0)
+            ax.axhline(0.0, color=COLORS["reference"], linewidth=0.8, linestyle="--",
+                       zorder=0)
+            for category in ("knockdown", "isozyme"):
+                d = flux[flux["knockdown"] == (category == "knockdown")]
+                ax.errorbar(d["wt"], d["ko"],
+                            xerr=[d["wt"] - d["wt_lo"], d["wt_hi"] - d["wt"]],
+                            yerr=[d["ko"] - d["ko_lo"], d["ko_hi"] - d["ko"]],
+                            fmt="o", markersize=5, color=COLORS[category],
+                            ecolor=COLORS[category], elinewidth=0.8, capsize=0,
+                            label=CATEGORIES[category],
+                            zorder=3 if category == "knockdown" else 2)
+            for _, r in flux[flux["knockdown"]].iterrows():
+                if xlim[0] <= r["wt"] <= xlim[1] and ylim[0] <= r["ko"] <= ylim[1]:
+                    ax.annotate(r["gene"], (r["wt"], r["ko"]),
+                                xytext=KNOCKDOWN_LABEL_OFFSET.get(r["gene"], (4, 4)),
+                                textcoords="offset points", fontsize=7, style="italic",
+                                color=COLORS["knockdown"], zorder=4)
+            ax.set_xlim(xlim)
+            ax.set_ylim(ylim)
+            ax.set_xticks(ticks[col])
+            ax.set_yticks(ticks[1 - row])
+            sns.despine(ax=ax, left=col == 1, bottom=row == 0)
+            if col == 1:
+                ax.tick_params(axis="y", left=False, labelleft=False)
+            if row == 0:
+                ax.tick_params(axis="x", bottom=False, labelbottom=False)
+    # Slanted marks where each axis is cut.
+    mark = dict(color="black", linewidth=0.8, clip_on=False)
+    for ax, xs in ((axes[1, 0], (1, 1)), (axes[1, 1], (0, 0))):
+        ax.plot([xs[0] - 0.02, xs[1] + 0.02], [-0.03, 0.03], transform=ax.transAxes, **mark)
+    for ax, ys in ((axes[1, 0], 1), (axes[0, 0], 0)):
+        ax.plot([-0.03, 0.03], [ys - 0.02, ys + 0.02], transform=ax.transAxes, **mark)
+    handles, labels = axes[1, 0].get_legend_handles_labels()
+    axes[0, 0].legend(handles, labels, frameon=False, fontsize=7, loc="upper left")
+    fig.supxlabel("Wild-type flux " + UNITS, x=(m["left"] + side / 2) / width, y=0.0,
+                  fontsize=12)
+    fig.supylabel("Knockout flux " + UNITS, x=0.0, y=(m["bottom"] + side / 2) / height,
+                  fontsize=12)
+    save_figure(fig, out_dir / "ko_flux_scatter.svg", tight=False)
+
+
+def labeling_r2(tokens):
     """Labeling R² per strain and method, from ko_labeling.py's token table.
 
     A state whose EMU solve failed has no labeling and gets NaN.
     """
-    tokens = pd.read_csv(run / "ko_labeling" / "tokens.csv")
     expected = pd.MultiIndex.from_frame(tokens[["gc", "method"]].drop_duplicates())
     valid = tokens.dropna(subset=["sim"])
     r2 = (valid.groupby(["gc", "method"])
@@ -216,12 +278,70 @@ def labeling_r2(run):
     return r2.reindex(expected).unstack("method")
 
 
+def plot_ko_labeling(tokens, r2, gc, gene, out_dir):
+    """Predicted against measured isotopologue fraction in *gene*'s knockout, with and
+    without FBApro."""
+    fig, ax = plt.subplots(figsize=(3.5, 3.5), gridspec_kw=dict(
+        left=0.22, right=0.97, bottom=0.17, top=0.97))
+    ax.plot([0, 1], [0, 1], color=COLORS["reference"], linewidth=0.8, linestyle="--",
+            zorder=0)
+    for method in ("fbapro", "sigmaflux"):
+        d = tokens[(tokens["gc"] == gc) & (tokens["method"] == method)].dropna(subset=["sim"])
+        ax.scatter(d["measured"], d["sim"], s=12, color=COLORS[method], linewidths=0,
+                   label=f"{SOURCES[method]} ($R^2$ = {r2.loc[gc, method]:.2f})", zorder=2)
+    handles, labels = ax.get_legend_handles_labels()
+    legend = ax.legend(handles[::-1], labels[::-1], frameon=False, fontsize=8,
+                       loc="upper left", title=gene, title_fontsize=9, alignment="left")
+    legend.get_title().set_fontstyle("italic")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_aspect("equal")
+    ax.set_xlabel("Measured isotopologue fraction")
+    ax.set_ylabel("Predicted isotopologue fraction")
+    sns.despine(ax=ax)
+    save_figure(fig, out_dir / f"ko_labeling_{gene}.svg", tight=False)
+
+
+def plot_labeling_knockdowns(r2, strains, knockdown, out_dir):
+    """Labeling R² of each knockdown strain, SF and SF + FBApro side by side, sorted by
+    SF R²; a state whose EMU solve failed is marked n/a."""
+    r2 = (r2.loc[[gc for gc in r2.index if gc in knockdown]]
+            .sort_values("sigmaflux", ascending=False))
+    order = list(r2.index.map(strains))
+    long = (r2.rename(index=strains).rename_axis("strain").reset_index()
+              .melt(id_vars="strain", value_vars=list(METHODS), var_name="method",
+                    value_name="r2"))
+    fig, ax = plt.subplots(figsize=(7, 2.8), gridspec_kw=dict(
+        left=0.12, right=0.8, bottom=0.14, top=0.96))
+    sns.barplot(data=long, x="strain", y="r2", hue="method", hue_order=list(METHODS),
+                order=order, saturation=1, palette={m: COLORS[m] for m in METHODS},
+                ax=ax)
+    # seaborn splits each group's 0.8 width evenly between the methods.
+    width = 0.8 / len(METHODS)
+    for x, strain in enumerate(order):
+        for i, method in enumerate(METHODS):
+            if long[(long["strain"] == strain) & (long["method"] == method)]["r2"].isna().all():
+                ax.text(x + (i - (len(METHODS) - 1) / 2) * width, 0.02, "n/a",
+                        ha="center", fontsize=7, color=COLORS["error"])
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("")
+    ax.set_ylabel("Predicted vs. measured\n" r"labeling $R^2$")
+    for label in ax.get_xticklabels():
+        label.set(fontstyle="italic")
+    handles, _ = ax.get_legend_handles_labels()
+    ax.legend(handles, [SOURCES[m] for m in METHODS], frameon=False, fontsize=9,
+              loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    sns.despine(ax=ax)
+    save_figure(fig, out_dir / "ko_labeling_r2.svg", tight=False)
+
+
 def plot_labeling_summary(r2, out_dir):
     """Labeling R² over the strains, SF and SF + FBApro side by side.
 
     Bars are the median over strains with the interquartile range; dots are strains.
     """
-    fig, ax = plt.subplots(figsize=(1.5, 3.5))
+    fig, ax = plt.subplots(figsize=(3.0, 3.5), gridspec_kw=dict(
+        left=0.22, right=0.5, bottom=0.05, top=0.97))
     for i, method in enumerate(METHODS):
         values = r2[method].dropna()
         q1, median, q3 = values.quantile([0.25, 0.5, 0.75])
@@ -235,37 +355,9 @@ def plot_labeling_summary(r2, out_dir):
     ax.set_xlim(-0.7, len(METHODS) - 0.3)
     ax.set_ylim(0.0, 1.0)
     ax.set_ylabel("Labeling R² vs measured")
-    legend = ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    ax.legend(frameon=False, fontsize=9, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / "ko_labeling.svg", extra_artists=[legend])
-
-
-def plot_ko_labeling(r2, gc, gene, out_dir):
-    """Labeling R² in wild type and *gene*'s knockout, one bar per method."""
-    groups = {WILD_TYPE_GC: "WT", gc: "KO"}
-    width = 0.8 / len(METHODS)
-    fig, ax = plt.subplots(figsize=(1.5, 3.5))
-    for g, strain in enumerate(groups):
-        # FBApro pins nothing in wild type.
-        present = ["sigmaflux"] if strain == WILD_TYPE_GC else list(METHODS)
-        for i, method in enumerate(present):
-            x = g + (i - (len(present) - 1) / 2) * width
-            value = r2.loc[strain, method]
-            ax.bar(x, 0.0 if np.isnan(value) else value, width=width,
-                   color=COLORS[method],
-                   label=SOURCES[method] if strain != WILD_TYPE_GC else None)
-            if np.isnan(value):
-                # No solvable labeling for this flux state.
-                ax.text(x, 0.02, "n/a", ha="center", va="bottom", fontsize=12,
-                        color=COLORS[method])
-    ax.set_xticks(np.arange(len(groups)), list(groups.values()))
-    ax.set_ylim(0.0, 1.0)
-    ax.set_ylabel("Labeling R² vs measured")
-    name = ax.text(0.5, 1.02, gene, transform=ax.transAxes, ha="center", va="bottom",
-                   fontstyle="italic")
-    legend = ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
-    sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"ko_labeling_{gene}.svg", extra_artists=[name, legend])
+    save_figure(fig, out_dir / "ko_labeling.svg", tight=False)
 
 
 def main():
@@ -286,42 +378,24 @@ def main():
                 .assign(strain=lambda d: d["gc"].map(strains)))
     r2.to_csv(out_dir / "ko_r2.csv", index=False)
     print(r2.round(3).to_string(index=False))
-    knockouts = org["cfg"]["experiment"]["knockouts"]
-    plot_r2(r2, {int(c[len(CONDITION):]) for c in knockouts}, out_dir)
+    gc_of = {strain: gc for gc, strain in strains.items()}
+    knockdown = {gc_of[gene] for gene in GENE_REACTIONS
+                 if gene in gc_of and is_knockdown(gene)}
+    plot_r2(r2, knockdown, out_dir)
 
-    every = paired(args.run, org)
-    rows = []
-    for cond, rxns in knockouts.items():
-        gc = int(cond[len(CONDITION):])
-        for rxn in rxns:
-            for strain_gc, wild_type in ((gc, False), (WILD_TYPE_GC, True)):
-                hits = every[(every["gc"] == strain_gc) & (every["reaction"] == rxn)]
-                if wild_type:
-                    hits = hits[hits["method"] == "sigmaflux"]   # FBApro pins nothing in WT
-                common = {"ko": strains[gc], "reaction": rxn, "wild_type": wild_type}
-                ref = hits.iloc[0]
-                rows.append({**common, "source": "published", "value": ref["ref"],
-                             "lo": ref["ref_lo"], "hi": ref["ref_hi"]})
-                for _, h in hits.iterrows():
-                    rows.append({**common, "source": h["method"], "value": h["pred"],
-                                 "lo": h["pred_lo"], "hi": h["pred_hi"]})
-    flux = pd.DataFrame(rows)
+    flux = ko_flux(args.run, strains, knockdown)
     flux.to_csv(out_dir / "ko_flux.csv", index=False)
-    print(flux.pivot_table(index="ko", columns=["wild_type", "source"], values="value",
-                           sort=False).round(3).to_string())
-    tests = flux_tests(flux)
-    tests.to_csv(out_dir / "ko_flux_tests.csv", index=False)
-    print(tests.round(4).to_string(index=False))
-    for gene, gene_flux in flux.groupby("ko", sort=False):
-        plot_ko_flux(gene_flux, tests[tests["ko"] == gene], gene, out_dir)
+    print(flux.round(3).to_string(index=False))
+    plot_ko_scatter(flux, out_dir)
 
-    labeling = labeling_r2(args.run)
+    tokens = pd.read_csv(args.run / "ko_labeling" / "tokens.csv")
+    labeling = labeling_r2(tokens)
     labeling.assign(strain=labeling.index.map(strains)).to_csv(out_dir / "ko_labeling.csv")
     print(labeling.round(3).to_string())
     plot_labeling_summary(labeling, out_dir)
-    for cond in knockouts:
-        gc = int(cond[len(CONDITION):])
-        plot_ko_labeling(labeling, gc, strains[gc], out_dir)
+    plot_labeling_knockdowns(labeling, strains, knockdown, out_dir)
+    for gene in LABELING_GENES:
+        plot_ko_labeling(tokens, labeling, gc_of[gene], gene, out_dir)
 
 
 if __name__ == "__main__":
