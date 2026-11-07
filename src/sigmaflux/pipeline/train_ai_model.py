@@ -175,9 +175,39 @@ class MixedFluxLoss:
         return self.basis_weight * basis_loss + self.flux_weight * flux_loss
 
 
+def reaction_variance(x, variance_min_cutoff=0.1, variance_floor='absolute',
+                      variance_min_cv=0.05, constant_cv=1e-6):
+    """Per-column variance used to normalise a variance-weighted loss.
+
+    ``variance_floor='absolute'`` clamps every column at ``variance_min_cutoff``
+    (the original behaviour). That is a scale decision: a column whose values are
+    small in absolute terms gets clamped however much it varies relative to its
+    own size, so tiny but informative fluxes are under-weighted.
+
+    ``variance_floor='relative'`` floors each column at
+    ``(variance_min_cv * rms)**2`` with ``rms = sqrt(mean**2 + var)``, so a column
+    is clamped only if it barely varies *relative to its own magnitude*. RMS rather
+    than ``|mean|`` keeps the floor sane for columns whose mean is near zero.
+    Columns with ``sd / rms < constant_cv`` (or ``rms == 0``) are effectively
+    constant and get an infinite variance, i.e. contribute nothing.
+    """
+    var = torch.var(x, dim=0)
+    if variance_floor == 'absolute':
+        return var.clamp_min(variance_min_cutoff)
+    if variance_floor != 'relative':
+        raise ValueError(f"variance_floor must be 'absolute' or 'relative', got {variance_floor!r}")
+    mean = x.mean(dim=0)
+    rms = torch.sqrt(mean ** 2 + var)
+    floor = (variance_min_cv * rms) ** 2
+    out = torch.maximum(var, floor)
+    constant = (rms == 0) | (torch.sqrt(var) < constant_cv * rms)
+    return torch.where(constant, torch.full_like(out, float('inf')), out)
+
+
 def build_loss_function(train_dataset, flux_dim, loss_name,
                         flux_loss_space='flux', Z_full=None, y_train=None, mixed_flux_weight=0.1,
-                        variance_min_cutoff=0.1):
+                        variance_min_cutoff=0.1, variance_floor='absolute',
+                        variance_min_cv=0.05, constant_cv=1e-6):
     """Build flux and reversibility loss functions.
 
     Args:
@@ -189,6 +219,13 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
         y_train: basis-space training targets, used for variance normalization.
         mixed_flux_weight: flux-space weight when flux_loss_space is 'mixed'.
         variance_min_cutoff: floor on per-output variance used for normalization.
+        variance_floor: 'absolute' (clamp at variance_min_cutoff) or 'relative'
+            (floor each reaction at (variance_min_cv * rms)^2). Applies to the
+            per-reaction flux term only; basis and reversibility normalisation
+            keep the absolute cutoff.
+        variance_min_cv: relative floor, as a coefficient of variation.
+        constant_cv: reactions varying less than this relative to their RMS are
+            treated as constant and excluded (relative mode only).
     """
     targets = train_dataset.targets
 
@@ -199,7 +236,8 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
     if loss_name == 'mse':
         base_flux_loss = nn.MSELoss()
     else:
-        flux_var = torch.var(targets[:, :flux_dim], dim=0).clamp_min(variance_min_cutoff)
+        flux_var = reaction_variance(targets[:, :flux_dim], variance_min_cutoff,
+                                     variance_floor, variance_min_cv, constant_cv)
         base_flux_loss = partial(var_norm_mse_loss, precomputed_variance=flux_var)
 
     if flux_loss_space == 'basis':
@@ -694,6 +732,9 @@ def main(args):
         y_train         = y_train_for_loss,
         mixed_flux_weight = args.mixed_flux_weight,
         variance_min_cutoff = args.variance_min_cutoff,
+        variance_floor      = getattr(args, "variance_floor", "absolute"),
+        variance_min_cv     = getattr(args, "variance_min_cv", 0.05),
+        constant_cv         = getattr(args, "constant_cv", 1e-6),
     )
 
     _print_token_selection(
@@ -969,6 +1010,9 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
+        variance_floor            = t.get("variance_floor", "absolute"),
+        variance_min_cv           = t.get("variance_min_cv", 0.05),
+        constant_cv               = t.get("constant_cv", 1e-6),
         shuffle_targets           = cli.shuffle_targets,
         # Fixed here, NOT re-read as args.seed inside main(): the ensemble loop below
         # sets member.seed = base_seed + i per member, and a null ensemble's whole point
