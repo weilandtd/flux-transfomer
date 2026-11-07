@@ -4,7 +4,7 @@ Stage 2 experiment: does a median-seeking aggregate beat the ensemble mean for S
 Compares four ways to collapse the SC ensemble into one flux state -- mean, median,
 medoid, medoid_convex (see sigmaflux.ai.uncertainty._medoid_weights) -- on real SC data,
 reporting both feasibility and R^2 against the published/x3cflux reference flux, using
-the *exact* same methodology as plot_experimental_predictions.py (MFA-identifiability
+the *exact* same methodology as plot_experimental.py (MFA-identifiability
 reaction filter, orientation, max-D selection, signed-flux R^2) so the numbers are
 directly comparable to experimental_flux_summary.csv's mean-aggregate R^2.
 
@@ -38,9 +38,8 @@ from validate_inferred_fluxes import (  # noqa: E402
 )
 from _figure_common import (  # noqa: E402
     MODELS_BY_KEY, R2_THRESHOLD, FLUX_MIN_ABS, benchmark_metrics, growth_rates,
-    PREDICTION_SPECS,
+    PREDICTION_SPECS, r2_linear,
 )
-from plot_experimental_predictions import _r2_linear  # noqa: E402
 
 RUN_DIR = _REPO_ROOT / "paper/.results/s_cerevisiae_20260917"
 CONFIG = _REPO_ROOT / "paper/configs/s_cerevisiae.yaml"
@@ -60,7 +59,7 @@ def main():
     conditions = _discover_conditions(str(DATA_DIR))
     ref_path = _REPO_ROOT / "data/S_cervesiae/Shen_et_al_flux_data_SC.xlsx"
 
-    # Same MFA-identifiability reaction filter plot_experimental_predictions.py uses.
+    # Same MFA-identifiability reaction filter plot_experimental.py uses.
     model = MODELS_BY_KEY["s_cerevisiae"]
     tbl = benchmark_metrics(model, run_suffix="sentinelfix_20260912")
     mfa_rxns = set(tbl.index[tbl["r2_mfa"] >= R2_THRESHOLD]) if tbl is not None else None
@@ -114,7 +113,7 @@ def main():
                                  reactions=mfa_rxns, growth_rates=growth_rates(ref_value),
                                  min_abs=FLUX_MIN_ABS)
             per_how_frames[how].append(joined)
-            r2_val = _r2_linear(joined["pred"], joined["ref"]) if len(joined) else float("nan")
+            r2_val = r2_linear(joined["pred"], joined["ref"]) if len(joined) else float("nan")
 
             print(f"  {how:14s} R2_vs_reference = {r2_val:+.4f}  (n={len(joined)})  "
                   f"feasible={passed}   max|Sv|={feas['max_Sv'].max():.3g}   "
@@ -127,7 +126,7 @@ def main():
     print("\n=== Pooled across C/N/P (max D), matching experimental_flux_summary.csv's scope ===")
     for how in HOWS:
         pooled = pd.concat(per_how_frames[how], ignore_index=True) if per_how_frames[how] else pd.DataFrame()
-        r2_pooled = _r2_linear(pooled["pred"], pooled["ref"]) if len(pooled) else float("nan")
+        r2_pooled = r2_linear(pooled["pred"], pooled["ref"]) if len(pooled) else float("nan")
         print(f"  {how:14s} pooled R2 = {r2_pooled:+.4f}  (n={len(pooled)})")
         rows.append(dict(Condition="pooled", GrowthCondition=-1, how=how,
                          r2_vs_reference=r2_pooled, n_reactions=len(pooled),

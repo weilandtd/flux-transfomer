@@ -49,6 +49,41 @@ from sigmaflux.ai.utils import (
 )
 
 
+def load_shared_basis(basis_file, n_reactions):
+    """A previously saved basis, or None when there is nothing usable to load.
+
+    Companion to :func:`share_basis`, for callers that would otherwise build a
+    basis only to throw it away. share_basis takes an already computed ``Z_full``
+    and returns the saved one instead when a file exists -- by which point the
+    expensive part is paid. Checking first turns that into a real skip.
+
+    It matters at genome scale. The targeted and targeted_ica bases rotate via
+    Varimax, which does pairwise Jacobi sweeps at O(max_iter * d^2); on the mouse
+    whole-body model (d = 1790, so 1.6e6 rotations per sweep) that ran 16 h
+    without converging. An ensemble shares one basis, so without this every
+    member repeats the same computation and discards it -- 20 times, each holding
+    a GPU idle while it runs on one CPU core.
+
+    Only the reaction count is checked. ``d`` is a property of the saved basis,
+    and requiring it to match a locally computed one would mean computing it. A
+    basis belonging to a different model is the real risk and it shows up in the
+    row count.
+
+    Args:
+        basis_file: path a previous run wrote, or None to disable loading.
+        n_reactions: rows the basis must have, i.e. this model's reaction count.
+    """
+    if not basis_file or not os.path.exists(basis_file):
+        return None
+    loaded = np.load(basis_file)['Z_full']
+    if loaded.shape[0] != n_reactions:
+        raise ValueError(
+            f"basis file {basis_file} holds a basis over {loaded.shape[0]} reactions "
+            f"but this model has {n_reactions}; it belongs to a different model")
+    print(f"Null-space basis: loaded {loaded.shape} from {basis_file} (build skipped)")
+    return loaded
+
+
 def share_basis(Z_full, basis_file):
     """Return the null-space basis every ensemble member must use.
 
@@ -140,9 +175,39 @@ class MixedFluxLoss:
         return self.basis_weight * basis_loss + self.flux_weight * flux_loss
 
 
+def reaction_variance(x, variance_min_cutoff=0.1, variance_floor='absolute',
+                      variance_min_cv=0.05, constant_cv=1e-6):
+    """Per-column variance used to normalise a variance-weighted loss.
+
+    ``variance_floor='absolute'`` clamps every column at ``variance_min_cutoff``
+    (the original behaviour). That is a scale decision: a column whose values are
+    small in absolute terms gets clamped however much it varies relative to its
+    own size, so tiny but informative fluxes are under-weighted.
+
+    ``variance_floor='relative'`` floors each column at
+    ``(variance_min_cv * rms)**2`` with ``rms = sqrt(mean**2 + var)``, so a column
+    is clamped only if it barely varies *relative to its own magnitude*. RMS rather
+    than ``|mean|`` keeps the floor sane for columns whose mean is near zero.
+    Columns with ``sd / rms < constant_cv`` (or ``rms == 0``) are effectively
+    constant and get an infinite variance, i.e. contribute nothing.
+    """
+    var = torch.var(x, dim=0)
+    if variance_floor == 'absolute':
+        return var.clamp_min(variance_min_cutoff)
+    if variance_floor != 'relative':
+        raise ValueError(f"variance_floor must be 'absolute' or 'relative', got {variance_floor!r}")
+    mean = x.mean(dim=0)
+    rms = torch.sqrt(mean ** 2 + var)
+    floor = (variance_min_cv * rms) ** 2
+    out = torch.maximum(var, floor)
+    constant = (rms == 0) | (torch.sqrt(var) < constant_cv * rms)
+    return torch.where(constant, torch.full_like(out, float('inf')), out)
+
+
 def build_loss_function(train_dataset, flux_dim, loss_name,
                         flux_loss_space='flux', Z_full=None, y_train=None, mixed_flux_weight=0.1,
-                        variance_min_cutoff=0.1):
+                        variance_min_cutoff=0.1, variance_floor='absolute',
+                        variance_min_cv=0.05, constant_cv=1e-6):
     """Build flux and reversibility loss functions.
 
     Args:
@@ -154,6 +219,13 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
         y_train: basis-space training targets, used for variance normalization.
         mixed_flux_weight: flux-space weight when flux_loss_space is 'mixed'.
         variance_min_cutoff: floor on per-output variance used for normalization.
+        variance_floor: 'absolute' (clamp at variance_min_cutoff) or 'relative'
+            (floor each reaction at (variance_min_cv * rms)^2). Applies to the
+            per-reaction flux term only; basis and reversibility normalisation
+            keep the absolute cutoff.
+        variance_min_cv: relative floor, as a coefficient of variation.
+        constant_cv: reactions varying less than this relative to their RMS are
+            treated as constant and excluded (relative mode only).
     """
     targets = train_dataset.targets
 
@@ -164,7 +236,8 @@ def build_loss_function(train_dataset, flux_dim, loss_name,
     if loss_name == 'mse':
         base_flux_loss = nn.MSELoss()
     else:
-        flux_var = torch.var(targets[:, :flux_dim], dim=0).clamp_min(variance_min_cutoff)
+        flux_var = reaction_variance(targets[:, :flux_dim], variance_min_cutoff,
+                                     variance_floor, variance_min_cv, constant_cv)
         base_flux_loss = partial(var_norm_mse_loss, precomputed_variance=flux_var)
 
     if flux_loss_space == 'basis':
@@ -394,11 +467,22 @@ def main(args):
     # Leading columns of a targeted basis are the identity block, one per measured
     # reaction; split_constant_directions must not rotate them away.
     n_targets = 0
+    # A saved basis makes the whole build below dead work -- share_basis would
+    # discard whatever it produced. Skip it. n_targets still has to be right,
+    # since split_constant_directions must not rotate the targeted identity block
+    # away, and it is a property of the config rather than of the computation.
+    _preloaded_basis = load_shared_basis(getattr(args, 'basis_file', None),
+                                         stoichiometric_matrix.shape[1])
+    if _preloaded_basis is not None and args.null_space_type in ('targeted', 'targeted_ica') \
+            and args.measured_fluxes:
+        n_targets = len([r for r in args.measured_fluxes if r in set(flux_df.index)])
     use_targeted = (
         args.null_space_type == 'targeted'
         and args.measured_fluxes
     )
-    if use_targeted:
+    if _preloaded_basis is not None:
+        Z_full = _preloaded_basis
+    elif use_targeted:
         rxn_names = list(flux_df.index)
         Z_full, basis_status = compute_targeted_nullspace(
             stoichiometric_matrix,
@@ -478,7 +562,8 @@ def main(args):
     # rotations of the same subspace. Predictions are unaffected — fluxes are
     # physical — but any per-member comparison in basis coordinates is not, so
     # members must share one basis, exactly as they share one train/val split.
-    Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
+    if _preloaded_basis is None:
+        Z_full = share_basis(Z_full, getattr(args, 'basis_file', None))
 
     # Directions no sample moves along -- a measurement pool's pinned drain, an
     # FVA-fixed route -- still have to be representable for v = y @ Z.T to reconstruct a
@@ -647,6 +732,9 @@ def main(args):
         y_train         = y_train_for_loss,
         mixed_flux_weight = args.mixed_flux_weight,
         variance_min_cutoff = args.variance_min_cutoff,
+        variance_floor      = getattr(args, "variance_floor", "absolute"),
+        variance_min_cv     = getattr(args, "variance_min_cv", 0.05),
+        constant_cv         = getattr(args, "constant_cv", 1e-6),
     )
 
     _print_token_selection(
@@ -655,6 +743,28 @@ def main(args):
         features_csv=args.features_csv,
         n_original=n_tokens_all,
     )
+
+    # training.precision: fp32 (default) | tf32 | bf16.
+    #
+    # fp32 keeps the previous behaviour exactly. The other two only change how the
+    # decoder's matmuls run -- the loss is computed in fp32 either way (see
+    # _train_epoch) and inference is untouched, so the exact Sv=0 projection and
+    # its 1e-6 min_slack never see reduced precision.
+    #
+    # Measured on an A100 80GB at this model's shapes (6974 tokens, 3290 output
+    # queries, d_model 512, 4 layers, batch 32): 4.20 s/step fp32, 3.34 TF32,
+    # 0.61 bf16 -- 38.6, 30.7 and 5.6 min per epoch. bf16 needs no GradScaler
+    # because it keeps fp32's exponent range.
+    _precision = str(getattr(args, "precision", "fp32") or "fp32").lower()
+    if _precision not in ("fp32", "tf32", "bf16"):
+        raise ValueError(f"training.precision must be fp32, tf32 or bf16, got {_precision!r}")
+    _amp_dtype = torch.bfloat16 if _precision == "bf16" else None
+    if _precision in ("tf32", "bf16"):
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    print(f"Precision: {_precision}"
+          + (" (autocast bf16 forward, fp32 loss)" if _amp_dtype is not None else "")
+          + (" (tf32 matmuls)" if _precision == "tf32" else ""))
 
     log = train_model(
         model,
@@ -672,6 +782,7 @@ def main(args):
         labeling_noise_std         = args.labeling_noise_std,
         loss_function              = loss_function,
         early_stopping_patience    = getattr(args, 'early_stopping_patience', None),
+        amp_dtype                  = _amp_dtype,
     )
 
     val_correlations = evaluate_validation_correlations(model, val_loader, device, flux_dim, flux_names=flux_names)
@@ -872,6 +983,7 @@ def cli(argv=None):
         max_samples            = t.get("max_samples"),
         epochs                 = t.get("epochs", 100),
         early_stopping_patience = t.get("early_stopping_patience"),
+        precision              = t.get("precision", "fp32"),
         batch_size             = t.get("batch_size", 64),
         learning_rate          = t.get("learning_rate", 1e-3),
         warmup_epochs          = t.get("warmup_epochs", 5),
@@ -898,6 +1010,9 @@ def cli(argv=None):
         flux_loss_space           = t.get("flux_loss_space", "flux"),
         mixed_flux_weight         = t.get("mixed_flux_weight", 0.1),
         variance_min_cutoff       = t.get("variance_min_cutoff", 0.1),
+        variance_floor            = t.get("variance_floor", "absolute"),
+        variance_min_cv           = t.get("variance_min_cv", 0.05),
+        constant_cv               = t.get("constant_cv", 1e-6),
         shuffle_targets           = cli.shuffle_targets,
         # Fixed here, NOT re-read as args.seed inside main(): the ensemble loop below
         # sets member.seed = base_seed + i per member, and a null ensemble's whole point

@@ -26,6 +26,7 @@ def build_theta_and_token_states(
     reversibility_df: pd.DataFrame | None = None,
     subsample_n: int | None = None,
     seed: int = 42,
+    need_theta: bool = True,
 ):
     """Project fluxes onto the null-space basis and build per-token MID arrays.
 
@@ -37,6 +38,16 @@ def build_theta_and_token_states(
         reversibility_df: optional reversibility DataFrame; appended to theta if given.
         subsample_n: further random subsample size, if smaller than n_samples.
         seed: subsampling random seed.
+        need_theta: build the null-space projection. False returns ``theta=None``
+            and ``d=0`` and skips compute_sparse_nullspace entirely, for callers
+            that only want ``token_states`` -- select_all_tokens is one, and it
+            reports ``n_free_flux_directions: None`` precisely because it has no
+            use for either. The rotation is the dominant cost at genome scale:
+            Varimax does pairwise Jacobi sweeps over every column pair, so it is
+            O(max_iter * d^2), and on the mouse whole-body model (d = 1790, i.e.
+            1.6e6 rotations per sweep against the ~50-150 columns the organism
+            models have) it ran 16 h without converging to produce a ``theta``
+            that was then discarded.
 
     When *reversibility_df* is given, variable reversibilities are log1p-z-scored and appended
     to theta so Fisher selection also captures tokens informative about reversibility.
@@ -50,34 +61,38 @@ def build_theta_and_token_states(
     contribute a rank-1 Gram instead; the permutation null floor is calibrated on the same
     shapes, so the significance threshold stays comparable rather than simply admitting less.
     """
-    model = load_json_model(model_json)
-    reaction_ids = [r.id for r in model.reactions]
-    S = create_stoichiometric_matrix(model)
-    Z = np.asarray(compute_sparse_nullspace(S), dtype=np.float64)  # (n_rxn, d)
-
     n = min(n_samples, flux_df.shape[1], labeling_df.shape[1])
-    V = flux_df.loc[reaction_ids].iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
 
-    # Drop the directions no sample moves along -- a pinned reaction such as a
-    # measurement pool's drain. Their coordinate is constant, so a token carries no
-    # information about it, but pinv over theta reads numerical noise out of the column
-    # and inflates the permutation null floor; on iAF1260 that took the floor to 32.7
-    # nats and selected zero tokens.
-    Z, Z_const, _ = split_constant_directions(Z, V)
-    if Z_const.shape[1]:
-        print(f"Dropped {Z_const.shape[1]} constant free-flux direction(s) "
-              f"(pinned reactions) from theta")
-    d = Z.shape[1]
-    theta = V @ Z  # (n, d)
+    if not need_theta:
+        # token_states below needs only labeling_df and n; nothing here is read.
+        theta, d = None, 0
+    else:
+        model = load_json_model(model_json)
+        reaction_ids = [r.id for r in model.reactions]
+        S = create_stoichiometric_matrix(model)
+        Z = np.asarray(compute_sparse_nullspace(S), dtype=np.float64)  # (n_rxn, d)
+        V = flux_df.loc[reaction_ids].iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
 
-    if reversibility_df is not None:
-        rev = reversibility_df.iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
-        rev_std = rev.std(axis=0)
-        rev = rev[:, rev_std > 1e-6]          # drop constant reversibilities
-        rev = np.log1p(np.abs(rev))
-        rev = (rev - rev.mean(axis=0, keepdims=True)) / (rev.std(axis=0, keepdims=True) + 1e-8)
-        theta = np.concatenate([theta, rev], axis=1)  # (n, d + n_rev_variable)
-        print(f"Reversibility augmentation: {rev.shape[1]} variable reactions appended to theta")
+        # Drop the directions no sample moves along -- a pinned reaction such as a
+        # measurement pool's drain. Their coordinate is constant, so a token carries no
+        # information about it, but pinv over theta reads numerical noise out of the column
+        # and inflates the permutation null floor; on iAF1260 that took the floor to 32.7
+        # nats and selected zero tokens.
+        Z, Z_const, _ = split_constant_directions(Z, V)
+        if Z_const.shape[1]:
+            print(f"Dropped {Z_const.shape[1]} constant free-flux direction(s) "
+                  f"(pinned reactions) from theta")
+        d = Z.shape[1]
+        theta = V @ Z  # (n, d)
+
+        if reversibility_df is not None:
+            rev = reversibility_df.iloc[:, :n].to_numpy(np.float64).T  # (n, n_rxn)
+            rev_std = rev.std(axis=0)
+            rev = rev[:, rev_std > 1e-6]          # drop constant reversibilities
+            rev = np.log1p(np.abs(rev))
+            rev = (rev - rev.mean(axis=0, keepdims=True)) / (rev.std(axis=0, keepdims=True) + 1e-8)
+            theta = np.concatenate([theta, rev], axis=1)  # (n, d + n_rev_variable)
+            print(f"Reversibility augmentation: {rev.shape[1]} variable reactions appended to theta")
 
     lab = labeling_df.iloc[:, :n]
     token_states = {}
@@ -87,7 +102,8 @@ def build_theta_and_token_states(
     if subsample_n is not None and subsample_n < n:
         rng = np.random.default_rng(seed)
         idx = rng.permutation(n)[:subsample_n]
-        theta = theta[idx]
+        if theta is not None:
+            theta = theta[idx]
         token_states = {k: v[idx] for k, v in token_states.items()}
         print(f"Random subsample: {subsample_n} of {n} samples (seed={seed})")
 

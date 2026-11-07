@@ -1,13 +1,12 @@
-# SigmaFlux training configuration — E. coli core (toy network)
+# SigmaFlux training configuration — E. coli core, GC/MS fragments
 #
-# The small teaching network that ships alongside iAF1260, 121 reactions. Useful as
-# a fast end-to-end check of the pipeline; it is not a genome-scale model and its
-# predictions are not comparable with the other organisms.
+# The E. coli core network with one fragment pool per GC/MS ion the core can carry
+# (Ala232 = alanine C2-C3, ...), built by models/atomistic/build_gcms_fragment_model.py.
 name: E_coli_core
-model_file: models/atomistic/E_coli_core/e_coli_core_annotated.json
-# Read by training's restrict_to_mapped feature filter; experiment.mapping_csv below
-# overrides this for sigmaflux-infer when the experimental data uses different ids.
-mapping_csv: models/atomistic/E_coli_core/E_coli_core_mapping.csv
+model_file: models/atomistic/E_coli_core/e_coli_core_gcms_annotated.json
+# Read by training's restrict_to_mapped feature filter and by sigmaflux-infer; its
+# formula/n_backbone columns make the loader correct the raw MIDs for natural isotopes.
+mapping_csv: models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv
 seed: 42
 device: auto  # auto | cpu | cuda
 
@@ -22,6 +21,18 @@ experiment:
   # uncertainty. The reported interval's width still follows the pooled replicate
   # dof, sum(R_t - 1), not this count.
   n_bootstrap: 200
+  # Reactions each strain's deletion removes (strain_index.csv), for sigmaflux-infer
+  # --fbapro. Only genes that are the sole route through a core reaction; isozymes
+  # (pfkA/B, fbaB, tktA/B, talA/B, rpiB, sgcE, fbp), the non-enzymatic pgl bypass and
+  # genes without a core reaction (glk, pgm) pin nothing.
+  knockouts:
+    B4:  [R1]    # pgi
+    B9:  [R4]    # tpiA
+    B10: [R8]    # zwf
+    B12: [R9]    # gnd
+    B13: [R10]   # rpe
+    B20: [R15]   # edd
+    B21: [R16]   # eda
 
 # Nothing dropped: unlike the yeasts and the T cell, this model has a single lumped
 # biomass with no macromolecule split, so BIOMASS itself is the growth measurement and
@@ -33,7 +44,7 @@ sampling:
   n_samples: 10000
   thinning: 100
   processes: 8
-  method: achr
+  method: optgp
   fva: true
   ko: false  # false | all | random | uncorrelated
 
@@ -71,14 +82,17 @@ labeling:
       labeling: [1, 1, 0, 0, 0, 0]
       enrichment: 1.0
       name: "1,2-13C glucose"
+    # Long & Antoniewicz ran [1,2-13C] and [1,6-13C]glucose in parallel; the workbooks'
+    # second sheet was labelled U-13C until check_fragments_at_reference.py showed it
+    # fits [1,6-13C] (median fragment RMSE 0.02 vs 0.60).
     - tracer_id: Gluc_e
-      labeling: [1, 1, 1, 1, 1, 1]
+      labeling: [1, 0, 0, 0, 0, 1]
       enrichment: 1.0
-      name: "U-13C glucose"
+      name: "1,6-13C glucose"
 
 # ── Feature selection (extract_informative_features.py) ─────────────────────
 features:
-  restrict_to_mapped: true          # only metabolites the HILIC platform can see
+  restrict_to_mapped: true          # only the fragments the GC/MS data reports
   exclude_extracellular: true
   token_selection_method: all       # all measurable tokens; no significance test
 
@@ -101,7 +115,8 @@ training:
   num_transformer_layers: 4
   dropout: 0.2
 
-  # 112 metabolites and 121 reactions — a much smaller vocabulary than the yeasts.
+  # 67 metabolites and 77 reactions plus the fragment pools — a much smaller vocabulary
+  # than the yeasts.
   h_compound: 7
   h_label: 5
   h_tracer: 1

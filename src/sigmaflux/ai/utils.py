@@ -150,6 +150,7 @@ def compute_targeted_nullspace(
     target_reactions: list,
     tol: float = 1e-10,
     warn_cond_threshold: float = 1e8,
+    rotate: bool = True,
 ):
     """Build a structured null-space basis that gives each target reaction its own DOF.
 
@@ -171,6 +172,20 @@ def compute_targeted_nullspace(
         Relative tolerance for rank determination and mass-balance check.
     warn_cond_threshold : float
         Log a warning when cond(S_D) exceeds this value.
+    rotate : bool
+        Varimax-rotate the free columns. True reproduces the original basis. False
+        leaves them as the raw LU complement, which spans exactly the same subspace
+        and keeps the targets equally separable -- the rotation is for
+        interpretability, not correctness, so ``v = y @ Z.T`` reaches the same
+        flux space either way.
+
+        Worth turning off in two cases. The rotation is O(max_iter * d^2) in
+        pairwise Jacobi sweeps, which at genome scale is the dominant cost of the
+        whole basis: on a 5245-reaction model (d = 1790, 1.6e6 rotations per sweep)
+        it ran 16 h without converging. And :func:`compute_targeted_ica_nullspace`
+        re-rotates these same columns with FastICA immediately afterwards, so
+        there the Varimax result is overwritten in the success path and only
+        survives as the FastICA-failure fallback.
 
     Returns
     -------
@@ -292,7 +307,7 @@ def compute_targeted_nullspace(
     # dimensions so they concentrate on specific metabolic pathways rather than being
     # arbitrary LU artefacts.
     n_targets = len(target_idx)
-    if n - r > n_targets + 1:
+    if rotate and n - r > n_targets + 1:
         Z[:, n_targets:] = _varimax_rotate(Z[:, n_targets:].copy())
 
     return Z, {
@@ -515,8 +530,8 @@ def compute_targeted_ica_nullspace(
     variance-based observability score (ICA modes before the SVD complement).
 
     Raises RuntimeError if the target reactions are not separable (stoichiometrically
-    coupled) — see :func:`compute_targeted_nullspace`. Falls back to the Varimax
-    targeted basis (unrotated free columns) if FastICA itself fails.
+    coupled) — see :func:`compute_targeted_nullspace`. Falls back to the targeted
+    basis with raw LU free columns (unrotated) if FastICA itself fails.
 
     Parameters
     ----------
@@ -539,12 +554,19 @@ def compute_targeted_ica_nullspace(
         SVD complement last).
     status : dict
         separable, cond_SD, target_indices, n_ica_free, n_complement_free,
-        n_active_free, and fallback (True if FastICA failed, Varimax free cols kept).
+        n_active_free, and fallback (True if FastICA failed, raw LU free cols kept).
     """
     from sklearn.decomposition import FastICA
 
     # ── Step 1: targeted construction ────────────────────────────────────────
-    Z_targ, tgt_status = compute_targeted_nullspace(S, reaction_names, target_reactions)
+    # rotate=False: the free columns are ICA-rotated a few lines below, so a Varimax
+    # pass here is overwritten in the success path. It cost 16 h without converging on
+    # the mouse whole-body model (d = 1790). The only thing given up is the FastICA
+    # failure fallback's sparsity -- those columns are then the raw LU complement,
+    # which spans the same subspace and keeps the targets separable, so the fallback
+    # remains a valid basis rather than a broken one.
+    Z_targ, tgt_status = compute_targeted_nullspace(S, reaction_names, target_reactions,
+                                                    rotate=False)
     if not tgt_status['separable']:
         # Deliberately not falling through to ica_informed. That substitution is
         # invisible in the resulting checkpoint -- the run reports null_space_type
@@ -611,7 +633,7 @@ def compute_targeted_ica_nullspace(
         # Modes in reaction null-space: Q_free @ W_wh @ mixing_matrix
         modes = Q_free @ (W_wh @ ica.components_.T)   # (n, n_ica_req), zeros on target rows ✓
     except Exception:
-        print("targeted_ica: FastICA failed; keeping Varimax free columns")
+        print("targeted_ica: FastICA failed; keeping raw LU free columns")
         return Z_targ, {
             'separable': True, 'cond_SD': tgt_status['cond_SD'],
             'targets_kept': tgt_status['targets_kept'],
