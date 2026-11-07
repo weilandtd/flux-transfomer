@@ -28,9 +28,9 @@ Every metric here (``per_flux_r2``/``per_flux_rmse``/``per_flux_nrmse`` in
 plot_test_performance.py) is computed in plain linear space over the benchmark HDF5s
 directly -- not read from output/identifiability.csv -- so this script has one source of
 truth and does not depend on plot_test_performance.py having been run first against the
-same run directory. They share the same chi2-accepted ("statistically acceptable") sample
-set -- see ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for one
-model describe the identical reaction population.
+same run directory. They share one sample set -- every sample each method returned a
+prediction for, see ``_figure_common.benchmark_metrics`` -- so the R² and NRMSE panels for
+one model describe the identical reaction population.
 
 Usage:
     python paper/scripts/plot_mfa_benchmark.py
@@ -65,24 +65,16 @@ def parse_args():
 
 def plot_r2_quantiles(model, tbl, out_dir):
     """R² against the cumulative fraction of reactions, one line per method."""
-    fig, ax = plt.subplots(figsize=(3.5, 3.5))
+    fig, ax = plt.subplots(figsize=(4, 3.5), gridspec_kw=dict(
+        left=0.25, right=0.96, bottom=0.16, top=0.96))
     ax.axhline(R2_THRESHOLD, color=COLORS["reference"], lw=0.8, ls="--", zorder=0)
 
-    frames = []
     for method in ("mfa", "ai"):
-        r2 = np.sort(tbl[f"r2_{method}"].to_numpy())[::-1]
-        frames.append(pd.DataFrame({
-            # Sorted descending, so x is the fraction of reactions at or above this R².
-            "fraction": (np.arange(len(r2)) + 1) / len(r2),
-            "r2": np.clip(r2, R2_FLOOR, None),
-            "method": method,
-        }))
-    df = pd.concat(frames, ignore_index=True)
-
-    for method, grp in df.groupby("method", sort=False):
-        sns.lineplot(data=grp, x="fraction", y="r2", ax=ax, label=LABEL[method],
-                     color=METHOD_COLORS[method], lw=1.8,
-                     errorbar=None, estimator=None)
+        # Sorted descending, so x is the fraction of reactions at or above this R²;
+        # each reaction holds its R² over its own 1/n of the axis.
+        r2 = np.clip(np.sort(tbl[f"r2_{method}"].to_numpy())[::-1], R2_FLOOR, None)
+        ax.stairs(r2, np.linspace(0, 1, len(r2) + 1), baseline=None,
+                  label=LABEL[method], color=METHOD_COLORS[method], lw=1.8)
 
     ax.set_xlim(0, 1)
     ax.set_ylim(R2_FLOOR, 1.0)
@@ -94,7 +86,7 @@ def plot_r2_quantiles(model, tbl, out_dir):
     ax.set_ylabel(r"Flux $R^2$")
     ax.legend(frameon=False, fontsize=9, loc="lower left")
     sns.despine(ax=ax)
-    save_figure(fig, out_dir / f"mfa_benchmark_r2_{model['key']}.svg")
+    save_figure(fig, out_dir / f"mfa_benchmark_r2_{model['key']}.svg", tight=False)
 
 
 def _nrmse_long(model, tbl):

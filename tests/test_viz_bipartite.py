@@ -95,7 +95,7 @@ def test_legend_annotation_lists_named_nodes_by_color():
                               legend={"tokens": "green"}, annotate="legend")
     assert not ax.texts
     assert [t.get_text() for t in ax.get_legend().get_texts()] == ["tokens", "b"]
-    assert ax.get_legend().legend_handles[1].get_markerfacecolor() == "red"
+    assert ax.get_legend().legend_handles[1].get_facecolor()[:3] == (1.0, 0.0, 0.0)
 
 
 def test_unknown_layout_raises():
@@ -116,3 +116,30 @@ def test_legend_none_color_is_a_bold_header():
     ax = plot_bipartite_graph(g, legend={"Group": None, "x": "red"})
     header, entry = ax.get_legend().get_texts()
     assert header.get_fontweight() == "bold" and entry.get_fontweight() == "normal"
+
+
+def test_node_styles_hatch_nodes_and_legend_swatches():
+    g = bipartite_graph(toy(), ["a", "b", "c"], ["x", "y", "z"], threshold=0.9)
+    striped = {"facecolor": "white", "edgecolor": "black", "hatch": "////"}
+    ax = plot_bipartite_graph(g, node_styles={(S, "a"): striped}, legend={"striped": striped})
+    assert "////" in {c.get_hatch() for c in ax.collections}
+    assert ax.get_legend().legend_handles[0].get_hatch() == "////"
+
+
+def test_source_gap_separates_sources():
+    # a and b have the same targets, so the spring layout puts them close together
+    g = bipartite_graph(np.array([[1.0, 1.0, 0.0], [1.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+                        ["a", "b", "c"], ["x", "y", "z"], threshold=0.5)
+    labels = {(S, "a"): "a", (S, "b"): "b"}
+    gap = [np.linalg.norm(np.subtract(*(t.xy for t in ax.texts)))
+           for ax in (plot_bipartite_graph(g, hub_labels=labels),
+                      plot_bipartite_graph(g, hub_labels=labels, source_gap=0.5))]
+    assert gap[1] > 2 * gap[0]
+
+
+
+def test_edge_colors_color_the_named_edges_either_way_round():
+    g = bipartite_graph(toy(), ["a", "b", "c"], ["x", "y", "z"], threshold=0.9)
+    ax = plot_bipartite_graph(g, edge_colors={((S, "a"), (T, "x")): "red"})
+    rgb = {tuple(c[:3]) for c in ax.collections[0].get_colors()}
+    assert rgb == {(1.0, 0.0, 0.0), (0.3, 0.3, 0.3)}

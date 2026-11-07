@@ -197,10 +197,11 @@ class ModelSpec:
                 )
             flux_bounds = bounds_from_model_json(network, flux_names)
 
-        tracers = {
-            t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
-            for t in cfg.get('labeling', {}).get('tracers', [])
-        }
+        tracers = {}
+        for t in cfg.get('labeling', {}).get('tracers', []):
+            internal = f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
+            tracers[t['name']] = f"{tracers[t['name']]}|{internal}" if t['name'] in tracers \
+                else internal
 
         token_ids = ckpt.get('token_experiment_ids')
         if token_ids is None:
@@ -310,7 +311,26 @@ def _knockout_indices(flux_names, knockout_rxn_ids):
     return [flux_names.index(r) for r in knockout_rxn_ids]
 
 
-def _cleaned_knockout_df(base_df, full_values, n_flux, n_rev, Z, ko_idx, weights):
+def _inverse_member_variance(flux_blocks):
+    """Per-reaction FBApro weights: inverse member variance, pooled over samples.
+
+    ``flux_blocks`` is ``(n_members, n_samples, n_flux)``.
+    """
+    return 1.0 / (flux_blocks.var(axis=0).mean(axis=0) + 1e-8)
+
+
+def _fbapro_decoder(model, V, vfixed, weights):
+    """FBApro onto the decoder's flux space ``flux_offset + span(Z_full)``.
+
+    ``Z_full`` spans only the free directions; pinned fluxes live in ``flux_offset``, so the
+    projection runs on ``V - flux_offset`` and adds it back.
+    """
+    Z = model.Z_full.detach().cpu().numpy().astype(np.float64)
+    v0 = model.flux_offset.detach().cpu().numpy().astype(np.float64)
+    return fbapro(V - v0, Z=Z, vfixed=vfixed - v0, weights=weights) + v0
+
+
+def _cleaned_knockout_df(base_df, full_values, n_flux, n_rev, model, ko_idx, weights):
     """Replace the flux block of a prediction with its knockout-cleaned projection.
 
     ``full_values`` is the long-format 'Value' column (flux then reversibility per sample);
@@ -322,7 +342,7 @@ def _cleaned_knockout_df(base_df, full_values, n_flux, n_rev, Z, ko_idx, weights
     grid = np.asarray(full_values, dtype=np.float64).reshape(-1, stride).copy()
     vfixed = np.full(n_flux, np.nan)
     vfixed[list(ko_idx)] = 0.0
-    grid[:, :n_flux] = fbapro(grid[:, :n_flux], Z=Z, vfixed=vfixed, weights=weights)
+    grid[:, :n_flux] = _fbapro_decoder(model, grid[:, :n_flux], vfixed, weights)
     out = base_df.copy()
     out['Value'] = grid.reshape(-1)
     return out
@@ -783,10 +803,9 @@ class SigmaFlux:
                 "spread -- use EnsembleSigmaFlux, or pass weights explicitly.")
         pred = self.predict(df_L, df_Vm=df_Vm)
         ko_idx = _knockout_indices(self.flux_names, knockout_rxn_ids)
-        Z = self._model.Z_full.detach().cpu().numpy().astype(np.float64)
         return _cleaned_knockout_df(
             pred, pred['Value'].to_numpy(), len(self.flux_names),
-            len(self.reversibility_names), Z, ko_idx,
+            len(self.reversibility_names), self._model, ko_idx,
             np.asarray(weights, dtype=np.float64))
 
     # ── Introspection helpers ─────────────────────────────────────────────────
@@ -1168,11 +1187,15 @@ class EnsembleSigmaFlux:
         # across every member, which measured better on real SC data (pooled flux R²
         # 0.242 vs the mean's 0.228, `[[medoid_convex_production_default]]` /
         # compare_aggregation_sc.py) with no feasibility cost, since it is still a
-        # convex combination.
+        # convex combination. Weights are solved per sample, so a sample's aggregate does
+        # not depend on which other samples share the call.
+        block = len(self.flux_names) + len(self.reversibility_names)
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
-        weights = _medoid_weights(values, how="medoid_convex")
+        values = values.reshape(len(preds), -1, block)
         out = preds[0].copy()
-        out['Value'] = weights @ values
+        out['Value'] = np.concatenate([
+            _medoid_weights(values[:, i], how="medoid_convex") @ values[:, i]
+            for i in range(values.shape[1])])
         if with_mid:
             # The labeling of the flux state we report, not the average of the labelings
             # each member implies. The EMU pass is nonlinear, so those differ, and only
@@ -1225,14 +1248,34 @@ class EnsembleSigmaFlux:
         n_members, n_rows = values.shape
         n_samples = n_rows // stride
 
-        # inverse-variance weight per reaction: member disagreement, pooled over samples
         flux_blocks = values.reshape(n_members, n_samples, stride)[:, :, :n_flux]
-        weights = 1.0 / (flux_blocks.var(axis=0).mean(axis=0) + 1e-8)
+        weights = _inverse_member_variance(flux_blocks)
 
         ko_idx = _knockout_indices(self.flux_names, knockout_rxn_ids)
-        Z = self.members[0]._model.Z_full.detach().cpu().numpy().astype(np.float64)
         return _cleaned_knockout_df(
-            preds[0], values.mean(axis=0), n_flux, n_rev, Z, ko_idx, weights)
+            preds[0], values.mean(axis=0), n_flux, n_rev, self.members[0]._model, ko_idx,
+            weights)
+
+    def project_knockouts(self, flux_blocks, knockout_rxn_ids):
+        """FBApro every member's flux states onto ``{S x = 0} ∩ {x[ko] = 0}``.
+
+        Same inverse-member-variance weights as :meth:`predict_knockout`; the projection
+        is linear, so the member mean of the result is what that method returns.
+
+        Parameters
+        ----------
+        flux_blocks : array, shape (n_members, n_samples, n_fluxes)
+            Raw member predictions, fluxes in :attr:`flux_names` order.
+        knockout_rxn_ids : list of str
+            Reaction ids to force to zero; empty projects onto ``S x = 0`` alone.
+        """
+        flux_blocks = np.asarray(flux_blocks, dtype=np.float64)
+        vfixed = np.full(flux_blocks.shape[-1], np.nan)
+        vfixed[_knockout_indices(self.flux_names, knockout_rxn_ids)] = 0.0
+        flat = _fbapro_decoder(self.members[0]._model,
+                               flux_blocks.reshape(-1, flux_blocks.shape[-1]), vfixed,
+                               _inverse_member_variance(flux_blocks))
+        return flat.reshape(flux_blocks.shape)
 
     # Introspection helpers delegate to member 0.
     def expected_metabolites(self):     return self.members[0].expected_metabolites()

@@ -7,12 +7,17 @@ Expected xlsx format (one sheet per tracer, sheet name = tracer name):
     e.g. C1_Rep1, N3_Rep2, B1_Rep1
 
 Output df_L columns: Tracer Name, Sample, Metabolite ID, Isotopomer, Fraction
+
+A mapping CSV with ``formula`` and ``n_backbone`` columns marks raw GC/MS fragment MIDs,
+which are corrected for natural isotopes and truncated to M+0..M+n_backbone on read.
 """
 
 import re
 import warnings
 
 import pandas as pd
+
+from sigmaflux.utils.natural_abundance import correct_mid
 
 _GC_REP_PAT = re.compile(r'^([A-Z]+)(\d+)_Rep(\d+)$')
 
@@ -31,6 +36,15 @@ def _load_mapping(mapping_csv: str) -> dict:
     return df.groupby('experimental_id')['model_id'].apply(list).to_dict()
 
 
+def _load_fragment_formulas(mapping_csv: str) -> dict:
+    """``{experimental_id: (formula, n_backbone)}`` for rows that need correction."""
+    df = pd.read_csv(mapping_csv)
+    if 'formula' not in df.columns:
+        return {}
+    df = df.dropna(subset=['formula'])
+    return dict(zip(df['experimental_id'], zip(df['formula'], df['n_backbone'].astype(int))))
+
+
 def read_xlsx_mid_data(
     xlsx_path:        str,
     mapping_csv:      str,
@@ -44,6 +58,7 @@ def read_xlsx_mid_data(
         growth_condition: if given, restricts to columns matching that GrowthCondition number.
     """
     met_map = _load_mapping(mapping_csv)
+    formulas = _load_fragment_formulas(mapping_csv)
     _warn_on_unresolved_compartments(met_map, mapping_csv)
     xl      = pd.ExcelFile(xlsx_path)
     records = []
@@ -62,20 +77,27 @@ def read_xlsx_mid_data(
                     gc_rep_cols.append((c, rep))
 
         for col, bio_rep in gc_rep_cols:
-            for _, row in df.iterrows():
-                exp_name = str(row['Compound'])
+            for exp_name, rows in df.groupby(df['Compound'].astype(str), sort=False):
                 if exp_name not in met_map:
                     continue
-                isotopomer = f"M+{int(row['C_Label'])}"
-                fraction   = float(row[col])
-                for model_id in met_map[exp_name]:
-                    records.append({
-                        'Tracer Name':   tracer_name,
-                        'Sample':        bio_rep,
-                        'Metabolite ID': model_id,
-                        'Isotopomer':    isotopomer,
-                        'Fraction':      fraction,
-                    })
+                rows = rows.sort_values('C_Label')
+                labels = rows['C_Label'].astype(int).tolist()
+                fractions = rows[col].astype(float).to_numpy()
+                if exp_name in formulas:
+                    if pd.isna(fractions).any():
+                        continue                 # fragment not measured in this sample
+                    formula, n_backbone = formulas[exp_name]
+                    fractions = correct_mid(fractions, formula, n_backbone)
+                    labels = list(range(n_backbone + 1))
+                for label, fraction in zip(labels, fractions):
+                    for model_id in met_map[exp_name]:
+                        records.append({
+                            'Tracer Name':   tracer_name,
+                            'Sample':        bio_rep,
+                            'Metabolite ID': model_id,
+                            'Isotopomer':    f"M+{label}",
+                            'Fraction':      float(fraction),
+                        })
 
     return pd.DataFrame(
         records,

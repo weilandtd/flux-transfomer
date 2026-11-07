@@ -23,7 +23,7 @@ Three families of check, in the order they can invalidate each other:
 3. **Agreement with the data** -- simulated vs measured MID per token: RMSE, worst offender,
    and a z-score against the measured replicate spread, written to
    ``simulated_vs_measured_<organism>.csv``. The parity scatter this used to draw is now
-   paper/scripts/plot_experimental_mid.py, which builds the paper figure from the same
+   paper/scripts/plot_experimental.py, which builds the paper figure from the same
    primitives.
 
 Only the maximum-likelihood input (the replicate mean) is forward-simulated by default --
