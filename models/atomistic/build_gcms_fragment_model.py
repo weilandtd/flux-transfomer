@@ -1,6 +1,8 @@
 """
-Build the GC/MS E. coli core model: one fragment pool per GC/MS known the core can carry.
+Build the GC/MS fragment models: one fragment pool per GC/MS ion a model can carry.
 
+E. coli core
+------------
 A GC/MS ion retains a known subset of its metabolite's carbons -- Ala232 is alanine C2-C3,
 Ala260 is C1-C3 -- so each row of data/GCMS_knowns.csv whose parent the core model holds
 and whose carbon set is unambiguous becomes a fragment pool (see
@@ -13,7 +15,16 @@ Also writes E_coli_core_fragment_mapping.csv, mapping the Long & Antoniewicz (20
 workbook's fragment names onto the fragment ids with the formula and backbone carbon
 count that ``read_xlsx_mid_data`` needs to correct the raw MIDs for natural isotopes.
 
-Run this whenever GCMS_knowns.csv or e_coli_core_annotated.json changes:
+T. arvense (Pennycress)
+-----------------------
+The ions and their carbon sets come from the MASS_SPECTROMETRY block of the Shi et al.
+FTBL, transcribed to T_arvense_L/T_arvense_L_fragments.csv. Their parents are the FTBL
+``*_bm`` measurement pools. The published MIDs are already corrected for the derivative's
+atoms but not for natural 13C on the backbone (the FTBL simulated it with natural-abundance
+inputs, which curate_pennycress_workbooks.py drops), so the mapping's formula is the
+backbone alone, ``C<n>``, and the loader removes exactly that.
+
+Run this whenever its inputs or the annotated models change:
 
     python models/atomistic/build_gcms_fragment_model.py
 """
@@ -28,9 +39,6 @@ from sigmaflux.core.measurement_pools import add_fragment_pools, check_mapping_c
 
 ROOT = Path(__file__).resolve().parents[2]
 KNOWNS = ROOT / "data" / "GCMS_knowns.csv"
-MODEL_IN = ROOT / "models/atomistic/E_coli_core/e_coli_core_annotated.json"
-MODEL_OUT = ROOT / "models/atomistic/E_coli_core/e_coli_core_gcms_annotated.json"
-MAPPING_OUT = ROOT / "models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv"
 
 #: Knowns ``Abbrev`` -> core metabolite. Glucose is glycogen-bound and ribose RNA-bound,
 #: so they report the G6P and R5P they were polymerised from.
@@ -105,25 +113,62 @@ def workbook_mapping(knowns, fragments):
     return pd.DataFrame(rows)
 
 
-def main():
+def plan_e_coli_core(model):
+    """Fragments from the GC/MS knowns, mapped onto the Long & Antoniewicz workbook."""
     knowns = pd.read_csv(KNOWNS)
-    model = cobra.io.load_json_model(str(MODEL_IN))
     fragments, skipped = plan_fragments(knowns, model)
-
     print(f"Skipped {len(skipped)} of {len(knowns)} knowns:")
     for raw_id, reason in skipped:
         print(f"  {raw_id}: {reason}")
+    return fragments, lambda: workbook_mapping(knowns, fragments)
+
+
+def plan_t_arvense(model):
+    """Fragments from the FTBL carbon sets, with backbone-only natural-isotope formulas."""
+    table = pd.read_csv(ROOT / "models/atomistic/T_arvense_L/T_arvense_L_fragments.csv")
+    fragments = {row.fragment_id: (row.parent, carbon_set(row.carbons))
+                 for row in table.itertuples()}
+
+    def mapping():
+        return pd.DataFrame([{"experimental_id": frag, "model_id": frag,
+                              "formula": f"C{len(carbons)}", "n_backbone": len(carbons)}
+                             for frag, (_, carbons) in fragments.items()])
+    return fragments, mapping
+
+
+CONFIGS = [
+    dict(name="E_coli_core", plan=plan_e_coli_core,
+         model_in="models/atomistic/E_coli_core/e_coli_core_annotated.json",
+         model_out="models/atomistic/E_coli_core/e_coli_core_gcms_annotated.json",
+         mapping_out="models/atomistic/E_coli_core/E_coli_core_fragment_mapping.csv"),
+    dict(name="T_arvense_L", plan=plan_t_arvense,
+         model_in="models/atomistic/T_arvense_L/ta_annotated.json",
+         model_out="models/atomistic/T_arvense_L/ta_gcms_annotated.json",
+         mapping_out="models/atomistic/T_arvense_L/T_arvense_L_fragment_mapping.csv"),
+]
+
+
+def build(name, plan, model_in, model_out, mapping_out):
+    """Add one organism's fragment pools and write its model and mapping CSV."""
+    print(f"\n== {name}")
+    model = cobra.io.load_json_model(str(ROOT / model_in))
+    fragments, mapping_of = plan(model)
 
     add_fragment_pools(model, fragments)
-    cobra.io.save_json_model(model, str(MODEL_OUT))
-    print(f"\nAdded {len(fragments)} fragment pools -> {MODEL_OUT.relative_to(ROOT)}")
+    cobra.io.save_json_model(model, str(ROOT / model_out))
+    print(f"\nAdded {len(fragments)} fragment pools -> {model_out}")
 
-    mapping = workbook_mapping(knowns, fragments)
+    mapping = mapping_of()
     problems = check_mapping_csv(model, zip(mapping["experimental_id"], mapping["model_id"]))
     if problems or mapping["formula"].isna().any():
         raise ValueError(f"mapping does not match the model: {problems}\n{mapping}")
-    mapping.to_csv(MAPPING_OUT, index=False)
-    print(f"Mapped {len(mapping)} workbook fragments -> {MAPPING_OUT.relative_to(ROOT)}")
+    mapping.to_csv(ROOT / mapping_out, index=False)
+    print(f"Mapped {len(mapping)} workbook fragments -> {mapping_out}")
+
+
+def main():
+    for cfg in CONFIGS:
+        build(**cfg)
 
 
 if __name__ == "__main__":

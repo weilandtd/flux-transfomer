@@ -43,6 +43,8 @@ MODELS = [
          run="paper/.results/i_orientalis_20260921"),
     dict(key="m_musculus_t_cell", label="M. musculus T cell",
          run="paper/.results/m_musculus_t_cell_20260917"),
+    dict(key="t_arvense_l", label="T. arvense",
+         run="paper/.results/t_arvense_l_v4_20261105"),
 ]
 MODELS_BY_KEY = {m["key"]: m for m in MODELS}
 
@@ -111,12 +113,16 @@ PREDICTION_SPECS = {
     # tcell_naive_extflux_unreliable note), so the reference carries scale, not
     # per-reaction structure.
     "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
+    # One condition letter, P: gc 1 is wild type, gc 2 the WD3 line (strain_index.csv);
+    # the Shi et al. reference is wild type only.
+    "t_arvense_l":       dict(conditions=["P"],           select="wt"),
 }
 
 # The condition letter means different things per organism: N is nitrogen-limited for
 # the yeasts and naive for the T cell, so the legend cannot be derived from the letter.
 CONDITION_LABEL = {
     "m_musculus_t_cell": {"N": "naive", "A": "activated"},
+    "t_arvense_l": {"P": "embryo"},
 }
 
 #: Letter -> name for the organisms CONDITION_LABEL says nothing about, whose letters are
@@ -129,6 +135,7 @@ ORGANISM_SHORT = {
     "s_cerevisiae": "S. cerevisiae",
     "i_orientalis": "I. orientalis",
     "m_musculus_t_cell": "T cell",
+    "t_arvense_l": "Pennycress",
 }
 
 
@@ -148,6 +155,7 @@ def panel_name(key, condition):
 # Literature-style names for the tracer metabolite ids seen in tracer strings below.
 _TRACER_METABOLITE_NAMES = {
     "glc__D_e": "glucose", "Gluc_e": "glucose", "gln__L_e": "glutamine",
+    "Glc_e": "glucose", "Ala_e": "alanine",
 }
 
 #: Marker shapes cycled by distinct tracer within a panel, so tracer is visually
@@ -162,7 +170,10 @@ def tracer_label(tracer_str):
     ``'glc__D_e_[1, 1, 1, 1, 1, 1]_0.5'`` -> ``'U-¹³C-glucose (50%)'``.
     Falls back to the raw string for anything that doesn't match the
     ``<metabolite>_[<pattern>]_<enrichment>`` shape this codebase generates tracer ids in.
+    A ``|``-joined mixture is labelled part by part.
     """
+    if "|" in str(tracer_str):
+        return " + ".join(tracer_label(t) for t in str(tracer_str).split("|"))
     m = re.match(r"^(.+?)_\[([\d,\s]+)\]_([\d.]+)$", str(tracer_str))
     if not m:
         return str(tracer_str)

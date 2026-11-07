@@ -39,7 +39,7 @@ class Experiment(object):
 
         self._tracers = dict()
         for the_tracer in tracers:
-            if the_tracer.metabolite not in self._tracers:
+            if the_tracer.metabolite.id not in self._tracers:
                 self._tracers[the_tracer.metabolite.id] = list()
             self._tracers[the_tracer.metabolite.id].append(the_tracer)
 

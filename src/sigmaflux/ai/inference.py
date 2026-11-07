@@ -197,10 +197,11 @@ class ModelSpec:
                 )
             flux_bounds = bounds_from_model_json(network, flux_names)
 
-        tracers = {
-            t['name']: f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
-            for t in cfg.get('labeling', {}).get('tracers', [])
-        }
+        tracers = {}
+        for t in cfg.get('labeling', {}).get('tracers', []):
+            internal = f"{t['tracer_id']}_{t['labeling']}_{t['enrichment']}"
+            tracers[t['name']] = f"{tracers[t['name']]}|{internal}" if t['name'] in tracers \
+                else internal
 
         token_ids = ckpt.get('token_experiment_ids')
         if token_ids is None:
