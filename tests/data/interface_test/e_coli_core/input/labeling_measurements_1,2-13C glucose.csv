@@ -1,0 +1,509 @@
+Condition,Replicate,Compound,Isotopomer,Fraction
+B1,1,glucose-6-phosphate,M+0,4.76572690956069e-06
+B1,1,glucose-6-phosphate,M+1,1.476669139897445e-08
+B1,1,glucose-6-phosphate,M+2,0.9743434184096855
+B1,1,glucose-6-phosphate,M+3,0.002088733565818362
+B1,1,glucose-6-phosphate,M+4,0.02308495895661256
+B1,1,glucose-6-phosphate,M+5,0.0004648316030468954
+B1,1,glucose-6-phosphate,M+6,1.327697123558283e-05
+B1,1,"fructose-1,6-bisphosphate",M+0,0.0596507667486304
+B1,1,"fructose-1,6-bisphosphate",M+1,0.01317084946488066
+B1,1,"fructose-1,6-bisphosphate",M+2,0.7461044245016938
+B1,1,"fructose-1,6-bisphosphate",M+3,0.01665075107698428
+B1,1,"fructose-1,6-bisphosphate",M+4,0.1568489337871465
+B1,1,"fructose-1,6-bisphosphate",M+5,0.004740977212626275
+B1,1,"fructose-1,6-bisphosphate",M+6,0.002833297208038137
+B1,1,dihydroxyacetone phosphate,M+0,0.3489089111450361
+B1,1,dihydroxyacetone phosphate,M+1,1.253084650091742e-07
+B1,1,dihydroxyacetone phosphate,M+2,0.6510870160113763
+B1,1,dihydroxyacetone phosphate,M+3,3.947535122581873e-06
+B1,1,D-glucosamine-1/6-phosphate,M+0,3.462658970318365e-06
+B1,1,D-glucosamine-1/6-phosphate,M+1,0.02024763622621573
+B1,1,D-glucosamine-1/6-phosphate,M+2,0.9289554012031623
+B1,1,D-glucosamine-1/6-phosphate,M+3,1.278951971954657e-09
+B1,1,D-glucosamine-1/6-phosphate,M+4,0.05078707500864216
+B1,1,D-glucosamine-1/6-phosphate,M+5,2.966269241528632e-06
+B1,1,D-glucosamine-1/6-phosphate,M+6,3.457354816192242e-06
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+0,5.20176930737385e-05
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+1,4.564168928168917e-07
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+2,0.5070181904883638
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+3,0.09267350235237795
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+4,0.3798595562304351
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+5,0.0006992069450348042
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+6,0.01950764261983076
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+7,8.56603569727765e-05
+B1,1,N-acetyl-glucosamine-1/6-phosphate,M+8,0.0001037668970182704
+B1,1,sn-glycerol-3-phosphate,M+0,0.4351626005838537
+B1,1,sn-glycerol-3-phosphate,M+1,0.01068240117786212
+B1,1,sn-glycerol-3-phosphate,M+2,0.5451595575971241
+B1,1,sn-glycerol-3-phosphate,M+3,0.008995440641160124
+B1,1,3-phosphoglycerate,M+0,0.5369160111355108
+B1,1,3-phosphoglycerate,M+1,0.01082719171158472
+B1,1,3-phosphoglycerate,M+2,0.4484638590062364
+B1,1,3-phosphoglycerate,M+3,0.003792938146668272
+B1,1,"1,3-bisphosphoglycerate",M+0,0.5526138224831465
+B1,1,"1,3-bisphosphoglycerate",M+1,0.001155357237037657
+B1,1,"1,3-bisphosphoglycerate",M+2,0.4461941422084789
+B1,1,"1,3-bisphosphoglycerate",M+3,3.667807133695733e-05
+B1,1,pyruvate,M+0,0.4754965910354848
+B1,1,pyruvate,M+1,8.374127843483562e-05
+B1,1,pyruvate,M+2,0.514047096389081
+B1,1,pyruvate,M+3,0.01037257129699934
+B1,1,malate,M+0,0.3153437146836213
+B1,1,malate,M+1,0.1015973648575804
+B1,1,malate,M+2,0.4199302260762145
+B1,1,malate,M+3,0.1027249592948591
+B1,1,malate,M+4,0.06040373508772499
+B1,1,6-phospho-D-gluconate,M+0,0.0007941309384176818
+B1,1,6-phospho-D-gluconate,M+1,0.005195701515293395
+B1,1,6-phospho-D-gluconate,M+2,0.9639402130590329
+B1,1,6-phospho-D-gluconate,M+3,0.003489513979866459
+B1,1,6-phospho-D-gluconate,M+4,0.02465026442107242
+B1,1,6-phospho-D-gluconate,M+5,0.001416312920426654
+B1,1,6-phospho-D-gluconate,M+6,0.0005138631658904678
+B1,1,ribose-5-phosphate,M+0,0.004140972345525253
+B1,1,ribose-5-phosphate,M+1,0.6451979101539546
+B1,1,ribose-5-phosphate,M+2,0.1024811473013278
+B1,1,ribose-5-phosphate,M+3,0.2113388616778317
+B1,1,ribose-5-phosphate,M+4,0.0364445104111705
+B1,1,ribose-5-phosphate,M+5,0.0003965981101901527
+B1,1,xylulose-5-phosphate,M+0,0.004684009912561691
+B1,1,xylulose-5-phosphate,M+1,0.6157683917273725
+B1,1,xylulose-5-phosphate,M+2,0.1105196815943926
+B1,1,xylulose-5-phosphate,M+3,0.2688990035827127
+B1,1,xylulose-5-phosphate,M+4,1.618002798792156e-06
+B1,1,xylulose-5-phosphate,M+5,0.0001272951801616291
+B1,1,sedoheptulose-7-phosphate,M+0,0.005472244701613432
+B1,1,sedoheptulose-7-phosphate,M+1,0.0289889015929973
+B1,1,sedoheptulose-7-phosphate,M+2,0.5558810651783137
+B1,1,sedoheptulose-7-phosphate,M+3,0.1486192026450777
+B1,1,sedoheptulose-7-phosphate,M+4,0.1755222508509633
+B1,1,sedoheptulose-7-phosphate,M+5,0.07558766854556302
+B1,1,sedoheptulose-7-phosphate,M+6,0.009440875942286618
+B1,1,sedoheptulose-7-phosphate,M+7,0.0004877905431848349
+B1,1,"sedoheptulose-1,7-bisphosphate",M+0,0.1171397338680382
+B1,1,"sedoheptulose-1,7-bisphosphate",M+1,0.004957131157353737
+B1,1,"sedoheptulose-1,7-bisphosphate",M+2,0.5570388738683698
+B1,1,"sedoheptulose-1,7-bisphosphate",M+3,0.1449836591907215
+B1,1,"sedoheptulose-1,7-bisphosphate",M+4,0.1230195297927621
+B1,1,"sedoheptulose-1,7-bisphosphate",M+5,0.05230319988435341
+B1,1,"sedoheptulose-1,7-bisphosphate",M+6,0.0001492420637265507
+B1,1,"sedoheptulose-1,7-bisphosphate",M+7,0.000408630174674913
+B1,1,aspartate,M+0,0.3629295105055821
+B1,1,aspartate,M+1,0.1158040076731286
+B1,1,aspartate,M+2,0.3957532113344465
+B1,1,aspartate,M+3,0.07858974673823779
+B1,1,aspartate,M+4,0.04692352374860514
+B1,1,threonine,M+0,0.3248870554328415
+B1,1,threonine,M+1,0.08835794498625807
+B1,1,threonine,M+2,0.4255057553705265
+B1,1,threonine,M+3,0.1105482338448153
+B1,1,threonine,M+4,0.05070101036555864
+B1,1,N-carbamoyl-L-aspartate,M+0,0.3193790717394245
+B1,1,N-carbamoyl-L-aspartate,M+1,0.1430265594089015
+B1,1,N-carbamoyl-L-aspartate,M+2,0.353953838773782
+B1,1,N-carbamoyl-L-aspartate,M+3,0.1508869904162663
+B1,1,N-carbamoyl-L-aspartate,M+4,0.03239288283706653
+B1,1,N-carbamoyl-L-aspartate,M+5,0.0003606568245591537
+B1,1,uridine monophosphate,M+0,0.006075574660436187
+B1,1,uridine monophosphate,M+1,0.2059564383553721
+B1,1,uridine monophosphate,M+2,0.1661525972567564
+B1,1,uridine monophosphate,M+3,0.2904562324906247
+B1,1,uridine monophosphate,M+4,0.1824297507424223
+B1,1,uridine monophosphate,M+5,0.08765404377621881
+B1,1,uridine monophosphate,M+6,0.0496457312703182
+B1,1,uridine monophosphate,M+7,0.008789129969374226
+B1,1,uridine monophosphate,M+8,0.001719205943684285
+B1,1,uridine monophosphate,M+9,0.001121295534792965
+B1,1,deoxythymidine triphosphate,M+0,0.002278503816639442
+B1,1,deoxythymidine triphosphate,M+1,0.1152321326944293
+B1,1,deoxythymidine triphosphate,M+2,0.1879062307982269
+B1,1,deoxythymidine triphosphate,M+3,0.216486152415035
+B1,1,deoxythymidine triphosphate,M+4,0.2452867472768948
+B1,1,deoxythymidine triphosphate,M+5,0.1349634241353791
+B1,1,deoxythymidine triphosphate,M+6,0.06484694322994342
+B1,1,deoxythymidine triphosphate,M+7,0.02547004396805572
+B1,1,deoxythymidine triphosphate,M+8,0.006437835984995029
+B1,1,deoxythymidine triphosphate,M+9,0.0005298899022081234
+B1,1,deoxythymidine triphosphate,M+10,0.0005620957781932195
+B1,1,alanine,M+0,0.5469164037095539
+B1,1,alanine,M+1,1.048809357116735e-07
+B1,1,alanine,M+2,0.4366033063510395
+B1,1,alanine,M+3,0.0164801850584709
+B1,1,valine,M+0,0.2612616106557988
+B1,1,valine,M+1,0.05246566854926102
+B1,1,valine,M+2,0.4210292885890448
+B1,1,valine,M+3,0.07045991388902731
+B1,1,valine,M+4,0.1878823080745411
+B1,1,valine,M+5,0.006901210242326987
+B1,1,α-keto-isovalerate,M+0,0.2730333540805719
+B1,1,α-keto-isovalerate,M+1,0.03916531751251572
+B1,1,α-keto-isovalerate,M+2,0.4684201846578201
+B1,1,α-keto-isovalerate,M+3,0.04177795335911155
+B1,1,α-keto-isovalerate,M+4,0.1739099170656961
+B1,1,α-keto-isovalerate,M+5,0.003693273324284681
+B1,1,2-isopropylmalic acid,M+0,0.1389149508880271
+B1,1,2-isopropylmalic acid,M+1,0.04399678621843187
+B1,1,2-isopropylmalic acid,M+2,0.3658518874553424
+B1,1,2-isopropylmalic acid,M+3,0.06906443645831926
+B1,1,2-isopropylmalic acid,M+4,0.2769482476167651
+B1,1,2-isopropylmalic acid,M+5,0.03191758630982706
+B1,1,2-isopropylmalic acid,M+6,0.07274753422230525
+B1,1,2-isopropylmalic acid,M+7,0.0005585708309818676
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+0,4.415118925366888e-07
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+1,0.6869891377715135
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+2,0.05512139246833381
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+3,0.1926929198633698
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+4,0.06512864476147544
+B1,1,5-phosphoribosyl-1-pyrophosphate,M+5,6.746362341491511e-05
+B1,1,aminoimidazole carboxamide ribonucleotide,M+0,0.002424687509687939
+B1,1,aminoimidazole carboxamide ribonucleotide,M+1,0.1530826326980442
+B1,1,aminoimidazole carboxamide ribonucleotide,M+2,0.3008737582716526
+B1,1,aminoimidazole carboxamide ribonucleotide,M+3,0.2742331555515022
+B1,1,aminoimidazole carboxamide ribonucleotide,M+4,0.1584847897770069
+B1,1,aminoimidazole carboxamide ribonucleotide,M+5,0.08781956363794087
+B1,1,aminoimidazole carboxamide ribonucleotide,M+6,0.01862079489377027
+B1,1,aminoimidazole carboxamide ribonucleotide,M+7,0.00330147478387204
+B1,1,aminoimidazole carboxamide ribonucleotide,M+8,0.0005731671668064399
+B1,1,aminoimidazole carboxamide ribonucleotide,M+9,0.0005859757097164058
+B1,1,tyrosine,M+0,0.1000893748536774
+B1,1,tyrosine,M+1,0.06611166058596937
+B1,1,tyrosine,M+2,0.4866172998517139
+B1,1,tyrosine,M+3,0.02038369778532403
+B1,1,tyrosine,M+4,0.2776843511305923
+B1,1,tyrosine,M+5,0.02155412817326223
+B1,1,tyrosine,M+6,0.02622499914964288
+B1,1,tyrosine,M+7,0.0002921283846431223
+B1,1,tyrosine,M+8,0.0005079460871559291
+B1,1,tyrosine,M+9,0.0005344139980190342
+B1,1,tryptophan,M+0,1.977152300968033e-05
+B1,1,tryptophan,M+1,0.1521465242839547
+B1,1,tryptophan,M+2,0.07352087947845604
+B1,1,tryptophan,M+3,0.456180874662112
+B1,1,tryptophan,M+4,0.0746647156069748
+B1,1,tryptophan,M+5,0.2432106022503822
+B1,1,tryptophan,M+6,9.079074915963466e-08
+B1,1,tryptophan,M+7,2.394400775420807e-05
+B1,1,tryptophan,M+8,5.749731062676438e-05
+B1,1,tryptophan,M+9,6.078439472298591e-05
+B1,1,tryptophan,M+10,6.051159190822609e-05
+B1,1,tryptophan,M+11,5.380409934919746e-05
+B1,1,shikimate(-3-phosphate),M+0,0.4565901931948038
+B1,1,shikimate(-3-phosphate),M+1,0.016458083755251
+B1,1,shikimate(-3-phosphate),M+2,0.3985069671510915
+B1,1,shikimate(-3-phosphate),M+3,0.04535684345299867
+B1,1,shikimate(-3-phosphate),M+4,0.08250967068880483
+B1,1,shikimate(-3-phosphate),M+5,2.441925605003495e-05
+B1,1,shikimate(-3-phosphate),M+6,0.0002599812037315796
+B1,1,shikimate(-3-phosphate),M+7,0.0002938412972685256
+B1,1,glutamate,M+0,0.1915360388823089
+B1,1,glutamate,M+1,0.1275468558030359
+B1,1,glutamate,M+2,0.3557696552341771
+B1,1,glutamate,M+3,0.1464053654995469
+B1,1,glutamate,M+4,0.1393420109510548
+B1,1,glutamate,M+5,0.0394000736298763
+B1,1,proline,M+0,0.1374773856738686
+B1,1,proline,M+1,0.06644628526570798
+B1,1,proline,M+2,0.3774710292246654
+B1,1,proline,M+3,0.2259641086458662
+B1,1,proline,M+4,0.1543538225802206
+B1,1,proline,M+5,0.03828736860967123
+B1,1,glutamine,M+0,0.1953207025445245
+B1,1,glutamine,M+1,0.1324141524681536
+B1,1,glutamine,M+2,0.3797523953881491
+B1,1,glutamine,M+3,0.1228932264078194
+B1,1,glutamine,M+4,0.138386070182762
+B1,1,glutamine,M+5,0.0312334530085915
+B1,1,serine,M+0,0.5157030914744694
+B1,1,serine,M+1,0.08468080974458454
+B1,1,serine,M+2,0.3995834116948965
+B1,1,serine,M+3,3.268708604949931e-05
+B1,1,glycine,M+0,0.4085115777189735
+B1,1,glycine,M+1,0.3506482123897026
+B1,1,glycine,M+2,0.240840209891324
+B1,1,methionine,M+0,0.1278358764804773
+B1,1,methionine,M+1,0.2824875613350784
+B1,1,methionine,M+2,0.2899028519380424
+B1,1,methionine,M+3,0.2599712807736153
+B1,1,methionine,M+4,0.03947902900092102
+B1,1,methionine,M+5,0.0003234004718655093
+B1,1,adenosine triphosphate,M+0,0.004872007402229889
+B1,1,adenosine triphosphate,M+1,0.08369855247911705
+B1,1,adenosine triphosphate,M+2,0.2426200184776931
+B1,1,adenosine triphosphate,M+3,0.2765616634872786
+B1,1,adenosine triphosphate,M+4,0.2072274802378425
+B1,1,adenosine triphosphate,M+5,0.1225631889743865
+B1,1,adenosine triphosphate,M+6,0.05152094998003257
+B1,1,adenosine triphosphate,M+7,0.009643555277940426
+B1,1,adenosine triphosphate,M+8,0.0006025670576655014
+B1,1,adenosine triphosphate,M+9,0.0003953349283740331
+B1,1,adenosine triphosphate,M+10,0.0002946816974399625
+B1,1,N-acetyl-glutamate,M+0,0.1037531710611045
+B1,1,N-acetyl-glutamate,M+1,0.07438057037860425
+B1,1,N-acetyl-glutamate,M+2,0.2739984862659779
+B1,1,N-acetyl-glutamate,M+3,0.1582114187071468
+B1,1,N-acetyl-glutamate,M+4,0.2293094998580427
+B1,1,N-acetyl-glutamate,M+5,0.08425954236746261
+B1,1,N-acetyl-glutamate,M+6,0.05814463847787122
+B1,1,N-acetyl-glutamate,M+7,0.01794267288378987
+B1,1,3-phospho-serine,M+0,0.4872966896293814
+B1,1,3-phospho-serine,M+1,4.974754778798676e-08
+B1,1,3-phospho-serine,M+2,0.5126928835963594
+B1,1,3-phospho-serine,M+3,1.000000377026854e-05
+B1,1,acetyl-group in acetyl-CoA,M+0,0.529631892550342
+B1,1,acetyl-group in acetyl-CoA,M+1,0.0647010061852774
+B1,1,acetyl-group in acetyl-CoA,M+2,0.405667101264381
+B1,2,glucose-6-phosphate,M+0,5.5340902844663e-05
+B1,2,glucose-6-phosphate,M+1,1.208510591215448e-06
+B1,2,glucose-6-phosphate,M+2,0.9800339866201351
+B1,2,glucose-6-phosphate,M+3,3.824032408497138e-05
+B1,2,glucose-6-phosphate,M+4,0.01972202800063009
+B1,2,glucose-6-phosphate,M+5,8.823144630010393e-05
+B1,2,glucose-6-phosphate,M+6,6.096419541397811e-05
+B1,2,"fructose-1,6-bisphosphate",M+0,0.0627081651435314
+B1,2,"fructose-1,6-bisphosphate",M+1,0.01404241633424474
+B1,2,"fructose-1,6-bisphosphate",M+2,0.7288801351045094
+B1,2,"fructose-1,6-bisphosphate",M+3,0.02155209135466221
+B1,2,"fructose-1,6-bisphosphate",M+4,0.1622138352530488
+B1,2,"fructose-1,6-bisphosphate",M+5,0.00739314472000679
+B1,2,"fructose-1,6-bisphosphate",M+6,0.00321021208999642
+B1,2,dihydroxyacetone phosphate,M+0,0.3805011415916039
+B1,2,dihydroxyacetone phosphate,M+1,1.355993992118904e-05
+B1,2,dihydroxyacetone phosphate,M+2,0.6088397313991417
+B1,2,dihydroxyacetone phosphate,M+3,0.01064556706933321
+B1,2,D-glucosamine-1/6-phosphate,M+0,9.57193154667937e-06
+B1,2,D-glucosamine-1/6-phosphate,M+1,9.936136631250274e-07
+B1,2,D-glucosamine-1/6-phosphate,M+2,0.9696508518115952
+B1,2,D-glucosamine-1/6-phosphate,M+3,1.224636574256232e-07
+B1,2,D-glucosamine-1/6-phosphate,M+4,0.0303133292541522
+B1,2,D-glucosamine-1/6-phosphate,M+5,1.303802612289512e-05
+B1,2,D-glucosamine-1/6-phosphate,M+6,1.209289926274551e-05
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+0,4.365443001825461e-05
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+1,3.3324318272005e-07
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+2,0.5370509462186691
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+3,0.06400871822122228
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+4,0.3810376571111055
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+5,0.0004599262398884818
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+6,0.01722926000263377
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+7,7.851372772234403e-05
+B1,2,N-acetyl-glucosamine-1/6-phosphate,M+8,9.09908055575287e-05
+B1,2,sn-glycerol-3-phosphate,M+0,0.4176266272274491
+B1,2,sn-glycerol-3-phosphate,M+1,0.01762499225858502
+B1,2,sn-glycerol-3-phosphate,M+2,0.5568413776609951
+B1,2,sn-glycerol-3-phosphate,M+3,0.007907002852970876
+B1,2,3-phosphoglycerate,M+0,0.5127610533378902
+B1,2,3-phosphoglycerate,M+1,0.008032099341855455
+B1,2,3-phosphoglycerate,M+2,0.4764114968928096
+B1,2,3-phosphoglycerate,M+3,0.002795350427444818
+B1,2,"1,3-bisphosphoglycerate",M+0,0.5414564060414989
+B1,2,"1,3-bisphosphoglycerate",M+1,0.007104975782262625
+B1,2,"1,3-bisphosphoglycerate",M+2,0.4514124742676509
+B1,2,"1,3-bisphosphoglycerate",M+3,2.614390858768882e-05
+B1,2,pyruvate,M+0,0.5117635828123194
+B1,2,pyruvate,M+1,1.531665073131197e-09
+B1,2,pyruvate,M+2,0.4821295479735132
+B1,2,pyruvate,M+3,0.006106867682502449
+B1,2,malate,M+0,0.3157527501117748
+B1,2,malate,M+1,0.1195755797253767
+B1,2,malate,M+2,0.3969447853444858
+B1,2,malate,M+3,0.1011873744943512
+B1,2,malate,M+4,0.06653951032401156
+B1,2,6-phospho-D-gluconate,M+0,0.0003187485827633462
+B1,2,6-phospho-D-gluconate,M+1,0.01135450980717959
+B1,2,6-phospho-D-gluconate,M+2,0.9612393294717044
+B1,2,6-phospho-D-gluconate,M+3,7.485116164385603e-05
+B1,2,6-phospho-D-gluconate,M+4,0.02551446564434333
+B1,2,6-phospho-D-gluconate,M+5,0.001130580191634443
+B1,2,6-phospho-D-gluconate,M+6,0.0003675151407311619
+B1,2,ribose-5-phosphate,M+0,0.01611414884495594
+B1,2,ribose-5-phosphate,M+1,0.627338614949922
+B1,2,ribose-5-phosphate,M+2,0.06169178250299335
+B1,2,ribose-5-phosphate,M+3,0.2375663790280825
+B1,2,ribose-5-phosphate,M+4,0.05698353418660831
+B1,2,ribose-5-phosphate,M+5,0.0003055404874379082
+B1,2,xylulose-5-phosphate,M+0,0.003851747184671277
+B1,2,xylulose-5-phosphate,M+1,0.6135045265453831
+B1,2,xylulose-5-phosphate,M+2,0.07944564447224364
+B1,2,xylulose-5-phosphate,M+3,0.2544143291595213
+B1,2,xylulose-5-phosphate,M+4,0.04844725910577766
+B1,2,xylulose-5-phosphate,M+5,0.0003364935324029205
+B1,2,sedoheptulose-7-phosphate,M+0,0.01258057957954378
+B1,2,sedoheptulose-7-phosphate,M+1,0.02041402796369642
+B1,2,sedoheptulose-7-phosphate,M+2,0.5451049526386282
+B1,2,sedoheptulose-7-phosphate,M+3,0.1858173813129724
+B1,2,sedoheptulose-7-phosphate,M+4,0.1553820411694905
+B1,2,sedoheptulose-7-phosphate,M+5,0.07755156201630128
+B1,2,sedoheptulose-7-phosphate,M+6,0.002627264889284382
+B1,2,sedoheptulose-7-phosphate,M+7,0.0005221904300832153
+B1,2,"sedoheptulose-1,7-bisphosphate",M+0,0.1062252563300283
+B1,2,"sedoheptulose-1,7-bisphosphate",M+1,0.04449019954499858
+B1,2,"sedoheptulose-1,7-bisphosphate",M+2,0.5612166419241854
+B1,2,"sedoheptulose-1,7-bisphosphate",M+3,0.1255857672202831
+B1,2,"sedoheptulose-1,7-bisphosphate",M+4,0.09436658871945824
+B1,2,"sedoheptulose-1,7-bisphosphate",M+5,0.06763158057185635
+B1,2,"sedoheptulose-1,7-bisphosphate",M+6,0.0001003986240279756
+B1,2,"sedoheptulose-1,7-bisphosphate",M+7,0.0003835670651620283
+B1,2,aspartate,M+0,0.3569257363659134
+B1,2,aspartate,M+1,0.1295652807496969
+B1,2,aspartate,M+2,0.3655690221373008
+B1,2,aspartate,M+3,0.08308957903207763
+B1,2,aspartate,M+4,0.06485038171501115
+B1,2,threonine,M+0,0.3829016811705109
+B1,2,threonine,M+1,0.1134285789835854
+B1,2,threonine,M+2,0.3953046020266063
+B1,2,threonine,M+3,0.07636053320635783
+B1,2,threonine,M+4,0.03200460461293952
+B1,2,N-carbamoyl-L-aspartate,M+0,0.2797645067459827
+B1,2,N-carbamoyl-L-aspartate,M+1,0.1145907489994935
+B1,2,N-carbamoyl-L-aspartate,M+2,0.3982669225321241
+B1,2,N-carbamoyl-L-aspartate,M+3,0.1720305669500789
+B1,2,N-carbamoyl-L-aspartate,M+4,0.03499597882911272
+B1,2,N-carbamoyl-L-aspartate,M+5,0.0003512759432079322
+B1,2,uridine monophosphate,M+0,0.005643456509567499
+B1,2,uridine monophosphate,M+1,0.1985993135589287
+B1,2,uridine monophosphate,M+2,0.1682761608636784
+B1,2,uridine monophosphate,M+3,0.2842865603014731
+B1,2,uridine monophosphate,M+4,0.1841660890838282
+B1,2,uridine monophosphate,M+5,0.1018465532857623
+B1,2,uridine monophosphate,M+6,0.04416233743980143
+B1,2,uridine monophosphate,M+7,0.01102202951811078
+B1,2,uridine monophosphate,M+8,0.001384010022507072
+B1,2,uridine monophosphate,M+9,0.000613489416342744
+B1,2,deoxythymidine triphosphate,M+0,0.003205273974119266
+B1,2,deoxythymidine triphosphate,M+1,0.1103868715046236
+B1,2,deoxythymidine triphosphate,M+2,0.1880239491436648
+B1,2,deoxythymidine triphosphate,M+3,0.2393545565588719
+B1,2,deoxythymidine triphosphate,M+4,0.223506229637021
+B1,2,deoxythymidine triphosphate,M+5,0.1338867962914916
+B1,2,deoxythymidine triphosphate,M+6,0.06989191370152993
+B1,2,deoxythymidine triphosphate,M+7,0.0291679978729576
+B1,2,deoxythymidine triphosphate,M+8,0.001449796553011077
+B1,2,deoxythymidine triphosphate,M+9,0.0005646967456856297
+B1,2,deoxythymidine triphosphate,M+10,0.0005619180170233444
+B1,2,alanine,M+0,0.4695154219286616
+B1,2,alanine,M+1,3.494633310514266e-06
+B1,2,alanine,M+2,0.530478439988752
+B1,2,alanine,M+3,2.643449275950538e-06
+B1,2,valine,M+0,0.3051747793207498
+B1,2,valine,M+1,0.02766447334811642
+B1,2,valine,M+2,0.460444772382165
+B1,2,valine,M+3,0.05143899138650269
+B1,2,valine,M+4,0.1444745992873873
+B1,2,valine,M+5,0.01080238427507888
+B1,2,α-keto-isovalerate,M+0,0.2762508740125533
+B1,2,α-keto-isovalerate,M+1,0.03095212502340017
+B1,2,α-keto-isovalerate,M+2,0.4573082666366053
+B1,2,α-keto-isovalerate,M+3,0.03930587262315278
+B1,2,α-keto-isovalerate,M+4,0.1927537841492757
+B1,2,α-keto-isovalerate,M+5,0.003429077555012751
+B1,2,2-isopropylmalic acid,M+0,0.1342513085721754
+B1,2,2-isopropylmalic acid,M+1,0.04280206322768611
+B1,2,2-isopropylmalic acid,M+2,0.3543923835055717
+B1,2,2-isopropylmalic acid,M+3,0.069333790491649
+B1,2,2-isopropylmalic acid,M+4,0.2923104802140817
+B1,2,2-isopropylmalic acid,M+5,0.0306611381807686
+B1,2,2-isopropylmalic acid,M+6,0.07576843872028242
+B1,2,2-isopropylmalic acid,M+7,0.0004803970877850643
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+0,0.006440577413046686
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+1,0.6054118639205864
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+2,0.1057936682058419
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+3,0.2168404323821564
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+4,0.06523619882125087
+B1,2,5-phosphoribosyl-1-pyrophosphate,M+5,0.0002772592571176618
+B1,2,aminoimidazole carboxamide ribonucleotide,M+0,0.00235554541059096
+B1,2,aminoimidazole carboxamide ribonucleotide,M+1,0.1654570734878657
+B1,2,aminoimidazole carboxamide ribonucleotide,M+2,0.3332883089499869
+B1,2,aminoimidazole carboxamide ribonucleotide,M+3,0.2627898823073225
+B1,2,aminoimidazole carboxamide ribonucleotide,M+4,0.1388253898361548
+B1,2,aminoimidazole carboxamide ribonucleotide,M+5,0.07269203046542257
+B1,2,aminoimidazole carboxamide ribonucleotide,M+6,0.02083679532599987
+B1,2,aminoimidazole carboxamide ribonucleotide,M+7,0.002578172836385989
+B1,2,aminoimidazole carboxamide ribonucleotide,M+8,0.0005843430494132686
+B1,2,aminoimidazole carboxamide ribonucleotide,M+9,0.0005924583308576074
+B1,2,tyrosine,M+0,0.250341511089201
+B1,2,tyrosine,M+1,0.05677797575821326
+B1,2,tyrosine,M+2,0.3689854137396851
+B1,2,tyrosine,M+3,0.003433958948439693
+B1,2,tyrosine,M+4,0.2855627263843589
+B1,2,tyrosine,M+5,0.007857908808323743
+B1,2,tyrosine,M+6,0.02649718884455698
+B1,2,tyrosine,M+7,6.932015966555804e-05
+B1,2,tyrosine,M+8,0.0002261126357421856
+B1,2,tyrosine,M+9,0.00024788363181354
+B1,2,tryptophan,M+0,4.479850736658963e-05
+B1,2,tryptophan,M+1,0.2102027887915301
+B1,2,tryptophan,M+2,0.1198011975244436
+B1,2,tryptophan,M+3,0.288260194702548
+B1,2,tryptophan,M+4,0.1590694662294925
+B1,2,tryptophan,M+5,0.1663610828925189
+B1,2,tryptophan,M+6,0.05517904007321363
+B1,2,tryptophan,M+7,2.765832948624565e-05
+B1,2,tryptophan,M+8,0.0002274993174997846
+B1,2,tryptophan,M+9,0.00027882826036542
+B1,2,tryptophan,M+10,0.0002805066924105516
+B1,2,tryptophan,M+11,0.0002669386791248948
+B1,2,shikimate(-3-phosphate),M+0,0.3784860550081562
+B1,2,shikimate(-3-phosphate),M+1,0.04230289062170059
+B1,2,shikimate(-3-phosphate),M+2,0.4335144012590801
+B1,2,shikimate(-3-phosphate),M+3,0.07625179960898003
+B1,2,shikimate(-3-phosphate),M+4,0.06880007364742101
+B1,2,shikimate(-3-phosphate),M+5,3.90163326108001e-05
+B1,2,shikimate(-3-phosphate),M+6,0.0002878920409730249
+B1,2,shikimate(-3-phosphate),M+7,0.0003178714810783798
+B1,2,glutamate,M+0,0.1894590852708198
+B1,2,glutamate,M+1,0.1240527403238466
+B1,2,glutamate,M+2,0.3490231209369357
+B1,2,glutamate,M+3,0.1508005570661145
+B1,2,glutamate,M+4,0.1467440177959367
+B1,2,glutamate,M+5,0.03992047860634682
+B1,2,proline,M+0,0.2002716663204556
+B1,2,proline,M+1,0.1556643389820492
+B1,2,proline,M+2,0.3069569753376459
+B1,2,proline,M+3,0.1391323966806105
+B1,2,proline,M+4,0.1673163048676202
+B1,2,proline,M+5,0.03065831781161865
+B1,2,glutamine,M+0,0.217125170300125
+B1,2,glutamine,M+1,0.1091581279231223
+B1,2,glutamine,M+2,0.3634186861636486
+B1,2,glutamine,M+3,0.1616770971840029
+B1,2,glutamine,M+4,0.1255668676363522
+B1,2,glutamine,M+5,0.02305405079274899
+B1,2,serine,M+0,0.5025259667047897
+B1,2,serine,M+1,0.01854578386488381
+B1,2,serine,M+2,0.4789120650804654
+B1,2,serine,M+3,1.618434986118084e-05
+B1,2,glycine,M+0,0.5067320560850449
+B1,2,glycine,M+1,0.3832809620369378
+B1,2,glycine,M+2,0.1099869818780172
+B1,2,methionine,M+0,0.1625075371904778
+B1,2,methionine,M+1,0.2268606563786083
+B1,2,methionine,M+2,0.260456210737864
+B1,2,methionine,M+3,0.2413847640264968
+B1,2,methionine,M+4,0.1086673386833821
+B1,2,methionine,M+5,0.0001234929831709026
+B1,2,adenosine triphosphate,M+0,0.002983533691306202
+B1,2,adenosine triphosphate,M+1,0.08528021767035388
+B1,2,adenosine triphosphate,M+2,0.2423684377661058
+B1,2,adenosine triphosphate,M+3,0.2710086649492159
+B1,2,adenosine triphosphate,M+4,0.2084042271640013
+B1,2,adenosine triphosphate,M+5,0.1246544596120024
+B1,2,adenosine triphosphate,M+6,0.05293611410224545
+B1,2,adenosine triphosphate,M+7,0.009955461188127552
+B1,2,adenosine triphosphate,M+8,0.001172996504831486
+B1,2,adenosine triphosphate,M+9,0.0006586523473782869
+B1,2,adenosine triphosphate,M+10,0.0005772350044316356
+B1,2,N-acetyl-glutamate,M+0,0.09765871400520472
+B1,2,N-acetyl-glutamate,M+1,0.08108700699438758
+B1,2,N-acetyl-glutamate,M+2,0.276891128911667
+B1,2,N-acetyl-glutamate,M+3,0.1418904696039879
+B1,2,N-acetyl-glutamate,M+4,0.238564722951833
+B1,2,N-acetyl-glutamate,M+5,0.08707888155936822
+B1,2,N-acetyl-glutamate,M+6,0.06488915136949075
+B1,2,N-acetyl-glutamate,M+7,0.011939924604061
+B1,2,3-phospho-serine,M+0,0.5179067702257295
+B1,2,3-phospho-serine,M+1,9.346500641234341e-08
+B1,2,3-phospho-serine,M+2,0.4820867580302445
+B1,2,3-phospho-serine,M+3,6.378279019421752e-06
+B1,2,acetyl-group in acetyl-CoA,M+0,0.542202362080128
+B1,2,acetyl-group in acetyl-CoA,M+1,0.027791425736405
+B1,2,acetyl-group in acetyl-CoA,M+2,0.430006212183467
