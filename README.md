@@ -1,4 +1,4 @@
-# SigmaFlux
+# Flux Transformer
 
 [![Python application](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml/badge.svg)](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
@@ -9,8 +9,8 @@ classical EMU (Elementary Metabolite Unit) ¹³C-MFA implementation with a
 transformer that predicts fluxes directly from mass-isotopomer distributions,
 so a fit that takes minutes of optimisation becomes a forward pass.
 
-Atom-mapped network models for *Issatchenkia orientalis*, *Saccharomyces cerevisiae*,
-*Rhodotorula toruloides*, *Escherichia coli* core and *Mus musculus* T cells ship
+Atom-mapped network models for *Issatchenkia orientalis*, *Saccharomyces cerevisiae*, 
+*Escherichia coli*, *Thlaspi arvense* embryos and *Mus musculus* T cells ship
 with the repository, with pretrained ensembles for all except *R. toruloides*.
 
 ## Installation
@@ -134,20 +134,21 @@ are in [paper/README.md](paper/README.md). API reference: `doc/`
 
 ## Citation
 
-If you use SigmaFlux in your work, please cite:
+If you use Flux Transformer in your work, please cite our preprint:
 
-<!-- TODO: replace with the published reference on acceptance -->
 ```bibtex
-@article{sigmaflux,
-  title   = {TBD},
-  author  = {Weilandt, Daniel R. and others},
-  journal = {TBD},
-  year    = {2026},
-  doi     = {TBD},
+@article {Weilandt2026.11.16.767180,
+	author = {Weilandt, Daniel R. and Tahmid, Md Toki and Ounit, Rachid and Schwender, Jorg and Singh, Mona and Rabinowitz, Joshua},
+	title = {Flux Transformer learns intracellular metabolic fluxes from isotope labeling and measured reaction rates},
+	elocation-id = {2026.11.16.767180},
+	year = {2026},
+	doi = {10.64898/2026.11.16.767180},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2026/11/18/2026.11.16.767180},
+	eprint = {https://www.biorxiv.org/content/early/2026/11/18/2026.11.16.767180.full.pdf},
+	journal = {bioRxiv}
 }
 ```
-
-A preprint and DOI will be linked here when available.
 
 ## License
 
