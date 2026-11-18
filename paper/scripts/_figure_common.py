@@ -2,8 +2,8 @@
 Shared plumbing for the Figure 2 scripts: model registry, run-dir resolution,
 per-reaction R² loading, and plot styling.
 
-Both paper/scripts/plot_mfa_benchmark.py and paper/scripts/plot_experimental_predictions.py
-import from here so they share exactly one source of truth for "what a model is" and
+Both paper/scripts/plot_mfa_benchmark.py and paper/scripts/plot_experimental.py import
+from here so they share exactly one source of truth for "what a model is" and
 "how its benchmark R² is computed" -- the benchmark HDF5s, not output/identifiability.csv,
 so neither script silently depends on plot_test_performance.py having been run first
 against the same run directory.
@@ -43,6 +43,8 @@ MODELS = [
          run="paper/.results/i_orientalis_20260921"),
     dict(key="m_musculus_t_cell", label="M. musculus T cell",
          run="paper/.results/m_musculus_t_cell_20260917"),
+    dict(key="t_arvense_l", label="T. arvense",
+         run="paper/.results/t_arvense_l_v4_20261105"),
 ]
 MODELS_BY_KEY = {m["key"]: m for m in MODELS}
 
@@ -111,17 +113,49 @@ PREDICTION_SPECS = {
     # tcell_naive_extflux_unreliable note), so the reference carries scale, not
     # per-reaction structure.
     "m_musculus_t_cell": dict(conditions=["N", "A"],      select="all"),
+    # One condition letter, P: gc 1 is wild type, gc 2 the WD3 line (strain_index.csv);
+    # the Shi et al. reference is wild type only.
+    "t_arvense_l":       dict(conditions=["P"],           select="wt"),
 }
 
 # The condition letter means different things per organism: N is nitrogen-limited for
 # the yeasts and naive for the T cell, so the legend cannot be derived from the letter.
 CONDITION_LABEL = {
     "m_musculus_t_cell": {"N": "naive", "A": "activated"},
+    "t_arvense_l": {"P": "embryo"},
 }
+
+#: Letter -> name for the organisms CONDITION_LABEL says nothing about, whose letters are
+#: nutrient limitations.
+LIMITATION_NAME = {"B": "batch", "C": "C-limited", "N": "N-limited", "P": "P-limited"}
+
+#: Organism as written in a panel name.
+ORGANISM_SHORT = {
+    "e_coli_core": "E. coli",
+    "s_cerevisiae": "S. cerevisiae",
+    "i_orientalis": "I. orientalis",
+    "m_musculus_t_cell": "T cell",
+    "t_arvense_l": "Pennycress",
+}
+
+
+def condition_name(key, condition):
+    """How this organism names the condition, e.g. ('m_musculus_t_cell', 'N') -> naive."""
+    named = CONDITION_LABEL.get(key, {})
+    if condition in named:
+        return named[condition]
+    return LIMITATION_NAME.get(condition, condition)
+
+
+def panel_name(key, condition):
+    """Organism and condition, e.g. ('s_cerevisiae', 'C') -> 'S. cerevisiae C-limited'."""
+    return f"{ORGANISM_SHORT.get(key, MODELS_BY_KEY[key]['label'])} " \
+           f"{condition_name(key, condition)}"
 
 # Literature-style names for the tracer metabolite ids seen in tracer strings below.
 _TRACER_METABOLITE_NAMES = {
     "glc__D_e": "glucose", "Gluc_e": "glucose", "gln__L_e": "glutamine",
+    "Glc_e": "glucose", "Ala_e": "alanine",
 }
 
 #: Marker shapes cycled by distinct tracer within a panel, so tracer is visually
@@ -136,7 +170,10 @@ def tracer_label(tracer_str):
     ``'glc__D_e_[1, 1, 1, 1, 1, 1]_0.5'`` -> ``'U-¹³C-glucose (50%)'``.
     Falls back to the raw string for anything that doesn't match the
     ``<metabolite>_[<pattern>]_<enrichment>`` shape this codebase generates tracer ids in.
+    A ``|``-joined mixture is labelled part by part.
     """
+    if "|" in str(tracer_str):
+        return " + ".join(tracer_label(t) for t in str(tracer_str).split("|"))
     m = re.match(r"^(.+?)_\[([\d,\s]+)\]_([\d.]+)$", str(tracer_str))
     if not m:
         return str(tracer_str)
@@ -147,6 +184,20 @@ def tracer_label(tracer_str):
     pct = f"{float(enrichment) * 100:.0f}%"
     tag = "U" if len(positions) == len(pattern) else ",".join(str(p) for p in positions)
     return f"{tag}-¹³C-{name} ({pct})"
+
+
+def r2_linear(pred, ref):
+    """Signed R² in linear space; NaN when the reference carries no variance.
+
+    Signed, not magnitudes: a flux predicted in the wrong direction is wrong, and scoring
+    |v| would credit it as a perfect hit. The same definition as ``per_flux_r2`` in the
+    simulation benchmark, so R² means one thing across the paper.
+    """
+    if len(ref) < 2:
+        return float("nan")
+    ss_res = ((pred - ref) ** 2).sum()
+    ss_tot = ((ref - ref.mean()) ** 2).sum()
+    return 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else float("nan")
 
 
 def apply_style():
@@ -195,10 +246,10 @@ def benchmark_metrics(model, run_suffix=None):
     plot_test_performance.py having been run first -- and on the same run directory.
 
     Every metric comes from the same ``load_benchmark()`` call per method, so they share
-    the identical chi2-accepted sample set -- no second, differently-filtered pass. The
-    NRMSE denominator is the exception: it is each reaction's root-mean-square flux over
-    the *whole* population, shared by both methods, because the two arms accept different
-    sample sets and a per-method denominator would not be one scale. The final
+    one sample set -- no second, differently-filtered pass. The NRMSE denominator is each
+    reaction's root-mean-square flux over the *whole* population, shared by both methods,
+    because the two arms cover different sample sets and a per-method denominator would
+    not be one scale. The final
     ``dropna()`` means a reaction missing R² (e.g. zero GT variance) is also dropped from
     the RMSE columns, keeping one reaction population across every column.
     """
@@ -221,7 +272,7 @@ def benchmark_metrics(model, run_suffix=None):
         df, n_failed = load_benchmark(run / sub, flux_df)
         n = df["sample"].nunique()
         print(f"  {model['label']:26s} {LABEL[method]:10s} "
-              f"{n} samples ({n_failed} unsolved), {df['reaction'].nunique()} reactions")
+              f"{n} samples ({n_failed} without a prediction), {df['reaction'].nunique()} reactions")
         out[f"r2_{method}"] = per_flux_r2(df)
         out[f"rmse_{method}"] = per_flux_rmse(df)
         out[f"nrmse_{method}"] = per_flux_nrmse(df, denom)
@@ -362,14 +413,18 @@ def axis_floor(*series, decades=0.5, floor=FLUX_MIN_ABS):
     return max(floor, float(positive.min()) / 10.0 ** decades)
 
 
-def save_figure(fig, path, extra_artists=()):
-    """Write the figure, trimmed to its content.
+def save_figure(fig, path, extra_artists=(), tight=True):
+    """Write the figure, trimmed to its content unless ``tight`` is False, in which case
+    it keeps exactly its figsize and the caller owns the margins.
 
     ``extra_artists`` are artists that sit outside the axes and are not the axes' own
     legend -- a second legend added with ``add_artist`` is not seen by ``bbox_inches="tight"``
     and gets cropped away silently, which looks exactly like never having drawn it.
     """
-    fig.savefig(path, bbox_inches="tight",
-                bbox_extra_artists=tuple(extra_artists) or None)
+    if tight:
+        fig.savefig(path, bbox_inches="tight",
+                    bbox_extra_artists=tuple(extra_artists) or None)
+    else:
+        fig.savefig(path)
     plt.close(fig)
     print(f"Saved: {path}")

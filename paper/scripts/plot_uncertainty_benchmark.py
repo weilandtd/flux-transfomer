@@ -33,12 +33,7 @@ Two different sources of spread, matching how the underlying data was collected:
 Both are fed to seaborn as raw per-replicate/per-draw rows and rendered with the
 same ``errorbar=('pi', 95)``, so one plotting code path serves both figures.
 
-MFA is scored over EVERY fit (``load_benchmark(..., require_converged=False)``),
-same as the bar-chart version this replaces -- see that rationale in
-``sigmaflux.pipeline.run_uncertainty_benchmark``'s module docstring (the
-solved-sample pool already excludes the fits MFA could not solve at baseline; this
-is a *further*, per-condition acceptance test that would leave too few fits to say
-anything for some organism/condition combinations).
+MFA is scored over every fit, as everywhere ``load_benchmark`` is used.
 
 Outputs (--out-dir, default paper/figures):
   uncertainty_missing_metabolites_resolved.svg
@@ -103,7 +98,7 @@ def _long_frame(run_dir, subdir, condition_name, method, flux_df):
     d = run_dir / subdir / condition_name / method
     if not list(d.glob("pred_*_flux.h5")):
         return None
-    df, _ = load_benchmark(d, flux_df, require_converged=False)
+    df, _ = load_benchmark(d, flux_df)
     return df
 
 

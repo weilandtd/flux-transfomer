@@ -93,6 +93,7 @@ import numpy as np
 import pandas as pd
 
 from ._paths import add_root_argument, load_config, resolve_path
+from .run_mfa_benchmark import read_convergence
 
 
 @dataclasses.dataclass(frozen=True)
@@ -287,13 +288,12 @@ def resolve_solved_sample_pool(baseline_mfa_dir, criterion, n_samples, seed=0):
         seed: RNG seed for the draw, independent of any run's noise ``--seed`` (same
             convention as the old ``--subsample``) so the pool never moves with it.
     """
-    files = sorted(glob.glob(os.path.join(baseline_mfa_dir, "pred_*_convergence.csv")))
-    if not files:
+    df = read_convergence(baseline_mfa_dir)
+    if df is None:
         raise SystemExit(
             f"No pred_*_convergence.csv in {baseline_mfa_dir} -- run "
             f"sigmaflux-benchmark-mfa over the full split first; the solved-sample "
             f"pool is drawn from its output, never recomputed here.")
-    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
     df = df.drop_duplicates("sample")
     if criterion == "ssr_ratio":
         eligible = df.loc[df["ssr_ratio"] <= 1.0, "sample"]

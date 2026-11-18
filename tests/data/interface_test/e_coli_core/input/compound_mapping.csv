@@ -1,0 +1,24 @@
+experimental_id,model_id
+3-phosphoglycerate,3PG
+6-phospho-D-gluconate,6PG
+acetyl-group in acetyl-CoA,AcCoA
+alanine,Ala
+aspartate,Asp
+dihydroxyacetone phosphate,DHAP
+"fructose-1,6-bisphosphate",FBP
+glucose-6-phosphate,G6P
+glutamate,Glu
+glutamine,Gln
+glycine,Gly
+malate,Mal
+methionine,Met
+proline,Pro
+pyruvate,Pyr
+ribose-5-phosphate,R5P
+sedoheptulose-7-phosphate,S7P
+serine,Ser
+threonine,Thr
+tryptophan,Trp
+tyrosine,Tyr
+valine,Val
+xylulose-5-phosphate,X5P

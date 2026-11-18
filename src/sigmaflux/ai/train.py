@@ -279,7 +279,7 @@ def apply_labeling_noise(fractions, compound_ids, tracer_ids, noise_std):
 def _train_epoch(model, loader, optimizer, device, gradient_clip,
                  flux_token_dropout=0.0, labeling_token_dropout=0.0,
                  flux_loss_fn=None, rev_loss_fn=None,
-                 labeling_noise_std=0.0):
+                 labeling_noise_std=0.0, amp_dtype=None):
     """Run one training epoch. Returns (avg_loss, avg_grad_norm).
 
     Args:
@@ -295,6 +295,12 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
         flux_loss_fn: loss on flux outputs (None = MSELoss).
         rev_loss_fn: loss on reversibility outputs (None = MSELoss).
         labeling_noise_std: Gaussian noise std applied to fractions (0 disables).
+        amp_dtype: autocast dtype for the forward pass (torch.bfloat16), or None for
+            fp32 throughout. The loss is always computed in fp32 -- predictions are
+            cast back before it -- so only the decoder's matmuls run reduced, which
+            is where effectively all the time goes. bfloat16 needs no GradScaler:
+            it keeps fp32's exponent range, so gradients do not underflow the way
+            float16's do.
     """
     model.train()
     if flux_loss_fn is None:
@@ -349,11 +355,18 @@ def _train_epoch(model, loader, optimizer, device, gradient_clip,
             fractions = fractions * keep + MISSING_LABEL_VALUE * (1.0 - keep)
 
         optimizer.zero_grad()
-        flux_preds, rev_preds = model(
-            compound_ids, label_ids, tracer_ids, fractions,
-            measured_fluxes=measured_fluxes,
-            flux_mask=flux_mask,
-        )
+        with torch.autocast(device_type=torch.device(device).type, dtype=amp_dtype,
+                            enabled=amp_dtype is not None):
+            flux_preds, rev_preds = model(
+                compound_ids, label_ids, tracer_ids, fractions,
+                measured_fluxes=measured_fluxes,
+                flux_mask=flux_mask,
+            )
+        # Loss in fp32 regardless. The variance-weighted loss divides by a per-target
+        # variance clamped at variance_min_cutoff, so it is the one place where a
+        # reduced mantissa would bite hardest, and it costs nothing to keep exact.
+        flux_preds = flux_preds.float()
+        rev_preds = rev_preds.float()
         flux_loss = flux_loss_fn(flux_preds, targets[:, :model.flux_dim])
         loss = flux_loss + rev_loss_fn(rev_preds, targets[:, model.flux_dim:])
         loss.backward()
@@ -424,7 +437,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
                 warmup_epochs=0, flux_token_dropout=0.0,
                 labeling_token_dropout=0.0, token_information=None,
                 loss_function=None, labeling_noise_std=0.0,
-                early_stopping_patience=None):
+                early_stopping_patience=None, amp_dtype=None):
     """Train a FluxDecoder model.
 
     Args:
@@ -490,7 +503,7 @@ def train_model(model, train_loader, val_loader=None, num_epochs=100,
             flux_token_dropout=flux_token_dropout,
             labeling_token_dropout=labeling_token_dropout,
             flux_loss_fn=flux_loss_fn, rev_loss_fn=rev_loss_fn,
-            labeling_noise_std=labeling_noise_std,
+            labeling_noise_std=labeling_noise_std, amp_dtype=amp_dtype,
         )
         train_losses.append(train_loss)
         grad_norms.append(grad_norm)

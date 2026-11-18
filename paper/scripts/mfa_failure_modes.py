@@ -75,6 +75,7 @@ from _figure_common import (
     CONFIG_DIR, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
 from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
 from sigmaflux.pipeline._paths import load_config
+from sigmaflux.pipeline.run_mfa_benchmark import read_convergence
 
 apply_style()
 
@@ -120,10 +121,9 @@ def load_convergence(bench_dir):
     the last file found -- defensive against a rerun SLURM shard overlapping an
     earlier one.
     """
-    records = sorted(bench_dir.glob("pred_*_convergence.csv"))
-    if not records:
+    df = read_convergence(bench_dir)
+    if df is None:
         return None
-    df = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
     n_before = len(df)
     df = df.drop_duplicates(subset="sample", keep="last")
     if len(df) < n_before:

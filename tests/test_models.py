@@ -49,6 +49,9 @@ DATASETS = {
     'ecoli_core': dict(prefix='ecoli_core_test', tracer='Gluc_e', enrichment=0.5,
                        labeling=[1] * 6, target='Pyr', unit_fluxes=True,
                        config='paper/configs/e_coli_core.yaml'),
+    'ecoli_core_gcms': dict(prefix='ecoli_core_test', tracer='Gluc_e', enrichment=0.5,
+                            labeling=[1] * 6, target='Pyr', unit_fluxes=True,
+                            config='paper/configs/e_coli_core_gc.yaml'),
 }
 
 MODEL_CASES = [
@@ -58,6 +61,8 @@ MODEL_CASES = [
     (os.path.join(MODELS, 'R_toruloides', 'imRt_annotated.json'), 'RT', 'yeast'),
     (os.path.join(MODELS, 'M_musculus_T_Cell', 'mmTcell_annotated.json'), 'MM', 'yeast'),
     (os.path.join(MODELS, 'E_coli_core', 'e_coli_core_annotated.json'), 'ECC', 'ecoli_core'),
+    (os.path.join(MODELS, 'E_coli_core', 'e_coli_core_gcms_annotated.json'), 'ECG',
+     'ecoli_core_gcms'),
     (os.path.join(MODELS, 'E_coli', 'iAF1260_annotated.json'), 'ECO', 'ecoli'),
 ]
 

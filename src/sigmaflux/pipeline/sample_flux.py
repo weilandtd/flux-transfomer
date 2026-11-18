@@ -299,9 +299,25 @@ def prepare_for_mfa(model, cfg):
     # After FVA: see the docstring above -- added earlier, this is a second,
     # glucose-free route into whatever exchange it feeds, and FVA would leave that
     # exchange at its raw media bound instead of tightening it.
-    diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
-    if diluted:
-        print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
+    #
+    # `sampling.dilution: false` turns this off, and defaults to on so every
+    # existing config keeps its behaviour. Dilution models an external reservoir
+    # of unlabeled medium, which is a cell-culture fact: the dish holds unlabeled
+    # glucose the cells also make themselves, so the mixing node needs an
+    # explicit unlabeled input (see media_dilution_targets). An organism-scale
+    # model has no such reservoir -- there its `media` entries are arterial
+    # delivery from the animal's own circulation, which the network already
+    # represents -- so the dilution inputs are unlabeled carbon entering from
+    # nowhere. On the mouse whole-body model that meant 1270 unbounded inputs
+    # that FVA never sees, carrying a median 11.5 into the glucose blood pool
+    # against a labeled infusion of 0.3, and every sample simulated to zero
+    # label.
+    if s.get("dilution", True):
+        diluted = add_dilution_inputs(model, media_dilution_targets(model, s["media"]))
+        if diluted:
+            print(f"  Added {len(diluted)} unlabeled media dilution input(s): {diluted}")
+    else:
+        print("  Unlabeled media dilution inputs disabled (sampling.dilution: false)")
 
     if cfg.get("skip_constraints"):
         drop_skip_constraints(model, cfg["skip_constraints"])

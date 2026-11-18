@@ -93,15 +93,16 @@ def resolve_device(device_arg):
 
 
 def build_experiments(mfa_model, tracer_cfg):
-    tracers = []
-    for tracer_info in tracer_cfg:
+    """One Experiment per tracer ``name``; entries sharing a name are one tracer mixture."""
+    by_name = {}
+    for i, tracer_info in enumerate(tracer_cfg):
         metabolite = mfa_model.metabolites.get_by_id(tracer_info["tracer_id"])
         tracer = Tracer(
             metabolite,
             tracer_info["enrichment"],
             tracer_info["labeling"],
         )
-        tracers.append(tracer)
+        by_name.setdefault(tracer_info.get("name", i), []).append(tracer)
         print(
             f"Loaded tracer: {tracer_info['tracer_id']}, "
             f"labeling: {tracer_info['labeling']}, "
@@ -109,8 +110,8 @@ def build_experiments(mfa_model, tracer_cfg):
         )
 
     return [
-        Experiment(mid_data=MassIsotopomerData(), tracers=[tracer], fluxes=None, enrichment=None)
-        for tracer in tracers
+        Experiment(mid_data=MassIsotopomerData(), tracers=tracers, fluxes=None, enrichment=None)
+        for tracers in by_name.values()
     ]
 
 

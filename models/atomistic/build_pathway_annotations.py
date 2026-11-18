@@ -72,6 +72,22 @@ SUBSYSTEM_TO_COARSE = {
     "Transport":                                         "Transport",
     "Exchange":                                          "Transport",
     "Glycerol secretion":                                "Transport",
+    # T. arvense (Pennycress) FTBL sections
+    "Cytosolic OPPP":                                    "Central carbon metabolism",
+    "Embden Meyerhof Pathway":                           "Central carbon metabolism",
+    "Calvin cycle / PPP (plastid)":                      "Central carbon metabolism",
+    "Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu": "Central carbon metabolism",
+    "TCA, Glyoxylate cycle":                             "Central carbon metabolism",
+    "Ser, Gly metabolism":                               "Amino acid metabolism",
+    "Histidine synthesis":                               "Amino acid metabolism",
+    "Phe, Tyr metabolism":                               "Amino acid metabolism",
+    "Val, Leu, Ile metabolism":                          "Amino acid metabolism",
+    "Starch, sucrose and cell wall":                     "Carbohydrate metabolism",
+    "Fatty acid synthesis":                              "Lipid metabolism",
+    "Glycerol synthesis":                                "Lipid metabolism",
+    "Uptake of substrates":                              "Transport",
+    "Transporters (cytosol/plastid)":                    "Transport",
+    "Output":                                            "Other",
     # Other
     "Other":                                             "Other",
     "Detoxification":                                    "Other",
@@ -101,6 +117,11 @@ CONFIGS = [
         model_json='models/atomistic/M_musculus_T_Cell/mmTcell_annotated_hierarchical.json',
         gem_xlsx='models/atomistic/M_musculus_T_Cell/mmTcell_GEM_completeMFA.xlsx',
         out_csv='models/atomistic/M_musculus_T_Cell/metabolite_pathways.csv',
+    ),
+    dict(
+        model_json='models/atomistic/T_arvense_L/ta_gcms_annotated.json',
+        gem_xlsx='models/atomistic/T_arvense_L/taGEM.xlsx',
+        out_csv='models/atomistic/T_arvense_L/metabolite_pathways.csv',
     ),
 ]
 

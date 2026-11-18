@@ -14,16 +14,11 @@ LC/MS-platform-measurable subset of the model -- what one experiment happened to
 report plays no part in it. It is used by prepare_experiment_data.py and
 run_inference.py via --mapping-csv.
 
-**The `*_fragment_mapping.csv` files are NOT built here, and need rebuilding.** GC/MS
-measures TBDMS-derivatised *fragments* -- Ala260, Glu432, a named ion carrying a known
-subset of a molecule's carbons -- not whole molecules, so they cannot be matched against
-`data/HILIC_LCMS_knowns.csv` the way this script matches everything else. The equivalent
-GC/MS fragment knowns list, giving each ion its parent metabolite and the carbon
-positions it retains, **does not exist in this repo yet**. Until it does, the two
-fragment CSVs (E_coli, E_coli_core) stay hand-written and carry no carbon-coverage or
-measurement-token filtering: their rows were only pruned of `_e`/`_p` compartments by
-hand. Anything reading them is measuring whole molecules that the platform actually
-resolves as fragments.
+**The `*_fragment_mapping.csv` files are NOT built here.** GC/MS measures derivatised
+*fragments* -- Ala232, Glu432, a named ion carrying a known subset of a molecule's carbons
+-- not whole molecules, so they cannot be matched against `data/HILIC_LCMS_knowns.csv`.
+E_coli_core's is built from `data/GCMS_knowns.csv` by build_gcms_fragment_model.py, onto
+fragment pools. E_coli's is still hand-written and maps fragments onto whole molecules.
 """
 
 import os

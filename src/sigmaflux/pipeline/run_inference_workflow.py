@@ -14,6 +14,9 @@ Usage:
 
 Optional:
     --conditions C N P      run only these conditions (default: all discovered)
+    --fbapro                project every member draw with FBApro onto S.v = 0, pinning
+                            the reactions ``experiment.knockouts`` lists for that growth
+                            condition (e.g. ``B4: [R1]``) to zero
 
 Measurement uncertainty is propagated through the ensemble by resampling cross-tracer
 combinations of the measured MID replicates, one flux draw each; ``experiment.n_bootstrap``
@@ -143,6 +146,27 @@ def predict_draws(sf, df_L_draws, df_Vm_draws, n_flux):
     return raw
 
 
+def fbapro_draws(sf, raw, n_flux, knockout_rxn_ids):
+    """*raw* with every member's flux states projected by FBApro, knockouts pinned to 0.
+
+    Args:
+        sf: ensemble predictor.
+        raw: :func:`predict_draws` output.
+        n_flux: number of flux outputs.
+        knockout_rxn_ids: reactions to pin to zero; empty projects onto S.v = 0 alone.
+    """
+    if 'Member' not in raw.columns:
+        raise ValueError("FBApro weights by member variance, so it needs an ensemble")
+    flux = raw['Type'] == 'flux'
+    names = raw.loc[flux, 'Flux Name'].to_numpy().reshape(-1, n_flux)
+    if not (names == np.asarray(sf.flux_names)).all():
+        raise ValueError("flux rows are not in flux_names order per member draw")
+    blocks = raw.loc[flux, 'Value'].to_numpy().reshape(raw['Member'].nunique(), -1, n_flux)
+    raw = raw.copy()
+    raw.loc[flux, 'Value'] = sf.project_knockouts(blocks, knockout_rxn_ids).ravel()
+    return raw
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Run SigmaFlux inference for all conditions and growth rates.",
@@ -158,6 +182,8 @@ def build_parser():
                         help="Directory where per-condition prediction CSVs are written")
     parser.add_argument("--conditions", nargs="+", default=None,
                         help="Conditions to run (default: all discovered from data-dir)")
+    parser.add_argument("--fbapro", action="store_true",
+                        help="Project predictions with FBApro, pinning experiment.knockouts")
     return add_root_argument(parser)
 
 
@@ -181,6 +207,7 @@ def cli(argv=None):
     # of another; draws are always bootstrapped combinations, experiment.n_bootstrap only
     # sets how many.
     n_bootstrap = cfg.get("experiment", {}).get("n_bootstrap", DEFAULT_N_BOOTSTRAP)
+    knockouts   = cfg.get("experiment", {}).get("knockouts") or {}
 
     def _p(rel):
         return resolve_path(rel, root)
@@ -258,6 +285,10 @@ def cli(argv=None):
                   f"+ 1 maximum-likelihood input, bias-corrected percentile interval)...")
 
             raw = predict_draws(sf, df_L_draws, df_Vm_draws, n_flux)
+            if args.fbapro:
+                pinned = knockouts.get(f"{condition}{gc}", [])
+                print(f"     FBApro: pinning {pinned or 'nothing'} to zero")
+                raw = fbapro_draws(sf, raw, n_flux, pinned)
 
             agg = summarize_draws(raw, n_draws=n_draws,
                                   group_cols=['Type', 'Flux Name'])

@@ -1,0 +1,100 @@
+metabolite_id,metabolite_name,subsystem,coarse_subsystem
+AcCoA_c,cytosolic acetyl-Coenzyme A,Fatty acid synthesis,Lipid metabolism
+AcCoA_h,plastidic acetyl-Coenzyme A,"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+Ac_c_bm,label measurement for C22(1-2),Fatty acid synthesis,Lipid metabolism
+Ac_h_bm,label measurement for C18(1-2),Fatty acid synthesis,Lipid metabolism
+Ala232,"label measurement for alanine C2,3",Other,Other
+Ala260,"label measurement for alanine C1,2,3",Other,Other
+Ala_bm,label measurement for alanine,Output,Other
+Ala_c,cytosolic Ala,Embden Meyerhof Pathway,Central carbon metabolism
+Ala_e,"cytosolic Ala, input metabolite",Exchange,Transport
+Aro,arogenate,"Phe, Tyr metabolism",Amino acid metabolism
+Asp,Asp,"Val, Leu, Ile metabolism",Amino acid metabolism
+Asp302,"label measurement for Asp C1,2",Other,Other
+Asp316,"label measurement for Asp C2,3,4",Other,Other
+Asp418,"label measurement for Asp C1,2,3,4",Other,Other
+Asx_bm,label measurement for Asp,"Val, Leu, Ile metabolism",Amino acid metabolism
+C1,"5,10-methylene- or 5-formyl -tetrahydrofolate","Ser, Gly metabolism",Amino acid metabolism
+C18_74,"label measurement for C18(1-2) C1,2",Other,Other
+C20_74,"label measurement for C22(1-2) C1,2",Other,Other
+CO2,CO2,"TCA, Glyoxylate cycle",Central carbon metabolism
+Cit,citrate,"TCA, Glyoxylate cycle",Central carbon metabolism
+Cit_bm,label measurement for citrate,"TCA, Glyoxylate cycle",Central carbon metabolism
+DAP,diaminopimelate,"Val, Leu, Ile metabolism",Amino acid metabolism
+EP_h,erythrose 4-phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+GLC_bm,"label measurement hexose, representing sucrose stored in biomass","Starch, sucrose and cell wall",Carbohydrate metabolism
+GOX,glyoxylate,"TCA, Glyoxylate cycle",Central carbon metabolism
+Glc_e,"6 carbons, label input metabolite",Exchange,Transport
+Gln,glutamine,"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+Gln_bm,label measurement for Glutamine (not used),Output,Other
+Gln_e,"glutamine, medium",Exchange,Transport
+Glu,glutamate,"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+Glu330,"label measurement for glutamate C2,3,4,5",Other,Other
+Glu432,"label measurement for glutamate C1,2,3,4,5",Other,Other
+Glu_bm,label measurement for glutamate,Output,Other
+Gly,glycine,"Ser, Gly metabolism",Amino acid metabolism
+Gly218,label measurement for glycine C2,Other,Other
+Gly246,"label measurement for glycine C1,2",Other,Other
+Gly_bm,label measurement for glycine,"Ser, Gly metabolism",Amino acid metabolism
+Glyc253,"label measurement for glycerol C2,3",Other,Other
+Glyc267,"label measurement for glycerol C1,2,3",Other,Other
+Glyc_bm,label measurement for glycerol,Glycerol synthesis,Lipid metabolism
+Glyc_c,glycerol (cytosolic),Glycerol synthesis,Lipid metabolism
+HP_c,hexose phosphate (cytosolic),"Starch, sucrose and cell wall",Carbohydrate metabolism
+HP_h,hexose phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+HPc_bm,label measurement for cell wall hexose monomer,"Starch, sucrose and cell wall",Carbohydrate metabolism
+His,histidine,Histidine synthesis,Amino acid metabolism
+His_bm,label measurement for histidine,Histidine synthesis,Amino acid metabolism
+Icit,isocitrate,"TCA, Glyoxylate cycle",Central carbon metabolism
+Ile,isoleucine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Ile200,"label measurement for isoleucine C2,3,4,5,6",Other,Other
+Ile_bm,label measurement for isoleucine,"Val, Leu, Ile metabolism",Amino acid metabolism
+KG,ketoglutarate,"TCA, Glyoxylate cycle",Central carbon metabolism
+Leu,leucine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Leu200,"label measurement for leucine C2,3,4,5,6",Other,Other
+Leu_bm,label measurement for leucine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Lys,lysine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Lys329,"label measurement for lysine C2,3,4,5,6",Other,Other
+Lys431,"label measurement for lysine C1,2,3,4,5,6",Other,Other
+Lys_bm,label measurement for lysine,"Val, Leu, Ile metabolism",Amino acid metabolism
+OAA,lumped pool of subcellular pools of oxaloacetate and malate,"TCA, Glyoxylate cycle",Central carbon metabolism
+PEP_c,phosphoenol pyruvate (cytosolic),"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+PEP_h,phosphoenol pyruvate (plastidic),"Phe, Tyr metabolism",Amino acid metabolism
+PGA_c,3-phospho glycerate (cytosolic),Embden Meyerhof Pathway,Central carbon metabolism
+PGA_h,3-phospho glycerate (plastidic),Embden Meyerhof Pathway,Central carbon metabolism
+Phe302,"label measurement for phenylalanine C1,2",Other,Other
+Phe_bm,label measurement for phenylalanine,"Phe, Tyr metabolism",Amino acid metabolism
+Pyr_c,pyruvate (cytosolic),"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+Pyr_h,pyruvate (plastidic),"Cytosolic and Plastidic metabolism of PEP, Pyr, Ala, Glu",Central carbon metabolism
+Pyr_m,pyruvate (mitochondrial),"TCA, Glyoxylate cycle",Central carbon metabolism
+RP_h,ribose 5-phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+RuP_c,Ribulose 5-phosphate (cytosolic),Cytosolic OPPP,Central carbon metabolism
+RuP_h,Ribulose 5-phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+SP_h,sedoheptulose 7-phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+Ser,serine,"Ser, Gly metabolism",Amino acid metabolism
+Ser288,"label measurement for serine C2,3",Other,Other
+Ser302,"label measurement for serine C1,2",Other,Other
+Ser390,"label measurement for serine C1,2,3",Other,Other
+Ser_bm,label measurement for serine,"Ser, Gly metabolism",Amino acid metabolism
+Shikimat,shikimic acid,"Phe, Tyr metabolism",Amino acid metabolism
+StGlc89,"label measurement for glucose (starch) C1,2",Other,Other
+St_bm,label measurement for glucose (starch),"Starch, sucrose and cell wall",Carbohydrate metabolism
+SucGlc451,"label measurement hexose, representing sucrose stored in biomass C1,2,3,4,5,6",Other,Other
+Succ,succinate,"TCA, Glyoxylate cycle",Central carbon metabolism
+TP_c,"triose phosphate (dihydroxyacetone phosphate, glyceraldehyde 3-phosphate, cytosolic)",Embden Meyerhof Pathway,Central carbon metabolism
+TP_h,"triose phosphate (dihydroxyacetone phosphate, glyceraldehyde 3-phosphate, plastidic)",Calvin cycle / PPP (plastid),Central carbon metabolism
+Thr,threonine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Thr376,"label measurement for threonine C2,3,4",Other,Other
+Thr404,"label measurement for threonine C1,2,3,4",Other,Other
+Thr_bm,label measurement for threonine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Tyr,tyrosine,"Phe, Tyr metabolism",Amino acid metabolism
+Tyr302,"label measurement for (tyrosine) C1,2",Other,Other
+Tyr_bm,label measurement for (tyrosine),"Phe, Tyr metabolism",Amino acid metabolism
+Val,valine,"Val, Leu, Ile metabolism",Amino acid metabolism
+Val260,"label measurement for valine) C2,3,4,5",Other,Other
+Val288,"label measurement for valine) C1,2,3,4,5",Other,Other
+Val302,"label measurement for valine) C1,2",Other,Other
+Val_bm,label measurement for valine),"Val, Leu, Ile metabolism",Amino acid metabolism
+XP_c,xylulose 5-phosphate (cytosolic),Cytosolic OPPP,Central carbon metabolism
+XP_h,xylulose 5-phosphate (plastidic),Calvin cycle / PPP (plastid),Central carbon metabolism
+aKIV,2-keto-isovalerate,"Val, Leu, Ile metabolism",Amino acid metabolism

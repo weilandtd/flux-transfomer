@@ -39,6 +39,7 @@ multi-start hyperparameters before committing to the full array benchmark:
 """
 
 import argparse
+import glob
 import json
 import os
 import time
@@ -167,6 +168,13 @@ def build_parser():
                         "σ is optimistic because renormalising each group to sum to one "
                         "shrinks the residual, and an unscaled test accepts ~100%% of "
                         "fits. Pass 1.0 to take σ at face value.")
+    p.add_argument("--all-starts", action="store_true",
+                   help="Run every one of --max-starts restarts instead of stopping at the "
+                        "first acceptable fit, and write each start's SSR and fluxes to "
+                        "pred_<tag>_starts.csv / pred_<tag>_starts_flux.h5")
+    p.add_argument("--n-params", type=float, default=None,
+                   help="Parameters the χ² test subtracts (default: the effective count in "
+                        "<output-dir>/effective_dof.json, else the structural count)")
     p.add_argument("--accept-ratio", type=float, default=1.0,
                    help="Only with --accept-rule ratio: accept when SSR <= this multiple "
                         "of the SSR the TRUE flux achieves against the same noise. Note "
@@ -346,6 +354,85 @@ def fitted_parameter_count(model, observed=None):
     return int(k + int(model._reversibility_mask.sum().item()))
 
 
+def effective_parameter_count(mfa_model, labeling_to, scored_rows, flux_df, rev_df,
+                              measured_ids, noise_std, flux_noise_std, scale_labeling,
+                              n_states=30, eps=1e-2, seed=0):
+    """Effective number of parameters the data determine, γ = Σ λ/(λ+1) (MacKay 1992).
+
+    λ are the eigenvalues of the Fisher information of the scored measurements relative
+    to the precision of the sampled flux population, over the same coordinates
+    :func:`fitted_parameter_count` counts: null-space net-flux directions plus one
+    exchange per reversible reaction. A direction the measurements pin down counts 1, one
+    they cannot see counts 0 -- which the structural count charges in full. The Fisher
+    information is averaged over sampled states, so the count depends on the model, the
+    measurement layout and the flux population, never on the fit it judges.
+
+    Args:
+        mfa_model: prepared model, simulated through :func:`forward_labeling`.
+        labeling_to: index gathering the model output into ``scored_rows``' frame.
+        scored_rows: boolean mask over that frame, the labeling entries the fit scores.
+        flux_df: sampled net fluxes, reactions × samples.
+        rev_df: sampled reversibilities, aligned to ``flux_df``.
+        measured_ids: reaction ids of the measured fluxes.
+        noise_std: labeling noise std.
+        flux_noise_std: relative measured-flux noise std.
+        scale_labeling: labeling residual variance scale (see ``labeling_chi2_scale``).
+        n_states: sampled states the Fisher information is averaged over.
+        eps: finite-difference step, as a fraction of each coordinate's population std.
+        seed: RNG seed for the state draw.
+
+    Returns ``(gamma, eigenvalues)``.
+    """
+    from ..core.mfa import gen_SVD_kernel
+
+    reaction_ids = [r.id for r in mfa_model.reactions]
+    Z = gen_SVD_kernel(mfa_model.stoichiometry.cpu().numpy())
+    rev_ix = np.flatnonzero(mfa_model._reversibility_mask.cpu().numpy())
+    V = flux_df.reindex(reaction_ids).to_numpy(np.float64)
+    R = rev_df.reindex(reaction_ids).fillna(0.0).to_numpy(np.float64)
+    prior = np.vstack([Z.T @ V, R[rev_ix]]).T
+    std = prior.std(axis=0)
+    # Directions the population never moves along are pinned, not fitted.
+    free = np.flatnonzero(std > 1e-12 * std.max())
+    std = std[free]
+    d = Z.shape[1]
+    meas_ix = [reaction_ids.index(r) for r in measured_ids]
+
+    def labeling(v, r):
+        return forward_labeling(mfa_model, v, r, labeling_to)[scored_rows]
+
+    F = np.zeros((len(free), len(free)))
+    states = np.random.default_rng(seed).choice(V.shape[1], n_states, replace=False)
+    for j in states:
+        v, r = V[:, j], R[:, j]
+        J = np.empty((int(scored_rows.sum()), len(free)))
+        for col, (k, h) in enumerate(zip(free, eps * std)):
+            if k < d:
+                J[:, col] = (labeling(v + h * Z[:, k], r) - labeling(v - h * Z[:, k], r)) / (2 * h)
+                continue
+            # Exchange enters as |r|: step forward only where a backward step would cross 0.
+            up, down = r.copy(), r.copy()
+            up[rev_ix[k - d]] += h
+            central = r[rev_ix[k - d]] > h
+            if central:
+                down[rev_ix[k - d]] -= h
+            J[:, col] = (labeling(v, up) - labeling(v, down)) / (h * (2 if central else 1))
+        # Standardised coordinates, so the prior below is the population's correlation.
+        J *= std
+        F += J.T @ J / (scale_labeling * noise_std ** 2)
+        sigma_F = np.maximum(flux_noise_std * np.abs(v[meas_ix]), FLUX_SIGMA_FLOOR)
+        J_F = np.zeros((len(meas_ix), len(free)))
+        net = free < d
+        J_F[:, net] = Z[meas_ix][:, free[net]] * std[net] / sigma_F[:, None]
+        F += J_F.T @ J_F
+    F /= n_states
+
+    corr = np.corrcoef(prior[:, free].T) + 1e-6 * np.eye(len(free))
+    L_inv = np.linalg.inv(np.linalg.cholesky(np.linalg.inv(corr)))
+    lam = np.clip(np.linalg.eigvalsh(L_inv @ F @ L_inv.T), 0.0, None)[::-1]
+    return float((lam / (lam + 1.0)).sum()), lam
+
+
 def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
     """Upper bound on the raw SSR for a statistically acceptable fit.
 
@@ -367,6 +454,60 @@ def chi2_acceptance(n_L, n_F, n_params, scale_labeling=1.0, alpha=0.05):
     dof = max(n_L + n_F - n_params, 1)
     scale = (scale_labeling * n_L + 1.0 * n_F) / max(n_L + n_F, 1)
     return float(scale * stats.chi2.ppf(1.0 - alpha, dof)), dof, scale
+
+
+#: Written into ``<run>/mfa_benchmark/`` by paper/scripts/mfa_effective_dof.py.
+EFFECTIVE_DOF_FILE = "effective_dof.json"
+
+
+def load_effective_dof(bench_dir):
+    """The benchmark's effective parameter count record, or None if not computed yet."""
+    path = os.path.join(bench_dir, EFFECTIVE_DOF_FILE)
+    if not os.path.exists(path):
+        return None
+    with open(path) as fh:
+        return json.load(fh)
+
+
+def rescore_acceptance(conv, bench_dir):
+    """Convergence rows re-judged by the χ² test on the effective parameter count.
+
+    Each row keeps its own variance scale (``chi2_bound`` over the χ² quantile it was
+    built from); only the degrees of freedom change. Valid without refitting: the
+    effective count is smaller, so the bound only loosens, and ``ssr_fit`` is already the
+    best of every start the stricter bound let run. Rows are returned unchanged when no
+    effective count exists or the run judged fits by SSR ratio.
+
+    Args:
+        conv: rows of ``pred_*_convergence.csv``.
+        bench_dir: the ``mfa_benchmark`` directory holding ``effective_dof.json``.
+    """
+    eff = load_effective_dof(bench_dir)
+    if eff is None or "chi2_bound" not in conv or (conv["accept_rule"] != "chi2").any():
+        return conv
+    q = 1.0 - eff["alpha"]
+    scale = conv["chi2_bound"] / stats.chi2.ppf(q, conv["chi2_dof"])
+    dof = eff["n_measurements"] - eff["p_eff"]
+    bound = scale * stats.chi2.ppf(q, dof)
+    return conv.assign(chi2_dof=dof, chi2_bound=bound,
+                       reached_optimum=conv["ssr_fit"] <= bound)
+
+
+def benchmark_parameter_count(model, observed, bench_dir):
+    """Parameters the χ² test subtracts: the effective count when one was computed for
+    this benchmark (:func:`effective_parameter_count`), else the structural count."""
+    eff = load_effective_dof(bench_dir)
+    return eff["p_eff"] if eff else fitted_parameter_count(model, observed)
+
+
+def read_convergence(bench_dir):
+    """Every ``pred_*_convergence.csv`` row in ``bench_dir``, judged by
+    :func:`rescore_acceptance`; None when there are none. Rows of reruns are kept."""
+    records = sorted(glob.glob(os.path.join(bench_dir, "pred_*_convergence.csv")))
+    if not records:
+        return None
+    return rescore_acceptance(pd.concat([pd.read_csv(f) for f in records], ignore_index=True),
+                              bench_dir)
 
 
 def acceptance_threshold(n_L, n_F, z=1.645):
@@ -721,6 +862,7 @@ def main(args):
 
     # ── Benchmark loop ────────────────────────────────────────────────────────
     pred_lab_data, pred_flux_data, sample_indices = [], [], []
+    start_rows, start_fluxes = [], []   # --all-starts only
     diagnostics = []
     pred_base = os.path.join(output_dir, f"pred_{tag}")
 
@@ -803,14 +945,15 @@ def main(args):
         # count, neither of which varies across samples, so it is built once and reused.
         if chi2_bound is None:
             n_L, n_F = _block_counts(mfa_model)
-            n_params = fitted_parameter_count(mfa_model, mapped_met_ids)
+            n_params = (args.n_params if args.n_params is not None
+                        else benchmark_parameter_count(mfa_model, mapped_met_ids, output_dir))
             scale_L = (args.chi2_scale if args.chi2_scale is not None
                        else labeling_chi2_scale(noisy_series, args.noise_std,
                                                 np.random.default_rng(args.seed)))
             chi2_bound, chi2_dof, chi2_scale = chi2_acceptance(
                 n_L, n_F, n_params, scale_L, args.chi2_alpha)
-            print(f"  Goodness-of-fit test: {n_L}+{n_F} measurements − {n_params} "
-                  f"parameters = {chi2_dof} dof, σ² scale {chi2_scale:.3f} → "
+            print(f"  Goodness-of-fit test: {n_L}+{n_F} measurements − {n_params:.1f} "
+                  f"parameters = {chi2_dof:.1f} dof, σ² scale {chi2_scale:.3f} → "
                   f"accept SSR ≤ {chi2_bound:.1f} (α={args.chi2_alpha})")
 
         # The residual the TRUE flux achieves against this very noise. Not zero: the
@@ -872,6 +1015,10 @@ def main(args):
                     crashed_starts += 1
                     print(f"  start {start + 1}/{args.max_starts}: CRASHED "
                           f"({info.get('crashed')})")
+                    if args.all_starts:
+                        start_rows.append({"sample": global_ix, "start": start + 1,
+                                           "ssr_fit": np.nan, "ssr_true": ssr_true})
+                        start_fluxes.append(np.full(len(reaction_ids), np.nan))
                     continue
                 # Put the fitted flux into the model, so everything downstream --
                 # scoring, acceptance, the snapshot, the HDF5 -- is the native path.
@@ -908,11 +1055,15 @@ def main(args):
                   f"(χ² accept≤{chi2_bound:.1f}, dof={chi2_dof}) ratio={ratio:.3f} "
                   f"reduced_chi2={mean_reduced_chi2:.4f} conv={res['converged']} "
                   f"iter={res['n_iter'] if res['n_iter'] is not None else 'n/a'}")
+            if args.all_starts:
+                start_rows.append({"sample": global_ix, "start": start + 1,
+                                   "ssr_fit": ssr_fit, "ssr_true": ssr_true})
+                start_fluxes.append(mfa_model.fluxes.detach().cpu().numpy().copy())
             if args.accept_rule == "chi2":
-                accepted = ssr_fit <= chi2_bound
+                accepted = accepted or ssr_fit <= chi2_bound
             else:
-                accepted = ssr_fit <= args.accept_ratio * ssr_true
-            if accepted:
+                accepted = accepted or ssr_fit <= args.accept_ratio * ssr_true
+            if accepted and not args.all_starts:
                 break
 
         # ── Step 4: record the best solution found, plus how far it is from optimal ──
@@ -951,8 +1102,10 @@ def main(args):
             # The goodness-of-fit test that decided `reached_optimum`, so a reader can
             # re-apply or re-tune it without re-running the benchmark.
             "accept_rule": args.accept_rule,
-            "chi2_dof": int(chi2_dof) if chi2_dof else np.nan,
+            "chi2_dof": float(chi2_dof) if chi2_dof else np.nan,
             "chi2_bound": float(chi2_bound) if chi2_bound else np.nan,
+            "n_params": float(n_params) if chi2_dof else np.nan,
+            "chi2_scale": float(chi2_scale) if chi2_dof else np.nan,
         })
 
         pred_lab_data.append(pred_labeling_vec)
@@ -962,6 +1115,11 @@ def main(args):
         # Convergence diagnostics travel with the predictions: without them a reader
         # cannot tell an optimal fit from one that merely stopped.
         pd.DataFrame(diagnostics).to_csv(f"{pred_base}_convergence.csv", index=False)
+        if args.all_starts:
+            pd.DataFrame(start_rows).to_csv(f"{pred_base}_starts.csv", index=False)
+            keys = pd.MultiIndex.from_frame(pd.DataFrame(start_rows)[["sample", "start"]])
+            pd.DataFrame(np.array(start_fluxes).T, index=reaction_ids, columns=keys).to_hdf(
+                f"{pred_base}_starts_flux.h5", key="fluxes", mode="w")
         write_predictions(pred_base, pred_lab_data, labeling_index, pred_flux_data,
                           reaction_ids, sample_indices)
         print(f"  Saved ({run_ix + 1}/{n_runs})")

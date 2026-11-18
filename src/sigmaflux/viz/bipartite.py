@@ -3,7 +3,9 @@ satellite drawing where every target sits next to the sources it connects to mos
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 SOURCE, TARGET = "source", "target"
 
@@ -142,10 +144,33 @@ def _columns(graph, sweeps=20):
     return pos
 
 
+def _separate(points, radii, seed, steps=200):
+    """Points moved apart until no two are closer than the sum of their ``radii`` (one per point),
+    each pair too close pushed apart along the line joining them (a random one when they
+    coincide)."""
+    rng = np.random.default_rng(seed)
+    points = np.array(points, dtype=float)
+    radii = np.asarray(radii, dtype=float)
+    gap = radii[:, None] + radii[None]
+    for _ in range(steps):
+        delta = points[:, None] - points[None]
+        dist = np.linalg.norm(delta, axis=-1)
+        close = (dist < gap) & ~np.eye(len(points), dtype=bool)
+        if not close.any():
+            break
+        same = close & (dist == 0)
+        delta[same] = rng.normal(size=(same.sum(), 2))
+        dist[same] = np.linalg.norm(delta[same], axis=-1)
+        push = np.where(close, (gap - dist) / 2 / np.maximum(dist, 1e-12), 0)[..., None] * delta
+        points += push.sum(1)
+    return points
+
+
 def plot_bipartite_graph(graph, ax=None, source_color="yellowgreen", target_color="#7b3294",
-                         node_colors=None, hub_labels=None, legend=None, layout="spring",
+                         node_colors=None, node_styles=None, hub_labels=None, legend=None,
+                         layout="spring",
                          annotate="nodes", edges=True, seed=0, node_size=12.0, source_size=60.0,
-                         spread=1.0, fontsize=8, bold=()):
+                         spread=1.0, source_gap=None, fontsize=8, bold=(), edge_colors=None):
     """Draw a weighted bipartite graph.
 
     Layouts:
@@ -165,9 +190,11 @@ def plot_bipartite_graph(graph, ax=None, source_color="yellowgreen", target_colo
         ax: axes to draw into; a new 7 x 7 in figure when ``None``.
         source_color, target_color: node colors of the two sides.
         node_colors: dict node -> color, overriding its side's color.
+        node_styles: dict node -> ``{"facecolor", "edgecolor", "hatch"}`` (any subset),
+            overriding ``node_colors``: e.g. black, white and striped nodes on one side.
         hub_labels: dict node -> text; only these nodes are named.
-        legend: dict label -> color for the legend right of the axes; a ``None`` color makes
-            the label a bold group header.
+        legend: dict label -> color for the legend right of the axes, or a style dict as in
+            ``node_styles`` (drawn as a swatch); a ``None`` color makes the label a bold header.
         layout: one of ``LAYOUTS``.
         annotate: ``"nodes"`` writes ``hub_labels`` next to their nodes, ``"legend"`` lists them
             in the legend by their node's color instead.
@@ -179,8 +206,14 @@ def plot_bipartite_graph(graph, ax=None, source_color="yellowgreen", target_colo
         source_size: marker area of a source with weighted degree 0; it grows with the root.
         spread: scales the spring layout's preferred node distance; above 1 the edges pull less
             against the repulsion, so satellites sit further out.
+        source_gap: spring layout only; when set, sources are pushed apart until no two are
+            closer than this share of the layout's width, and each target moves by the
+            edge-weighted mean shift of its sources, so crowded sources separate and the
+            satellites keep their shape.
         fontsize: annotation font size.
         bold: nodes whose names are set in bold.
+        edge_colors: dict (source, target) -> color of that edge, grey for any left out; the
+            opacity still grows with the weight.
     """
     if layout not in LAYOUTS:
         raise ValueError(f"layout {layout!r} not in {LAYOUTS}")
@@ -193,8 +226,20 @@ def plot_bipartite_graph(graph, ax=None, source_color="yellowgreen", target_colo
         return ax
 
     if layout == "spring":
-        pos = nx.spring_layout(graph, weight="weight", seed=seed,
-                               k=1.5 * spread / np.sqrt(graph.number_of_nodes()))
+        k = 1.5 * spread / np.sqrt(graph.number_of_nodes())
+        pos = nx.spring_layout(graph, weight="weight", seed=seed, k=k)
+        if source_gap:
+            sources = [n for n in graph if n[0] == SOURCE]
+            width = np.ptp(np.array(list(pos.values())), axis=0).max()
+            moved = dict(zip(sources, _separate([pos[n] for n in sources],
+                                                np.full(len(sources), source_gap * width / 2),
+                                                seed)))
+            shift = {n: moved[n] - pos[n] for n in sources}
+            for n in (n for n in graph if n[0] != SOURCE):
+                linked = graph[n]
+                pos[n] = pos[n] + np.average([shift[s] for s in linked], axis=0,
+                                             weights=[linked[s]["weight"] for s in linked])
+            pos |= moved
     else:
         pos = _biplot(graph) if layout == "biplot" else _columns(graph)
     if edges is not False:
@@ -202,27 +247,37 @@ def plot_bipartite_graph(graph, ax=None, source_color="yellowgreen", target_colo
         w = np.array([e[2] for e in edge_list])
         span = np.ptp(w)
         scaled = (w - w.min()) / span if span else np.ones_like(w)
-        colors = [(0.3, 0.3, 0.3, a) for a in 0.15 + 0.45 * scaled]
+        edge_colors = edge_colors or {}
+        colors = [(*to_rgb(edge_colors.get((u, v) if u[0] == SOURCE else (v, u), (0.3, 0.3, 0.3))), a)
+                  for (u, v, _), a in zip(edge_list, 0.15 + 0.45 * scaled)]
         nx.draw_networkx_edges(graph, pos, edgelist=[e[:2] for e in edge_list], ax=ax,
                                width=0.3 + 1.2 * scaled, edge_color=colors)
 
     strength = dict(graph.degree(weight="weight"))
     node_colors = {n: source_color if n[0] == SOURCE else target_color
                    for n in graph} | (node_colors or {})
+    styles = {n: {"facecolor": node_colors[n], "edgecolor": "white", "hatch": None}
+              | (node_styles or {}).get(n, {}) for n in graph}
     for nodes in reversed(_sides(graph)):
-        size = [source_size * (1 + np.sqrt(strength[n])) if n[0] == SOURCE else node_size
-                for n in nodes]
-        nx.draw_networkx_nodes(graph, pos, nodelist=nodes, ax=ax, node_size=size,
-                               node_color=[node_colors[n] for n in nodes],
-                               edgecolors="white", linewidths=0.4)
+        size = {n: source_size * (1 + np.sqrt(strength[n])) if n[0] == SOURCE else node_size
+                for n in nodes}
+        for style in {tuple(styles[n].items()) for n in nodes}:
+            group = [n for n in nodes if tuple(styles[n].items()) == style]
+            style = dict(style)
+            ax.scatter([pos[n][0] for n in group], [pos[n][1] for n in group],
+                       s=[size[n] for n in group], c=[style["facecolor"]],
+                       edgecolors=style["edgecolor"], hatch=style["hatch"], zorder=2,
+                       linewidths=0.4 if style["edgecolor"] == "white" else 0.8)
 
     named = {n: text for n, text in (hub_labels or {}).items() if n in pos}
     entries = dict(legend or {})
     if annotate == "legend":
-        entries |= {text: node_colors[n] for n, text in named.items()}
+        entries |= {text: styles[n] for n, text in named.items()}
     if entries:
-        handles = [Line2D([], [], ls="", marker="o" if color else None, ms=6, mfc=color,
-                          mec="white", label=name) for name, color in entries.items()]
+        handles = [Patch(label=name, **{"facecolor": "white", "edgecolor": "black"} | color)
+                   if isinstance(color, dict)
+                   else Line2D([], [], ls="", marker="o" if color else None, ms=6, mfc=color,
+                               mec="white", label=name) for name, color in entries.items()]
         leg = ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1, 1),
                         frameon=False, fontsize=fontsize)
         for text, color in zip(leg.get_texts(), entries.values()):

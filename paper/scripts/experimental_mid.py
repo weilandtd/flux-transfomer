@@ -3,7 +3,7 @@ Simulate SigmaFlux's predicted labeling for the experimental panels.
 
 The expensive half of the isotopologue comparison: for every growth condition the paper
 plots, this predicts the flux state from the measured data, pushes each draw through the
-EMU forward pass, and writes the per-token table paper/scripts/plot_experimental_mid.py
+EMU forward pass, and writes the per-token table paper/scripts/plot_experimental.py
 draws. Splitting the two means a plotting choice -- a different floor, a different
 annotation -- costs a second, not another pass over the whole bootstrap.
 
@@ -17,8 +17,9 @@ spread. The predicted side is the same bootstrap the flux predictions report, pr
 all the way into labeling space: the measured replicates are resampled across tracers
 (``sample_inputs``), every draw is predicted by every ensemble member, and each of those
 flux states is simulated through the EMU pass in full. ``summarize_draws`` then reduces
-the resulting fractions exactly as it does for fluxes -- ensemble mean at the
-maximum-likelihood input, bias-corrected bootstrap percentile interval over the draws.
+the resulting fractions exactly as it does for fluxes -- the labeling of the ensemble's
+medoid_convex flux state at the maximum-likelihood input, bias-corrected bootstrap
+percentile interval over the draws.
 Propagating in labeling space rather than mapping the flux interval through is the point:
 the EMU pass is nonlinear, so the endpoints of a flux interval are not the endpoints of
 the labeling interval.
@@ -77,7 +78,7 @@ TOKENS_SUBDIR = "experimental_mid"
 
 
 def tokens_path(run):
-    """The per-run token table :mod:`plot_experimental_mid` reads."""
+    """The per-run token table :mod:`plot_experimental` reads."""
     return run / TOKENS_SUBDIR / "tokens.csv"
 
 

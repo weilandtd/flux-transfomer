@@ -66,7 +66,7 @@ from sigmaflux.pipeline._benchmark import (
 from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
 from sigmaflux.pipeline.run_mfa_benchmark import (
     _block_counts, _chi2_split, build_noisy_experiments, chi2_acceptance,
-    fitted_parameter_count, make_measured_flux_data, measured_flux_ids)
+    benchmark_parameter_count, make_measured_flux_data, measured_flux_ids, read_convergence)
 
 
 def parse_args():
@@ -102,11 +102,10 @@ def pick_exemplars(bench_dir, seed):
     Deterministic from ``seed`` alone -- every array task recomputes the identical
     pair without any shared state.
     """
-    records = sorted(bench_dir.glob("pred_*_convergence.csv"))
-    if not records:
+    conv = read_convergence(bench_dir)
+    if conv is None:
         raise SystemExit(f"No convergence records in {bench_dir} -- "
                          f"run the MFA benchmark for this organism first")
-    conv = pd.concat([pd.read_csv(f) for f in records], ignore_index=True)
     conv = conv.drop_duplicates(subset="sample", keep="last")
     solved = conv.loc[conv["reached_optimum"], "sample"].to_numpy()
     unsolved = conv.loc[~conv["reached_optimum"], "sample"].to_numpy()
@@ -220,12 +219,12 @@ def main():
     # whichever exemplar's target happens to be loaded.
     mfa_model.experiments = targets["solved"]["noisy_exps"]
     n_L, n_F = _block_counts(mfa_model)
-    n_params = fitted_parameter_count(mfa_model)
+    n_params = benchmark_parameter_count(mfa_model, mapped_met_ids, bench_dir)
     scale_L = labeling_chi2_scale(targets["solved"]["noisy_series"], args.noise_std,
                                   np.random.default_rng(args.seed))
     chi2_bound, chi2_dof, _ = chi2_acceptance(n_L, n_F, n_params, scale_L, args.chi2_alpha)
-    print(f"Goodness-of-fit: {n_L}+{n_F} measurements - {n_params} params = "
-          f"{chi2_dof} dof -> accept SSR <= {chi2_bound:.1f}")
+    print(f"Goodness-of-fit: {n_L}+{n_F} measurements - {n_params:.1f} params = "
+          f"{chi2_dof:.1f} dof -> accept SSR <= {chi2_bound:.1f}")
 
     # Self-check: each exemplar scored against its own target should land close to
     # that sample's own recorded ssr_true/ssr_fit in pred_*_convergence.csv --
