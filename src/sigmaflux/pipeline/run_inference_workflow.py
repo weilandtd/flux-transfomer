@@ -290,7 +290,8 @@ def cli(argv=None):
                 print(f"     FBApro: pinning {pinned or 'nothing'} to zero")
                 raw = fbapro_draws(sf, raw, n_flux, pinned)
 
-            agg = summarize_draws(raw, n_draws=n_draws, flux_std=sf.flux_std())
+            agg = summarize_draws(raw, n_draws=n_draws,
+                                  group_cols=['Type', 'Flux Name'])
             agg.insert(0, 'GrowthCondition', gc)
             agg.insert(0, 'Condition', condition)
 

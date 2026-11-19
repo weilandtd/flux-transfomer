@@ -34,11 +34,13 @@ can be compared directly. It is deliberately *not* the spread of individual memb
 predictions: that answers "where would one member land", which is a wider question and
 made our intervals incomparable with the MFA fits they sit beside.
 
-Two spreads are reported alongside; neither enters the interval:
+Two spreads are reported, and only the first enters the interval:
 
-* ``sigma_input``  -- the bootstrap standard error of ``Value``: how far it moves when
-  the measured inputs are resampled.
-* ``sigma_model``  -- how far the members disagree at the maximum-likelihood input.
+* ``sigma_input``  -- the bootstrap standard error of ``Value``: how far the aggregate
+  moves when the measured replicates it is built from are resampled.
+* ``sigma_model``  -- diagnostic only: how far the members disagree at the
+  maximum-likelihood input. It says where an interval's width comes from; it is not part
+  of one, because the members are not resampled.
 
 No factor is fitted to make the interval cover any known answer -- coverage against
 held-out ground truth is a diagnostic (:func:`coverage_by_reaction`), and tuning to it
@@ -226,76 +228,80 @@ def _percentile_interval(drawn, keys, alpha):
     return values.quantile(alpha / 2.0), values.quantile(1.0 - alpha / 2.0)
 
 
-def summarize_draws(raw: pd.DataFrame, n_draws: int, flux_std: pd.Series = None,
-                    group_cols=('Type', 'Flux Name'), alpha: float = 0.05) -> pd.DataFrame:
+def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
+                    alpha: float = 0.05) -> pd.DataFrame:
     """Reduce raw per-(sample, member) predictions to the MLE point and its interval.
 
-    The point estimate is the ensemble medoid (:func:`medoid_member`) at the unperturbed
-    input: the one member whose flux state is closest to the coordinatewise median,
-    reported whole -- fluxes and reversibilities -- so it is a flux state the model
-    actually produced. The interval is the bootstrap percentile
-    (:func:`_percentile_interval`) of the medoid re-chosen on every draw, so it is the
-    uncertainty of the reported value, as an MFA confidence interval is.
+    The point estimate is the ensemble medoid at the unperturbed input (see
+    :func:`_medoid_weights`): the one member closest to the coordinatewise median over
+    the full (Member x key) matrix, reported whole -- so it is a flux state the model
+    actually produced -- and the same aggregate :meth:`EnsembleSigmaFlux.predict` uses.
+    The interval is the bootstrap percentile (:func:`_percentile_interval`) of the medoid
+    re-chosen on every draw (:func:`_aggregate_draws`), so it is the uncertainty of the
+    reported value, as an MFA confidence interval is.
 
     ``sigma_model`` (member disagreement at the MLE input) and ``sigma_input`` (bootstrap
     standard error of ``Value``) are diagnostics; nothing is computed from them.
 
     Args:
-        raw: long predictions with Sample, Value and the group columns, plus Member and
-            Type when there are several members per sample.
+        raw: long predictions with Sample, Member, Value and the group columns.
         n_draws: number of replicate draws; sample ``n_draws`` is the unperturbed MLE row.
-        flux_std: training standard deviation per flux name, the scale members are
-            compared in; required when *raw* has a Member column.
-        group_cols: columns identifying one predicted quantity.
+        group_cols: columns identifying one predicted quantity. A reaction can appear both
+            as a flux and as a reversibility, so 'Type' belongs here alongside the name.
         alpha: two-sided miss rate of the reported interval.
     """
-    if 'Member' in raw.columns:
-        medoid = _medoid_rows(raw, flux_std)
-    else:                                # one state per sample, nothing to choose between
-        medoid = raw = raw.assign(Member=0)
+    if 'Member' not in raw.columns:      # single model -- an ensemble of one
+        raw = raw.assign(Member=0)
 
     keys = list(group_cols)
-    out = medoid[medoid['Sample'] == n_draws].set_index(keys)[['Value']]
-    out['sigma_model'] = (raw[raw['Sample'] == n_draws]
-                          .groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0))
-    drawn = medoid[medoid['Sample'] < n_draws]
-    by_key = drawn.groupby(keys, sort=False)['Value']
+    mle = raw[raw['Sample'] == n_draws]
+    out = _aggregate_draws(mle, keys).set_index(keys)[['Value']]
+    out['sigma_model'] = mle.groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0)
+    agg_drawn = _aggregate_draws(raw[raw['Sample'] < n_draws], keys)
+    by_key = agg_drawn.groupby(keys, sort=False)['Value']
     # Draws can be lost upstream (a labeling that did not solve), so count the survivors.
     out['n_draws'] = by_key.size()
     out['sigma_input'] = by_key.std(ddof=1).fillna(0.0)
-    out['Value_lo'], out['Value_hi'] = _percentile_interval(drawn, keys, alpha)
+    out['Value_lo'], out['Value_hi'] = _percentile_interval(agg_drawn, keys, alpha)
     return out.reset_index()
 
 
-def _medoid_rows(raw, flux_std):
-    """Every row of each sample's medoid member in *raw*."""
-    flux = raw[raw['Type'] == 'flux']
-    picks = []
-    for sample, g in flux.groupby('Sample', sort=False):
-        wide = g.pivot(index='Member', columns='Flux Name', values='Value')
-        k = medoid_member(wide.to_numpy(float), flux_std.loc[wide.columns].to_numpy(float))
-        picks.append((sample, wide.index[k]))
-    return raw.merge(pd.DataFrame(picks, columns=['Sample', 'Member']),
-                     on=['Sample', 'Member'])
+def _aggregate_draws(drawn, keys, how='medoid'):
+    """The point estimator applied to each sample on its own.
+
+    The medoid is chosen again per draw rather than reused from the maximum-likelihood
+    row: which member sits nearest the median is itself a function of the input.
+    """
+    frames = []
+    for sample, g in drawn.groupby('Sample', sort=False):
+        wide = g.pivot_table(index='Member', columns=keys, values='Value', sort=False)
+        w = _medoid_weights(wide.to_numpy(float), how=how)
+        agg = pd.Series(w @ wide.to_numpy(float), index=wide.columns, name='Value')
+        frames.append(agg.reset_index().assign(Sample=sample))
+    return pd.concat(frames, ignore_index=True)
 
 
-def medoid_member(states: np.ndarray, scale: np.ndarray) -> int:
-    """Index of the member whose flux state is closest to the coordinatewise median.
+def _medoid_weights(members: np.ndarray, how: str = "medoid") -> np.ndarray:
+    """One-hot weights on the member closest to the coordinatewise median.
 
-    Each flux is measured in units of *scale*, its training standard deviation, so large
-    fluxes do not decide the distance alone and a flux the members happen to agree on
-    does not blow it up.
+    Distances are scaled per reaction by the median absolute deviation across members,
+    so the largest-magnitude reactions don't decide "closest" alone.
 
     Args:
-        states: (n_members, n_fluxes) flux state of each member.
-        scale: (n_fluxes,) training standard deviation of each flux.
+        members: (n_members, n_reactions) raw per-member values, one row each.
+        how: ``"medoid"``, the only aggregate.
     """
-    z = (states - np.median(states, axis=0)) / scale
-    dist = np.linalg.norm(z, axis=1)
+    if how != "medoid":
+        raise ValueError(f"Unknown how={how!r}")
+    median = np.median(members, axis=0)
+    scale = np.median(np.abs(members - median), axis=0)
+    scale = np.where(scale > 1e-9, scale, 1.0)
+    dist = np.linalg.norm((members - median) / scale, axis=1)
     if not np.isfinite(dist).all():
-        raise ValueError("non-finite distance between ensemble members; "
-                         "check the predictions and the flux scale")
-    return int(np.argmin(dist))
+        raise ValueError("non-finite distance between ensemble members")
+    w = np.zeros(len(members))
+    w[int(np.argmin(dist))] = 1.0
+    return w
 
 
 def coverage_by_reaction(pred: pd.DataFrame, truth: pd.DataFrame) -> pd.Series:

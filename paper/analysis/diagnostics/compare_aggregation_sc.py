@@ -2,7 +2,7 @@
 Stage 2 experiment: does a median-seeking aggregate beat the ensemble mean for SC?
 
 Compares three ways to collapse the SC ensemble into one flux state -- mean, median,
-medoid (see sigmaflux.ai.uncertainty.medoid_member) -- on real SC data,
+medoid (see sigmaflux.ai.uncertainty._medoid_weights) -- on real SC data,
 reporting both feasibility and R^2 against the published/x3cflux reference flux, using
 the *exact* same methodology as plot_experimental.py (MFA-identifiability
 reaction filter, orientation, max-D selection, signed-flux R^2) so the numbers are
@@ -103,7 +103,7 @@ def main():
 
         print(f"\n=== {cond_letter}{gc} (max D) ===")
         for how in HOWS:
-            v, r_ = aggregate_state(flux_wide, rev_wide, n_draws, how, sf.flux_std())
+            v, r_ = aggregate_state(flux_wide, rev_wide, n_draws, how)
             feas = feasibility(mfa_model, *as_state_frames(v, r_, n_draws), rev_predicted)
             passed = report_feasibility(feas, f"[{how}]")
 

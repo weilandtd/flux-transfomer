@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, medoid_member
+from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, _medoid_weights
 from sigmaflux.pipeline._benchmark import (
     build_mfa_context, forward_labeling, load_prepared_model,
 )
@@ -127,12 +127,12 @@ def split_predictions(raw, sf, reaction_ids):
             rev_predicted)
 
 
-def aggregate_state(flux_wide, rev_wide, sample, how, flux_std=None):
+def aggregate_state(flux_wide, rev_wide, sample, how):
     """Combine the ensemble members at one sample into a single flux state.
 
     ``how="medoid"`` is what ``EnsembleSigmaFlux.predict`` and the predictions CSV report:
-    the member closest to the coordinatewise median in units of *flux_std*
-    (:func:`sigmaflux.ai.uncertainty.medoid_member`), so a flux state the model produced.
+    the member closest to the coordinatewise median over fluxes and reversibilities
+    (:func:`sigmaflux.ai.uncertainty._medoid_weights`), so a flux state the model produced.
     ``how="mean"`` is a convex combination of members, so also a flux state.
     ``how="median"`` is not a convex combination and can leave the null space; it is kept
     so that difference stays measured.
@@ -142,14 +142,13 @@ def aggregate_state(flux_wide, rev_wide, sample, how, flux_std=None):
         rev_wide: matching reversibilities.
         sample: the input draw to aggregate over.
         how: "mean", "median" or "medoid".
-        flux_std: training standard deviation per predicted flux, for "medoid".
     """
     fw = flux_wide.xs(sample, level="Sample")
     rw = rev_wide.xs(sample, level="Sample")
     if how in ("mean", "median"):
         return getattr(fw, how)(axis=0), getattr(rw, how)(axis=0)
     if how == "medoid":
-        k = medoid_member(fw[flux_std.index].to_numpy(float), flux_std.to_numpy(float))
+        k = int(np.argmax(_medoid_weights(np.hstack([fw.to_numpy(float), rw.to_numpy(float)]))))
         return fw.iloc[k], rw.iloc[k]
     raise ValueError(f"Unknown how={how!r}")
 
@@ -449,8 +448,7 @@ def main(args):
             checks.append((f"{condition}{gc} per-member flux states feasible",
                            report_feasibility(feas, "[1] Feasibility of every per-member prediction")))
 
-            flux_std = sf.flux_std()
-            states = {how: aggregate_state(flux_wide, rev_wide, n_draws, how, flux_std)
+            states = {how: aggregate_state(flux_wide, rev_wide, n_draws, how)
                       for how in ("medoid", "median")}
             for tag, label in (("medoid", "[1b] Ensemble MEDOID (what the predictions CSV reports)"),
                                ("median", "[1c] Ensemble MEDIAN (for contrast)")):
@@ -472,7 +470,7 @@ def main(args):
                                                rev_wide.loc[(n_draws, m)],
                                                labeling_to, labeling_index)
             for d in range(min(args.sim_draws, n_draws)):
-                dv, dr = aggregate_state(flux_wide, rev_wide, d, "medoid", flux_std)
+                dv, dr = aggregate_state(flux_wide, rev_wide, d, "medoid")
                 sims[f"draw_{d}"] = simulate(mfa_model, dv, dr, labeling_to, labeling_index)
 
             measured = measured_table(df_L, name_to_id)

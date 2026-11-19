@@ -11,13 +11,13 @@ import pandas as pd
 import pytest
 
 from sigmaflux.ai.uncertainty import (
-    _medoid_rows, coverage_by_reaction, medoid_member, summarize_draws)
+    _aggregate_draws, _medoid_weights, coverage_by_reaction, summarize_draws)
 
-UNIT = pd.Series(1.0, index=["R1", "R2"])
+KEYS = ["Type", "Flux Name"]
 
 
-def summarize(raw, n_draws, flux_std=UNIT):
-    return summarize_draws(raw, n_draws=n_draws, flux_std=flux_std)
+def summarize(raw, n_draws):
+    return summarize_draws(raw, n_draws=n_draws, group_cols=KEYS)
 
 
 class TestSummarizeDraws:
@@ -68,13 +68,6 @@ class TestSummarizeDraws:
         assert out.loc["R1", "Value"] == pytest.approx(4.0)
         assert out.loc["R2", "Value"] == pytest.approx(4.0)
 
-    def test_reversibility_comes_from_the_flux_medoid(self):
-        """Reversibilities do not vote; they are the chosen member's own."""
-        raw = self._raw(n_members=5)
-        rev = raw.assign(Type="reversibility", Value=-raw["Member"].astype(float))
-        out = summarize(pd.concat([raw, rev], ignore_index=True), n_draws=3)
-        assert out.set_index("Type").loc["reversibility", "Value"] == pytest.approx(-2.0)
-
     def test_interval_brackets_the_point_estimate(self):
         out = summarize(self._raw(), n_draws=3)
         row = out.iloc[0]
@@ -88,7 +81,7 @@ class TestSummarizeDraws:
         raw = self._raw(n_reps=n_draws, n_members=5, seed=3)
         out = summarize(raw, n_draws=n_draws).iloc[0]
 
-        agg = _medoid_rows(raw[raw["Sample"] < n_draws], UNIT)
+        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], KEYS)
         boot = agg["Value"].to_numpy()
         assert len(boot) == n_draws            # one value per draw, not per (draw, member)
         lo, hi = np.quantile(boot, [0.025, 0.975])
@@ -162,22 +155,9 @@ class TestSummarizeDraws:
         assert set(out["Type"]) == {"flux", "reversibility"}
         assert len(out) == 2
 
-    def test_flux_std_sets_the_scale_of_each_reaction(self):
-        """A reaction the members nearly agree on must not decide the medoid. On R1 the
-        members agree to 1e-8 except member 0; on R2 member 0 is the typical one."""
-        rows = []
-        for s in (0, 1):
-            for m, (r1, r2) in enumerate([(1e-6 + 3.0, 5.0), (1e-6, 4.0), (1e-6 + 1e-8, 8.0),
-                                          (1e-6, 2.0), (1e-6 + 2e-8, 9.0)]):
-                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R1", "Value": r1}))
-                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R2", "Value": r2}))
-        raw = pd.DataFrame(rows)
-        out = summarize(raw, n_draws=1, flux_std=pd.Series({"R1": 10.0, "R2": 1.0}))
-        assert out.set_index("Flux Name").loc["R2", "Value"] == pytest.approx(5.0)
-
     def test_a_non_finite_distance_raises(self):
         with pytest.raises(ValueError, match="non-finite"):
-            medoid_member(np.array([[1.0, np.nan], [2.0, 3.0]]), np.ones(2))
+            _medoid_weights(np.array([[1.0, np.nan], [2.0, 3.0]]))
 
     def test_single_model_has_no_member_spread(self):
         raw = self._raw(n_members=1).drop(columns="Member")
@@ -189,7 +169,7 @@ class TestSummarizeDraws:
         n_draws = 200
         raw = self._raw(n_reps=n_draws, n_members=5, seed=11)
         out = summarize(raw, n_draws=n_draws).iloc[0]
-        agg = _medoid_rows(raw[raw["Sample"] < n_draws], UNIT)
+        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], KEYS)
         assert out["sigma_input"] == pytest.approx(agg["Value"].std(ddof=1))
 
     def test_reports_the_value_its_interval_and_the_diagnostics(self):

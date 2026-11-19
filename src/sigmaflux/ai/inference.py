@@ -37,7 +37,7 @@ from .data import (
     radial_vocabs_from_lists,
 )
 from .model import FluxDecoder, MISSING_LABEL_VALUE
-from .uncertainty import medoid_member
+from .uncertainty import _medoid_weights
 from ..core.fbapro import fbapro
 
 
@@ -916,15 +916,6 @@ class SigmaFlux:
         return {n: (float(lo), float(hi)) for n, lo, hi
                 in zip(self.flux_names, self._flux_lb, self._flux_ub)}
 
-    def flux_std(self):
-        """Training standard deviation of each flux, the scale ensemble members are
-        compared in."""
-        if not self.spec.flux_norm_stats:
-            raise ValueError("This model carries no flux_norm_stats, so its ensemble "
-                             "members cannot be compared")
-        return pd.Series(np.asarray(self.spec.flux_norm_stats['std'], dtype=np.float64),
-                         index=self.flux_names)
-
     def simulate_mid(self, flux_arr, rev_arr, samples, context=None):
         """Labeling each predicted flux state implies, in this predictor's input schema.
 
@@ -1041,7 +1032,7 @@ class EnsembleSigmaFlux:
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
     interface, returning the ensemble medoid per sample (see
-    :func:`sigmaflux.ai.uncertainty.medoid_member`): one member's own prediction, so it
+    :func:`sigmaflux.ai.uncertainty._medoid_weights`): one member's own prediction, so it
     is a flux state the model produced.
     """
 
@@ -1185,13 +1176,12 @@ class EnsembleSigmaFlux:
             combined = pd.concat(raw, ignore_index=True)
             return (combined, mid_out) if with_mid else combined
         # The member closest to the coordinatewise median, per sample, reported whole.
-        n_flux = len(self.flux_names)
+        block = len(self.flux_names) + len(self.reversibility_names)
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
-        values = values.reshape(len(preds), -1, n_flux + len(self.reversibility_names))
-        scale = self.flux_std().to_numpy()
+        values = values.reshape(len(preds), -1, block)
         out = preds[0].copy()
         out['Value'] = np.concatenate([
-            values[medoid_member(values[:, i, :n_flux], scale), i]
+            _medoid_weights(values[:, i]) @ values[:, i]
             for i in range(values.shape[1])])
         if with_mid:
             # The labeling of the flux state we report, not the average of the labelings
@@ -1277,7 +1267,6 @@ class EnsembleSigmaFlux:
     def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
     def tracer_ids(self):               return self.members[0].tracer_ids()
     def flux_bounds(self):              return self.members[0].flux_bounds()
-    def flux_std(self):                 return self.members[0].flux_std()
 
 
 def load_predictor(config, checkpoint, data_dir=None, device=None):

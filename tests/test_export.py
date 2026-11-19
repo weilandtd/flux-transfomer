@@ -118,9 +118,10 @@ def test_export_roundtrip_fp16_quantized(toy_run, tmp_path):
 def test_predict_matches_source_ensemble_fp32(toy_run, tmp_path):
     path = _export(toy_run, tmp_path, precision="fp32")
     df_L = _toy_df_L()
+    # Per member: the medoid choice is discrete, and the two toy members always tie.
     expected = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"],
-                                 device="cpu").predict(df_L)
-    got = load_model(path, device="cpu").predict(df_L)
+                                 device="cpu").predict(df_L, aggregate=False)
+    got = load_model(path, device="cpu").predict(df_L, aggregate=False)
 
     assert list(got.columns) == list(expected.columns)
     assert got["Flux Name"].tolist() == expected["Flux Name"].tolist()
