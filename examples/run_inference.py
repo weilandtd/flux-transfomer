@@ -5,8 +5,13 @@
 Reads tests/data/interface_test/<model>/input/ and writes
 tests/data/interface_test/<model>/output/predictions_<condition>.csv.
 """
+import os
 import sys
 from pathlib import Path
+
+# Pin torch's MKL, oneDNN and kernel dispatch to one code path so outputs are identical
+# on any CPU; the libraries read these at load, so they must be set before the imports.
+os.environ.update(MKL_CBWR="COMPATIBLE", DNNL_MAX_CPU_ISA="AVX2", ATEN_CPU_CAPABILITY="avx2")
 
 import numpy as np
 import pandas as pd
