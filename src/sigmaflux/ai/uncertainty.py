@@ -209,49 +209,21 @@ def _flux_draws(df_Vm, df_err, n_draws: int, rng: np.random.Generator,
     return pd.concat(parts, ignore_index=True)
 
 
-def _bc_percentile_interval(drawn, keys, point, alpha):
-    """Bias-corrected bootstrap percentile interval, one row per group.
+def _percentile_interval(drawn, keys, alpha):
+    """Bootstrap percentile interval of each group's draws, as ``(lo, hi)`` Series.
 
     The draws are already a nonparametric bootstrap -- measured replicates resampled with
     replacement across tracers (:func:`sample_inputs`) -- so the interval is the matching
-    percentile of the bootstrap distribution rather than a scale fitted to it. That is
-    what lets it come out asymmetric: a flux whose predictions pile up against zero on one
-    side and spread on the other now reports that shape instead of averaging it away.
-
-    ``z0`` is Efron's bias correction: the bootstrap distribution generally does not centre
-    on the point estimate (which is evaluated at the maximum-likelihood input, not at any
-    resample), and a plain percentile interval would inherit that offset. It is read off
-    the fraction of bootstrap values below the point estimate and clamped to +/- one
-    half-observation, so an estimate outside the bootstrap range shifts the quantiles by a
-    finite amount rather than an infinite one.
-
-    The acceleration term of a full BCa is not estimated: it needs a jackknife over the
-    measured replicates, and with as few as two per tracer that estimate would be noisier
-    than the skewness it corrects.
+    percentile of the bootstrap distribution rather than a scale fitted to it, and comes
+    out asymmetric wherever the draws are.
 
     Args:
         drawn: the bootstrap rows (Sample < n_draws), long-format with 'Value'.
         keys: the group columns identifying one predicted quantity.
-        point: the point estimate per group, indexed by those keys.
         alpha: two-sided miss rate.
     """
-    z_lo, z_hi = stats.norm.ppf(alpha / 2.0), stats.norm.ppf(1.0 - alpha / 2.0)
-    bounds = {}
-    for key, values in drawn.groupby(keys, sort=False)['Value']:
-        v = values.to_numpy()
-        theta = float(point.loc[key])
-        n = len(v)
-        if n < 2 or np.ptp(v) == 0.0:
-            bounds[key] = (theta, theta)      # nothing resampled, or nothing moved
-            continue
-        p0 = np.clip((v < theta).mean(), 1.0 / (2 * n), 1.0 - 1.0 / (2 * n))
-        z0 = stats.norm.ppf(p0)
-        q = stats.norm.cdf(2.0 * z0 + np.array([z_lo, z_hi]))
-        bounds[key] = tuple(np.quantile(v, q))
-
-    idx = point.index
-    return (pd.Series([bounds[k][0] for k in idx], index=idx),
-            pd.Series([bounds[k][1] for k in idx], index=idx))
+    values = drawn.groupby(keys, sort=False)['Value']
+    return values.quantile(alpha / 2.0), values.quantile(1.0 - alpha / 2.0)
 
 
 def summarize_draws(raw: pd.DataFrame, n_draws: int, flux_std: pd.Series = None,
@@ -261,8 +233,8 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, flux_std: pd.Series = None,
     The point estimate is the ensemble medoid (:func:`medoid_member`) at the unperturbed
     input: the one member whose flux state is closest to the coordinatewise median,
     reported whole -- fluxes and reversibilities -- so it is a flux state the model
-    actually produced. The interval is the bias-corrected bootstrap percentile
-    (:func:`_bc_percentile_interval`) of the medoid re-chosen on every draw, so it is the
+    actually produced. The interval is the bootstrap percentile
+    (:func:`_percentile_interval`) of the medoid re-chosen on every draw, so it is the
     uncertainty of the reported value, as an MFA confidence interval is.
 
     ``sigma_model`` (member disagreement at the MLE input) and ``sigma_input`` (bootstrap
@@ -291,7 +263,7 @@ def summarize_draws(raw: pd.DataFrame, n_draws: int, flux_std: pd.Series = None,
     # Draws can be lost upstream (a labeling that did not solve), so count the survivors.
     out['n_draws'] = by_key.size()
     out['sigma_input'] = by_key.std(ddof=1).fillna(0.0)
-    out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(drawn, keys, out['Value'], alpha)
+    out['Value_lo'], out['Value_hi'] = _percentile_interval(drawn, keys, alpha)
     return out.reset_index()
 
 

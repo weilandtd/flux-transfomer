@@ -9,7 +9,6 @@ two variance sources, and coverage_by_reaction.
 import numpy as np
 import pandas as pd
 import pytest
-from scipy.stats import norm
 
 from sigmaflux.ai.uncertainty import (
     _medoid_rows, coverage_by_reaction, medoid_member, summarize_draws)
@@ -92,10 +91,7 @@ class TestSummarizeDraws:
         agg = _medoid_rows(raw[raw["Sample"] < n_draws], UNIT)
         boot = agg["Value"].to_numpy()
         assert len(boot) == n_draws            # one value per draw, not per (draw, member)
-        z0 = norm.ppf(np.clip((boot < out["Value"]).mean(),
-                              1 / (2 * n_draws), 1 - 1 / (2 * n_draws)))
-        q = norm.cdf(2 * z0 + np.array([norm.ppf(0.025), norm.ppf(0.975)]))
-        lo, hi = np.quantile(boot, q)
+        lo, hi = np.quantile(boot, [0.025, 0.975])
         assert out["Value_lo"] == pytest.approx(lo)
         assert out["Value_hi"] == pytest.approx(hi)
 
@@ -108,6 +104,18 @@ class TestSummarizeDraws:
         row = summarize(raw, n_draws=n_draws).iloc[0]
         pooled = raw[raw["Sample"] < n_draws]["Value"].std(ddof=1)
         assert row["Value_hi"] - row["Value_lo"] < 2 * 1.96 * pooled
+
+    def test_interval_is_continuous_in_draws_tied_with_the_point(self):
+        """Draws piled on the point estimate (a reaction on its bound) must not let a
+        last-bit difference move the interval."""
+        raw = self._raw(n_reps=200, n_members=1, seed=2)
+        drawn = raw["Sample"] < 200
+        raw.loc[drawn & (raw["Sample"] % 3 > 0), "Value"] = 5.0
+        raw.loc[~drawn, "Value"] = 5.0
+        nudged = raw.assign(Value=raw["Value"] - np.where(drawn & (raw["Value"] == 5.0), 1e-13, 0.0))
+        a, b = summarize(raw, n_draws=200).iloc[0], summarize(nudged, n_draws=200).iloc[0]
+        assert a["Value_lo"] == pytest.approx(b["Value_lo"], abs=1e-12)
+        assert a["Value_hi"] == pytest.approx(b["Value_hi"], abs=1e-12)
 
     def test_interval_is_asymmetric_when_the_draws_are(self):
         """The point of the change: a symmetric band could not report a skewed spread.
@@ -128,7 +136,7 @@ class TestSummarizeDraws:
 
     def test_a_degenerate_group_collapses_to_the_point_estimate(self):
         """Every draw identical means nothing was resampled into a spread; the interval is
-        a point, not a zero-width artefact of a quantile on a constant."""
+        that point."""
         raw = self._raw(n_reps=5, n_members=3)
         raw["Value"] = 4.0
         row = summarize(raw, n_draws=5).iloc[0]

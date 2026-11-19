@@ -282,7 +282,7 @@ def cli(argv=None):
                                                     bounds=sf.flux_bounds())
 
             print(f"     Running inference ({n_draws} bootstrapped cross-tracer draws "
-                  f"+ 1 maximum-likelihood input, bias-corrected percentile interval)...")
+                  f"+ 1 maximum-likelihood input, percentile interval)...")
 
             raw = predict_draws(sf, df_L_draws, df_Vm_draws, n_flux)
             if args.fbapro:

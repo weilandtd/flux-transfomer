@@ -18,8 +18,8 @@ all the way into labeling space: the measured replicates are resampled across tr
 (``sample_inputs``), every draw is predicted by every ensemble member, and each of those
 flux states is simulated through the EMU pass in full. ``summarize_draws`` then reduces
 the resulting fractions exactly as it does for fluxes -- the labeling of the ensemble's
-medoid flux state at the maximum-likelihood input, bias-corrected bootstrap
-percentile interval over the draws.
+medoid flux state at the maximum-likelihood input, bootstrap percentile interval
+over the draws.
 Propagating in labeling space rather than mapping the flux interval through is the point:
 the EMU pass is nonlinear, so the endpoints of a flux interval are not the endpoints of
 the labeling interval.

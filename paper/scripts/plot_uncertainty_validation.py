@@ -59,7 +59,7 @@ def norm_or_t_quantile(n_members):
     """Student-t quantile on the member axis' degrees of freedom.
 
     A *proxy* for the shipped interval, not a copy of it. ``summarize_draws`` now reports a
-    bias-corrected bootstrap percentile over resampled measured replicates crossed with
+    bootstrap percentile over resampled measured replicates crossed with
     members; a held-out benchmark sample has no replicates to resample, so that
     construction cannot be reproduced here. This keeps the symmetric t-interval over the
     member axis alone -- the widest thing the benchmark data supports -- so the coverage
