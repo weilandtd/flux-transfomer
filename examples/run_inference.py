@@ -48,7 +48,8 @@ df_err = fluxes[["Flux Name", "Std"]].rename(columns={"Std": "Value"})
 df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=np.random.default_rng(0),
                                         n_bootstrap=N_BOOTSTRAP, bounds=sf.flux_bounds())
 raw = predict_draws(sf, df_L_draws, df_Vm_draws, len(sf.flux_names))
-result = summarize_draws(raw, n_draws=N_BOOTSTRAP, flux_std=sf.flux_std())
+result = (summarize_draws(raw, n_draws=N_BOOTSTRAP, flux_std=sf.flux_std())
+          .drop(columns=["sigma_model", "sigma_input"]))
 out = data / "output"
 out.mkdir(exist_ok=True)
 result.to_csv(out / f"predictions_{condition}.csv", index=False)
