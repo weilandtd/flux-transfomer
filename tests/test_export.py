@@ -118,9 +118,10 @@ def test_export_roundtrip_fp16_quantized(toy_run, tmp_path):
 def test_predict_matches_source_ensemble_fp32(toy_run, tmp_path):
     path = _export(toy_run, tmp_path, precision="fp32")
     df_L = _toy_df_L()
+    # Per member: the medoid choice is discrete, and the two toy members always tie.
     expected = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"],
-                                 device="cpu").predict(df_L)
-    got = load_model(path, device="cpu").predict(df_L)
+                                 device="cpu").predict(df_L, aggregate=False)
+    got = load_model(path, device="cpu").predict(df_L, aggregate=False)
 
     assert list(got.columns) == list(expected.columns)
     assert got["Flux Name"].tolist() == expected["Flux Name"].tolist()
@@ -131,8 +132,9 @@ def test_predict_fp16_within_tolerance(toy_run, tmp_path, toy_sfx):
     fp32 = load_model(_export(toy_run, tmp_path, precision="fp32"), device="cpu")
     fp16 = load_model(toy_sfx, device="cpu")
     df_L = _toy_df_L()
-    a = fp32.predict(df_L)["Value"].to_numpy()
-    b = fp16.predict(df_L)["Value"].to_numpy()
+    # Per member: the medoid choice is discrete, and the two toy members always tie.
+    a = fp32.predict(df_L, aggregate=False)["Value"].to_numpy()
+    b = fp16.predict(df_L, aggregate=False)["Value"].to_numpy()
     np.testing.assert_allclose(b, a, rtol=2e-2, atol=1e-3 * max(np.abs(a).max(), 1e-9))
 
 

@@ -1,8 +1,8 @@
 """
 Stage 2 experiment: does a median-seeking aggregate beat the ensemble mean for SC?
 
-Compares four ways to collapse the SC ensemble into one flux state -- mean, median,
-medoid, medoid_convex (see sigmaflux.ai.uncertainty._medoid_weights) -- on real SC data,
+Compares three ways to collapse the SC ensemble into one flux state -- mean, median,
+medoid (see sigmaflux.ai.uncertainty._medoid_weights) -- on real SC data,
 reporting both feasibility and R^2 against the published/x3cflux reference flux, using
 the *exact* same methodology as plot_experimental.py (MFA-identifiability
 reaction filter, orientation, max-D selection, signed-flux R^2) so the numbers are
@@ -44,7 +44,7 @@ from _figure_common import (  # noqa: E402
 RUN_DIR = _REPO_ROOT / "paper/.results/s_cerevisiae_20260917"
 CONFIG = _REPO_ROOT / "paper/configs/s_cerevisiae.yaml"
 DATA_DIR = _REPO_ROOT / "data/S_cervesiae"
-HOWS = ["mean", "median", "medoid", "medoid_convex"]
+HOWS = ["mean", "median", "medoid"]
 
 
 def main():

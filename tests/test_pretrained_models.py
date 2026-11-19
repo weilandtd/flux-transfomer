@@ -212,11 +212,8 @@ def test_each_member_and_the_ensemble_are_mass_balanced(model, sfx_path):
     """Every member is mass-balanced, and so is what ``predict()`` reports.
 
     A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
-    space. ``EnsembleSigmaFlux.predict`` combines members with an elementwise **mean**,
-    a convex combination, which stays in the null space — so the reported value is a
-    flux state too. It was an elementwise median before, which is not a convex
-    combination and did leave it (measured ``max|S v| = 5.74`` on E. coli core LC-MS
-    against a glucose uptake of 8.6); this pins the fix.
+    space. ``EnsembleSigmaFlux.predict`` reports the medoid, one member's own state, so
+    the reported value is a flux state too -- unlike an elementwise median.
     """
     if not inspect_model(sfx_path).get("network", {}).get("included"):
         pytest.skip("release predates the packaged COBRA network; re-export to cover it")
@@ -233,25 +230,6 @@ def test_each_member_and_the_ensemble_are_mass_balanced(model, sfx_path):
     resid = np.abs(S @ combined).max()
     assert resid < 1e-5 * max(np.abs(combined).max(), 1.0), \
         f"ensemble aggregate: |S@v|max={resid:.3e}"
-
-
-def test_each_member_is_mass_balanced(model, sfx_path):
-    """The per-member invariant that the ensemble median is projected back onto.
-
-    A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
-    space; asserting it separately says which layer a future regression came from.
-    The ensemble meets the same bound only because ``predict`` re-projects — the
-    raw median does not, a median being non-linear.
-    """
-    if not inspect_model(sfx_path).get("network", {}).get("included"):
-        pytest.skip("release predates the packaged COBRA network; re-export to cover it")
-
-    S, _, _ = read_stoichiometry(sfx_path)
-    df_L = make_df_L(model, n_samples=1)
-    for i, member in enumerate(model.members):
-        flux = member.predict(df_L)["Value"].values[:len(model.flux_names)]
-        resid = np.abs(S @ flux).max()
-        assert resid < 1e-5 * max(np.abs(flux).max(), 1.0), f"member {i}: |S@v|max={resid:.3e}"
 
 
 @pytest.mark.skipif(len(FETCHED) < 2, reason="needs two fetched models")

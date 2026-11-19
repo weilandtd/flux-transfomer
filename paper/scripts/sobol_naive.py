@@ -21,10 +21,10 @@ The groups are otherwise independent, so
 no correlation between metabolites survives. SALib's Sobol sequence places N(D + 2) points for the
 D factors, and ``SALib.analyze.sobol`` gives each flux the first-order index S1 (Saltelli 2010) and
 the total index ST (Jansen) with bootstrap confidence intervals, of the ensemble prediction as
-``EnsembleSigmaFlux.predict`` reports it: the medoid_convex aggregate of the members
-(``uncertainty._medoid_weights``), one set of member weights for the whole population as for one
-predict call, solved on the independent base samples (A and B). Solving it per sample instead
-lets a small change of one token switch the weights, a jump every token then reads as sensitivity.
+``EnsembleSigmaFlux.predict`` reports it: the ensemble medoid (``uncertainty._medoid_weights``),
+one member for the whole population, chosen on the independent base samples (A and B). Choosing it
+per sample instead lets a small change of one token switch the member, a jump every token then
+reads as sensitivity.
 
 The Sobol indices say how much a factor moves a flux, not which way. On the same design, the
 direction comes from a rank regression: the standardized ranks of each flux's prediction regressed
@@ -135,14 +135,13 @@ def inputs(u, groups, tables, base):
     return fracs, x[:, col:]
 
 
-def medoid_convex(stack, n_factors):
-    """The medoid_convex aggregate (n, n_fluxes) of member predictions ``stack``
-    (n_members, n, n_fluxes): one weight per member, solved on the A and B rows of SALib's
-    layout (per base sample A, AB_1..AB_D, B) and applied to every row."""
+def medoid(stack, n_factors):
+    """The ensemble medoid's predictions (n, n_fluxes) from member predictions ``stack``
+    (n_members, n, n_fluxes): one member, chosen on the A and B rows of SALib's layout
+    (per base sample A, AB_1..AB_D, B) and applied to every row."""
     step = n_factors + 2
     rows = np.flatnonzero(np.isin(np.arange(stack.shape[1]) % step, (0, step - 1)))
-    weights = _medoid_weights(stack[:, rows].reshape(len(stack), -1).astype(float),
-                              how="medoid_convex")
+    weights = _medoid_weights(stack[:, rows].reshape(len(stack), -1).astype(float))
     return np.einsum("mnf,m->nf", stack, weights)
 
 
@@ -227,7 +226,7 @@ def main():
             loaded = [dict(np.load(p)) for p in paths]
             members = np.concatenate([p["members"] for p in loaded])
             kinds = loaded[0]["kinds"]
-            y = medoid_convex(np.concatenate([p["y"] for p in loaded]), len(kinds))
+            y = medoid(np.concatenate([p["y"] for p in loaded]), len(kinds))
             meta = {k: v for k, v in loaded[0].items() if k not in ("y", "kinds", "members")}
             seed = int(meta.get("seed", args.seed))
             u = design(len(kinds), int(meta["base_samples"]), seed)
@@ -278,7 +277,7 @@ def main():
             np.savez(dest, y=ys, kinds=kinds, members=np.array(members), **meta)
             print(f"Saved: {dest}")
         else:
-            analyze_and_save(stem.parent / f"{stem.name}.npz", medoid_convex(ys, len(kinds)), u,
+            analyze_and_save(stem.parent / f"{stem.name}.npz", medoid(ys, len(kinds)), u,
                              kinds, meta | {"members": np.array(members)}, args.seed)
 
 

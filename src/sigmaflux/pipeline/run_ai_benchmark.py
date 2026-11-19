@@ -20,10 +20,9 @@ MultiIndex instead of one column per sample. No ensemble combination happens her
 each member's own output already satisfies ``S v = 0`` by construction. Combining is
 left to the evaluation side (``plot_test_performance.load_benchmark``), which
 aggregates per (sample, reaction) across whatever members a file holds — so a
-different aggregation can be tried without rerunning inference. Note that only a
-*convex* combination preserves ``S v = 0``: the mean does, which is why
-``EnsembleSigmaFlux.predict`` reports it, while a per-reaction median does not and
-would need re-projecting.
+different aggregation can be tried without rerunning inference. A per-reaction median
+does not preserve ``S v = 0``; ``EnsembleSigmaFlux.predict`` reports the medoid, one
+member's own state, which does.
 
 Usage (I. orientalis):
     sigmaflux-benchmark \\

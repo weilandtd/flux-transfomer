@@ -46,9 +46,8 @@ def score_arm(run_dir, cfg, root, args, shared):
     df_Vm = build_df_Vm(training_flux_df, cfg.get("training", {}).get("measured_fluxes", []),
                         sel, args.noise_std, args.flux_noise_std, training_labeling_df,
                         args.seed)
-    # The ensemble mean is the reported prediction, and it is a convex combination. On a
-    # projection arm the box is a convex set every member's state lies in, so the mean lies
-    # in it too; on an affine arm nothing makes that true and the mean can sit outside.
+    # The reported prediction is the ensemble medoid, one member's own state: inside the
+    # box on a projection arm, possibly outside it on an affine arm.
     res = sf.predict(df_L, df_Vm=df_Vm)
     res["_pos"] = res.groupby("Sample", sort=False).cumcount()
     flux = (res[res["_pos"] < len(flux_names)]

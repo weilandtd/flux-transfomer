@@ -5,8 +5,13 @@
 Reads tests/data/interface_test/<model>/input/ and writes
 tests/data/interface_test/<model>/output/predictions_<condition>.csv.
 """
+import os
 import sys
 from pathlib import Path
+
+# Pin torch's MKL, oneDNN and kernel dispatch to one code path so outputs are identical
+# on any CPU; the libraries read these at load, so they must be set before the imports.
+os.environ.update(MKL_CBWR="COMPATIBLE", DNNL_MAX_CPU_ISA="AVX2", ATEN_CPU_CAPABILITY="avx2")
 
 import numpy as np
 import pandas as pd
@@ -43,7 +48,8 @@ df_err = fluxes[["Flux Name", "Std"]].rename(columns={"Std": "Value"})
 df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=np.random.default_rng(0),
                                         n_bootstrap=N_BOOTSTRAP, bounds=sf.flux_bounds())
 raw = predict_draws(sf, df_L_draws, df_Vm_draws, len(sf.flux_names))
-result = summarize_draws(raw, n_draws=N_BOOTSTRAP, group_cols=["Type", "Flux Name"])
+result = (summarize_draws(raw, n_draws=N_BOOTSTRAP, group_cols=["Type", "Flux Name"])
+          .drop(columns=["sigma_model", "sigma_input"]))
 out = data / "output"
 out.mkdir(exist_ok=True)
 result.to_csv(out / f"predictions_{condition}.csv", index=False)
