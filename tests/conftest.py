@@ -33,6 +33,7 @@ from sigmaflux.ai.data import (
     radial_embedding_table,
 )
 from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
+from sigmaflux.ai.train import FluxNorm
 from sigmaflux.ai.utils import compute_sparse_nullspace
 from sigmaflux.core.utils import annotate_atom_patterns
 
@@ -211,6 +212,10 @@ def toy_run(tmp_path_factory):
         d_reaction=H_REACTION * 2, d_type=H_TYPE * 2,
     )
 
+    # Per-reaction flux statistics, as train_ai_model.py computes them over all samples.
+    flux_norm = FluxNorm(flux_df.values)
+    flux_norm_stats = {"mean": flux_norm.mean.numpy(), "std": flux_norm.std.numpy()}
+
     def build(seed):
         torch.manual_seed(seed)
         return FluxDecoder(
@@ -220,6 +225,7 @@ def toy_run(tmp_path_factory):
             label_emb_table=vocabs["label_emb_table"],
             tracer_emb_table=tracer_combo_emb_table,
             null_space_data=null_space_data,
+            flux_norm_stats=flux_norm_stats,
             reaction_emb_table=radial_embedding_table(n_fluxes, H_REACTION),
             type_emb_table=radial_embedding_table(2, H_TYPE),
         )
@@ -246,6 +252,7 @@ def toy_run(tmp_path_factory):
             "reversibility_names": flux_names,
             "measured_fluxes": measured_fluxes,
             "null_space_data": null_space_data,
+            "flux_norm_stats": flux_norm_stats,
             "h_reaction": H_REACTION,
             "h_type": H_TYPE,
             "data_dir": str(run_dir),

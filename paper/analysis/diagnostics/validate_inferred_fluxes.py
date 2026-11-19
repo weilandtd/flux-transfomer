@@ -12,9 +12,9 @@ Three families of check, in the order they can invalidate each other:
    ``S.v = 0``, the FVA bounding box, and irreversible reactions pointing the way their
    bounds allow. Checked for every (draw, member) prediction and for both ensemble
    aggregates. Each member predicts ``v = y @ Z_full.T`` and so lies in the null space by
-   construction; the **mean** the predictions CSV reports is a convex combination of those
-   and stays there, while the **median** it used to report is not and can leave it
-   entirely. Both are kept so the gap stays measured rather than assumed.
+   construction; the **medoid** the predictions CSV reports is one member's own state,
+   while the per-reaction **median** is not and can leave it entirely. Both are kept so
+   the gap stays measured rather than assumed.
 
 2. **Simulated MID validity** -- ``sum(M+1..M+N) <= 1`` per (tracer, metabolite), i.e. the
    implied M+0 is a real fraction. The EMU solver clamps negative contributions at zero
@@ -27,7 +27,7 @@ Three families of check, in the order they can invalidate each other:
    primitives.
 
 Only the maximum-likelihood input (the replicate mean) is forward-simulated by default --
-one EMU pass per ensemble member plus one each for the mean and median states. The
+one EMU pass per ensemble member plus one each for the medoid and median states. The
 feasibility checks are cheap and run over every bootstrap draw. ``--sim-draws`` adds
 simulations of individual draws.
 
@@ -50,7 +50,7 @@ import numpy as np
 import pandas as pd
 
 from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, _medoid_weights
+from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, medoid_member
 from sigmaflux.pipeline._benchmark import (
     build_mfa_context, forward_labeling, load_prepared_model,
 )
@@ -127,35 +127,30 @@ def split_predictions(raw, sf, reaction_ids):
             rev_predicted)
 
 
-def aggregate_state(flux_wide, rev_wide, sample, how):
+def aggregate_state(flux_wide, rev_wide, sample, how, flux_std=None):
     """Combine the ensemble members at one sample into a single flux state.
 
-    ``how="mean"`` is the aggregate that stays a flux state: every member predicts
-    ``v = y @ Z_full.T`` for its own basis coefficients, so an average of members is
-    ``mean(y) @ Z_full.T`` -- still in the null space, hence still ``S.v = 0``, and still
-    inside the (convex) bounding box whenever every member is -- which is why it is what
-    ``EnsembleSigmaFlux.predict`` and the predictions CSV report. ``how="median"`` was the
-    previous aggregate; a per-reaction median is not a convex combination, so it can leave
-    the null space entirely. ``how="medoid"``/``"medoid_convex"`` (see
-    :func:`sigmaflux.ai.uncertainty._medoid_weights`) are candidate replacements for the
-    mean that stay closer to the "typical" member instead of blending uniformly across all
-    of them. All are kept so the differences stay measured, not assumed.
+    ``how="medoid"`` is what ``EnsembleSigmaFlux.predict`` and the predictions CSV report:
+    the member closest to the coordinatewise median in units of *flux_std*
+    (:func:`sigmaflux.ai.uncertainty.medoid_member`), so a flux state the model produced.
+    ``how="mean"`` is a convex combination of members, so also a flux state.
+    ``how="median"`` is not a convex combination and can leave the null space; it is kept
+    so that difference stays measured.
 
     Args:
         flux_wide: per-(Sample, Member) fluxes, columns in model reaction order.
         rev_wide: matching reversibilities.
         sample: the input draw to aggregate over.
-        how: "mean", "median", "medoid" or "medoid_convex".
+        how: "mean", "median" or "medoid".
+        flux_std: training standard deviation per predicted flux, for "medoid".
     """
+    fw = flux_wide.xs(sample, level="Sample")
+    rw = rev_wide.xs(sample, level="Sample")
     if how in ("mean", "median"):
-        return (getattr(flux_wide.xs(sample, level="Sample"), how)(axis=0),
-                getattr(rev_wide.xs(sample, level="Sample"), how)(axis=0))
-    if how in ("medoid", "medoid_convex"):
-        fw = flux_wide.xs(sample, level="Sample")
-        rw = rev_wide.xs(sample, level="Sample")
-        w = _medoid_weights(fw.to_numpy(float), how=how)
-        return (pd.Series(w @ fw.to_numpy(float), index=fw.columns),
-                pd.Series(w @ rw.to_numpy(float), index=rw.columns))
+        return getattr(fw, how)(axis=0), getattr(rw, how)(axis=0)
+    if how == "medoid":
+        k = medoid_member(fw[flux_std.index].to_numpy(float), flux_std.to_numpy(float))
+        return fw.iloc[k], rw.iloc[k]
     raise ValueError(f"Unknown how={how!r}")
 
 
@@ -454,17 +449,17 @@ def main(args):
             checks.append((f"{condition}{gc} per-member flux states feasible",
                            report_feasibility(feas, "[1] Feasibility of every per-member prediction")))
 
-            states = {how: aggregate_state(flux_wide, rev_wide, n_draws, how)
-                      for how in ("mean", "median")}
-            for tag, label in (("mean",   "[1b] Ensemble MEAN   (what the predictions CSV reports)"),
-                               ("median", "[1c] Ensemble MEDIAN (the previous aggregate, for contrast)")):
+            flux_std = sf.flux_std()
+            states = {how: aggregate_state(flux_wide, rev_wide, n_draws, how, flux_std)
+                      for how in ("medoid", "median")}
+            for tag, label in (("medoid", "[1b] Ensemble MEDOID (what the predictions CSV reports)"),
+                               ("median", "[1c] Ensemble MEDIAN (for contrast)")):
                 v, r = states[tag]
                 f = feasibility(mfa_model, *as_state_frames(v, r, n_draws), rev_predicted)
                 passed = report_feasibility(f, label)
-                # Only the mean is reported, so only the mean is held to the invariant;
-                # the median is printed to keep the difference between them measured.
-                if tag == "mean":
-                    checks.append((f"{condition}{gc} ensemble mean feasible", passed))
+                # Only the medoid is reported, so only it is held to the invariant.
+                if tag == "medoid":
+                    checks.append((f"{condition}{gc} ensemble medoid feasible", passed))
                 if f["worst_bound"].max() > TOL:
                     print(worst_bound_offenders(mfa_model, v.to_numpy(float),
                                                 reaction_ids).to_string(index=False))
@@ -477,7 +472,7 @@ def main(args):
                                                rev_wide.loc[(n_draws, m)],
                                                labeling_to, labeling_index)
             for d in range(min(args.sim_draws, n_draws)):
-                dv, dr = aggregate_state(flux_wide, rev_wide, d, "mean")
+                dv, dr = aggregate_state(flux_wide, rev_wide, d, "medoid", flux_std)
                 sims[f"draw_{d}"] = simulate(mfa_model, dv, dr, labeling_to, labeling_index)
 
             measured = measured_table(df_L, name_to_id)
@@ -485,21 +480,20 @@ def main(args):
                 composition(measured.set_index(["Tracer", "Metabolite", "Isotopomer"])["measured"]
                                     .rename("sim")),
                 "[2a] Measured MID (control -- should already sum to <= 1)")
-            for tag, num in (("mean", "2b"), ("median", "2c")):
+            for tag, num in (("medoid", "2b"), ("median", "2c")):
                 ok_sum = report_composition(
                     composition(sims[tag]),
                     f"[{num}] Simulated MID from the ensemble-{tag.upper()} flux state")
-                if tag == "mean":
+                if tag == "medoid":
                     checks.append((f"{condition}{gc} simulated MID sums to <= 1", ok_sum))
 
-            joined = agreement(sims["mean"], measured)
-            report_agreement(joined, "[3a] Simulated (ensemble-MEAN flux) vs measured MID")
+            joined = agreement(sims["medoid"], measured)
+            report_agreement(joined, "[3a] Simulated (ensemble-MEDOID flux) vs measured MID")
             report_agreement(agreement(sims["median"], measured),
                              "[3b] Simulated (ensemble-MEDIAN flux) vs measured MID")
             report_member_spread(sims, measured, "[3c] Per-member fit -- can any member explain the data?")
 
-            # 'sim'/'error'/'z' are the mean state; the median is carried alongside for
-            # comparison, since that is the number the predictions CSV actually reports.
+            # 'sim'/'error'/'z' are the medoid state; the median is carried alongside.
             key = ["Tracer", "Metabolite", "Isotopomer"]
             joined = joined.merge(
                 agreement(sims["median"], measured)[key + ["sim"]]

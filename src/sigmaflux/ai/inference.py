@@ -37,7 +37,7 @@ from .data import (
     radial_vocabs_from_lists,
 )
 from .model import FluxDecoder, MISSING_LABEL_VALUE
-from .uncertainty import _medoid_weights
+from .uncertainty import medoid_member
 from ..core.fbapro import fbapro
 
 
@@ -916,6 +916,15 @@ class SigmaFlux:
         return {n: (float(lo), float(hi)) for n, lo, hi
                 in zip(self.flux_names, self._flux_lb, self._flux_ub)}
 
+    def flux_std(self):
+        """Training standard deviation of each flux, the scale ensemble members are
+        compared in."""
+        if not self.spec.flux_norm_stats:
+            raise ValueError("This model carries no flux_norm_stats, so its ensemble "
+                             "members cannot be compared")
+        return pd.Series(np.asarray(self.spec.flux_norm_stats['std'], dtype=np.float64),
+                         index=self.flux_names)
+
     def simulate_mid(self, flux_arr, rev_arr, samples, context=None):
         """Labeling each predicted flux state implies, in this predictor's input schema.
 
@@ -1031,10 +1040,9 @@ class EnsembleSigmaFlux:
     """Ensemble of trained SigmaFlux members sharing one architecture and split.
 
     Loads every ``model_*.pt`` in ``ensemble_dir`` and exposes the same ``predict``
-    interface, returning the medoid_convex aggregate over members (see
-    :func:`sigmaflux.ai.uncertainty._medoid_weights`) -- a convex combination, so it
-    stays a flux state like the mean does, chosen over the mean for measuring closer to
-    the real-data reference on SC (see the comment in ``predict()`` below).
+    interface, returning the ensemble medoid per sample (see
+    :func:`sigmaflux.ai.uncertainty.medoid_member`): one member's own prediction, so it
+    is a flux state the model produced.
     """
 
     def __init__(self, config, ensemble_dir, device=None, data_dir=None):
@@ -1129,7 +1137,7 @@ class EnsembleSigmaFlux:
         df_Vm
             Measured exchange fluxes, or None.
         aggregate
-            ``True`` (default): medoid_convex aggregate over members, unchanged schema.
+            ``True`` (default): ensemble medoid per sample, unchanged schema.
             ``False``: every member's own raw prediction, long-format with an added
             'Member' column (one row per Sample x Member x Flux Name) -- no aggregation,
             no other post-processing.
@@ -1176,33 +1184,19 @@ class EnsembleSigmaFlux:
                 raw.append(p)
             combined = pd.concat(raw, ignore_index=True)
             return (combined, mid_out) if with_mid else combined
-        # medoid_convex, not the plain mean or a per-reaction median: every member
-        # predicts v = y @ Z_full.T and so lies in the stoichiometric null space, and
-        # medoid_convex's simplex weights are a convex combination of those -- it stays
-        # a flux state (S.v=0, inside the box whenever every member is), the same
-        # guarantee the mean had. A per-reaction median is not a convex combination and
-        # can leave the null space entirely (measured: max|S.v| = 5.74 on E. coli core
-        # LC-MS, versus 2e-6 for the mean). Unlike the plain mean, medoid_convex weights
-        # concentrate near the coordinatewise median instead of spreading uniformly
-        # across every member, which measured better on real SC data (pooled flux R²
-        # 0.242 vs the mean's 0.228, `[[medoid_convex_production_default]]` /
-        # compare_aggregation_sc.py) with no feasibility cost, since it is still a
-        # convex combination. Weights are solved per sample, so a sample's aggregate does
-        # not depend on which other samples share the call.
-        block = len(self.flux_names) + len(self.reversibility_names)
+        # The member closest to the coordinatewise median, per sample, reported whole.
+        n_flux = len(self.flux_names)
         values = np.stack([p['Value'].to_numpy() for p in preds], axis=0)
-        values = values.reshape(len(preds), -1, block)
+        values = values.reshape(len(preds), -1, n_flux + len(self.reversibility_names))
+        scale = self.flux_std().to_numpy()
         out = preds[0].copy()
         out['Value'] = np.concatenate([
-            _medoid_weights(values[:, i], how="medoid_convex") @ values[:, i]
+            values[medoid_member(values[:, i, :n_flux], scale), i]
             for i in range(values.shape[1])])
         if with_mid:
             # The labeling of the flux state we report, not the average of the labelings
             # each member implies. The EMU pass is nonlinear, so those differ, and only
-            # the first is the labeling that corresponds to the published fluxes. It is
-            # also better conditioned: the aggregate is a convex combination and so stays
-            # inside the box, where individual members often sit on or outside it and
-            # return fractions the forward pass cannot produce.
+            # the first is the labeling that corresponds to the published fluxes.
             mid_out = self.members[0].simulate_mid(
                 *self._aggregate_arrays(out, df_L), context=context)
         return (out, mid_out) if with_mid else out
@@ -1283,6 +1277,7 @@ class EnsembleSigmaFlux:
     def expected_measured_fluxes(self): return self.members[0].expected_measured_fluxes()
     def tracer_ids(self):               return self.members[0].tracer_ids()
     def flux_bounds(self):              return self.members[0].flux_bounds()
+    def flux_std(self):                 return self.members[0].flux_std()
 
 
 def load_predictor(config, checkpoint, data_dir=None, device=None):

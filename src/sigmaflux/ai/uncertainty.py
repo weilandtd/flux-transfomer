@@ -34,13 +34,11 @@ can be compared directly. It is deliberately *not* the spread of individual memb
 predictions: that answers "where would one member land", which is a wider question and
 made our intervals incomparable with the MFA fits they sit beside.
 
-Two spreads are reported, and only the first enters the interval:
+Two spreads are reported alongside; neither enters the interval:
 
-* ``sigma_input``  -- the bootstrap standard error of ``Value``: how far the aggregate
-  moves when the measured replicates it is built from are resampled.
-* ``sigma_model``  -- diagnostic only: how far the members disagree at the
-  maximum-likelihood input. It says where an interval's width comes from; it is not part
-  of one, because the members are not resampled.
+* ``sigma_input``  -- the bootstrap standard error of ``Value``: how far it moves when
+  the measured inputs are resampled.
+* ``sigma_model``  -- how far the members disagree at the maximum-likelihood input.
 
 No factor is fitted to make the interval cover any known answer -- coverage against
 held-out ground truth is a diagnostic (:func:`coverage_by_reaction`), and tuning to it
@@ -50,7 +48,6 @@ would make it true by construction.
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.optimize import minimize
 from scipy.stats import truncnorm
 
 #: Bootstrap draws when the config's ``experiment`` block does not say. Large enough for a
@@ -257,158 +254,76 @@ def _bc_percentile_interval(drawn, keys, point, alpha):
             pd.Series([bounds[k][1] for k in idx], index=idx))
 
 
-def summarize_draws(raw: pd.DataFrame, n_draws: int, group_cols=('Flux Name',),
-                    alpha: float = 0.05) -> pd.DataFrame:
+def summarize_draws(raw: pd.DataFrame, n_draws: int, flux_std: pd.Series = None,
+                    group_cols=('Type', 'Flux Name'), alpha: float = 0.05) -> pd.DataFrame:
     """Reduce raw per-(sample, member) predictions to the MLE point and its interval.
 
-    The point estimate is the ensemble *medoid_convex* aggregate at the unperturbed
-    input (see :func:`_medoid_weights`) -- the same aggregation
-    :meth:`EnsembleSigmaFlux.predict` uses, evaluated at the MLE input rather than
-    averaged over the replicates. One weight vector is solved from the *full* joint
-    (Member x key) matrix -- simplex weights minimizing distance to the coordinatewise
-    median -- and applied identically across every key, not recomputed key by key,
-    since the weights describe which members' overall flux state to blend, not an
-    independent choice per reaction.
+    The point estimate is the ensemble medoid (:func:`medoid_member`) at the unperturbed
+    input: the one member whose flux state is closest to the coordinatewise median,
+    reported whole -- fluxes and reversibilities -- so it is a flux state the model
+    actually produced. The interval is the bias-corrected bootstrap percentile
+    (:func:`_bc_percentile_interval`) of the medoid re-chosen on every draw, so it is the
+    uncertainty of the reported value, as an MFA confidence interval is.
 
-    medoid_convex rather than the plain mean or a per-reaction median because it is the
-    only one of the three that is both a flux state and measurably closer to real data.
-    Each member predicts ``v = y @ Z_full.T``, so it lies in the stoichiometric null
-    space; both the mean and medoid_convex are convex combinations of those and stay
-    there, and stay inside the (convex) bounding box whenever the members do. A
-    per-reaction median is neither, and measurably so -- on E. coli core LC-MS it
-    reported ``max|S.v| = 5.74`` against a glucose uptake of 8.6, where the mean gave
-    2e-6. Between the two feasible options, medoid_convex measured better against real
-    SC flux data than the plain mean (pooled R² 0.242 vs 0.228,
-    `paper/analysis/diagnostics/compare_aggregation_sc.py`), because it concentrates
-    weight near the coordinatewise median instead of spreading uniformly across every
-    member. What is given up relative to the mean is nothing measured so far; watch
-    ``sigma_model``, which reports member spread regardless of which aggregate is used.
-
-    The interval is the bias-corrected bootstrap percentile (:func:`_bc_percentile_interval`)
-    of the *aggregated* draws -- each draw reduced by the same estimator that produces
-    ``Value`` (:func:`_aggregate_draws`) -- so it reports the uncertainty of the value we
-    publish, which is what an MFA confidence interval reports too. Taking the percentile of
-    the raw per-member draws instead would describe where a single member lands, a wider
-    and different question.
-
-    Being a percentile rather than a fitted scale, it is **asymmetric** wherever the draws
-    are. Its resolution is bounded by the replicate structure, not the draw count: with
-    4/2/2 replicates there are only 16 distinct MID configurations to resample, and the
-    tails are as fine as that allows.
-
-    ``sigma_model`` is carried alongside as a diagnostic -- member disagreement at the
-    maximum-likelihood input -- but nothing is computed from it.
-
-    The sigma columns are kept as diagnostics -- they say where the width comes from, which
-    an interval alone does not -- but nothing is computed from them any more.
-
-    None of this is fitted to coverage; coverage (:func:`coverage_by_reaction`) is the check
-    on it, not a target.
+    ``sigma_model`` (member disagreement at the MLE input) and ``sigma_input`` (bootstrap
+    standard error of ``Value``) are diagnostics; nothing is computed from them.
 
     Args:
-        raw: long predictions with Sample, Member, Value and the group columns.
+        raw: long predictions with Sample, Value and the group columns, plus Member and
+            Type when there are several members per sample.
         n_draws: number of replicate draws; sample ``n_draws`` is the unperturbed MLE row.
-        group_cols: columns identifying one predicted quantity. A reaction can appear both
-            as a flux and as a reversibility, so 'Type' belongs here alongside the name.
+        flux_std: training standard deviation per flux name, the scale members are
+            compared in; required when *raw* has a Member column.
+        group_cols: columns identifying one predicted quantity.
         alpha: two-sided miss rate of the reported interval.
     """
-    if 'Member' not in raw.columns:      # single model -- an ensemble of one
-        raw = raw.assign(Member=0)
+    if 'Member' in raw.columns:
+        medoid = _medoid_rows(raw, flux_std)
+    else:                                # one state per sample, nothing to choose between
+        medoid = raw = raw.assign(Member=0)
 
     keys = list(group_cols)
-    mle = raw[raw['Sample'] == n_draws]
-    drawn = raw[raw['Sample'] < n_draws]
-
-    at_mle = mle.groupby(keys, sort=False)['Value']
-    # One medoid_convex weight vector from the full (Member x key) matrix -- see the
-    # docstring above for why this must be joint, not per-key.
-    wide = mle.pivot_table(index='Member', columns=keys, values='Value', sort=False)
-    weights = _medoid_weights(wide.to_numpy(float), how='medoid_convex')
-    agg_value = pd.Series(weights @ wide.to_numpy(float), index=wide.columns, name='Value')
-    out = pd.DataFrame({
-        'Value':       agg_value,
-        'sigma_model': at_mle.std(ddof=1).fillna(0.0),
-    })
-    # The estimator re-applied to every draw. This, not the raw per-member values, is the
-    # bootstrap distribution of what gets reported.
-    agg_drawn = _aggregate_draws(drawn, keys)
-    # How many draws actually reached the percentile. A draw can be lost upstream -- a
-    # flux state whose labeling did not solve is dropped rather than carried as NaN -- and
-    # an interval from a handful of survivors is not the same statement as one from 200.
-    out['n_draws'] = agg_drawn.groupby(keys, sort=False)['Value'].size()
-    out['sigma_input'] = (agg_drawn.groupby(keys, sort=False)['Value']
-                                   .std(ddof=1).fillna(0.0))
-
-    out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(
-        agg_drawn, keys, out['Value'], alpha)
+    out = medoid[medoid['Sample'] == n_draws].set_index(keys)[['Value']]
+    out['sigma_model'] = (raw[raw['Sample'] == n_draws]
+                          .groupby(keys, sort=False)['Value'].std(ddof=1).fillna(0.0))
+    drawn = medoid[medoid['Sample'] < n_draws]
+    by_key = drawn.groupby(keys, sort=False)['Value']
+    # Draws can be lost upstream (a labeling that did not solve), so count the survivors.
+    out['n_draws'] = by_key.size()
+    out['sigma_input'] = by_key.std(ddof=1).fillna(0.0)
+    out['Value_lo'], out['Value_hi'] = _bc_percentile_interval(drawn, keys, out['Value'], alpha)
     return out.reset_index()
 
 
-def _aggregate_draws(drawn, keys, how='medoid_convex'):
-    """The point estimator applied to each bootstrap draw on its own.
-
-    Bootstrapping a statistic means recomputing *that statistic* on every resample, so the
-    weights are solved again per draw rather than reused from the maximum-likelihood row:
-    which members sit nearest the coordinatewise median is itself a function of the input,
-    and holding the weights fixed would report the spread of a different estimator than
-    the one ``Value`` uses.
-    """
-    frames = []
-    for sample, g in drawn.groupby('Sample', sort=False):
-        wide = g.pivot_table(index='Member', columns=keys, values='Value', sort=False)
-        w = _medoid_weights(wide.to_numpy(float), how=how)
-        agg = pd.Series(w @ wide.to_numpy(float), index=wide.columns, name='Value')
-        frames.append(agg.reset_index().assign(Sample=sample))
-    return pd.concat(frames, ignore_index=True)
+def _medoid_rows(raw, flux_std):
+    """Every row of each sample's medoid member in *raw*."""
+    flux = raw[raw['Type'] == 'flux']
+    picks = []
+    for sample, g in flux.groupby('Sample', sort=False):
+        wide = g.pivot(index='Member', columns='Flux Name', values='Value')
+        k = medoid_member(wide.to_numpy(float), flux_std.loc[wide.columns].to_numpy(float))
+        picks.append((sample, wide.index[k]))
+    return raw.merge(pd.DataFrame(picks, columns=['Sample', 'Member']),
+                     on=['Sample', 'Member'])
 
 
-def _medoid_weights(members: np.ndarray, how: str = "medoid") -> np.ndarray:
-    """Aggregation weights picking (or blending) the member(s) closest to the
-    coordinatewise median, as an alternative to the plain per-reaction mean.
+def medoid_member(states: np.ndarray, scale: np.ndarray) -> int:
+    """Index of the member whose flux state is closest to the coordinatewise median.
 
-    The mean is a convex combination of null-space vectors, so it stays a valid flux
-    state (S.v=0, and inside any convex box every member satisfies) -- see the comment
-    on ``EnsembleSigmaFlux.predict``. But it is a *blend*, and may not correspond to any
-    single coherent flux state if the ensemble disagrees at a branch point. This offers
-    two alternatives that stay closer to the "typical" member:
+    Each flux is measured in units of *scale*, its training standard deviation, so large
+    fluxes do not decide the distance alone and a flux the members happen to agree on
+    does not blow it up.
 
     Args:
-        members: (n_members, n_reactions) raw per-member values, one row each.
-        how: ``"medoid"`` -- one-hot at the single member closest (z-scored L2) to the
-            coordinatewise median. Exactly one real member's own output, so it is on the
-            null-space manifold by construction, but -- unlike the mean -- is not
-            guaranteed to lie inside the FVA box (individual members frequently do not).
-            ``"medoid_convex"`` -- simplex weights minimizing distance to the median.
-            Still a convex combination, so it keeps the mean's box-feasibility guarantee,
-            while concentrating weight near the median rather than spreading uniformly.
-
-    Distances are scaled per reaction by the median absolute deviation across members,
-    not raw L2, so the largest-magnitude reactions (glucose uptake, biomass) don't dominate
-    the distance and "closest member" doesn't collapse to "closest on one big flux".
+        states: (n_members, n_fluxes) flux state of each member.
+        scale: (n_fluxes,) training standard deviation of each flux.
     """
-    median = np.median(members, axis=0)
-    scale = np.median(np.abs(members - median), axis=0)
-    scale = np.where(scale > 1e-9, scale, 1.0)
-    z = (members - median) / scale
-
-    n = len(members)
-    if how == "medoid":
-        i = int(np.argmin(np.linalg.norm(z, axis=1)))
-        w = np.zeros(n)
-        w[i] = 1.0
-        return w
-    if how == "medoid_convex":
-        a = z.T  # (n_reactions, n_members)
-        w0 = np.full(n, 1.0 / n)
-        res = minimize(
-            lambda w: float(np.sum((a @ w) ** 2)), w0,
-            jac=lambda w: 2 * a.T @ (a @ w),
-            bounds=[(0.0, 1.0)] * n,
-            constraints=[{"type": "eq", "fun": lambda w: w.sum() - 1.0}],
-            method="SLSQP",
-        )
-        return res.x
-    raise ValueError(f"Unknown how={how!r}")
+    z = (states - np.median(states, axis=0)) / scale
+    dist = np.linalg.norm(z, axis=1)
+    if not np.isfinite(dist).all():
+        raise ValueError("non-finite distance between ensemble members; "
+                         "check the predictions and the flux scale")
+    return int(np.argmin(dist))
 
 
 def coverage_by_reaction(pred: pd.DataFrame, truth: pd.DataFrame) -> pd.Series:

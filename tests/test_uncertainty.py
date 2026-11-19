@@ -12,7 +12,13 @@ import pytest
 from scipy.stats import norm
 
 from sigmaflux.ai.uncertainty import (
-    _aggregate_draws, coverage_by_reaction, summarize_draws)
+    _medoid_rows, coverage_by_reaction, medoid_member, summarize_draws)
+
+UNIT = pd.Series(1.0, index=["R1", "R2"])
+
+
+def summarize(raw, n_draws, flux_std=UNIT):
+    return summarize_draws(raw, n_draws=n_draws, flux_std=flux_std)
 
 
 class TestSummarizeDraws:
@@ -31,39 +37,25 @@ class TestSummarizeDraws:
                                  **{"Flux Name": "R1", "Value": value}))
         return pd.DataFrame(rows)
 
-    def test_point_estimate_is_the_ensemble_mean_at_the_mle_input(self):
-        out = summarize_draws(self._raw(n_members=5), n_draws=3, group_cols=["Type", "Flux Name"])
+    def test_point_estimate_is_the_medoid_at_the_mle_input(self):
+        out = summarize(self._raw(n_members=5), n_draws=3)
         assert len(out) == 1
         # Members sit at 5.0, 5.5, 6.0, 6.5, 7.0 on the unperturbed row.
         assert out["Value"].iloc[0] == pytest.approx(6.0)
 
-    def test_point_estimate_is_medoid_convex_not_the_plain_mean(self):
-        """The two coincide on a symmetric ensemble, so this skews one member.
-
-        The distinction is load-bearing: a member predicts ``v = y @ Z_full.T`` and so
-        lies in the null space, and a convex combination of those (the plain mean, or
-        medoid_convex's simplex weights) is still a flux state -- a per-reaction median
-        is not, and measurably leaves it. medoid_convex is chosen over the plain mean
-        because it concentrates weight near the coordinatewise median instead of
-        spreading uniformly, so a single outlier member pulls it far less.
-        """
+    def test_point_estimate_is_the_medoid_not_the_plain_mean(self):
+        """One outlier member pulls the mean, not the member nearest the median."""
         raw = self._raw(n_members=5)
         outlier = (raw["Member"] == 4)
         raw.loc[outlier, "Value"] = raw.loc[outlier, "Value"] + 10.0
 
-        out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"]).iloc[0]
-        # Members now sit at 5.0, 5.5, 6.0, 6.5, 17.0: mean 8.0, coordinatewise median
-        # 6.0. With a single key, medoid_convex's simplex weights minimize distance to
-        # that median in one dimension, which a convex combination can only do by
-        # concentrating on the member(s) nearest it -- here, sitting exactly on it.
+        out = summarize(raw, n_draws=3).iloc[0]
+        # Members now sit at 5.0, 5.5, 6.0, 6.5, 17.0: mean 8.0, medoid 6.0.
         assert out["Value"] == pytest.approx(6.0)
-        assert out["Value"] != pytest.approx(8.0)   # not the plain mean
 
-    def test_point_estimate_uses_one_joint_weight_vector_across_keys(self):
-        """medoid_convex solves one set of member weights from the *whole* flux state,
-        not an independent choice per reaction -- so it stays far closer to a non-outlier
-        member's values on every key at once, unlike a per-reaction median would.
-        """
+    def test_point_estimate_is_one_member_on_every_key(self):
+        """The medoid is chosen from the whole flux state and reported whole, unlike a
+        per-reaction median, which mixes members."""
         rows = []
         # Three members, two reactions. Member 2 is a severe outlier on R2 only.
         for s in (0, 1):  # MLE row is sample 1 (n_draws=1)
@@ -72,14 +64,20 @@ class TestSummarizeDraws:
                 rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R2", "Value": r2}))
         raw = pd.DataFrame(rows)
 
-        out = summarize_draws(raw, n_draws=1, group_cols=["Type", "Flux Name"]).set_index("Flux Name")
-        # The plain mean would put R2 at (0+4+100)/3 = 34.67, dominated by the outlier.
-        # medoid_convex's joint weights keep R2 close to the non-outlier members' range.
-        assert out.loc["R2", "Value"] < 20.0
-        assert out.loc["R1", "Value"] == pytest.approx(2.0, abs=2.5)
+        out = summarize(raw, n_draws=1).set_index("Flux Name")
+        # Median (2, 4): member 1 is closest, and both its values are reported.
+        assert out.loc["R1", "Value"] == pytest.approx(4.0)
+        assert out.loc["R2", "Value"] == pytest.approx(4.0)
+
+    def test_reversibility_comes_from_the_flux_medoid(self):
+        """Reversibilities do not vote; they are the chosen member's own."""
+        raw = self._raw(n_members=5)
+        rev = raw.assign(Type="reversibility", Value=-raw["Member"].astype(float))
+        out = summarize(pd.concat([raw, rev], ignore_index=True), n_draws=3)
+        assert out.set_index("Type").loc["reversibility", "Value"] == pytest.approx(-2.0)
 
     def test_interval_brackets_the_point_estimate(self):
-        out = summarize_draws(self._raw(), n_draws=3, group_cols=["Type", "Flux Name"])
+        out = summarize(self._raw(), n_draws=3)
         row = out.iloc[0]
         assert row["Value_lo"] < row["Value"] < row["Value_hi"]
 
@@ -89,9 +87,9 @@ class TestSummarizeDraws:
         which would answer the wider question of where a single member lands."""
         n_draws = 400
         raw = self._raw(n_reps=n_draws, n_members=5, seed=3)
-        out = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
+        out = summarize(raw, n_draws=n_draws).iloc[0]
 
-        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], ["Type", "Flux Name"])
+        agg = _medoid_rows(raw[raw["Sample"] < n_draws], UNIT)
         boot = agg["Value"].to_numpy()
         assert len(boot) == n_draws            # one value per draw, not per (draw, member)
         z0 = norm.ppf(np.clip((boot < out["Value"]).mean(),
@@ -107,7 +105,7 @@ class TestSummarizeDraws:
         times wider and would not describe the value we report."""
         n_draws = 200
         raw = self._raw(n_reps=n_draws, n_members=5, seed=7)
-        row = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
+        row = summarize(raw, n_draws=n_draws).iloc[0]
         pooled = raw[raw["Sample"] < n_draws]["Value"].std(ddof=1)
         assert row["Value_hi"] - row["Value_lo"] < 2 * 1.96 * pooled
 
@@ -124,7 +122,7 @@ class TestSummarizeDraws:
         skew = drawn & (raw["Sample"] % 5 == 0)
         raw.loc[skew, "Value"] = raw.loc[skew, "Value"] + 20.0
 
-        row = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
+        row = summarize(raw, n_draws=n_draws).iloc[0]
         upper, lower = row["Value_hi"] - row["Value"], row["Value"] - row["Value_lo"]
         assert upper > 3 * lower, f"expected a right-skewed interval, got {lower=} {upper=}"
 
@@ -133,17 +131,15 @@ class TestSummarizeDraws:
         a point, not a zero-width artefact of a quantile on a constant."""
         raw = self._raw(n_reps=5, n_members=3)
         raw["Value"] = 4.0
-        row = summarize_draws(raw, n_draws=5, group_cols=["Type", "Flux Name"]).iloc[0]
+        row = summarize(raw, n_draws=5).iloc[0]
         assert row["Value_lo"] == pytest.approx(4.0)
         assert row["Value_hi"] == pytest.approx(4.0)
 
     def test_components_separate_member_spread_from_input_spread(self):
-        """sigma_model is member disagreement at the MLE input, a diagnostic; sigma_input
-        is how far the aggregate moves across draws, which is what the interval reports.
-        Members are spread far wider here than the replicate draws, so the diagnostic term
-        must dominate -- and that gap is exactly why only one of them sets the width."""
-        out = summarize_draws(self._raw(n_members=5), n_draws=3, group_cols=["Type", "Flux Name"])
-        row = out.iloc[0]
+        """sigma_model is member disagreement at the MLE input; sigma_input is how far the
+        reported value moves across draws. Members are spread far wider here than the
+        replicate draws, so the member term must dominate."""
+        row = summarize(self._raw(n_members=5), n_draws=3).iloc[0]
         assert row["sigma_model"] > row["sigma_input"]
         assert row["sigma_model"] == pytest.approx(np.std([5.0, 5.5, 6.0, 6.5, 7.0], ddof=1),
                                                     rel=0.01)
@@ -154,24 +150,45 @@ class TestSummarizeDraws:
         raw = self._raw()
         raw = pd.concat([raw, raw.assign(Type="reversibility", Value=raw["Value"] * 0.1)],
                         ignore_index=True)
-        out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"])
+        out = summarize(raw, n_draws=3)
         assert set(out["Type"]) == {"flux", "reversibility"}
         assert len(out) == 2
 
+    def test_flux_std_sets_the_scale_of_each_reaction(self):
+        """A reaction the members nearly agree on must not decide the medoid. On R1 the
+        members agree to 1e-8 except member 0; on R2 member 0 is the typical one."""
+        rows = []
+        for s in (0, 1):
+            for m, (r1, r2) in enumerate([(1e-6 + 3.0, 5.0), (1e-6, 4.0), (1e-6 + 1e-8, 8.0),
+                                          (1e-6, 2.0), (1e-6 + 2e-8, 9.0)]):
+                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R1", "Value": r1}))
+                rows.append(dict(Sample=s, Member=m, Type="flux", **{"Flux Name": "R2", "Value": r2}))
+        raw = pd.DataFrame(rows)
+        out = summarize(raw, n_draws=1, flux_std=pd.Series({"R1": 10.0, "R2": 1.0}))
+        assert out.set_index("Flux Name").loc["R2", "Value"] == pytest.approx(5.0)
+
+    def test_a_non_finite_distance_raises(self):
+        with pytest.raises(ValueError, match="non-finite"):
+            medoid_member(np.array([[1.0, np.nan], [2.0, 3.0]]), np.ones(2))
+
     def test_single_model_has_no_member_spread(self):
         raw = self._raw(n_members=1).drop(columns="Member")
-        out = summarize_draws(raw, n_draws=3, group_cols=["Type", "Flux Name"])
+        out = summarize(raw, n_draws=3)
+        assert out["Value"].iloc[0] == pytest.approx(5.0)
         assert out["sigma_model"].iloc[0] == 0.0
 
     def test_sigma_input_is_the_standard_error_of_the_reported_value(self):
-        """sigma_input is the spread of the aggregate across draws, so it matches the
-        interval it accompanies rather than describing a different quantity."""
         n_draws = 200
         raw = self._raw(n_reps=n_draws, n_members=5, seed=11)
-        out = summarize_draws(raw, n_draws=n_draws, group_cols=["Type", "Flux Name"]).iloc[0]
-        agg = _aggregate_draws(raw[raw["Sample"] < n_draws], ["Type", "Flux Name"])
+        out = summarize(raw, n_draws=n_draws).iloc[0]
+        agg = _medoid_rows(raw[raw["Sample"] < n_draws], UNIT)
         assert out["sigma_input"] == pytest.approx(agg["Value"].std(ddof=1))
-        assert "sigma_total" not in out.index
+
+    def test_reports_the_value_its_interval_and_the_diagnostics(self):
+        out = summarize(self._raw(), n_draws=3)
+        assert list(out.columns) == ["Type", "Flux Name", "Value", "sigma_model", "n_draws",
+                                     "sigma_input", "Value_lo", "Value_hi"]
+        assert out["n_draws"].iloc[0] == 3
 
 
 class TestCoverageByReaction:
