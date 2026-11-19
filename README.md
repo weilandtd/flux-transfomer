@@ -54,41 +54,92 @@ The pretrained models live in this repository, so clone it if you want those.
 ## Quick start — predict fluxes with a pretrained model
 
 A packaged `.sfx` model is self-contained: no config file, training data or
-network JSON required.
+network JSON required. Example inputs for every pretrained model ship in
+`tests/data/interface_test/<model>/input/`, and
+[`examples/run_inference.py`](examples/run_inference.py) predicts one condition
+from them, with 95% intervals:
 
-```python
-import pandas as pd
-from sigmaflux.ai import load_model
-
-sf = load_model("models/pretrained/i_orientalis-v1.4.1.sfx")
-
-# What the model expects
-sf.expected_tracers()          # tracer names to use in df_L
-sf.expected_metabolites()      # measurable metabolite IDs
-sf.expected_measured_fluxes()  # reaction IDs to supply in df_Vm
-
-# Measured mass-isotopomer distributions (one row per isotopomer).
-# M+0 is excluded — fractions are determined by M+1…M+N.
-df_L = pd.DataFrame([
-    {"Tracer Name": "U-13C glucose (50%)", "Metabolite ID": "pyr_c",
-     "Isotopomer": "M+1", "Fraction": 0.13},
-    {"Tracer Name": "U-13C glucose (50%)", "Metabolite ID": "pyr_c",
-     "Isotopomer": "M+2", "Fraction": 0.07},
-    # ...
-])
-
-# Known exchange fluxes (optional, but sharply improves identifiability)
-df_Vm = pd.DataFrame([
-    {"Flux Name": "EX_glc__D_e", "Value": -10.0},
-    {"Flux Name": "EX_etoh_e",   "Value": 6.2},
-])
-
-fluxes = sf.predict(df_L, df_Vm)   # columns: Flux Name, Value
+```bash
+python examples/run_inference.py i_orientalis B1
+# -> tests/data/interface_test/i_orientalis/output/predictions_B1.csv
 ```
 
+### Inputs
+
+| File | Columns | Notes |
+|---|---|---|
+| `labeling_measurements_<tracer>.csv`, one per tracer | `Condition, Replicate, Compound, Isotopomer, Fraction` | `<tracer>` must be one of `sf.expected_tracers()` |
+| `compound_mapping.csv` | `experimental_id, model_id` | maps your compound names to `sf.expected_metabolites()` |
+| `measured_fluxes.csv` | `Condition, Flux Name, Value, Std` | reactions from `sf.expected_measured_fluxes()` |
+
+Measured fluxes are optional, but they set the scale of the prediction: the
+labeling alone fixes only ratios.
+
+### Prediction with intervals
+
+This is what the example does, for one condition:
+
+```python
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+from sigmaflux.ai import load_model
+from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
+from sigmaflux.pipeline.run_inference_workflow import predict_draws
+
+sf = load_model("models/pretrained/i_orientalis-v1.4.1.sfx")
+data = Path("tests/data/interface_test/i_orientalis/input")
+condition = "B1"
+
+# Labeling: one CSV per tracer, named labeling_measurements_<tracer name>.csv.
+prefix = "labeling_measurements_"
+mids = pd.concat(pd.read_csv(f).assign(**{"Tracer Name": f.stem.removeprefix(prefix)})
+                 for f in sorted(data.glob(prefix + "*.csv")))
+mids = mids[mids["Condition"] == condition]
+
+# Experimental compound names -> model metabolite IDs; replicates become samples.
+names = pd.read_csv(data / "compound_mapping.csv").rename(
+    columns={"experimental_id": "Compound", "model_id": "Metabolite ID"})
+df_L = mids.merge(names, on="Compound").rename(columns={"Replicate": "Sample"})
+
+# Measured fluxes and their standard deviations.
+fluxes = pd.read_csv(data / "measured_fluxes.csv")
+fluxes = fluxes[fluxes["Condition"] == condition]
+df_Vm = fluxes[["Flux Name", "Value"]]
+df_err = fluxes[["Flux Name", "Std"]].rename(columns={"Std": "Value"})
+
+# Resample the replicates across tracers and the fluxes from their Std, predict
+# every draw with every ensemble member, and summarize.
+n_bootstrap = 200
+df_L_draws, df_Vm_draws = sample_inputs(df_L, df_Vm, df_err, rng=np.random.default_rng(0),
+                                        n_bootstrap=n_bootstrap, bounds=sf.flux_bounds())
+raw = predict_draws(sf, df_L_draws, df_Vm_draws, len(sf.flux_names))
+result = summarize_draws(raw, n_draws=n_bootstrap, group_cols=["Type", "Flux Name"])
+```
+
+`result` has one row per predicted quantity:
+
+| Column | Meaning |
+|---|---|
+| `Type` | `flux` or `reversibility` |
+| `Flux Name` | reaction ID |
+| `Value` | the prediction at the replicate means and the measured fluxes |
+| `Value_lo`, `Value_hi` | 95% interval: 2.5th–97.5th percentile over the bootstrap draws |
+| `n_draws` | draws that reached the interval |
+| `sigma_input` | standard deviation of the prediction across draws |
+| `sigma_model` | disagreement between ensemble members at the replicate means |
+
 `load_model` always returns an **ensemble** — a single model is an ensemble of
-one — and reports the per-reaction median across members. Add a `Sample` column
-to `df_L`/`df_Vm` to predict many samples in one call.
+one — and reports the **ensemble medoid**: the member closest to the
+per-reaction median, so every prediction is a flux state the model actually
+produced. For a prediction without an interval, `sf.predict(df_L, df_Vm)`
+returns one per `Sample`.
+
+For results that are bit-identical across CPU types, set the environment
+variables at the top of `examples/run_inference.py` before importing numpy or
+torch.
 
 To inspect a model without loading any weights (no torch required):
 
