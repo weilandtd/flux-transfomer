@@ -20,9 +20,9 @@ import numpy as np
 from cobra.io import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
-from sigmaflux.ai.data import load_data
-from sigmaflux.ai.utils import compute_targeted_nullspace
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
+from flux_transformer.ai.data import load_data
+from flux_transformer.ai.utils import compute_targeted_nullspace
+from flux_transformer.pipeline._paths import add_root_argument, load_config, resolve_path
 
 
 

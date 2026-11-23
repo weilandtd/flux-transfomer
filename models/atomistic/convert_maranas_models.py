@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / 'src'))
 
-from sigmaflux.core.utils import convert_mfa_maranas  # noqa: E402
+from flux_transformer.core.utils import convert_mfa_maranas  # noqa: E402
 
 _MODELS = pathlib.Path(__file__).parent
 
@@ -54,7 +54,7 @@ def _annotate_compartments(model, names, out):
     """
     import cobra
 
-    from sigmaflux.core.measurement_pools import _compartment
+    from flux_transformer.core.measurement_pools import _compartment
 
     for met in model.metabolites:
         suffix = _compartment(met.id)
@@ -71,7 +71,7 @@ def _check_mappings(by_organism):
     """
     import csv
 
-    from sigmaflux.core.measurement_pools import check_mapping_csv
+    from flux_transformer.core.measurement_pools import check_mapping_csv
 
     failed = {}
     for label, (model, paths) in by_organism.items():

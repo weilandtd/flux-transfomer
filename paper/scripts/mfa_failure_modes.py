@@ -73,9 +73,9 @@ from sklearn.manifold import TSNE
 
 from _figure_common import (
     CONFIG_DIR, add_common_args, apply_style, run_dir_for, save_figure, selected_models)
-from sigmaflux.ai.data import find_checkpoint, load_data, split_sample_indices
-from sigmaflux.pipeline._paths import load_config
-from sigmaflux.pipeline.run_mfa_benchmark import read_convergence
+from flux_transformer.ai.data import find_checkpoint, load_data, split_sample_indices
+from flux_transformer.pipeline._paths import load_config
+from flux_transformer.pipeline.run_mfa_benchmark import read_convergence
 
 apply_style()
 
@@ -177,7 +177,7 @@ def report_coverage(model, conv, run, n_total):
 def zscore_columns(df):
     """(n_samples, n_reactions) population z-score of a reactions x samples frame.
 
-    Same zero-variance guard as sigmaflux.ai.data.prepare_dataset: a constant
+    Same zero-variance guard as flux_transformer.ai.data.prepare_dataset: a constant
     reaction has (value - mean) == 0 for every sample, so flooring the divisor to
     1.0 rather than dropping the reaction is exact, not an approximation.
     """

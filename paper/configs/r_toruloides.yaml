@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — Rhodotorula toruloides
+# FluxTransformer training configuration — Rhodotorula toruloides
 name: R_toruloides
 model_file: models/atomistic/R_toruloides/imRt_annotated_hierarchical.json
 mapping_csv: models/atomistic/R_toruloides/R_toruloides_mapping.csv
@@ -6,7 +6,7 @@ seed: 42
 device: auto  # auto | cpu | cuda
 
 # No `experiment:` block — there is no data/R_toruloides yet. That block is read only
-# by the paper analyses and by sigmaflux-infer, and plot_mid_data.py discovers
+# by the paper analyses and by flux-transformer-infer, and plot_mid_data.py discovers
 # organisms by its presence, so omitting it keeps R. toruloides out of the MID plots
 # rather than pointing them at files that do not exist. Training needs none of it.
 

@@ -16,13 +16,13 @@ import torch
 from cobra.io.json import load_json_model, save_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
-from sigmaflux.core.data import MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.measurement_pools import (add_fragment_pools, check_mapping_csv,
+from flux_transformer.core.data import MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.measurement_pools import (add_fragment_pools, check_mapping_csv,
                                               fragment_pools, measurement_token,
                                               pool_members)
-from sigmaflux.core.model import MFAModel
-from sigmaflux.expansion.emu import EMU
+from flux_transformer.core.model import MFAModel
+from flux_transformer.expansion.emu import EMU
 
 FRAGMENTS = {"A_C23": ("A", [2, 3]), "A_C12": ("A", [1, 2]), "A_all": ("A", [1, 2, 3])}
 
@@ -147,7 +147,7 @@ def test_emu_fragment_mid_is_the_retained_carbons(fragment_model, tmp_path, x):
 # ── Natural-isotope correction ────────────────────────────────────────────────
 
 def test_correction_recovers_the_tracer_label():
-    from sigmaflux.utils.natural_abundance import correct_mid, correction_matrix
+    from flux_transformer.utils.natural_abundance import correct_mid, correction_matrix
     label = np.array([0.4, 0.15, 0.45])
     raw = correction_matrix("C10H26NOSi2+", 2, 5) @ label
     np.testing.assert_allclose(correct_mid(raw, "C10H26NOSi2+", 2), label / label.sum(),
@@ -156,7 +156,7 @@ def test_correction_recovers_the_tracer_label():
 
 def test_an_unlabeled_ion_corrects_to_pure_m0():
     """Column 0 is the natural distribution of the whole ion, backbone carbons included."""
-    from sigmaflux.utils.natural_abundance import correct_mid, correction_matrix
+    from flux_transformer.utils.natural_abundance import correct_mid, correction_matrix
     raw = correction_matrix("C11H26NO2Si2+", 3, 6)[:, 0]
     assert raw[1] > 0.1                                   # Si/C isotopes are not small
     np.testing.assert_allclose(correct_mid(raw, "C11H26NO2Si2+", 3), [1, 0, 0, 0],
@@ -164,5 +164,5 @@ def test_an_unlabeled_ion_corrects_to_pure_m0():
 
 
 def test_formula_parsing():
-    from sigmaflux.utils.natural_abundance import parse_formula
+    from flux_transformer.utils.natural_abundance import parse_formula
     assert parse_formula("C17H40NO3Si3+") == {"C": 17, "H": 40, "N": 1, "O": 3, "Si": 3}

@@ -4,7 +4,7 @@ import pytest
 import torch
 import numpy as np
 
-from sigmaflux.ai.train import apply_labeling_noise
+from flux_transformer.ai.train import apply_labeling_noise
 
 
 @pytest.fixture

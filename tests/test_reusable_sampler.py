@@ -15,8 +15,8 @@ import pytest
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.pipeline.reusable_sampler import ReusableSampler  # noqa: E402
-from sigmaflux.pipeline.sample_flux import screen_nonessential  # noqa: E402
+from flux_transformer.pipeline.reusable_sampler import ReusableSampler  # noqa: E402
+from flux_transformer.pipeline.sample_flux import screen_nonessential  # noqa: E402
 
 
 def _reaction(model, rid, stoich, lb, ub):

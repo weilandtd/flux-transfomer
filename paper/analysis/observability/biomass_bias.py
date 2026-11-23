@@ -18,7 +18,7 @@ import torch
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from sigmaflux.ai.data import load_data
+from flux_transformer.ai.data import load_data
 
 BIOMASS_PREC = ['PROTEIN_c', 'RNA_c', 'DNA_c', 'LIPID_c', 'CARB_c']
 

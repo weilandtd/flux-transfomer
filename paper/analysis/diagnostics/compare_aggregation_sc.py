@@ -2,7 +2,7 @@
 Stage 2 experiment: does a median-seeking aggregate beat the ensemble mean for SC?
 
 Compares three ways to collapse the SC ensemble into one flux state -- mean, median,
-medoid (see sigmaflux.ai.uncertainty._medoid_weights) -- on real SC data,
+medoid (see flux_transformer.ai.uncertainty._medoid_weights) -- on real SC data,
 reporting both feasibility and R^2 against the published/x3cflux reference flux, using
 the *exact* same methodology as plot_experimental.py (MFA-identifiability
 reaction filter, orientation, max-D selection, signed-flux R^2) so the numbers are
@@ -23,14 +23,14 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "scripts"))
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import sample_inputs
-from sigmaflux.pipeline._benchmark import build_mfa_context
-from sigmaflux.pipeline._paths import mapping_csv_for, resolve_path, load_config
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.ai.uncertainty import sample_inputs
+from flux_transformer.pipeline._benchmark import build_mfa_context
+from flux_transformer.pipeline._paths import mapping_csv_for, resolve_path, load_config
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, load_condition_inputs, predict_draws)
-from sigmaflux.utils import read_reference_fluxes
-from sigmaflux.utils.read_reference_flux import pair_fluxes, reference_orientation
+from flux_transformer.utils import read_reference_fluxes
+from flux_transformer.utils.read_reference_flux import pair_fluxes, reference_orientation
 
 from validate_inferred_fluxes import (  # noqa: E402
     aggregate_state, feasibility, report_feasibility, split_predictions,

@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from sigmaflux.pipeline._paths import load_config, mapping_csv_for, resolve_path
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.pipeline._paths import load_config, mapping_csv_for, resolve_path
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, _inspect_growth_conditions)
-from sigmaflux.utils import read_xlsx_extflux, read_xlsx_mid_data
+from flux_transformer.utils import read_xlsx_extflux, read_xlsx_mid_data
 
 ROOT = Path(__file__).resolve().parent.parent
 model = sys.argv[1]

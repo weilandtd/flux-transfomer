@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — Thlaspi arvense (pennycress), developing embryos, GC/MS
+# FluxTransformer training configuration — Thlaspi arvense (pennycress), developing embryos, GC/MS
 #
 # The Shi et al. influx_s FTBL network (Schwender lab), curated by
 # models/atomistic/curate_pennycress_workbooks.py into cytosol (_c), plastid (_h) and

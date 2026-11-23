@@ -15,7 +15,7 @@ import argparse, os, numpy as np, pandas as pd, torch
 from scipy.stats import mannwhitneyu
 import matplotlib as mpl; mpl.use('Agg')
 import matplotlib.pyplot as plt, seaborn as sns
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
 
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 COLORS = {'non-KO': '#4C72B0', 'KO': '#DD8452'}

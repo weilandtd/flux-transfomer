@@ -1,4 +1,4 @@
-sigmaflux
+flux_transformer
 =========
 
 Metabolic Flux Analysis with the EMU framework and AI-based flux prediction.

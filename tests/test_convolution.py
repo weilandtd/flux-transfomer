@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 import torch
 
-from sigmaflux.core.mfa import convolution, convolution_derivative
-from sigmaflux.expansion.emu import EMU, OriginSet
+from flux_transformer.core.mfa import convolution, convolution_derivative
+from flux_transformer.expansion.emu import EMU, OriginSet
 
 DEVICE = torch.device("cpu")
 DTYPE = torch.float64

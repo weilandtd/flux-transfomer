@@ -4,7 +4,7 @@ Labeling of a ¹³C refit constrained to the published MFA fluxes, for the exper
 The MFA counterpart of paper/scripts/experimental_mid.py. The published fits report net
 fluxes for part of the network only -- no exchange fluxes, no compartment pool fractions --
 so their labeling cannot be simulated directly. Instead, for every growth condition
-SigmaFlux was scored on, the network is refit to the measured MIDs with every reported net
+FluxTransformer was scored on, the network is refit to the measured MIDs with every reported net
 flux pinned to the published value. Unreported net fluxes, exchange fluxes and pool
 fractions are free, so the result is the best labeling the published flux state admits in
 this network.
@@ -16,14 +16,14 @@ within ``PIN_REL`` (floor ``PIN_ABS``) of that state. ``fluxes.csv`` records how
 one had to move.
 
 Per model, in ``<run-dir>/experimental_mid_mfa/``:
-  tokens.csv    SigmaFlux's ``experimental_mid/tokens.csv`` with ``sim`` replaced by the
+  tokens.csv    FluxTransformer's ``experimental_mid/tokens.csv`` with ``sim`` replaced by the
                 refit's labeling
   fluxes.csv    per growth condition and reported reaction: published value and 95%
                 interval, the closest steady state, and the refit's net flux
   fit.csv       per growth condition: Ipopt status, SSR, and how far the reported fluxes
                 moved from the published values
 
-The fit starts from the closest steady state. It sees the same tokens SigmaFlux is scored
+The fit starts from the closest steady state. It sees the same tokens FluxTransformer is scored
 on, with the replicate std floored at the training labeling noise. Run paper/scripts/experimental_mid.py
 first; the fits take minutes per condition, so submit
 paper/submit/submit_experimental_mid_mfa.sh.
@@ -42,13 +42,13 @@ import pandas as pd
 import torch
 from cobra.util.array import create_stoichiometric_matrix
 
-from sigmaflux.core.data import MassIsotopomerData
-from sigmaflux.core.experiment import Experiment
-from sigmaflux.core.fbapro import bounded_moma
-from sigmaflux.core.measurement_pools import POOL_DRAIN_PREFIX
-from sigmaflux.core.mfa_ipopt import fit_mfa_model_ipopt
-from sigmaflux.pipeline._benchmark import build_mfa_context, load_prepared_model, pin_threads
-from sigmaflux.utils import read_reference_fluxes, reference_orientation
+from flux_transformer.core.data import MassIsotopomerData
+from flux_transformer.core.experiment import Experiment
+from flux_transformer.core.fbapro import bounded_moma
+from flux_transformer.core.measurement_pools import POOL_DRAIN_PREFIX
+from flux_transformer.core.mfa_ipopt import fit_mfa_model_ipopt
+from flux_transformer.pipeline._benchmark import build_mfa_context, load_prepared_model, pin_threads
+from flux_transformer.utils import read_reference_fluxes, reference_orientation
 
 from _figure_common import (
     PREDICTION_SPECS, UNBOUNDED_FLUX, _REPO_ROOT, add_common_args, reference_path,
@@ -79,7 +79,7 @@ OPEN_BOUND = 1e5
 PIN_REL = 0.01
 PIN_ABS = 1e-3
 
-#: Columns that describe SigmaFlux's prediction interval, not the refit.
+#: Columns that describe FluxTransformer's prediction interval, not the refit.
 SF_ONLY = ["Value_lo", "Value_hi", "sigma_input", "n_draws"]
 
 
@@ -180,7 +180,7 @@ def refit(mfa_model, experiments, tokens, lb, ub, start, std_floor, max_iter):
 
 
 def model_tokens(run, org, max_iter):
-    """Refit labeling tokens and fit diagnostics for every (condition, gc) SigmaFlux was
+    """Refit labeling tokens and fit diagnostics for every (condition, gc) FluxTransformer was
     scored on."""
     sf = pd.read_csv(tokens_path(run))
     cobra_model, mapped = load_prepared_model(str(run), org["cfg"], org["root"])

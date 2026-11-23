@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.ai.data import load_stoichiometric_matrix
-from sigmaflux.ai.inference import SigmaFlux
-from sigmaflux.ai.model import MISSING_LABEL_VALUE
+from flux_transformer.ai.data import load_stoichiometric_matrix
+from flux_transformer.ai.inference import FluxTransformer
+from flux_transformer.ai.model import MISSING_LABEL_VALUE
 
 from conftest import TOY_CONFIG_YAML as _TOY_CONFIG_YAML
 from conftest import TOY_MODEL_JSON as _TOY_MODEL_JSON
@@ -22,7 +22,7 @@ from conftest import TOY_MODEL_JSON as _TOY_MODEL_JSON
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def make_toy_df_L(n_samples: int = 2) -> pd.DataFrame:
-    """Long-format labeling DataFrame compatible with SigmaFlux.predict."""
+    """Long-format labeling DataFrame compatible with FluxTransformer.predict."""
     rng = np.random.default_rng(7)
     records = []
     for s in range(n_samples):
@@ -45,7 +45,7 @@ def make_toy_df_L(n_samples: int = 2) -> pd.DataFrame:
 
 def test_predict_output_shape(toy_run):
     """Predictions have the right number of rows and finite values."""
-    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    sf     = FluxTransformer(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L   = make_toy_df_L(n_samples=2)
     result = sf.predict(df_L)
 
@@ -66,7 +66,7 @@ def test_mass_balance(toy_run):
     flux_names = [r.id for r in cobra_model.reactions]
     n_fluxes   = len(flux_names)
 
-    sf     = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    sf     = FluxTransformer(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     result = sf.predict(make_toy_df_L(n_samples=1))   # single sample → no Sample col
 
     # First n_fluxes rows are the flux predictions; the rest are reversibilities
@@ -83,7 +83,7 @@ def test_fixed_fluxes_affect_prediction(toy_run):
     constrained by measured reactions), replacing y_raw's signal there.
     Predictions with df_Vm therefore differ from predictions without it.
     """
-    sf   = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    sf   = FluxTransformer(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L = make_toy_df_L(n_samples=1)
 
     df_Vm = pd.DataFrame({
@@ -110,7 +110,7 @@ def test_absent_tokens_are_masked_out_not_read_as_zero(toy_run):
     but carrying wildly different values. If they were being read, the prediction would
     move; masked, it cannot.
     """
-    sf = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    sf = FluxTransformer(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L = make_toy_df_L(n_samples=1)
 
     without_gly = df_L[df_L['Metabolite ID'] != 'Gly']
@@ -134,7 +134,7 @@ def test_missing_label_value_fills_exactly_the_unmeasured_tokens(toy_run):
     every trained token the experiment did not measure, and the real fraction at every
     one it did -- per sample, since a replicate can be missing a metabolite the others
     have. Tokens stay attended either way (no mask kwarg) -- only the value changes."""
-    sf = SigmaFlux(_TOY_CONFIG_YAML, toy_run['checkpoint'])
+    sf = FluxTransformer(_TOY_CONFIG_YAML, toy_run['checkpoint'])
     df_L = make_toy_df_L(n_samples=2)
     # Sample 1 loses Glycine; sample 0 keeps everything.
     partial = df_L[(df_L['Sample'] == 0) | (df_L['Metabolite ID'] != 'Gly')]

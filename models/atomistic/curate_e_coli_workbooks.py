@@ -61,7 +61,7 @@ RENAME_ATOM_TRANSITION = {'metabAbbreviation': 'metAbbreviation'}
 
 _BRACKET = re.compile(r'\[([a-zA-Z]+)\]')
 
-# The dilution sub-network, which SigmaFlux does not model. iAF1260 files it under
+# The dilution sub-network, which FluxTransformer does not model. iAF1260 files it under
 # an 'auxiliary: dilution' subsystem so `drop_subsystems` reaches it, but the core
 # workbook puts everything in one subsystem, so it has to go by name.
 #
@@ -170,7 +170,7 @@ def canonicalise_boundaries(name, reactions, metabolites):
 
     Normalises the two workbooks' differing boundary conventions; without this, a
     model with no exchanges at all pins itself at zero flux. Exchanges are written
-    in the depletion direction (`met_e -->`), matching SigmaFlux's secretion-positive
+    in the depletion direction (`met_e -->`), matching FluxTransformer's secretion-positive
     convention.
 
     Args:

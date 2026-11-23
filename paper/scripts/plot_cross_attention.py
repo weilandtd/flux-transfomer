@@ -59,7 +59,7 @@ from sklearn.cluster import SpectralCoclustering
 from _figure_common import (
     _REPO_ROOT, add_common_args, apply_style, save_figure, selected_models, tracer_label)
 from cross_attention import RESULTS_DIR, results_path
-from sigmaflux.core.measurement_pools import POOL_PREFIX
+from flux_transformer.core.measurement_pools import POOL_PREFIX
 
 DROPPED_PREFIXES = (POOL_PREFIX, "EX_", "DILUT_")
 MEASURED_BLOCK = "measured fluxes"

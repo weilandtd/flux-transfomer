@@ -21,16 +21,16 @@ import os
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.pipeline._benchmark import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.pipeline._benchmark import (
     build_mfa_context,
     forward_labeling,
     load_benchmark_inputs,
     pin_threads,
     select_samples,
 )
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
-from sigmaflux.pipeline.run_ai_benchmark import build_df_L, build_df_Vm
+from flux_transformer.pipeline._paths import add_root_argument, load_config, resolve_path
+from flux_transformer.pipeline.run_ai_benchmark import build_df_L, build_df_Vm
 
 
 def score_arm(run_dir, cfg, root, args, shared):

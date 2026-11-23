@@ -10,9 +10,9 @@ from unittest.mock import patch
 
 import pandas as pd
 from cobra.io.json import load_json_model
-from sigmaflux.core.model import MFAModel
-from sigmaflux.core.experiment import Tracer, Experiment
-from sigmaflux.core.data import MassIsotopomerData, FluxData
+from flux_transformer.core.model import MFAModel
+from flux_transformer.core.experiment import Tracer, Experiment
+from flux_transformer.core.data import MassIsotopomerData, FluxData
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir))

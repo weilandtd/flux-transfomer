@@ -18,8 +18,8 @@ from cobra.io.json import load_json_model
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.ai import features as feat_lib
-from sigmaflux.ai.utils import load_fisher_token_scores
+from flux_transformer.ai import features as feat_lib
+from flux_transformer.ai.utils import load_fisher_token_scores
 
 TOY_MODEL = os.path.join(_REPO_ROOT, "models", "atomistic", "toy", "one_carbon_annotated.json")
 

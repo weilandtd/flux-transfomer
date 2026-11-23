@@ -7,7 +7,7 @@ Installation
    pip install -e ".[dev,docs]"
 
    # Runtime only
-   pip install sigmaflux
+   pip install flux_transformer
 
 The optional x3cflux MFA backend needs Ipopt, and pip's ``cyipopt`` is an sdist that
 wants Ipopt headers at build time — so it has to come from conda-forge. Run this from
@@ -17,4 +17,4 @@ directory:
 .. code-block:: bash
 
    conda env create -f environment.yml
-   conda activate sigmaflux
+   conda activate flux_transformer

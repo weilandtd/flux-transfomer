@@ -1,17 +1,17 @@
 """
-Plot MFA vs SigmaFlux benchmark performance.
+Plot MFA vs FluxTransformer benchmark performance.
 
 Loads ground-truth fluxes from the training H5 files in run_dir and compares
 them to the benchmark predictions. Produces SVG figures:
-  r2_cdf.svg          — cumulative distribution of per-reaction flux R² (MFA + SigmaFlux)
+  r2_cdf.svg          — cumulative distribution of per-reaction flux R² (MFA + FluxTransformer)
   r2_labeling_cdf.svg — cumulative distribution of per-sample labeling R²
-  scatter.svg         — overlapping pred-vs-GT scatter (MFA + SigmaFlux)
+  scatter.svg         — overlapping pred-vs-GT scatter (MFA + FluxTransformer)
 
 Also writes output/identifiability.csv classifying each reaction as
 identifiable by None / MFA / SF / Both (R² > R2_THRESHOLD).
 
 **All R² are plain and unfiltered — do not add an outlier cut here.** Every sample a
-method returned a prediction for is scored: MFA's best fit of its restarts, SigmaFlux's
+method returned a prediction for is scored: MFA's best fit of its restarts, FluxTransformer's
 prediction. The spread is genuine flux non-identifiability, and filtering it measures how a
 method does on the samples it happened to get right — which is exactly the selection bias
 the benchmark exists to expose. Three such filters have been tried and removed: an NMAD
@@ -34,7 +34,7 @@ import pandas as pd
 import seaborn as sns
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-from sigmaflux.ai.data import load_data, _read_hdf  # noqa: E402
+from flux_transformer.ai.data import load_data, _read_hdf  # noqa: E402
 
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})
 
@@ -55,12 +55,12 @@ COLORS = {
 
 LABEL = {
     "mfa": "MFA",
-    "ai":  "SigmaFlux",
+    "ai":  "FluxTransformer",
 }
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Plot MFA vs SigmaFlux benchmark R²")
+    p = argparse.ArgumentParser(description="Plot MFA vs FluxTransformer benchmark R²")
     p.add_argument("run_dir", type=pathlib.Path,
                    help="Training run directory (contains H5 training data and benchmark subdirs)")
     p.add_argument("--mfa-dir", type=pathlib.Path, default=None,
@@ -102,7 +102,7 @@ def drop_pool_reactions(flux_df: pd.DataFrame, run_dir: pathlib.Path) -> pd.Data
         return flux_df
     from cobra.io.json import load_json_model
 
-    from sigmaflux.core.measurement_pools import pool_reaction_ids
+    from flux_transformer.core.measurement_pools import pool_reaction_ids
     pool_ids = set(pool_reaction_ids(load_json_model(str(prepared))))
     keep = [r for r in flux_df.index if r not in pool_ids]
     if len(keep) < flux_df.shape[0]:
@@ -236,7 +236,7 @@ def identifiability_table(r2_mfa: pd.Series, r2_ai: pd.Series) -> pd.DataFrame:
     # Explicit per-method flags for downstream selectors. The predicted-flux panels use
     # mfa_identifiable: those panels compare against the reference MFA fluxes, so where MFA
     # cannot determine a flux the reference value itself is unreliable and the comparison is
-    # meaningless regardless of how SigmaFlux does.
+    # meaningless regardless of how FluxTransformer does.
     tbl["sf_identifiable"] = ai_id
     tbl["mfa_identifiable"] = mfa_id
     return tbl.sort_values(["identifiable_by", "r2_ai"], ascending=[True, False])
@@ -246,10 +246,10 @@ def plot_metric_cdf(series: dict, xlabel: str, ylabel: str, filename: str,
                     output_dir: pathlib.Path, xlim=(R2_CLIP, 1.0),
                     ticks=None, tick_labels=None,
                     threshold=R2_THRESHOLD, higher_is_better=True):
-    """Cumulative distribution of a per-reaction metric for MFA and SigmaFlux.
+    """Cumulative distribution of a per-reaction metric for MFA and FluxTransformer.
 
     y = fraction of the population with metric ≤ x. The vertical gap between the two
-    curves at `threshold` is the fraction of the population SigmaFlux moves onto the
+    curves at `threshold` is the fraction of the population FluxTransformer moves onto the
     good side of that bar, and is annotated.
     """
     df = pd.concat([
@@ -263,7 +263,7 @@ def plot_metric_cdf(series: dict, xlabel: str, ylabel: str, filename: str,
                  palette={LABEL[k]: COLORS[k] for k in series})
 
     # Fraction of each population on the good side of the bar. Signed gap = what
-    # SigmaFlux adds over MFA; negative for labeling R², which MFA optimises directly.
+    # FluxTransformer adds over MFA; negative for labeling R², which MFA optimises directly.
     good = {k: float((v > threshold).mean() if higher_is_better else (v < threshold).mean())
             for k, v in series.items() if not v.empty}
     if len(good) == 2:
@@ -407,7 +407,7 @@ def main():
 
     for name, r2, df, n_failed in [
             ("MFA", r2_mfa, df_mfa, n_failed_mfa),
-            ("SigmaFlux", r2_ai, df_ai, n_failed_ai)]:
+            ("FluxTransformer", r2_ai, df_ai, n_failed_ai)]:
         n_total = df["sample"].nunique() + n_failed
         print(f"\n{name:9s} — median R²: {r2.median():+.3f}")
         print(f"            reactions R² > {R2_THRESHOLD}: "

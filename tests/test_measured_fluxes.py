@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.ai.data import (
+from flux_transformer.ai.data import (
     extract_measured_fluxes,
     get_measured_fluxes_reaction_ids,
     load_measured_fluxes_config,

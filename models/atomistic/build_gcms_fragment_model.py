@@ -6,7 +6,7 @@ E. coli core
 A GC/MS ion retains a known subset of its metabolite's carbons -- Ala232 is alanine C2-C3,
 Ala260 is C1-C3 -- so each row of data/GCMS_knowns.csv whose parent the core model holds
 and whose carbon set is unambiguous becomes a fragment pool (see
-:func:`sigmaflux.core.measurement_pools.add_fragment_pools`). Rows are skipped, with the
+:func:`flux_transformer.core.measurement_pools.add_fragment_pools`). Rows are skipped, with the
 reason printed, when the parent is absent from the core, is a mixture the knowns do not
 resolve (F6P_G6P, CitIcit, P5P_dp), or the carbon set is ambiguous ("1,2 OR 3,4", "not
 stated", multi-ion rows).
@@ -35,7 +35,7 @@ from pathlib import Path
 import cobra
 import pandas as pd
 
-from sigmaflux.core.measurement_pools import add_fragment_pools, check_mapping_csv
+from flux_transformer.core.measurement_pools import add_fragment_pools, check_mapping_csv
 
 ROOT = Path(__file__).resolve().parents[2]
 KNOWNS = ROOT / "data" / "GCMS_knowns.csv"

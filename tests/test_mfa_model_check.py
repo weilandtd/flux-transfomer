@@ -3,14 +3,14 @@
 An MFA backend can be wrong in ways a fit never reveals -- an optimiser happily
 converges on a network that has lost a balance row or scrambled an atom mapping,
 and reports a small residual for a model that is not the one we meant. This
-exercises :mod:`sigmaflux.pipeline.check_mfa_model`'s four checks against the toy
+exercises :mod:`flux_transformer.pipeline.check_mfa_model`'s four checks against the toy
 model, in order, each depending on the last: the model builds in x3cflux, every
 reaction delivers its full stoichiometry to
 every EMU it produces, both forward models predict the same
 labeling from the same flux, and a fit starts (convergence is not required -- see
 ``check_fit_starts``).
 
-The toy model runs in CI. Set ``SIGMAFLUX_CHECK_CONFIGS=1`` to also sweep
+The toy model runs in CI. Set ``FLUX_TRANSFORMER_CHECK_CONFIGS=1`` to also sweep
 ``paper/configs/*.yaml`` against the real organisms -- slow, since the x3cflux
 simulator build is single-threaded and takes minutes to hours depending on the
 model.
@@ -23,12 +23,12 @@ import yaml
 
 pytest.importorskip("x3cflux", reason="optional x3cflux backend not installed")
 
-from sigmaflux.pipeline._benchmark import build_mfa_context          # noqa: E402
-from sigmaflux.pipeline.check_mfa_model import (                     # noqa: E402
+from flux_transformer.pipeline._benchmark import build_mfa_context          # noqa: E402
+from flux_transformer.pipeline.check_mfa_model import (                     # noqa: E402
     check_build, check_edge_weights, check_fit_starts, check_labeling,
     interior_flux, measurable_metabolites,
 )
-from sigmaflux.x3cflux.facts import model_facts                      # noqa: E402
+from flux_transformer.x3cflux.facts import model_facts                      # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,7 +38,7 @@ def toy_context(toy_run):
     """Everything the checks need, built the way :func:`check_model` builds it.
 
     The toy config has no ``sampling:`` block and no ``mapping_csv``, so it never
-    goes through :func:`~sigmaflux.pipeline.check_mfa_model.prepared_model` --
+    goes through :func:`~flux_transformer.pipeline.check_mfa_model.prepared_model` --
     ``toy_run`` already leaves a ``model_prepared_for_mfa.json`` with
     ``atom_pattern`` annotations, which is the only preparation the toy model
     needs, and :func:`measurable_metabolites` correctly returns ``None`` (target
@@ -143,17 +143,17 @@ def test_fit_starts(toy_check_results):
 # pytest.ini), and gates expensive tests with importorskip + an env var
 # elsewhere (e.g. tests/test_pretrained_models.py). Follow that convention.
 
-REAL_CONFIGS = os.environ.get("SIGMAFLUX_CHECK_CONFIGS")
+REAL_CONFIGS = os.environ.get("FLUX_TRANSFORMER_CHECK_CONFIGS")
 
 
-@pytest.mark.skipif(not REAL_CONFIGS, reason="set SIGMAFLUX_CHECK_CONFIGS=1 to run")
+@pytest.mark.skipif(not REAL_CONFIGS, reason="set FLUX_TRANSFORMER_CHECK_CONFIGS=1 to run")
 @pytest.mark.parametrize("config_name", [
     "e_coli_core", "e_coli", "s_cerevisiae", "i_orientalis", "r_toruloides",
     "m_musculus_t_cell",
 ])
 def test_real_model(config_name, tmp_path):
-    from sigmaflux.pipeline._paths import load_config
-    from sigmaflux.pipeline.check_mfa_model import check_model
+    from flux_transformer.pipeline._paths import load_config
+    from flux_transformer.pipeline.check_mfa_model import check_model
 
     config_path = os.path.join(REPO_ROOT, "paper", "configs", f"{config_name}.yaml")
     cfg, root = load_config(config_path)

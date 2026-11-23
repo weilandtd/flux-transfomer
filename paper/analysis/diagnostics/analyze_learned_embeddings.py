@@ -16,7 +16,7 @@ Usage:
 Requires environment setup:
     module load anaconda3/2025.12 cplex/22.1.0
     eval "$(conda shell.bash hook)"
-    conda activate sigmaflux
+    conda activate flux_transformer
     export PYTHONPATH=<repo>/src:${PYTHONPATH:+:$PYTHONPATH}
 """
 
@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.manifold import TSNE
 
-from sigmaflux.ai.checkpoint import ALL, build_flux_decoder, load_eval_context
+from flux_transformer.ai.checkpoint import ALL, build_flux_decoder, load_eval_context
 
 
 def collect_tokens(model, dataset, max_samples, device):

@@ -18,7 +18,7 @@ import math
 import numpy as np
 import torch
 
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
 
 
 def strip_compartment(met_id):

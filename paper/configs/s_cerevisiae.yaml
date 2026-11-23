@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — Saccharomyces cerevisiae
+# FluxTransformer training configuration — Saccharomyces cerevisiae
 name: S_cerevisiae
 model_file: models/atomistic/S_cerevisiae/sc_annotated_hierarchical.json
 mapping_csv: models/atomistic/S_cerevisiae/S_cerevisiae_mapping.csv

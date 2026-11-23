@@ -28,9 +28,9 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from sigmaflux.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, pin_threads
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
-from sigmaflux.pipeline.run_mfa_benchmark import (
+from flux_transformer.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, pin_threads
+from flux_transformer.pipeline._paths import add_root_argument, load_config, resolve_path
+from flux_transformer.pipeline.run_mfa_benchmark import (
     EFFECTIVE_DOF_FILE, effective_parameter_count, fitted_parameter_count, measured_flux_ids)
 
 

@@ -16,10 +16,10 @@ import torch
 import yaml
 from cobra.io.json import load_json_model
 
-from sigmaflux.core.data import FluxData, MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.model import MFAModel
-from sigmaflux.pipeline.sample_flux import apply_media, apply_reaction_bounds
+from flux_transformer.core.data import FluxData, MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.model import MFAModel
+from flux_transformer.pipeline.sample_flux import apply_media, apply_reaction_bounds
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.abspath(os.path.join(TEST_DIR, os.pardir))

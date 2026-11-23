@@ -3,11 +3,11 @@ import sys
 
 sys.path.insert(0, os.path.abspath("../src"))
 
-project = "sigmaflux"
+project = "flux_transformer"
 author = "Daniel R. Weilandt"
 
 # Read the version rather than repeating it — see .claude/versioning.md.
-from sigmaflux import __version__ as release  # noqa: E402
+from flux_transformer import __version__ as release  # noqa: E402
 version = ".".join(release.split(".")[:2])    # short X.Y form Sphinx also uses
 
 extensions = [

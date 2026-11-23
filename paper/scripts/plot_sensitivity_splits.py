@@ -7,13 +7,13 @@ rises with the O2 taken up per glucose; as a ratio of one metabolite's isotopolo
 the enrichment and the dilution by unlabeled carbon (glutamine in the T cell) that offset single
 fractions between species. The relations were chosen by screening measured tokens, and ratios of
 tokens the signed sensitivity maps set against each other, against every branch split and every
-flux per glucose, keeping those whose measured values follow the ratio SigmaFlux predicts for the
+flux per glucose, keeping those whose measured values follow the ratio FluxTransformer predicts for the
 conditions with the sign the simulated samples give, across species and within each yeast.
 
 Each panel is one token, or a ratio of two isotopologues, against one ratio, a flux over the sum of the fluxes it is compared to,
 each taken in its forward direction (clipped at 0). The points are the experimental conditions,
 the T cell's in front, the measured fraction (bars: its replicate standard deviation) at the ratio
-SigmaFlux predicts for that condition, framed by the axes; a split never runs past 1. Fractions
+FluxTransformer predicts for that condition, framed by the axes; a split never runs past 1. Fractions
 are divided by the tracer enrichment (1,2-13C- and U-13C-glucose are 50% for the yeasts,
 U-13C-glucose 50% for E. coli), so organisms share one axis. A point is hollow when a reaction of
 its ratio is predicted with validation R² <= ``MIN_R2`` (``r2_ai`` of
@@ -43,8 +43,8 @@ from plot_labeling_vs_split import COLORS, MARKERS, MIN_FIT, MIN_R2, enrichment,
 from plot_sensitivity_graph import display
 from scipy.stats import spearmanr
 
-from sigmaflux.ai.data import load_data
-from sigmaflux.utils.read_reference_flux import read_predicted_fluxes
+from flux_transformer.ai.data import load_data
+from flux_transformer.utils.read_reference_flux import read_predicted_fluxes
 
 YEASTS_TCELL = ("s_cerevisiae", "i_orientalis", "m_musculus_t_cell")
 # Model -> (numerator, reactions summed into the denominator).

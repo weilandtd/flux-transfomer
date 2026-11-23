@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — E. coli core (toy network)
+# FluxTransformer training configuration — E. coli core (toy network)
 #
 # The small teaching network that ships alongside iAF1260, 121 reactions. Useful as
 # a fast end-to-end check of the pipeline; it is not a genome-scale model and its

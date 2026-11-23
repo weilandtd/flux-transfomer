@@ -27,10 +27,10 @@ import pandas as pd
 import pytest
 import torch
 
-from sigmaflux.ai._sfx import SCHEMA_VERSION
-from sigmaflux.ai.export import inspect_model, load_model, read_metabolites, read_stoichiometry
-from sigmaflux.ai.inference import EnsembleSigmaFlux
-from sigmaflux.pipeline import inspect_model as inspect_cli
+from flux_transformer.ai._sfx import SCHEMA_VERSION
+from flux_transformer.ai.export import inspect_model, load_model, read_metabolites, read_stoichiometry
+from flux_transformer.ai.inference import EnsembleFluxTransformer
+from flux_transformer.pipeline import inspect_model as inspect_cli
 
 from conftest import REPO_ROOT
 
@@ -134,7 +134,7 @@ def test_reported_validation_is_healthy(sfx_path):
 
 
 def test_inspect_cli_reads_every_model(sfx_path, capsys):
-    """`sigmaflux-inspect <model>` — the no-torch path a deploy script uses."""
+    """`flux-transformer-inspect <model>` — the no-torch path a deploy script uses."""
     assert inspect_cli.cli([sfx_path]) == 0
     out = capsys.readouterr().out
     assert inspect_model(sfx_path)["name"] in out
@@ -156,7 +156,7 @@ def test_load_model_matches_its_manifest(model, sfx_path):
     """load_model returns a complete ensemble that agrees with the manifest."""
     m = inspect_model(sfx_path)
 
-    assert isinstance(model, EnsembleSigmaFlux)
+    assert isinstance(model, EnsembleFluxTransformer)
     assert len(model.members) == m["n_members"]
     assert len(model.flux_names) == m["model"]["n_fluxes"]
     assert len(model.reversibility_names) == m["model"]["n_rev"]
@@ -212,7 +212,7 @@ def test_each_member_and_the_ensemble_are_mass_balanced(model, sfx_path):
     """Every member is mass-balanced, and so is what ``predict()`` reports.
 
     A member reconstructs ``fluxes = x_l @ Z_full.T`` and so cannot leave the null
-    space. ``EnsembleSigmaFlux.predict`` reports the medoid, one member's own state, so
+    space. ``EnsembleFluxTransformer.predict`` reports the medoid, one member's own state, so
     the reported value is a flux state too -- unlike an elementwise median.
     """
     if not inspect_model(sfx_path).get("network", {}).get("included"):

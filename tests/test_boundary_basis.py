@@ -31,7 +31,7 @@ Expected: n_throughput=2, n_cycle=1, total=3.
 import numpy as np
 import pytest
 
-from sigmaflux.ai.boundary_basis import (
+from flux_transformer.ai.boundary_basis import (
     compute_boundary_basis,
     normalize_externals,
     compute_cycle_block,

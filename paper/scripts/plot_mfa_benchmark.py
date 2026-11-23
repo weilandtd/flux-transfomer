@@ -1,5 +1,5 @@
 """
-MFA-vs-SigmaFlux simulation benchmark — per-reaction R²/NRMSE distributions and Venn
+MFA-vs-FluxTransformer simulation benchmark — per-reaction R²/NRMSE distributions and Venn
 diagrams.
 
 Per model:
@@ -13,7 +13,7 @@ Across all models:
   mfa_benchmark_nrmse_paired_tests.csv     Per-organism Wilcoxon signed-rank test, AI vs
                                             MFA per-reaction NRMSE, paired by reaction
 
-R² curves and the NRMSE violin both plot the two methods on the same axis (SigmaFlux vs
+R² curves and the NRMSE violin both plot the two methods on the same axis (FluxTransformer vs
 MFA, ``METHOD_COLORS``); the R² x axis is the fraction of reactions at or above a given
 R², sorted descending. A model whose benchmark data is missing is skipped with a warning
 rather than failing the run, so the figure set fills itself in as runs land.
@@ -178,7 +178,7 @@ def report_paired_tests(records, out_dir):
     for r in records:
         print(f"\n{r['model']}   (n = {r['n_reactions']} reactions)")
         print(f"   median NRMSE — MFA {r['median_nrmse_mfa']:.4g}, "
-              f"SigmaFlux {r['median_nrmse_ai']:.4g}")
+              f"FluxTransformer {r['median_nrmse_ai']:.4g}")
         print(f"   lower NRMSE: {r['lower_nrmse']}"
               f"   (p = {r['wilcoxon_p']:.3g}, W = {r['wilcoxon_stat']:.1f})")
     path = out_dir / "mfa_benchmark_nrmse_paired_tests.csv"
@@ -212,10 +212,10 @@ def report_sets(records, out_dir):
     for r in records:
         print(f"\n{r['model']}   (n = {r['n_reactions']} reactions)")
         print(f"   MFA only     : {r['mfa_only']:4d}")
-        print(f"   SigmaFlux only: {r['sf_only']:4d}")
+        print(f"   FluxTransformer only: {r['sf_only']:4d}")
         print(f"   Both         : {r['both']:4d}")
         print(f"   Neither      : {r['neither']:4d}   (outside both circles)")
-        print(f"   circle totals — MFA {r['mfa_total']}, SigmaFlux {r['sf_total']}")
+        print(f"   circle totals — MFA {r['mfa_total']}, FluxTransformer {r['sf_total']}")
     path = out_dir / "mfa_benchmark_identifiable_sets.csv"
     pd.DataFrame(records).to_csv(path, index=False)
     print(f"\nSaved: {path}")
@@ -277,10 +277,10 @@ def _relocate_overflowing_labels(fig, ax, venn, region_ids):
 def plot_venn(model, counts, out_dir):
     """2-set Venn of reactions each method resolves (R² >= R2_THRESHOLD), drawn as an
     oval (short figure height + aspect='auto' -- venn2 otherwise forces a circular
-    aspect) with no MFA/SigmaFlux set-name annotation, just the bold region counts.
+    aspect) with no MFA/FluxTransformer set-name annotation, just the bold region counts.
 
     ``counts`` is ``set_counts()``'s output for this model, reused rather than
-    recomputed. MFA-only and SigmaFlux-only regions use the same colours as the
+    recomputed. MFA-only and FluxTransformer-only regions use the same colours as the
     R² panels (``METHOD_COLORS``); the overlap is grey (``COLORS["reference"]``),
     matching the threshold/identity lines used elsewhere in this figure set.
 

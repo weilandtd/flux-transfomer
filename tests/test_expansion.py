@@ -3,9 +3,9 @@ import pandas as pd
 import os
 from collections import defaultdict
 from cobra.io.json import load_json_model
-from sigmaflux.core.model import MFAModel
-from sigmaflux.core.experiment import Tracer, Experiment
-from sigmaflux.core.data import MassIsotopomerData, FluxData
+from flux_transformer.core.model import MFAModel
+from flux_transformer.core.experiment import Tracer, Experiment
+from flux_transformer.core.data import MassIsotopomerData, FluxData
 from test_models import make_test_data, make_test_flux_data
 
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))

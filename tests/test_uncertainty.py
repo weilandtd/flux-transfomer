@@ -1,4 +1,4 @@
-"""Tests for sigmaflux.ai.uncertainty: replicate-based input draws and the composed
+"""Tests for flux_transformer.ai.uncertainty: replicate-based input draws and the composed
 interval (ensemble + measurement).
 
 The flux-side resampler and sample_inputs' replicate handling have their own file
@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.ai.uncertainty import (
+from flux_transformer.ai.uncertainty import (
     _aggregate_draws, _medoid_weights, coverage_by_reaction, summarize_draws)
 
 KEYS = ["Type", "Flux Name"]

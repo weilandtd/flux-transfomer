@@ -60,11 +60,11 @@ import time
 import numpy as np
 import pandas as pd
 
-from sigmaflux.pipeline._benchmark import (
+from flux_transformer.pipeline._benchmark import (
     build_mfa_context, forward_labeling, labeling_chi2_scale, load_benchmark_inputs,
     noisy_measurements, pin_threads)
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
-from sigmaflux.pipeline.run_mfa_benchmark import (
+from flux_transformer.pipeline._paths import add_root_argument, load_config, resolve_path
+from flux_transformer.pipeline.run_mfa_benchmark import (
     _block_counts, _chi2_split, build_noisy_experiments, chi2_acceptance,
     benchmark_parameter_count, make_measured_flux_data, measured_flux_ids, read_convergence)
 

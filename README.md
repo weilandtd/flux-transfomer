@@ -1,10 +1,10 @@
-# SigmaFlux
+# FluxTransformer
 
-[![Python application](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml/badge.svg)](https://github.com/weilandtd/sigmaflux/actions/workflows/python-app.yml)
+[![Python application](https://github.com/weilandtd/flux-transfomer/actions/workflows/python-app.yml/badge.svg)](https://github.com/weilandtd/flux-transfomer/actions/workflows/python-app.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Metabolic flux analysis from stable-isotope labeling data. SigmaFlux pairs a
+Metabolic flux analysis from stable-isotope labeling data. FluxTransformer pairs a
 classical EMU (Elementary Metabolite Unit) ¹³C-MFA implementation with a
 transformer that predicts fluxes directly from mass-isotopomer distributions,
 so a fit that takes minutes of optimisation becomes a forward pass.
@@ -21,8 +21,8 @@ pointers instead of models.
 
 ```bash
 git lfs install
-git clone https://github.com/weilandtd/sigmaflux.git
-cd sigmaflux
+git clone https://github.com/weilandtd/flux-transfomer.git
+cd flux-transfomer
 
 pip install -e .            # runtime
 pip install -e ".[dev]"     # + pytest, ruff, mypy
@@ -35,20 +35,20 @@ build time, so it has to come from conda-forge:
 
 ```bash
 conda env create -f environment.yml   # from the repo root: `-e .` resolves against cwd
-conda activate sigmaflux
+conda activate flux_transformer
 ```
 
 Verify:
 
 ```bash
-python -c "import sigmaflux; print(sigmaflux.__version__)"
-sigmaflux-inspect models/pretrained/i_orientalis-v1.4.1.sfx
+python -c "import flux_transformer; print(flux_transformer.__version__)"
+flux-transformer-inspect models/pretrained/i_orientalis-v1.4.1.sfx
 ```
 
-If `sigmaflux-inspect` reports a format error, the LFS objects were not fetched —
+If `flux-transformer-inspect` reports a format error, the LFS objects were not fetched —
 run `git lfs pull`.
 
-Once published to PyPI, the library alone installs with `pip install sigmaflux`.
+Once published to PyPI, the library alone installs with `pip install flux_transformer`.
 The pretrained models live in this repository, so clone it if you want those.
 
 ## Quick start — predict fluxes with a pretrained model
@@ -85,9 +85,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai import load_model
-from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
-from sigmaflux.pipeline.run_inference_workflow import predict_draws
+from flux_transformer.ai import load_model
+from flux_transformer.ai.uncertainty import sample_inputs, summarize_draws
+from flux_transformer.pipeline.run_inference_workflow import predict_draws
 
 sf = load_model("models/pretrained/i_orientalis-v1.4.1.sfx")
 data = Path("tests/data/interface_test/i_orientalis/input")
@@ -144,11 +144,11 @@ torch.
 To inspect a model without loading any weights (no torch required):
 
 ```bash
-sigmaflux-inspect models/pretrained/i_orientalis-v1.4.1.sfx --verify
+flux-transformer-inspect models/pretrained/i_orientalis-v1.4.1.sfx --verify
 ```
 
 Reads the name, version, output dimensions, tracers, and provenance — the
-sigmaflux version, git commit and training config that produced it.
+flux_transformer version, git commit and training config that produced it.
 
 ## Training your own model
 
@@ -156,23 +156,23 @@ Everything is driven by one organism YAML (see `paper/configs/`). Four stages,
 each an installed console script:
 
 ```bash
-sigmaflux-sample-flux     --config <config>.yaml --output-dir <run>   # sample the flux polytope
-sigmaflux-generate-data   --config <config>.yaml --output-dir <run>   # simulate labeling (EMU)
-sigmaflux-select-features --config <config>.yaml --data-dir  <run>    # Fisher token selection
-sigmaflux-train           --config <config>.yaml --data-dir  <run>    # train the FluxDecoder
+flux-transformer-sample-flux     --config <config>.yaml --output-dir <run>   # sample the flux polytope
+flux-transformer-generate-data   --config <config>.yaml --output-dir <run>   # simulate labeling (EMU)
+flux-transformer-select-features --config <config>.yaml --data-dir  <run>    # Fisher token selection
+flux-transformer-train           --config <config>.yaml --data-dir  <run>    # train the FluxDecoder
 ```
 
 Or all four at once:
 
 ```bash
-sigmaflux-workflow --config paper/configs/i_orientalis.yaml
+flux-transformer-workflow --config paper/configs/i_orientalis.yaml
 ```
 
 Train an ensemble and package it for release:
 
 ```bash
-sigmaflux-train  --config <config>.yaml --data-dir <run> --ensemble-size 20
-sigmaflux-export --source <run>/ensemble --config <config>.yaml --model-version 1.0.0
+flux-transformer-train  --config <config>.yaml --data-dir <run> --ensemble-size 20
+flux-transformer-export --source <run>/ensemble --config <config>.yaml --model-version 1.0.0
 ```
 
 Ensembles are the recommended target: `load_model` and `load_predictor` use them
@@ -185,11 +185,11 @@ are in [paper/README.md](paper/README.md). API reference: `doc/`
 
 ## Citation
 
-If you use SigmaFlux in your work, please cite:
+If you use FluxTransformer in your work, please cite:
 
 <!-- TODO: replace with the published reference on acceptance -->
 ```bibtex
-@article{sigmaflux,
+@article{flux_transformer,
   title   = {TBD},
   author  = {Weilandt, Daniel R. and others},
   journal = {TBD},

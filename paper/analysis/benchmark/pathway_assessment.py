@@ -1,5 +1,5 @@
 """
-Pathway-level assessment: which subsystems does MFA recover, and which does SigmaFlux?
+Pathway-level assessment: which subsystems does MFA recover, and which does FluxTransformer?
 
 Per-reaction R² is hard to read across 400 reactions. Aggregating to the GEM's own
 subsystem annotation answers the question a biologist actually asks — *can I believe the
@@ -29,7 +29,7 @@ sys.path.insert(0, str(_REPO_ROOT / "models" / "atomistic"))
 from build_pathway_annotations import SUBSYSTEM_TO_COARSE  # noqa: E402
 from analysis_predicted_fluxes import _organism_path, _resolve_organism  # noqa: E402
 from plot_test_performance import load_benchmark, per_flux_r2, R2_THRESHOLD  # noqa: E402
-from sigmaflux.ai.data import load_data  # noqa: E402
+from flux_transformer.ai.data import load_data  # noqa: E402
 
 # A subsystem needs at least this many scored reactions before its median is worth
 # reporting — below it the median is one or two reactions and swings wildly.
@@ -74,7 +74,7 @@ def build(run_dir: pathlib.Path, flux_floor: float) -> pd.DataFrame:
 
 
 def summarise(tbl: pd.DataFrame, level: str, min_n: int) -> pd.DataFrame:
-    """Per-pathway medians, ranked by how many more reactions SigmaFlux resolves.
+    """Per-pathway medians, ranked by how many more reactions FluxTransformer resolves.
 
     Ranking uses `delta_ok`, the difference in the fraction of reactions clearing
     R² > 0.8, rather than the difference in median R². A median R² difference is
@@ -111,7 +111,7 @@ def main():
     fmt = lambda v: f"{v:.3f}"
     for level, title in [("coarse", "COARSE PATHWAY GROUP"), ("subsystem", "SUBSYSTEM")]:
         s = summarise(tbl, level, args.min_reactions)
-        print(f"\n=== {title} — ranked by extra reactions SigmaFlux resolves "
+        print(f"\n=== {title} — ranked by extra reactions FluxTransformer resolves "
               f"(delta_ok, R² > {R2_THRESHOLD}) ===")
         print(s.to_string(float_format=fmt))
 

@@ -20,11 +20,11 @@ import pandas as pd
 import pytest
 import torch
 
-from sigmaflux.core.data import MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.model import MFAModel
-from sigmaflux.expansion.atom_mapping import InconsistentAtomMappingError
-from sigmaflux.expansion.emu import EMU
+from flux_transformer.core.data import MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.model import MFAModel
+from flux_transformer.expansion.atom_mapping import InconsistentAtomMappingError
+from flux_transformer.expansion.emu import EMU
 
 
 def _metabolite(met_id, atom_pattern, symmetries=None):

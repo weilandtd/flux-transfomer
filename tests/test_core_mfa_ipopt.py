@@ -18,11 +18,11 @@ pytest.importorskip("cyipopt", reason="optional native-ipopt backend not install
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.core.data import FluxData, MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.mfa import fit_mfa_model
-from sigmaflux.core.mfa_ipopt import fit_mfa_model_ipopt
-from sigmaflux.core.model import MFAModel
+from flux_transformer.core.data import FluxData, MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.mfa import fit_mfa_model
+from flux_transformer.core.mfa_ipopt import fit_mfa_model_ipopt
+from flux_transformer.core.model import MFAModel
 
 from test_core_mfa import TOY_FLUXES, TOY_LABELING, TOY_MODEL, _load_toy_data
 

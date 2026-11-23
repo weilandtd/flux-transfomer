@@ -1,4 +1,4 @@
-"""sigmaflux-infer --fbapro: every member draw is projected, in the right shape."""
+"""flux-transformer-infer --fbapro: every member draw is projected, in the right shape."""
 
 from types import SimpleNamespace
 
@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import torch
 
-from sigmaflux.ai.inference import _fbapro_decoder
-from sigmaflux.core.fbapro import fbapro
-from sigmaflux.pipeline.run_inference_workflow import fbapro_draws
+from flux_transformer.ai.inference import _fbapro_decoder
+from flux_transformer.core.fbapro import fbapro
+from flux_transformer.pipeline.run_inference_workflow import fbapro_draws
 
 # One metabolite, A -> B -> C: steady state forces v1 = v2.
 S = np.array([[1.0, -1.0, 0.0]])

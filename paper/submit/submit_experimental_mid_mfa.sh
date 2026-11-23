@@ -36,7 +36,7 @@ LOG_DIR="$REPO_ROOT/paper/.results/logs"
 mkdir -p "$LOG_DIR"
 
 echo "======================================"
-echo "SigmaFlux — 13C refit with the published MFA fluxes pinned"
+echo "FluxTransformer — 13C refit with the published MFA fluxes pinned"
 echo "Models     : ${MODELS:-all}"
 echo "Output     : <run-dir>/experimental_mid_mfa/tokens.csv per model"
 echo "Resources  : ${CPUS} cpus, ${MEM}, ${TIME}, qos=${QOS}"

@@ -1,5 +1,5 @@
 """
-How much explained variance does SigmaFlux add, per pathway?
+How much explained variance does FluxTransformer add, per pathway?
 
 This replaces a fold-enrichment view of the same question. Fold enrichment asks only whether
 the *rescued* reactions are concentrated in a subsystem, which turned out to be a poor
@@ -12,7 +12,7 @@ The effect size reported here is the mean per-reaction gain in explained varianc
 
     gain_i = clip(R²_SF, 0, 1) - clip(R²_MFA, 0, 1)
 
-so it lives in [-1, 1] and reads directly as "SigmaFlux explains this much more of the
+so it lives in [-1, 1] and reads directly as "FluxTransformer explains this much more of the
 variance". **Clipping at 0 is essential, not cosmetic**: raw R² is unbounded below and the
 raw mean gain reaches +4838 (IO purine metabolism) and -71.6 (SC Gly/Ser/Thr) purely from
 reactions whose R² is hugely negative. Every R² below 0 means the same thing in practice —
@@ -21,7 +21,7 @@ information worth propagating into a pathway average.
 
 Significance is a paired Wilcoxon signed-rank test on the clipped per-reaction pairs within
 each subsystem, Benjamini-Hochberg corrected. Pathways with no rescued reaction at all are
-dropped, since the question is about pathways SigmaFlux improves.
+dropped, since the question is about pathways FluxTransformer improves.
 
 Usage:
     python paper/analysis/benchmark/pathway_improvement.py
@@ -142,7 +142,7 @@ def plot(tables: dict, fdr: float, out_path: pathlib.Path):
         ax.axvline(0.0, color=COLORS["ref"], lw=0.8, ls="--", zorder=1)
         ax.set_yticks(y)
         ax.set_yticklabels(order, fontsize=9)
-        ax.set_xlabel("Mean gain in explained variance\n($R^2_{SigmaFlux} - R^2_{MFA}$)")
+        ax.set_xlabel("Mean gain in explained variance\n($R^2_{FluxTransformer} - R^2_{MFA}$)")
         ax.set_title(org, fontsize=11, style="italic")
         sns.despine(ax=ax)
 

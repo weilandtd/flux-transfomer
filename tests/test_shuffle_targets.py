@@ -11,7 +11,7 @@ reproducible from the seed so an ensemble's members share one broken pairing.
 import numpy as np
 import pandas as pd
 
-from sigmaflux.pipeline.train_ai_model import shuffle_targets
+from flux_transformer.pipeline.train_ai_model import shuffle_targets
 
 
 def _frames(n_samples=20, n_flux=5, n_rev=3, seed=0):

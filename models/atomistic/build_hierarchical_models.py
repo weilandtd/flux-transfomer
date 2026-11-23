@@ -19,7 +19,7 @@ from cobra.io import load_json_model, save_json_model
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / 'src'))
 
-from sigmaflux.core.utils import (  # noqa: E402
+from flux_transformer.core.utils import (  # noqa: E402
     BIOMASS_COMPONENT_IDS, PUBLISHED_BIOMASS_FRACTIONS, apply_terminal_annotations,
     derive_biomass_fractions, split_biomass_hierarchical,
 )

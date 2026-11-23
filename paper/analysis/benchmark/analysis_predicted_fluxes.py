@@ -1,5 +1,5 @@
 """
-Plot SigmaFlux predicted fluxes vs the Shen et al. MFA reference, as a 1×3 panel
+Plot FluxTransformer predicted fluxes vs the Shen et al. MFA reference, as a 1×3 panel
 (one nutrient condition per panel: C, N, P), colored by growth rate.
 
 Everything is derived from a single training-run directory:
@@ -12,8 +12,8 @@ Only reactions **MFA** resolves on held-out simulations (mfa_identifiable, R² >
 plotted. The x axis is the reference MFA flux, so where MFA cannot determine a flux the
 reference value is itself unreliable and agreement with it means nothing — restricting to
 MFA-identifiable reactions is what makes the comparison valid. This set is a strict subset
-of the SigmaFlux-identifiable one (219 of 270 in I. orientalis, 193 of 230 in
-S. cerevisiae), so it is also the harder, unbiased choice: it is not selected on SigmaFlux's
+of the FluxTransformer-identifiable one (219 of 270 in I. orientalis, 193 of 230 in
+S. cerevisiae), so it is also the harder, unbiased choice: it is not selected on FluxTransformer's
 own performance.
 
 Predictions are RAW (no calibration). Fluxes are compared in absolute value on log-log axes.
@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import norm
 
-from sigmaflux.pipeline._paths import load_config, resolve_path
+from flux_transformer.pipeline._paths import load_config, resolve_path
 
 mpl.use('Agg')
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
@@ -216,10 +216,10 @@ def _label_deviations(fig, ax, sub: pd.DataFrame, mark: pd.DataFrame, max_labels
 
 def build_plot_df(run_dir: pathlib.Path, org: dict, panel_rxns: set) -> pd.DataFrame:
     """Tidy DataFrame of |pred| vs |ref| per (condition, growth condition, reaction),
-    restricted to SigmaFlux-identifiable reactions and finite positive values.
+    restricted to FluxTransformer-identifiable reactions and finite positive values.
 
     Also carries the published MFA confidence bounds (``ref_lo``/``ref_hi``) and the
-    SigmaFlux ensemble's 95% interval (``pred_lo``/``pred_hi``) alongside the point
+    FluxTransformer ensemble's 95% interval (``pred_lo``/``pred_hi``) alongside the point
     ``ref``/``pred`` values, NaN-filled when unavailable (older reference workbooks or
     predictions CSVs) so callers can always assume the columns exist.
     """
@@ -324,7 +324,7 @@ def plot_panels(df: pd.DataFrame, out_path: pathlib.Path, max_labels: int = 5):
         ax.set_ylabel('')
         sns.despine(ax=ax)
 
-    axes[0].set_ylabel('SigmaFlux\n[mmol gDW⁻¹ h⁻¹]')
+    axes[0].set_ylabel('FluxTransformer\n[mmol gDW⁻¹ h⁻¹]')
 
     out_path.parent.mkdir(exist_ok=True)
     fig.savefig(out_path, bbox_inches='tight')
@@ -362,7 +362,7 @@ def plot_qq(df: pd.DataFrame, out_path: pathlib.Path, n_points: int = 400):
     ax.plot([-lim, lim], [-lim, lim], color=COLORS['reference'], lw=0.8, ls='--', zorder=0)
     ax.set_xlim(-lim, lim)
     ax.set_xlabel('Normal quantile')
-    ax.set_ylabel('Standardized\nlog₁₀(SigmaFlux / MFA)')
+    ax.set_ylabel('Standardized\nlog₁₀(FluxTransformer / MFA)')
     ax.legend(frameon=False, fontsize=9, loc='upper left')
     sns.despine(ax=ax)
 
@@ -401,15 +401,15 @@ def main():
     parser.add_argument('--select', default='both', choices=['both', 'mfa', 'sf', 'sf_only'],
                         help="Which identifiable set to plot. 'mfa' is the valid comparison "
                              "(the reference is an MFA fit). 'sf_only' is the complement — "
-                             "reactions SigmaFlux resolves and MFA does not. 'both' (default) "
+                             "reactions FluxTransformer resolves and MFA does not. 'both' (default) "
                              "writes each as its own figure.")
     parser.add_argument('--max-labels', type=int, default=5,
                         help='Worst outliers to name per panel (default 5)')
     parser.add_argument('--config', default=None,
                         help='Organism YAML (default: matched from the run directory name)')
     parser.add_argument('--all-reactions', action='store_true',
-                        help='Plot all shared reactions instead of filtering to SigmaFlux-identifiable '
-                             '(skips identifiability.csv). Used to view the SigmaFlux experimental '
+                        help='Plot all shared reactions instead of filtering to FluxTransformer-identifiable '
+                             '(skips identifiability.csv). Used to view the FluxTransformer experimental '
                              'predictions standalone.')
     args = parser.parse_args()
 
@@ -435,12 +435,12 @@ def main():
         # MFA can actually determine.
         'mfa': ("MFA-identifiable (reference is trustworthy)",
                 set(id_df.loc[mfa, 'reaction']), 'predicted_fluxes_panels.svg'),
-        # The complement, as its own figure: what SigmaFlux predicts where MFA cannot. Here
-        # disagreement with the reference is expected and is NOT evidence SigmaFlux is wrong.
-        'sf_only': ("SigmaFlux-only (MFA cannot determine these — reference unreliable)",
+        # The complement, as its own figure: what FluxTransformer predicts where MFA cannot. Here
+        # disagreement with the reference is expected and is NOT evidence FluxTransformer is wrong.
+        'sf_only': ("FluxTransformer-only (MFA cannot determine these — reference unreliable)",
                     set(id_df.loc[id_df.sf_identifiable & ~mfa, 'reaction']),
                     'predicted_fluxes_sf_only.svg'),
-        'sf': ("SigmaFlux-identifiable", set(id_df.loc[id_df.sf_identifiable, 'reaction']),
+        'sf': ("FluxTransformer-identifiable", set(id_df.loc[id_df.sf_identifiable, 'reaction']),
                'predicted_fluxes_panels_sf.svg'),
     }
     wanted = ['mfa', 'sf_only'] if args.select == 'both' else [args.select]

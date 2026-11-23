@@ -1,5 +1,5 @@
 """
-HSIC global sensitivity analysis for SigmaFlux labeling data.
+HSIC global sensitivity analysis for FluxTransformer labeling data.
 
 Quantifies which fluxes and reversibilities most influence the isotope
 labeling pattern using De Veiga (2015) HSIC sensitivity indices.
@@ -29,9 +29,9 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from sigmaflux.ai.data import load_data
-from sigmaflux.analysis.sensitivity import hsic_indices
-from sigmaflux.pipeline._paths import find_project_root, resolve_path
+from flux_transformer.ai.data import load_data
+from flux_transformer.analysis.sensitivity import hsic_indices
+from flux_transformer.pipeline._paths import find_project_root, resolve_path
 
 COLORS = {
     "main":      "#2C7BB6",
@@ -142,7 +142,7 @@ def _run_model_inference(
     """Run FluxDecoder on sample_idx samples, return per-reaction R² DataFrame."""
     try:
         import torch
-        from sigmaflux.ai.checkpoint import (
+        from flux_transformer.ai.checkpoint import (
             build_flux_decoder,
             load_eval_context,
             resolve_device,
@@ -273,7 +273,7 @@ def _print_top(df: pd.DataFrame, label: str, top_n: int, by: str) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="HSIC global sensitivity analysis for SigmaFlux labeling data."
+        description="HSIC global sensitivity analysis for FluxTransformer labeling data."
     )
     parser.add_argument("--data-dir",   required=True,  help="Directory containing wb_model_*.h5 files")
     parser.add_argument("--output",     default=None,   help="Path to write full results CSV")

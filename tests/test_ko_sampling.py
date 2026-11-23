@@ -15,7 +15,7 @@ import pytest
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.pipeline.sample_flux import (  # noqa: E402
+from flux_transformer.pipeline.sample_flux import (  # noqa: E402
     _normalize_ko_strategy,
     _select_uncorrelated_ko,
     greedy_pivoted_cholesky_select,

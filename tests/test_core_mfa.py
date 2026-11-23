@@ -3,7 +3,7 @@ Smoke test for the constrained MFA pipeline (null-space L-BFGS-B).
 
 Runs a short optimization on the toy one-carbon model using synthetic test
 fixtures in data/test/.  The full benchmark lives in
-sigmaflux.pipeline.run_mfa_benchmark (``sigmaflux-benchmark-mfa``).
+flux_transformer.pipeline.run_mfa_benchmark (``flux-transformer-benchmark-mfa``).
 """
 
 import os
@@ -17,10 +17,10 @@ from cobra.io.json import load_json_model
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.core.data import FluxData, MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.mfa import fit_mfa_model
-from sigmaflux.core.model import MFAModel
+from flux_transformer.core.data import FluxData, MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.mfa import fit_mfa_model
+from flux_transformer.core.model import MFAModel
 
 _TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_DIR = os.path.abspath(os.path.join(_TEST_DIR, os.pardir))

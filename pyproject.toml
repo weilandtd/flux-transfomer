@@ -3,8 +3,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sigmaflux"
-# Single source of truth: src/sigmaflux/__init__.py:__version__ (see .claude/versioning.md)
+name = "flux_transformer"
+# Single source of truth: src/flux_transformer/__init__.py:__version__ (see .claude/versioning.md)
 dynamic = ["version"]
 description = "Metabolic Flux Analysis with EMU framework and AI-based flux prediction"
 readme = "README.md"
@@ -42,21 +42,21 @@ dependencies = [
 ]
 
 [project.scripts]
-sigmaflux-sample-flux     = "sigmaflux.pipeline.sample_flux:cli"
-sigmaflux-generate-data   = "sigmaflux.pipeline.generate_training_data:cli"
-sigmaflux-select-features = "sigmaflux.pipeline.extract_informative_features:cli"
-sigmaflux-train           = "sigmaflux.pipeline.train_ai_model:cli"
-sigmaflux-workflow        = "sigmaflux.pipeline.run_training_workflow:cli"
-sigmaflux-infer           = "sigmaflux.pipeline.run_inference_workflow:cli"
-sigmaflux-mfa-data        = "sigmaflux.pipeline.run_mfa_data:cli"
-sigmaflux-benchmark       = "sigmaflux.pipeline.run_ai_benchmark:cli"
-sigmaflux-benchmark-mfa   = "sigmaflux.pipeline.mfa_entry:cli"
-sigmaflux-benchmark-uncertainty = "sigmaflux.pipeline.run_uncertainty_benchmark:cli"
-sigmaflux-check-mfa-model = "sigmaflux.pipeline.check_mfa_model:cli"
-sigmaflux-sample-ko-flux  = "sigmaflux.pipeline.sample_ko_flux:cli"
-sigmaflux-build-ko-split  = "sigmaflux.pipeline.build_ko_split:cli"
-sigmaflux-export          = "sigmaflux.pipeline.export_model:cli"
-sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
+flux-transformer-sample-flux     = "flux_transformer.pipeline.sample_flux:cli"
+flux-transformer-generate-data   = "flux_transformer.pipeline.generate_training_data:cli"
+flux-transformer-select-features = "flux_transformer.pipeline.extract_informative_features:cli"
+flux-transformer-train           = "flux_transformer.pipeline.train_ai_model:cli"
+flux-transformer-workflow        = "flux_transformer.pipeline.run_training_workflow:cli"
+flux-transformer-infer           = "flux_transformer.pipeline.run_inference_workflow:cli"
+flux-transformer-mfa-data        = "flux_transformer.pipeline.run_mfa_data:cli"
+flux-transformer-benchmark       = "flux_transformer.pipeline.run_ai_benchmark:cli"
+flux-transformer-benchmark-mfa   = "flux_transformer.pipeline.mfa_entry:cli"
+flux-transformer-benchmark-uncertainty = "flux_transformer.pipeline.run_uncertainty_benchmark:cli"
+flux-transformer-check-mfa-model = "flux_transformer.pipeline.check_mfa_model:cli"
+flux-transformer-sample-ko-flux  = "flux_transformer.pipeline.sample_ko_flux:cli"
+flux-transformer-build-ko-split  = "flux_transformer.pipeline.build_ko_split:cli"
+flux-transformer-export          = "flux_transformer.pipeline.export_model:cli"
+flux-transformer-inspect         = "flux_transformer.pipeline.inspect_model:cli"
 
 [project.optional-dependencies]
 # hopsy is a test-only dependency, not a runtime one. cobra >= 0.32 ships
@@ -65,7 +65,7 @@ sigmaflux-inspect         = "sigmaflux.pipeline.inspect_model:cli"
 # is absent, before any of our code runs. Installing hopsy keeps the import alive. The
 # HopsySampler wrapper itself is devel-branch-only, which is why this is not a runtime dep.
 dev = ["pytest>=7.0", "pytest-cov", "ruff", "mypy", "hopsy"]
-# The second MFA backend. sigmaflux.x3cflux is imported lazily and its tests skip
+# The second MFA backend. flux_transformer.x3cflux is imported lazily and its tests skip
 # when it is absent, so this stays optional. One install note pip cannot express:
 # x3cflux needs Ipopt, and pip's cyipopt is an sdist that wants Ipopt headers at
 # build time -- so cyipopt has to come from conda-forge, which is what
@@ -79,7 +79,7 @@ docs = [
 ]
 
 [tool.setuptools.dynamic]
-version = { attr = "sigmaflux.__version__" }
+version = { attr = "flux_transformer.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

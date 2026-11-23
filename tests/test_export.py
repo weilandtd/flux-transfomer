@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 import torch
 
-from sigmaflux.ai._sfx import (
+from flux_transformer.ai._sfx import (
     MANIFEST,
     MEMBER_FMT,
     SfxFormatError,
@@ -30,8 +30,8 @@ from sigmaflux.ai._sfx import (
     SfxVersionError,
     check_schema,
 )
-from sigmaflux.ai.data import load_stoichiometric_matrix
-from sigmaflux.ai.export import (
+from flux_transformer.ai.data import load_stoichiometric_matrix
+from flux_transformer.ai.export import (
     export_model,
     inspect_model,
     load_model,
@@ -40,7 +40,7 @@ from sigmaflux.ai.export import (
     read_stoichiometry,
     validate_model,
 )
-from sigmaflux.ai.inference import EnsembleSigmaFlux, SigmaFlux, load_predictor
+from flux_transformer.ai.inference import EnsembleFluxTransformer, FluxTransformer, load_predictor
 
 from conftest import TRACER_ID
 
@@ -119,7 +119,7 @@ def test_predict_matches_source_ensemble_fp32(toy_run, tmp_path):
     path = _export(toy_run, tmp_path, precision="fp32")
     df_L = _toy_df_L()
     # Per member: the medoid choice is discrete, and the two toy members always tie.
-    expected = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"],
+    expected = EnsembleFluxTransformer(toy_run["config"], toy_run["ensemble_dir"],
                                  device="cpu").predict(df_L, aggregate=False)
     got = load_model(path, device="cpu").predict(df_L, aggregate=False)
 
@@ -256,12 +256,12 @@ def test_single_member_export_is_an_ensemble(toy_run, tmp_path):
     path = _export(toy_run, tmp_path, source=toy_run["checkpoint"], precision="fp32")
     loaded = load_model(path, device="cpu")
 
-    assert isinstance(loaded, EnsembleSigmaFlux)
+    assert isinstance(loaded, EnsembleFluxTransformer)
     assert len(loaded.members) == 1
     assert inspect_model(path)["n_members"] == 1
 
     df_L = _toy_df_L()
-    single = SigmaFlux(toy_run["config"], toy_run["checkpoint"], device="cpu").predict(df_L)
+    single = FluxTransformer(toy_run["config"], toy_run["checkpoint"], device="cpu").predict(df_L)
     np.testing.assert_allclose(loaded.predict(df_L)["Value"], single["Value"],
                                rtol=1e-5, atol=1e-6)
 
@@ -276,7 +276,7 @@ def test_no_config_or_cobra_needed_to_load(toy_run, tmp_path, monkeypatch):
     for original in (toy_run["config"], toy_run["model_json"]):
         shutil.copy(original, hidden / os.path.basename(original))
 
-    monkeypatch.setattr("sigmaflux.ai.data.load_stoichiometric_matrix",
+    monkeypatch.setattr("flux_transformer.ai.data.load_stoichiometric_matrix",
                         lambda *a, **k: pytest.fail("loading the export read the COBRA JSON"))
     monkeypatch.chdir(tmp_path)
 
@@ -291,14 +291,14 @@ def test_no_config_or_cobra_needed_to_load(toy_run, tmp_path, monkeypatch):
 
 def test_inspect_model_fields(toy_sfx):
     m = inspect_model(toy_sfx)
-    assert m["format"] == "sigmaflux-model"
+    assert m["format"] == "flux-transformer-model"
     assert isinstance(m["schema_version"], int)
     assert m["name"] == "toy" and m["model_version"] == "1.0.0"
     assert m["precision"] == "fp16" and m["n_members"] == 2
     for key in ("created_utc", "provenance", "model", "tracers", "tensors",
                 "regenerated_tensors", "entries", "member_nbytes"):
         assert key in m, key
-    assert m["provenance"]["sigmaflux_version"]
+    assert m["provenance"]["flux_transformer_version"]
     # the tensor table must tile the member blob exactly
     offset = 0
     for spec in m["tensors"]:
@@ -312,7 +312,7 @@ def test_manifest_readable_without_torch(toy_sfx, tmp_path):
     script = textwrap.dedent(f"""
         import importlib.util, sys
         spec = importlib.util.spec_from_file_location(
-            "_sfx", {os.path.join(os.path.dirname(__file__), '..', 'src', 'sigmaflux', 'ai', '_sfx.py')!r})
+            "_sfx", {os.path.join(os.path.dirname(__file__), '..', 'src', 'flux_transformer', 'ai', '_sfx.py')!r})
         m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
         manifest = m.read_manifest({toy_sfx!r})
         assert manifest["name"] == "toy"
@@ -333,8 +333,8 @@ def test_manifest_is_first_and_stored(toy_sfx):
 
 
 def test_schema_version_rejects_newer():
-    with pytest.raises(SfxVersionError, match="Upgrade sigmaflux"):
-        check_schema({"format": "sigmaflux-model", "schema_version": 999})
+    with pytest.raises(SfxVersionError, match="Upgrade flux_transformer"):
+        check_schema({"format": "flux-transformer-model", "schema_version": 999})
 
 
 def test_wrong_format_rejected():
@@ -344,7 +344,7 @@ def test_wrong_format_rejected():
 
 def test_unknown_manifest_key_tolerated():
     """Adding an optional key must not require a schema bump."""
-    m = check_schema({"format": "sigmaflux-model", "schema_version": 1, "future_key": 42})
+    m = check_schema({"format": "flux-transformer-model", "schema_version": 1, "future_key": 42})
     assert m["future_key"] == 42
 
 
@@ -405,13 +405,13 @@ def test_rejects_bad_precision(toy_run, tmp_path):
 def test_load_predictor_accepts_sfx(toy_sfx):
     """`--checkpoint model.sfx` must work at every existing call site."""
     predictor = load_predictor(None, toy_sfx, device="cpu")
-    assert isinstance(predictor, EnsembleSigmaFlux)
+    assert isinstance(predictor, EnsembleFluxTransformer)
     assert len(predictor.members) == 2
 
 
 def test_validate_model_reproduces_r2(toy_run, tmp_path):
     """R² must be recomputable from the export alone."""
-    from sigmaflux.ai.train import per_reaction_r2
+    from flux_transformer.ai.train import per_reaction_r2
 
     path = str(export_model(toy_run["ensemble_dir"], tmp_path / "v.sfx", name="toy",
                             model_version="1.0.0", config=toy_run["config"],
@@ -433,8 +433,8 @@ def test_validate_model_without_inputs_is_a_clear_error(toy_sfx):
 
 
 def test_cli_export_then_inspect(toy_run, tmp_path, capsys):
-    from sigmaflux.pipeline import export_model as export_cli
-    from sigmaflux.pipeline import inspect_model as inspect_cli
+    from flux_transformer.pipeline import export_model as export_cli
+    from flux_transformer.pipeline import inspect_model as inspect_cli
 
     out = tmp_path / "cli.sfx"
     assert export_cli.cli([

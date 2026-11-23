@@ -6,10 +6,10 @@ Library API
 
 .. code-block:: python
 
-   from sigmaflux.core import MFAModel, Experiment, Tracer, fit_mfa_model
-   from sigmaflux.expansion import EMUExpansion
-   from sigmaflux.ai import FluxDecoder, FluxDecoderConfig
-   from sigmaflux.ai.inference import load_predictor
+   from flux_transformer.core import MFAModel, Experiment, Tracer, fit_mfa_model
+   from flux_transformer.expansion import EMUExpansion
+   from flux_transformer.ai import FluxDecoder, FluxDecoderConfig
+   from flux_transformer.ai.inference import load_predictor
 
 Fitting a model to measured data:
 
@@ -29,7 +29,7 @@ Fitting a model to measured data:
 
    ``fit_mfa_model`` minimises a null-space reduced chi-squared with L-BFGS-B and
    returns a dict. The older penalized-Lagrangian optimizer is still available as
-   ``sigmaflux.core.fit_mfa_model_penalized`` for reproducing earlier analyses.
+   ``flux_transformer.core.fit_mfa_model_penalized`` for reproducing earlier analyses.
 
 Using a released model
 ----------------------
@@ -39,7 +39,7 @@ no COBRA JSON:
 
 .. code-block:: python
 
-   from sigmaflux.ai import load_model
+   from flux_transformer.ai import load_model
 
    sf = load_model("i_orientalis-v1.0.0.sfx")
    predictions = sf.predict(df_L, df_Vm)
@@ -50,8 +50,8 @@ file without loading any weights — or without torch installed at all:
 
 .. code-block:: bash
 
-   sigmaflux-inspect i_orientalis-v1.0.0.sfx
-   sigmaflux-inspect i_orientalis-v1.0.0.sfx --verify   # check every checksum
+   flux-transformer-inspect i_orientalis-v1.0.0.sfx
+   flux-transformer-inspect i_orientalis-v1.0.0.sfx --verify   # check every checksum
 
 To package your own trained run, see :ref:`exporting-a-model` below.
 
@@ -64,14 +64,14 @@ project can keep its own models and data:
 
 .. code-block:: bash
 
-   sigmaflux-workflow --config paper/configs/i_orientalis.yaml
+   flux-transformer-workflow --config paper/configs/i_orientalis.yaml
 
    # or one stage at a time
-   sigmaflux-sample-flux     --config <config.yaml>
-   sigmaflux-generate-data   --config <config.yaml>
-   sigmaflux-select-features --config <config.yaml> --data-dir <run_dir>
-   sigmaflux-train           --config <config.yaml> --data-dir <run_dir>
-   sigmaflux-infer           --config <config.yaml> --checkpoint <model.pt> \
+   flux-transformer-sample-flux     --config <config.yaml>
+   flux-transformer-generate-data   --config <config.yaml>
+   flux-transformer-select-features --config <config.yaml> --data-dir <run_dir>
+   flux-transformer-train           --config <config.yaml> --data-dir <run_dir>
+   flux-transformer-infer           --config <config.yaml> --checkpoint <model.pt> \
                              --data-dir <xlsx_dir> --out-dir <results_dir>
 
 .. _exporting-a-model:
@@ -80,13 +80,13 @@ Exporting a model
 -----------------
 
 Training writes one ``.pt`` per ensemble member, each carrying a full copy of the
-vocabularies, null-space basis and training diagnostics. ``sigmaflux-export``
+vocabularies, null-space basis and training diagnostics. ``flux-transformer-export``
 packages them into a single file that stores the shared payload once and keeps
 only the trained weights per member:
 
 .. code-block:: bash
 
-   sigmaflux-export --source <run_dir>/ensemble \
+   flux-transformer-export --source <run_dir>/ensemble \
                     --config paper/configs/i_orientalis.yaml \
                     --model-version 1.0.0
 
@@ -99,11 +99,11 @@ Anything that takes a checkpoint takes an ``.sfx`` too, so inference is unchange
 
 .. code-block:: bash
 
-   sigmaflux-infer --config <config.yaml> --checkpoint i_orientalis-v1.0.0.sfx \
+   flux-transformer-infer --config <config.yaml> --checkpoint i_orientalis-v1.0.0.sfx \
                    --data-dir <xlsx_dir> --out-dir <results_dir>
 
 Versioning is three independent things: ``schema_version`` is the file format and
 is bumped only when the layout changes (older files keep loading);
 ``model_version`` is the semver you give the weights; and the manifest's
-``provenance`` block records the sigmaflux version, git commit, training config
+``provenance`` block records the flux_transformer version, git commit, training config
 and its checksum.

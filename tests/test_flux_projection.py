@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 import torch
 
-from sigmaflux.ai.flux_projection import FluxProjection, active_set_sizes
+from flux_transformer.ai.flux_projection import FluxProjection, active_set_sizes
 
 DEPTH = 24
 

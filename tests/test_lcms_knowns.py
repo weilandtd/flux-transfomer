@@ -12,7 +12,7 @@ import warnings
 import pandas as pd
 import pytest
 
-from sigmaflux.utils.lcms_knowns import (
+from flux_transformer.utils.lcms_knowns import (
     _GEM_NAME_ALIASES,
     _alias_key,
     _conflicts,

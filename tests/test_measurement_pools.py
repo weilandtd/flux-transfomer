@@ -22,15 +22,15 @@ import torch
 from cobra.io.json import load_json_model, save_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
-from sigmaflux.core.data import MassIsotopomerData
-from sigmaflux.core.experiment import Experiment, Tracer
-from sigmaflux.core.measurement_pools import (
+from flux_transformer.core.data import MassIsotopomerData
+from flux_transformer.core.experiment import Experiment, Tracer
+from flux_transformer.core.measurement_pools import (
     add_measurement_pools, check_mapping_csv, degenerate_pool_members,
     measurement_token, plan_measurement_pools, pool_members, pool_reaction_ids,
 )
-from sigmaflux.core.model import MFAModel
-from sigmaflux.expansion.emu import EMU
-from sigmaflux.expansion.utils import labeling_educts, zero_stoichiometry_educts
+from flux_transformer.core.model import MFAModel
+from flux_transformer.expansion.emu import EMU
+from flux_transformer.expansion.utils import labeling_educts, zero_stoichiometry_educts
 
 
 def _met(met_id, pattern="abc"):
@@ -278,7 +278,7 @@ def test_pinned_directions_are_split_out_of_the_predicted_basis():
     gives it maximum weight on a target that is identically zero once standardised -- the
     failure that made Fisher selection return zero tokens on iAF1260.
     """
-    from sigmaflux.ai.utils import split_constant_directions
+    from flux_transformer.ai.utils import split_constant_directions
     rng = np.random.default_rng(0)
     Z, _ = np.linalg.qr(rng.normal(size=(12, 5)))
     y = np.zeros((300, 5))
@@ -302,7 +302,7 @@ def test_the_split_leaves_a_targeted_identity_block_alone():
     -0.225 while the non-pool median went 0.994 -> 0.595. Pools only supplied the first
     pinned directions, so the rotation fired for the first time; they were not the cause.
     """
-    from sigmaflux.ai.utils import split_constant_directions
+    from flux_transformer.ai.utils import split_constant_directions
     rng = np.random.default_rng(0)
     n_targets = 3
     Q, _ = np.linalg.qr(rng.normal(size=(12, 6)))
@@ -329,7 +329,7 @@ def test_the_whole_basis_rotation_is_what_destroys_the_targeted_block():
     Kept as the counter-case: it is why ``n_protected`` exists, and it reproduces the
     2026-08-29 regression in three lines.
     """
-    from sigmaflux.ai.utils import split_constant_directions
+    from flux_transformer.ai.utils import split_constant_directions
     rng = np.random.default_rng(0)
     Q, _ = np.linalg.qr(rng.normal(size=(12, 6)))
     targeted = Q[:, :3] @ rng.normal(size=(3, 3))
@@ -348,7 +348,7 @@ def test_split_is_skipped_when_there_are_too_few_samples():
     Its null eigenvectors are arbitrary, so splitting there would discard directions the
     model still has to predict.
     """
-    from sigmaflux.ai.utils import split_constant_directions
+    from flux_transformer.ai.utils import split_constant_directions
     rng = np.random.default_rng(0)
     Z, _ = np.linalg.qr(rng.normal(size=(12, 5)))
     V = rng.normal(size=(3, 5)) @ Z.T
@@ -383,7 +383,7 @@ def test_only_the_pool_drain_reopens_after_sampling(two_compartment_model):
     compartment fraction means; widening them too asserted they could carry a hundred
     times their own meaning, and handed the MFA fit a box 100x larger than the simplex.
     """
-    from sigmaflux.pipeline.sample_flux import (POOL_RELAXED_UB,
+    from flux_transformer.pipeline.sample_flux import (POOL_RELAXED_UB,
                                                 relax_measurement_pool_bounds)
 
     model = two_compartment_model
@@ -420,7 +420,7 @@ def test_the_predictor_copy_also_reopens_the_mixing_legs(two_compartment_model):
     model still keeps the legs at [0, 1] -- MFA reads it and its search box should stay
     the size of the simplex -- so only the predictor's copy opens them.
     """
-    from sigmaflux.pipeline.sample_flux import (POOL_RELAXED_UB,
+    from flux_transformer.pipeline.sample_flux import (POOL_RELAXED_UB,
                                                 relax_measurement_pool_bounds)
 
     model = two_compartment_model
@@ -475,9 +475,9 @@ def _pool_facts():
 def _pool_simulator():
     """``(simulator, converted, facts)`` for :func:`_pool_facts`."""
     x = pytest.importorskip("x3cflux")
-    from sigmaflux.x3cflux.build_config import build_configurations
-    from sigmaflux.x3cflux.check_network import assert_network
-    from sigmaflux.x3cflux.convert import convert
+    from flux_transformer.x3cflux.build_config import build_configurations
+    from flux_transformer.x3cflux.check_network import assert_network
+    from flux_transformer.x3cflux.convert import convert
 
     facts = _pool_facts()
     conv = convert(facts)
@@ -491,8 +491,8 @@ def _pool_simulator():
 
 def _mids_at(simulator, conv, facts, v_c, v_m):
     """``{metabolite: MID over M+1..M+3}`` at the given compartment fractions."""
-    from sigmaflux.x3cflux.compare import measurement_slots
-    from sigmaflux.x3cflux.fluxmap import FluxMap
+    from flux_transformer.x3cflux.compare import measurement_slots
+    from flux_transformer.x3cflux.fluxmap import FluxMap
 
     fluxmap = FluxMap(facts, conv, simulator.parameter_space)
     order = [r["id"] for r in facts["reactions"]]
@@ -546,7 +546,7 @@ def test_a_k_member_pool_costs_k_minus_one_free_parameters():
 
 def test_the_pool_block_survives_the_flux_round_trip():
     """Taps and drains take the generic path, so ``FluxMap`` needs no case for them."""
-    from sigmaflux.x3cflux.fluxmap import FluxMap
+    from flux_transformer.x3cflux.fluxmap import FluxMap
 
     simulator, conv, facts = _pool_simulator()
     fluxmap = FluxMap(facts, conv, simulator.parameter_space)
@@ -571,7 +571,7 @@ def test_a_pool_costs_k_minus_one_fitted_parameters(two_compartment_model):
     phantom parameter per pool. On I. orientalis that was 152 instead of 116, costing 36
     dof and tightening the acceptance bound for nothing.
     """
-    from sigmaflux.pipeline.run_mfa_benchmark import fitted_parameter_count
+    from flux_transformer.pipeline.run_mfa_benchmark import fitted_parameter_count
 
     unpooled = two_compartment_model.copy()
     unpooled.remove_reactions(
@@ -594,7 +594,7 @@ def test_a_pool_nothing_measures_costs_no_fitted_parameters(two_compartment_mode
     flux state. That is the point: the chi2 test is the only criterion computable when the
     true fluxes are unknown, so its parameter count must not depend on a flux solution.
     """
-    from sigmaflux.pipeline.run_mfa_benchmark import fitted_parameter_count
+    from flux_transformer.pipeline.run_mfa_benchmark import fitted_parameter_count
 
     unpooled = two_compartment_model.copy()
     unpooled.remove_reactions(

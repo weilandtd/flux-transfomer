@@ -20,10 +20,10 @@ Usage:
 
 # cyipopt links libspral, which needs the conda env's libstdc++; importing torch first pins
 # the system copy and the later x3cflux import fails. This must precede every other import
-# -- see sigmaflux.x3cflux.__init__.
+# -- see flux_transformer.x3cflux.__init__.
 import sys
 
-from sigmaflux.x3cflux import preimport
+from flux_transformer.x3cflux import preimport
 
 if not preimport():
     sys.exit("x3cflux is not installed: conda env create -f environment.yml")
@@ -36,13 +36,13 @@ import numpy as np
 import pandas as pd
 from optlang.symbolics import Zero
 
-from sigmaflux.pipeline._benchmark import (
+from flux_transformer.pipeline._benchmark import (
     build_mfa_context, forward_labeling, load_prepared_model,
 )
-from sigmaflux.pipeline._paths import load_config, mapping_csv_for, resolve_path
-from sigmaflux.utils import read_xlsx_extflux, read_xlsx_mid_data
-from sigmaflux.x3cflux.facts import model_facts
-from sigmaflux.x3cflux.fit import X3CFluxBackend
+from flux_transformer.pipeline._paths import load_config, mapping_csv_for, resolve_path
+from flux_transformer.utils import read_xlsx_extflux, read_xlsx_mid_data
+from flux_transformer.x3cflux.facts import model_facts
+from flux_transformer.x3cflux.fit import X3CFluxBackend
 
 #: Floor on a measured flux's sigma, so a value reported as exactly 0 with zero error
 #: (naive ``DNA_c``) does not become an infinitely stiff constraint.

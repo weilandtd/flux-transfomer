@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — Escherichia coli, genome-scale iAF1260
+# FluxTransformer training configuration — Escherichia coli, genome-scale iAF1260
 #
 # The ¹³C data in data/E_coli_LC_MS is the HILIC/LC-MS wild-type batch: three separate
 # cultures, one per tracer sheet. The external rates still come from the Long &

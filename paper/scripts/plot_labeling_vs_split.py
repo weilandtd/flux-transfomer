@@ -2,7 +2,7 @@
 Measured labeling of a token against the flux split it reports, across organisms.
 
 A labeling fraction has no units: it reports how carbon divides at a branch point, not how fast
-it flows. So each x axis is a split, the SigmaFlux-predicted flux into one branch over the flux
+it flows. So each x axis is a split, the FluxTransformer-predicted flux into one branch over the flux
 reaching the branch point, unitless and comparable across organisms. The PPP split is G6PDH over
 glucose phosphorylation (hexokinase, or the PTS in E. coli): G6P has no other outlet, so it equals
 G6PDH / (G6PDH + PGI). Oxygen uptake per glucose measures how much carbon is respired through the
@@ -46,7 +46,7 @@ from _figure_common import (
     selected_models,
 )
 
-from sigmaflux.utils.read_reference_flux import read_predicted_fluxes
+from flux_transformer.utils.read_reference_flux import read_predicted_fluxes
 
 TRACERS = {"1,2-13C-glucose": "[1, 1, 0, 0, 0, 0]", "U-13C-glucose": "[1, 1, 1, 1, 1, 1]"}
 MIN_R2 = 0.8

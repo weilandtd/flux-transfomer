@@ -1,5 +1,5 @@
 """
-Ground-truth vs predicted flux for one reaction, SigmaFlux and MFA simulation benchmarks
+Ground-truth vs predicted flux for one reaction, FluxTransformer and MFA simulation benchmarks
 overlaid in a single panel.
 
 Writes ``benchmark_scatter_<model>_<reaction>.svg``. Each point is one benchmark sample;

@@ -10,7 +10,7 @@ Usage:
   python paper/analysis/ko_eval.py --checkpoint <ko.pt> --run-dir <ko run> --tau-rel 0.1
 """
 import argparse, json, os, numpy as np, pandas as pd, torch
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
 
 
 def main():

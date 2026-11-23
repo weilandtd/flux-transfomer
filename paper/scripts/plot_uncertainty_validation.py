@@ -5,8 +5,8 @@ Per model:
   uncertainty_coverage_<key>.svg     CDF of per-reaction coverage, against nominal
   uncertainty_validation_<key>.csv   per-reaction coverage and spread components
 
-The interval SigmaFlux reports is a propagation of the measured inputs and the ensemble's
-own disagreement (see :mod:`sigmaflux.ai.uncertainty`). Nothing in it is fitted to make it
+The interval FluxTransformer reports is a propagation of the measured inputs and the ensemble's
+own disagreement (see :mod:`flux_transformer.ai.uncertainty`). Nothing in it is fitted to make it
 cover ground truth, so coverage is evidence rather than a restatement of a tuning step --
 which is exactly why it is worth measuring, and why the number is reported here whichever
 way it lands.
@@ -35,7 +35,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy.stats import t as t_dist
 
-from sigmaflux.ai.data import load_data, _read_hdf
+from flux_transformer.ai.data import load_data, _read_hdf
 
 from _figure_common import (
     COLORS, add_common_args, apply_style, run_dir_for, save_figure, selected_models)

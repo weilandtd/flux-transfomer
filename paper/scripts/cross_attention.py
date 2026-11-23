@@ -56,9 +56,9 @@ from _figure_common import (
     selected_models,
 )
 
-from sigmaflux.ai import load_model
-from sigmaflux.ai._sfx import SfxReader
-from sigmaflux.ai.data import load_data
+from flux_transformer.ai import load_model
+from flux_transformer.ai._sfx import SfxReader
+from flux_transformer.ai.data import load_data
 
 SFX_VERSION = "v1.4.0"
 RESULTS_DIR = _REPO_ROOT / "paper" / ".results" / "cross_attention"
@@ -201,8 +201,8 @@ def validation_run(ens, path, args):
 def condition_inputs(model):
     """(condition, growth condition, df_L, df_Vm) for every growth condition of every
     condition in the organism's experimental data, one row per replicate."""
-    from sigmaflux.pipeline._paths import mapping_csv_for, resolve_path
-    from sigmaflux.pipeline.run_inference_workflow import (
+    from flux_transformer.pipeline._paths import mapping_csv_for, resolve_path
+    from flux_transformer.pipeline.run_inference_workflow import (
         _discover_conditions,
         _find_ext_flux_file,
         _inspect_growth_conditions,

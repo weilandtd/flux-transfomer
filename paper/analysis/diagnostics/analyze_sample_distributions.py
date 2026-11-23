@@ -1,5 +1,5 @@
 """
-Analyze flux sample distributions in a SigmaFlux dataset directory.
+Analyze flux sample distributions in a FluxTransformer dataset directory.
 
 Prints three sections to stdout:
   1. Global flux statistics (all samples × all reactions)

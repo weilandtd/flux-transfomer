@@ -3,7 +3,7 @@
 ``toy_run`` builds a complete but minimal *run directory* on the toy one-carbon
 model: the three training HDF5 batches, a trained-shaped checkpoint (random
 weights, correct stoichiometric structure), and a two-member ensemble. It is
-what a real ``sigmaflux-train`` run produces, minus the training.
+what a real ``flux-transformer-train`` run produces, minus the training.
 
 Both :mod:`test_ai_inference` (which needs only the checkpoint) and
 :mod:`test_checkpoint` (which needs the HDF5 data and the split as well) build
@@ -25,16 +25,16 @@ import pytest
 import torch
 from cobra.io.json import load_json_model, save_json_model
 
-from sigmaflux.ai.data import (
+from flux_transformer.ai.data import (
     build_radial_vocabs,
     create_tracer_mapping,
     load_stoichiometric_matrix,
     prepare_id_dataset,
     radial_embedding_table,
 )
-from sigmaflux.ai.model import FluxDecoder, FluxDecoderConfig
-from sigmaflux.ai.utils import compute_sparse_nullspace
-from sigmaflux.core.utils import annotate_atom_patterns
+from flux_transformer.ai.model import FluxDecoder, FluxDecoderConfig
+from flux_transformer.ai.utils import compute_sparse_nullspace
+from flux_transformer.core.utils import annotate_atom_patterns
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOY_MODEL_JSON = os.path.join(REPO_ROOT, "models", "atomistic", "toy", "one_carbon_annotated.json")
@@ -165,7 +165,7 @@ def toy_run(tmp_path_factory):
     rev_df.to_hdf(run_dir / f"wb_model_reversibility_data{suffix}.h5", key="reversibility", mode="w")
 
     # The benchmarks read the prepared model and the observable metabolites from the
-    # run directory, as sigmaflux-sample-flux / -select-features leave them. Model
+    # run directory, as flux-transformer-sample-flux / -select-features leave them. Model
     # preparation is what turns the toy JSON's reaction atom mappings into the
     # per-metabolite atom_pattern annotations build_targets needs.
     save_json_model(annotate_atom_patterns(load_json_model(TOY_MODEL_JSON)),

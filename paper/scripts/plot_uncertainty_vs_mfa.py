@@ -14,7 +14,7 @@ span many orders of magnitude, and a single summary would describe only the larg
 
 Restricted to points where BOTH sides give a finite bound: a published bound at or beyond
 the +/-1e8 sentinel means MFA could not identify the flux at all (see
-sigmaflux.utils.read_reference_flux's UNBOUNDED_FLUX handling), not a measurement to
+flux_transformer.utils.read_reference_flux's UNBOUNDED_FLUX handling), not a measurement to
 compare against.
 
 Usage:
@@ -57,7 +57,7 @@ def per_reaction_ratio(df: pd.DataFrame) -> pd.DataFrame:
 
     Width is ``|hi - lo|`` rather than ``hi - lo``: ``pair_fluxes`` already reorders each
     interval's ends after orienting the reference (see
-    ``sigmaflux.utils.read_reference_flux.pair_fluxes``), but taking the absolute value
+    ``flux_transformer.utils.read_reference_flux.pair_fluxes``), but taking the absolute value
     here is a cheap second guarantee that an inverted pair cannot silently flip the sign
     of the ratio.
     """

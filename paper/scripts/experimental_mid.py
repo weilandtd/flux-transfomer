@@ -1,5 +1,5 @@
 """
-Simulate SigmaFlux's predicted labeling for the experimental panels.
+Simulate FluxTransformer's predicted labeling for the experimental panels.
 
 The expensive half of the isotopologue comparison: for every growth condition the paper
 plots, this predicts the flux state from the measured data, pushes each draw through the
@@ -50,14 +50,14 @@ import time
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, summarize_draws
-from sigmaflux.pipeline._benchmark import pin_threads
-from sigmaflux.pipeline._paths import mapping_csv_for, resolve_path
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, summarize_draws
+from flux_transformer.pipeline._benchmark import pin_threads
+from flux_transformer.pipeline._paths import mapping_csv_for, resolve_path
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, _inspect_growth_conditions,
     load_condition_inputs)
-from sigmaflux.utils import read_reference_fluxes
+from flux_transformer.utils import read_reference_fluxes
 
 from _figure_common import (
     PREDICTION_SPECS, UNBOUNDED_FLUX, _REPO_ROOT, add_common_args, growth_rates,
@@ -100,7 +100,7 @@ def tracer_name_map(tracer_cfg, experiments):
 
     ``build_labeling_index`` names each experiment by its tracers' repr, and
     ``build_experiments`` builds one experiment per config tracer in order, so zipping
-    the two is exact -- and needs no checkpoint, unlike ``SigmaFlux.tracer_ids()``.
+    the two is exact -- and needs no checkpoint, unlike ``FluxTransformer.tracer_ids()``.
     """
     return {cfg_entry.get("name", str(exp.tracers[0])):
             "|".join(str(t) for t in exp.tracers)

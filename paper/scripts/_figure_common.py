@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from sigmaflux.pipeline._paths import load_config, resolve_path
-from sigmaflux.utils import (
+from flux_transformer.pipeline._paths import load_config, resolve_path
+from flux_transformer.utils import (
     pair_fluxes, read_predicted_fluxes, read_reference_fluxes, reference_orientation)
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -30,7 +30,7 @@ from plot_test_performance import (  # noqa: E402
     LABEL, R2_THRESHOLD, drop_pool_reactions, load_benchmark, per_flux_nrmse,
     per_flux_r2, per_flux_rms, per_flux_rmse)
 from plot_test_performance import COLORS as METHOD_COLORS  # noqa: E402
-from sigmaflux.ai.data import load_data  # noqa: E402
+from flux_transformer.ai.data import load_data  # noqa: E402
 
 # ── What to draw ──────────────────────────────────────────────────────────────
 # `run` is relative to the repo root.
@@ -55,7 +55,7 @@ COLORS = {
 
 # ── This project's data conventions ───────────────────────────────────────────
 # These describe how *these* runs and workbooks are laid out, not anything intrinsic to
-# the file formats, so they live here rather than in sigmaflux.utils: another dataset may
+# the file formats, so they live here rather than in flux_transformer.utils: another dataset may
 # use different condition letters, a different sentinel, or none at all.
 CONDITIONS = ["C", "N", "P", "A", "B"]
 
@@ -342,7 +342,7 @@ def growth_rates(ref_value):
 def build_reference_comparison(run_dir, org, panel_rxns):
     """Signed pred-vs-reference frame for every condition a run has predictions for.
 
-    Locates this project's files and hands them to :mod:`sigmaflux.utils.read_reference_flux`,
+    Locates this project's files and hands them to :mod:`flux_transformer.utils.read_reference_flux`,
     which does the reading and pairing but knows nothing about where they live.
     """
     ref_path = reference_path(org)

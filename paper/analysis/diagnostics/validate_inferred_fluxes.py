@@ -1,10 +1,10 @@
 """
-Close the loop on a real experiment: Data -> SigmaFlux -> fluxes -> simulation -> MIDs.
+Close the loop on a real experiment: Data -> FluxTransformer -> fluxes -> simulation -> MIDs.
 
 A flux prediction is only worth reporting if it is a flux state the network can actually
 hold and if it reproduces the labeling it was derived from. Nothing in the pipeline checks
 either, so this script does, against real measured data rather than held-out synthetic
-samples (which is what ``sigmaflux-benchmark`` already covers).
+samples (which is what ``flux-transformer-benchmark`` already covers).
 
 Three families of check, in the order they can invalidate each other:
 
@@ -49,16 +49,16 @@ import sys
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, _medoid_weights
-from sigmaflux.pipeline._benchmark import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.ai.uncertainty import DEFAULT_N_BOOTSTRAP, sample_inputs, _medoid_weights
+from flux_transformer.pipeline._benchmark import (
     build_mfa_context, forward_labeling, load_prepared_model,
 )
-from sigmaflux.pipeline._paths import (
+from flux_transformer.pipeline._paths import (
     add_root_argument, load_config, mapping_csv_for, resolve_path,
 )
-from sigmaflux.pipeline.check_mfa_model import measurable_metabolites, prepared_model
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.pipeline.check_mfa_model import measurable_metabolites, prepared_model
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, _inspect_growth_conditions,
     load_condition_inputs, predict_draws,
 )
@@ -78,7 +78,7 @@ def prepared_network(cfg, root, checkpoint, out_dir):
     Loads whichever run directory holds the ``model_prepared_for_mfa.json`` the checkpoint
     was trained against -- the checkpoint's own directory, or its parent for an
     ``ensemble/`` subdirectory -- via the same
-    :func:`~sigmaflux.pipeline._benchmark.load_prepared_model` the benchmarks use. Falls
+    :func:`~flux_transformer.pipeline._benchmark.load_prepared_model` the benchmarks use. Falls
     back to re-deriving the model from the config, which re-solves FVA and writes a stray
     artifact into *out_dir*, only when no run directory carries one.
     """
@@ -130,9 +130,9 @@ def split_predictions(raw, sf, reaction_ids):
 def aggregate_state(flux_wide, rev_wide, sample, how):
     """Combine the ensemble members at one sample into a single flux state.
 
-    ``how="medoid"`` is what ``EnsembleSigmaFlux.predict`` and the predictions CSV report:
+    ``how="medoid"`` is what ``EnsembleFluxTransformer.predict`` and the predictions CSV report:
     the member closest to the coordinatewise median over fluxes and reversibilities
-    (:func:`sigmaflux.ai.uncertainty._medoid_weights`), so a flux state the model produced.
+    (:func:`flux_transformer.ai.uncertainty._medoid_weights`), so a flux state the model produced.
     ``how="mean"`` is a convex combination of members, so also a flux state.
     ``how="median"`` is not a convex combination and can leave the null space; it is kept
     so that difference stays measured.

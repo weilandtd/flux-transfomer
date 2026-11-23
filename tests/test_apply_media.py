@@ -10,7 +10,7 @@ there makes the model infeasible.
 import cobra
 import pytest
 
-from sigmaflux.pipeline.sample_flux import apply_media
+from flux_transformer.pipeline.sample_flux import apply_media
 
 
 @pytest.fixture

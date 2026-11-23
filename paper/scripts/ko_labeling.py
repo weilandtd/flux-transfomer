@@ -1,5 +1,5 @@
 """
-Labeling implied by SigmaFlux's knockout-panel predictions, against the measured MIDs.
+Labeling implied by FluxTransformer's knockout-panel predictions, against the measured MIDs.
 
 For every strain of the Long & Antoniewicz (2019) panel, the flux state inference
 reported -- plain (``predictions/``) and FBApro-projected (``predictions_fbapro/``) -- is
@@ -22,9 +22,9 @@ import sys
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.pipeline._paths import mapping_csv_for, resolve_path
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.pipeline._paths import mapping_csv_for, resolve_path
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, _inspect_growth_conditions,
     load_condition_inputs)
 
@@ -36,7 +36,7 @@ from validate_inferred_fluxes import agreement, measured_table  # noqa: E402
 RUN = _REPO_ROOT / "paper/.results/e_coli_core_gc_20260924"
 CONDITION = "B"
 #: Prediction directory per method.
-METHODS = {"sigmaflux": "predictions", "fbapro": "predictions_fbapro"}
+METHODS = {"flux_transformer": "predictions", "fbapro": "predictions_fbapro"}
 TOKEN = ["Tracer", "Metabolite", "Isotopomer"]
 
 

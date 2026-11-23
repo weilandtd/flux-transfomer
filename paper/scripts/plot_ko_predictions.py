@@ -1,7 +1,7 @@
 """
-SigmaFlux on the Long & Antoniewicz (2019) E. coli knockout panel, with and without FBApro.
+FluxTransformer on the Long & Antoniewicz (2019) E. coli knockout panel, with and without FBApro.
 
-  ko_r2.svg              SigmaFlux R² against the published MFA fit, one bar per
+  ko_r2.svg              FluxTransformer R² against the published MFA fit, one bar per
                          strain whose gene is in the network (GENE_REACTIONS), sorted by
                          R², dark where the deletion knocks down a core reaction, light
                          where an isozyme takes over
@@ -21,7 +21,7 @@ SigmaFlux on the Long & Antoniewicz (2019) E. coli knockout panel, with and with
   ko_r2.csv, ko_flux.csv, ko_labeling.csv
                          the numbers behind them
 
-Reads the two sets of sigmaflux-infer output the GC/MS E. coli core run carries:
+Reads the two sets of flux-transformer-infer output the GC/MS E. coli core run carries:
 ``predictions/`` (plain) and ``predictions_fbapro/`` (``--fbapro``, which projects every
 member draw onto S.v = 0 with the config's experiment.knockouts pinned to zero). Run
 both first:
@@ -29,7 +29,7 @@ both first:
     bash paper/submit/submit_inference.sh paper/.results/e_coli_core_gc_<date>
     FBAPRO=1 bash paper/submit/submit_inference.sh paper/.results/e_coli_core_gc_<date>
 
-R² is scored per strain on the reactions SigmaFlux predicts with R² > 0.9 in its own
+R² is scored per strain on the reactions FluxTransformer predicts with R² > 0.9 in its own
 simulation benchmark (``<run>/ai_benchmark``), with the same linear, signed definition as
 plot_experimental.py. Intervals are the ones inference reports; the published
 ones are the fit's 95% bounds.
@@ -50,19 +50,19 @@ import seaborn as sns
 from _figure_common import (METHOD_COLORS, UNBOUNDED_FLUX, _REPO_ROOT, apply_style,
                             drop_pool_reactions, load_benchmark, load_data, per_flux_r2,
                             r2_linear, reference_path, resolve_organism, save_figure)
-from sigmaflux.utils import (pair_fluxes, read_predicted_fluxes, read_reference_fluxes,
+from flux_transformer.utils import (pair_fluxes, read_predicted_fluxes, read_reference_fluxes,
                              reference_orientation)
 
 RUN = _REPO_ROOT / "paper/.results/e_coli_core_gc_20260924"
 CONDITION = "B"
 BENCHMARK_R2 = 0.9
 #: Prediction directory per method.
-METHODS = {"sigmaflux": "predictions", "fbapro": "predictions_fbapro"}
+METHODS = {"flux_transformer": "predictions", "fbapro": "predictions_fbapro"}
 
 COLORS = {
     "knockdown": METHOD_COLORS["ai"],   # flux transformer teal
     "isozyme":   "#A9CFCB",             # light teal
-    "sigmaflux": METHOD_COLORS["ai"],
+    "flux_transformer": METHOD_COLORS["ai"],
     "fbapro":    "#A9CFCB",
     "reference": "#AAAAAA",
     "error":     "#333333",
@@ -72,7 +72,7 @@ CATEGORIES = {"knockdown": "Reaction knockdown",
               "isozyme": "Alternative isozyme",
               "wild_type": "Wild type"}
 #: Legend label per prediction method.
-SOURCES = {"sigmaflux": "FT", "fbapro": "FT + FBApro"}
+SOURCES = {"flux_transformer": "FT", "fbapro": "FT + FBApro"}
 WILD_TYPE_GC = 1
 UNITS = r"[mmol gDW$^{-1}$ h$^{-1}$]"
 #: R² bar plot size and margins (figure fractions); the scatter matches its axes height.
@@ -120,7 +120,7 @@ def parse_args():
 
 
 def benchmark_reactions(run):
-    """Reactions SigmaFlux predicts with R² above BENCHMARK_R2 on simulated data."""
+    """Reactions FluxTransformer predicts with R² above BENCHMARK_R2 on simulated data."""
     _, flux_df, _ = load_data(str(run))
     paired, _ = load_benchmark(run / "ai_benchmark", drop_pool_reactions(flux_df, run))
     r2 = per_flux_r2(paired)
@@ -152,7 +152,7 @@ def strain_names(org):
 
 
 def plot_r2(r2, knockdown, out_dir):
-    """SigmaFlux R² bar per strain in the network, sorted by R²; *knockdown* is the set of
+    """FluxTransformer R² bar per strain in the network, sorted by R²; *knockdown* is the set of
     growth conditions whose deletion knocks down a core reaction."""
     r2 = r2[(r2["gc"] == WILD_TYPE_GC) | r2["strain"].isin(GENE_REACTIONS)]
     category = np.where(r2["gc"] == WILD_TYPE_GC, "wild_type",
@@ -177,7 +177,7 @@ def plot_r2(r2, knockdown, out_dir):
 
 def ko_flux(run, strains, knockdown):
     """SF flux of each deleted gene's reaction in wild type and in its knockout."""
-    pred = predictions(run, "sigmaflux")
+    pred = predictions(run, "flux_transformer")
     gc_of = {strain: gc for gc, strain in strains.items()}
     rows = []
     # GPR also names partner genes outside the deletion panel (fbaA, glpX, rpiA).
@@ -285,7 +285,7 @@ def plot_ko_labeling(tokens, r2, gc, gene, out_dir):
         left=0.22, right=0.97, bottom=0.17, top=0.97))
     ax.plot([0, 1], [0, 1], color=COLORS["reference"], linewidth=0.8, linestyle="--",
             zorder=0)
-    for method in ("fbapro", "sigmaflux"):
+    for method in ("fbapro", "flux_transformer"):
         d = tokens[(tokens["gc"] == gc) & (tokens["method"] == method)].dropna(subset=["sim"])
         ax.scatter(d["measured"], d["sim"], s=12, color=COLORS[method], linewidths=0,
                    label=f"{SOURCES[method]} ($R^2$ = {r2.loc[gc, method]:.2f})", zorder=2)
@@ -306,7 +306,7 @@ def plot_labeling_knockdowns(r2, strains, knockdown, out_dir):
     """Labeling R² of each knockdown strain, SF and SF + FBApro side by side, sorted by
     SF R²; a state whose EMU solve failed is marked n/a."""
     r2 = (r2.loc[[gc for gc in r2.index if gc in knockdown]]
-            .sort_values("sigmaflux", ascending=False))
+            .sort_values("flux_transformer", ascending=False))
     order = list(r2.index.map(strains))
     long = (r2.rename(index=strains).rename_axis("strain").reset_index()
               .melt(id_vars="strain", value_vars=list(METHODS), var_name="method",
@@ -370,7 +370,7 @@ def main():
     reactions = benchmark_reactions(args.run)
     print(f"{len(reactions)} reactions with benchmark R² > {BENCHMARK_R2}")
     scored = paired(args.run, org, reactions)
-    scored = scored[scored["method"] == "sigmaflux"]
+    scored = scored[scored["method"] == "flux_transformer"]
     r2 = (scored.groupby("gc")
                 .apply(lambda g: pd.Series({"r2": r2_linear(g["pred"], g["ref"]),
                                             "n": len(g)}), include_groups=False)

@@ -54,7 +54,7 @@ from plot_cross_attention import (
     reaction_pathways,
 )
 
-from sigmaflux.viz import bipartite_graph, hubs, plot_bipartite_graph
+from flux_transformer.viz import bipartite_graph, hubs, plot_bipartite_graph
 
 KEY = "m_musculus_t_cell"   # the default model
 # Tokens whose fraction follows a flux split across the model's simulated samples for a reason

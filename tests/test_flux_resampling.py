@@ -1,4 +1,4 @@
-"""Tests for the sign-bounded Beta resampler used at inference (sigmaflux.ai.uncertainty).
+"""Tests for the sign-bounded Beta resampler used at inference (flux_transformer.ai.uncertainty).
 
 An exchange flux is either uptake or secretion in a given condition, never both, so
 resampling it for the inference ensemble must not put mass on the wrong side of zero --
@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.ai.uncertainty import resample_flux, sample_inputs
+from flux_transformer.ai.uncertainty import resample_flux, sample_inputs
 
 _resample_flux = resample_flux
 

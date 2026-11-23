@@ -1,4 +1,4 @@
-"""Unit tests for compute_targeted_nullspace in sigmaflux.ai.utils.
+"""Unit tests for compute_targeted_nullspace in flux_transformer.ai.utils.
 
 Tests cover:
   1. Basic correctness on a small synthetic S (identity block, mass balance, shape).
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import scipy.linalg
 
-from sigmaflux.ai.utils import compute_targeted_nullspace
+from flux_transformer.ai.utils import compute_targeted_nullspace
 
 
 # ---------------------------------------------------------------------------

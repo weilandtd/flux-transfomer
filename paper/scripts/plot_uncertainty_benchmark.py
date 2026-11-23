@@ -1,7 +1,7 @@
 """
 Missing-metabolite and measurement-noise sensitivity -- line plots.
 
-Reads what ``sigmaflux-benchmark-uncertainty`` writes --
+Reads what ``flux-transformer-benchmark-uncertainty`` writes --
 ``<run_dir>/uncertainty_benchmark/<condition>/{ai,mfa}/`` -- and draws three
 single-panel line figures, one per quantity swept (metabolites observed, MID noise,
 flux noise). y is the number of reactions the arm **resolves**: R² across the scored
@@ -19,10 +19,10 @@ The line is the **median** over the replicates (missing-metabolite axis) or the
 bootstrap draws (noise axes), matching the percentile error band around it, so a single
 pathological draw moves neither.
 
-Colour is METHOD (SigmaFlux/MFA, ``plot_test_performance.COLORS`` -- the paper's own
+Colour is METHOD (FluxTransformer/MFA, ``plot_test_performance.COLORS`` -- the paper's own
 convention); marker + linestyle is MODEL, via seaborn's ``style``. The condition grid
 itself is never re-derived here -- imported straight from
-:mod:`sigmaflux.pipeline.run_uncertainty_benchmark`, so a change to the grid there
+:mod:`flux_transformer.pipeline.run_uncertainty_benchmark`, so a change to the grid there
 cannot silently desync from what this script expects to find on disk.
 
 Two different sources of spread, matching how the underlying data was collected:
@@ -66,8 +66,8 @@ from _figure_common import (  # noqa: E402
     add_common_args, apply_style, run_dir_for, save_figure, selected_models)
 from plot_test_performance import (  # noqa: E402
     COLORS, LABEL, R2_THRESHOLD, load_benchmark)
-from sigmaflux.ai.data import load_data  # noqa: E402
-from sigmaflux.pipeline.run_uncertainty_benchmark import (  # noqa: E402
+from flux_transformer.ai.data import load_data  # noqa: E402
+from flux_transformer.pipeline.run_uncertainty_benchmark import (  # noqa: E402
     DEFAULT_FLUX_STD, DEFAULT_LAB_STD, _build_conditions)
 
 apply_style()

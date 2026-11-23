@@ -1,5 +1,5 @@
 """
-Rank the fluxes where MFA and SigmaFlux disagree most, and decide which to trust.
+Rank the fluxes where MFA and FluxTransformer disagree most, and decide which to trust.
 
 On the simulation benchmark the ground truth is known, so a disagreement can be
 adjudicated outright: for every reaction we report how far apart the two methods are and
@@ -41,7 +41,7 @@ import pandas as pd
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "analysis" / "diagnostics"))
 from plot_test_performance import load_benchmark, per_flux_r2, R2_THRESHOLD  # noqa: E402
-from sigmaflux.ai.data import load_data  # noqa: E402
+from flux_transformer.ai.data import load_data  # noqa: E402
 
 # Reactions below this typical |flux| are numerically negligible: their spread across
 # samples is ~1e-3 mmol/gDW/h, both methods are pure noise there, and they otherwise
@@ -142,14 +142,14 @@ def build_table(run_dir: pathlib.Path, flux_floor: float) -> pd.DataFrame:
     else:
         print(f"  (no {rel} — run ensemble_calibration.py for uncertainty columns)")
 
-    tbl["winner"] = np.where(tbl.mfa_err < tbl.sf_err, "MFA", "SigmaFlux")
+    tbl["winner"] = np.where(tbl.mfa_err < tbl.sf_err, "MFA", "FluxTransformer")
     good_mfa, good_sf = tbl.r2_mfa > R2_THRESHOLD, tbl.r2_sf > R2_THRESHOLD
     tbl["trust"] = np.select(
         [good_mfa & good_sf, good_sf & ~good_mfa, good_mfa & ~good_sf],
-        ["either", "SigmaFlux", "MFA"], default="neither")
+        ["either", "FluxTransformer", "MFA"], default="neither")
 
     # Carrying no carbon is tested FIRST, because it is the more fundamental property and
-    # the two classes overlap: water and Pi transport sit on cycles too, yet SigmaFlux
+    # the two classes overlap: water and Pi transport sit on cycles too, yet FluxTransformer
     # recovers them (R² ≈ 0.94) since they are rigidly coupled to growth through the
     # biomass equation. Ordering cycle-first would file them under "cycle" and blur the
     # one class that is genuinely hopeless.
@@ -197,9 +197,9 @@ def validate_uncertainty(tbl: pd.DataFrame) -> None:
 
     score = -tbl["u_rel"].to_numpy()
     print("\nAUC of ensemble spread alone (no ground truth) for predicting:")
-    print(f"  SigmaFlux R² > {R2_THRESHOLD}          : {_auc(score, (tbl.r2_sf > R2_THRESHOLD).to_numpy()):.3f}")
+    print(f"  FluxTransformer R² > {R2_THRESHOLD}          : {_auc(score, (tbl.r2_sf > R2_THRESHOLD).to_numpy()):.3f}")
     print(f"  reaction is trustworthy at all : {_auc(score, (tbl.trust != 'neither').to_numpy()):.3f}")
-    print(f"  SigmaFlux beats MFA            : {_auc(score, (tbl.winner == 'SigmaFlux').to_numpy()):.3f}")
+    print(f"  FluxTransformer beats MFA            : {_auc(score, (tbl.winner == 'FluxTransformer').to_numpy()):.3f}")
 
     print("\nMedian calibrated uncertainty by mechanism:")
     print(tbl.groupby("mechanism")["u_rel"].median().sort_values()
@@ -239,7 +239,7 @@ def main():
     print(f"=== TOP {args.top} DISAGREEMENTS ===")
     print(tbl[cols].head(args.top).to_string(float_format=lambda v: f"{v:.3f}"))
 
-    print(f"\nSigmaFlux closer to truth on {100 * (tbl.winner == 'SigmaFlux').mean():.0f}% "
+    print(f"\nFluxTransformer closer to truth on {100 * (tbl.winner == 'FluxTransformer').mean():.0f}% "
           f"of these reactions; trust verdict: "
           + ", ".join(f"{k}={v}" for k, v in tbl.trust.value_counts().items()))
 
@@ -248,8 +248,8 @@ def main():
                                    disagree=("disagree_abs", "median"),
                                    r2_mfa=("r2_mfa", "median"),
                                    r2_sf=("r2_sf", "median"),
-                                   sf_closer=("winner", lambda s: (s == "SigmaFlux").mean()),
-                                   trust_sf=("trust", lambda s: (s == "SigmaFlux").mean()),
+                                   sf_closer=("winner", lambda s: (s == "FluxTransformer").mean()),
+                                   trust_sf=("trust", lambda s: (s == "FluxTransformer").mean()),
                                    trust_none=("trust", lambda s: (s == "neither").mean()))
     print(grp.sort_values("disagree", ascending=False).to_string(float_format=lambda v: f"{v:.3f}"))
 

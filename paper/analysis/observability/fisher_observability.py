@@ -16,11 +16,11 @@ Usage: python paper/analysis/fisher_observability.py --config paper/configs/i_or
 """
 import argparse, os, numpy as np, pandas as pd
 import matplotlib as mpl; mpl.use('Agg'); import matplotlib.pyplot as plt, seaborn as sns
-from sigmaflux.ai.data import load_data, load_stoichiometric_matrix
-from sigmaflux.ai import features as feat_lib
-from sigmaflux.ai.fisher_selection import empirical_sensitivity_grams, observable_spectrum, _prior_precision
-from sigmaflux.ai.utils import compute_sparse_nullspace
-from sigmaflux.pipeline._paths import add_root_argument, load_config, resolve_path
+from flux_transformer.ai.data import load_data, load_stoichiometric_matrix
+from flux_transformer.ai import features as feat_lib
+from flux_transformer.ai.fisher_selection import empirical_sensitivity_grams, observable_spectrum, _prior_precision
+from flux_transformer.ai.utils import compute_sparse_nullspace
+from flux_transformer.pipeline._paths import add_root_argument, load_config, resolve_path
 
 mpl.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 COLORS = {'main': '#4C72B0'}

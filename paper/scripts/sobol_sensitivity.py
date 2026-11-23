@@ -44,8 +44,8 @@ from _figure_common import add_common_args, run_dir_for, selected_models
 from cross_attention import RESULTS_DIR, sfx_path, validation_inputs
 from SALib.analyze.sobol import first_order, total_order
 
-from sigmaflux.ai import load_model
-from sigmaflux.ai.model import MISSING_LABEL_VALUE
+from flux_transformer.ai import load_model
+from flux_transformer.ai.model import MISSING_LABEL_VALUE
 
 
 def predict(model, ids, fracs, measured, fixed, batch_size):

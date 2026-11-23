@@ -25,7 +25,7 @@ import os
 import pytest
 from cobra.io import load_json_model
 
-from sigmaflux.core.utils import (
+from flux_transformer.core.utils import (
     BIOMASS_COMPONENT_IDS,
     PUBLISHED_BIOMASS_FRACTIONS,
     _COMPONENT_TO_BM,

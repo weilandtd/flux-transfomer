@@ -1,4 +1,4 @@
-# SigmaFlux training configuration — Mus musculus primary T cell
+# FluxTransformer training configuration — Mus musculus primary T cell
 #
 # One model covers both cell states. The GEM ships a single BIOMASS whose
 # coefficients are the *activated* composition, while the published MFA fits a

@@ -22,8 +22,8 @@ import torch
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.core.experiment import Tracer, calculate_tracer_input  # noqa: E402
-from sigmaflux.expansion.emu import EMU  # noqa: E402
+from flux_transformer.core.experiment import Tracer, calculate_tracer_input  # noqa: E402
+from flux_transformer.expansion.emu import EMU  # noqa: E402
 
 
 def _emu(mid, n_atoms=6):

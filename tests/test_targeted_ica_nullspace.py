@@ -1,4 +1,4 @@
-"""Unit tests for compute_targeted_ica_nullspace in sigmaflux.ai.utils.
+"""Unit tests for compute_targeted_ica_nullspace in flux_transformer.ai.utils.
 
 Tests cover:
   1. Basic correctness: shape, null-space property, rank, unit column norms, status keys.
@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import scipy.linalg
 
-from sigmaflux.ai.utils import compute_targeted_ica_nullspace, detect_parallel_reaction_groups
+from flux_transformer.ai.utils import compute_targeted_ica_nullspace, detect_parallel_reaction_groups
 
 
 # ---------------------------------------------------------------------------

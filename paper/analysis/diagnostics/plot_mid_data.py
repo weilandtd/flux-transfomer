@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from sigmaflux.pipeline._paths import load_config, resolve_path
+from flux_transformer.pipeline._paths import load_config, resolve_path
 
 mpl.use("Agg")
 mpl.rcParams.update({"font.family": "Arial", "font.size": 12})

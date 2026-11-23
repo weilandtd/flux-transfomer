@@ -3,7 +3,7 @@ BiGG-id -> real compound name fallback, for organisms whose GEM xlsx carries no
 metabolite names at all.
 
 iAF1260 (E_coli) and its core subset (E_coli_core) ship a `Metabolites` sheet whose
-`metname` column is entirely empty, so `sigmaflux.utils.lcms_knowns.match_lcms_knowns`
+`metname` column is entirely empty, so `flux_transformer.utils.lcms_knowns.match_lcms_knowns`
 has nothing to match against `data/HILIC_LCMS_knowns.csv` by name. These two tables
 fill that gap for the metabolites this repo's models actually carry, each value
 spelled exactly as it appears in `data/HILIC_LCMS_knowns.csv`'s `compound` column so

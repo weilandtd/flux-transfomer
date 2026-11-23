@@ -1,7 +1,7 @@
 """
 Integration tests for the accuracy-benchmark console scripts.
 
-``sigmaflux-benchmark`` and ``sigmaflux-benchmark-mfa`` score two different
+``flux-transformer-benchmark`` and ``flux-transformer-benchmark-mfa`` score two different
 predictors on the same held-out samples and must write the same HDF5 schema —
 ``plot_test_performance.py`` loads both with one reader. These tests run each CLI
 end-to-end on the ``toy_run`` fixture and assert that schema, plus the properties
@@ -16,10 +16,10 @@ import pandas as pd
 import pytest
 from scipy import stats
 
-from sigmaflux.pipeline import run_ai_benchmark, run_mfa_benchmark
-from sigmaflux.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, noisy_measurements
-from sigmaflux.pipeline._paths import load_config
-from sigmaflux.pipeline.run_mfa_benchmark import (
+from flux_transformer.pipeline import run_ai_benchmark, run_mfa_benchmark
+from flux_transformer.pipeline._benchmark import build_mfa_context, load_benchmark_inputs, noisy_measurements
+from flux_transformer.pipeline._paths import load_config
+from flux_transformer.pipeline.run_mfa_benchmark import (
     EFFECTIVE_DOF_FILE, acceptance_threshold, build_noisy_experiments, chi2_acceptance,
     effective_parameter_count, fitted_parameter_count, make_init_fluxes,
     make_measured_flux_data, measured_flux_ids, rescore_acceptance,

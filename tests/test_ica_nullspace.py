@@ -1,4 +1,4 @@
-"""Unit tests for compute_ica_nullspace in sigmaflux.ai.utils.
+"""Unit tests for compute_ica_nullspace in flux_transformer.ai.utils.
 
 Tests cover:
   1. Basic correctness: null-space property, rank, shape, unit column norms, status keys.
@@ -14,7 +14,7 @@ import pytest
 import scipy.linalg
 import yaml
 
-from sigmaflux.ai.utils import compute_ica_nullspace
+from flux_transformer.ai.utils import compute_ica_nullspace
 
 
 # ---------------------------------------------------------------------------

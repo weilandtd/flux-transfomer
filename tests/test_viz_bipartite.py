@@ -5,7 +5,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 
-from sigmaflux.viz import (
+from flux_transformer.viz import (
     bipartite_graph,
     common_subgraph,
     hubs,

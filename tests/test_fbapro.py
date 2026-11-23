@@ -7,7 +7,7 @@ import numpy as np
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from sigmaflux.core.fbapro import fbapro, bounded_moma  # noqa: E402
+from flux_transformer.core.fbapro import fbapro, bounded_moma  # noqa: E402
 
 # Branched pathway:  v1: ->A,  v2: A->B,  v3: A->B (parallel),  v4: B->   (metabolites A, B)
 S = np.array([[1.0, -1.0, -1.0, 0.0],

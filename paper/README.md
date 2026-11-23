@@ -5,7 +5,7 @@
 Run the entire pipeline for an organism by passing its config:
 
 ```bash
-sigmaflux-workflow --config paper/configs/i_orientalis.yaml
+flux-transformer-workflow --config paper/configs/i_orientalis.yaml
 ```
 
 Key options:
@@ -46,26 +46,26 @@ reactions, and it carries no carbohydrate, so `CARB_c` is absent.
 The pipeline stages ship with the package as console scripts. Each takes the same
 organism YAML; per-stage settings live in the config, not on the command line.
 
-### 1. Sample flux distributions — `sigmaflux-sample-flux`
+### 1. Sample flux distributions — `flux-transformer-sample-flux`
 
 Prepares a COBRA sampling problem from an annotated model and
 draws flux samples via COBRApy's `optgp` sampler.
 
 ```bash
-sigmaflux-sample-flux \
+flux-transformer-sample-flux \
     --config paper/configs/i_orientalis.yaml \
     --output-dir training_data
 ```
 
 Outputs `flux_samples.csv` and a copy of the prepared model JSON to `--output-dir`.
 
-### 2. Simulate isotope labeling — `sigmaflux-generate-data`
+### 2. Simulate isotope labeling — `flux-transformer-generate-data`
 
 For each sampled flux distribution, runs `MFAModel` forward to compute
 simulated mass isotopomer distributions (MIDs) and saves them to HDF5.
 
 ```bash
-sigmaflux-generate-data \
+flux-transformer-generate-data \
     --config paper/configs/i_orientalis.yaml \
     --output-dir training_data \
     --start-idx 0 \
@@ -76,14 +76,14 @@ Outputs `wb_model_labeling_data_*.h5`, `wb_model_flux_data_*.h5` and
 `wb_model_reversibility_data_*.h5`. Run in parallel slices
 (`--start-idx` / `--end-idx`) to distribute across jobs.
 
-### 3. Select informative features — `sigmaflux-select-features`
+### 3. Select informative features — `flux-transformer-select-features`
 
 Fisher-information significance token selection over the generated HDF5, writing
 `features.csv`. A token is included iff its standalone information about the free
 fluxes exceeds a permutation-calibrated null floor — no redundancy trimming.
 
 ```bash
-sigmaflux-select-features \
+flux-transformer-select-features \
     --config paper/configs/i_orientalis.yaml \
     --data-dir training_data
 ```
@@ -94,12 +94,12 @@ sensitivity Gram is estimated — `fisher` (exact, cross-fit, bias-corrected) or
 significance test on top, so `features.csv`'s schema and downstream training are
 unaffected by the choice; `fisher_fast` just costs less.
 
-### 4. Train the decoder — `sigmaflux-train`
+### 4. Train the decoder — `flux-transformer-train`
 
 Trains `FluxDecoder` on the HDF5 files produced above.
 
 ```bash
-sigmaflux-train \
+flux-transformer-train \
     --config paper/configs/i_orientalis.yaml \
     --data-dir training_data \
     --output imisor_transformer.pt
@@ -107,41 +107,41 @@ sigmaflux-train \
 
 Saves the trained model to `--output` (`.pt` file).
 
-### 5. (optional) Train a reliability ensemble — `sigmaflux-train --ensemble-size 20`
+### 5. (optional) Train a reliability ensemble — `flux-transformer-train --ensemble-size 20`
 
 Adding `--ensemble-size 20` trains 20 seed-varied models on a shared split, written to
 `<output_dir>/ensemble/model_{0..19}.pt`.
 
 This is the recommended way to train, because ensembles are the **default at
-prediction time**: `sigmaflux.ai.load_predictor` returns an `EnsembleSigmaFlux`
+prediction time**: `flux_transformer.ai.load_predictor` returns an `EnsembleFluxTransformer`
 whenever it finds an `ensemble/` directory next to the checkpoint, and reports the
 per-reaction median over members. No extra flag is needed — point inference at the
 run directory and it picks the ensemble up automatically.
 
-### 6. Predict fluxes from experimental data — `sigmaflux-infer`
+### 6. Predict fluxes from experimental data — `flux-transformer-infer`
 
 Discovers the per-condition MID spreadsheets in the experimental data directory
 and writes `predictions_*.csv` per condition.
 
 ```bash
-sigmaflux-infer \
+flux-transformer-infer \
     --config     paper/configs/i_orientalis.yaml \
     --checkpoint <run_dir>/imisor_transformer.pt \
     --data-dir   data/I_orientalis \
     --out-dir    <run_dir>/predictions
 ```
 
-For programmatic use, `sigmaflux.ai.load_predictor` returns the same predictor and
+For programmatic use, `flux_transformer.ai.load_predictor` returns the same predictor and
 exposes `.predict(df_L, df_Vm)`.
 
-### 7. Package the model for release — `sigmaflux-export`
+### 7. Package the model for release — `flux-transformer-export`
 
 A trained run is 20 `.pt` files (252 MB for I. orientalis), and each one only
-loads next to its config YAML, COBRA JSON and run directory. `sigmaflux-export`
+loads next to its config YAML, COBRA JSON and run directory. `flux-transformer-export`
 packages them into one self-contained file:
 
 ```bash
-sigmaflux-export \
+flux-transformer-export \
     --source <run_dir>/ensemble \
     --config paper/configs/i_orientalis.yaml \
     --model-version 1.2.0
@@ -160,7 +160,7 @@ The export also carries the run's prepared COBRA network (~30 KB packed), so a
 consumer can rebuild the stoichiometry the predictions belong to:
 
 ```python
-from sigmaflux.ai import load_model, read_stoichiometry
+from flux_transformer.ai import load_model, read_stoichiometry
 
 S, metabolite_ids, cobra_model = read_stoichiometry("i_orientalis-v1.2.0.sfx")
 S @ predicted_fluxes      # ≈ 0 — columns are already in flux_names order
@@ -177,20 +177,20 @@ were already unidentifiable move, and the null-space basis stays float32 so
 Inspect one without loading any weights — or without torch installed:
 
 ```bash
-sigmaflux-inspect i_orientalis-v1.2.0.sfx           # name, version, provenance
-sigmaflux-inspect i_orientalis-v1.2.0.sfx --verify  # checksums for every entry
+flux-transformer-inspect i_orientalis-v1.2.0.sfx           # name, version, provenance
+flux-transformer-inspect i_orientalis-v1.2.0.sfx --verify  # checksums for every entry
 ```
 
 An export is **always an ensemble** (a single model is an ensemble of one), and
 anything that accepts a checkpoint accepts it:
 
 ```bash
-sigmaflux-infer --config paper/configs/i_orientalis.yaml \
+flux-transformer-infer --config paper/configs/i_orientalis.yaml \
                 --checkpoint i_orientalis-v1.2.0.sfx \
                 --data-dir data/I_orientalis --out-dir <run_dir>/predictions
 ```
 
-### 8. Benchmark accuracy — `sigmaflux-benchmark`, `sigmaflux-benchmark-mfa`
+### 8. Benchmark accuracy — `flux-transformer-benchmark`, `flux-transformer-benchmark-mfa`
 
 Both benchmarks score a predictor on the samples withheld from AI training
 (`--split val`), from the same noisy inputs, and write the same HDF5 schema
@@ -198,15 +198,15 @@ Both benchmarks score a predictor on the samples withheld from AI training
 `paper/analysis/diagnostics/plot_test_performance.py`.
 
 ```bash
-sigmaflux-benchmark \
+flux-transformer-benchmark \
     --config paper/configs/i_orientalis.yaml \
     --data-dir <run_dir> --n-benchmarks 2000        # → <run_dir>/ai_benchmark/
 
-sigmaflux-benchmark-mfa \
+flux-transformer-benchmark-mfa \
     --config paper/configs/i_orientalis.yaml \
     --data-dir <run_dir> --n-benchmarks 2 --start-ix 0   # → <run_dir>/mfa_benchmark/
 
-sigmaflux-benchmark-mfa --backend x3cflux \
+flux-transformer-benchmark-mfa --backend x3cflux \
     --config paper/configs/i_orientalis.yaml \
     --data-dir <run_dir> --n-benchmarks 2 --start-ix 0   # 13CFLUX/Ipopt, same schema
 ```
@@ -231,14 +231,14 @@ sample with full diagnostics (GT feasibility, init agreement, per-block χ² spl
 measured-flux recovery, flux/labeling R²) and no HDF5 output:
 
 ```bash
-sigmaflux-benchmark-mfa --diagnose \
+flux-transformer-benchmark-mfa --diagnose \
     --config paper/configs/i_orientalis.yaml \
     --data-dir <run_dir> --start-ix 0 --max-iter 1000
 ```
 
 ## Notes
 
-- Install the package once with `pip install -e .`; the `sigmaflux-*` console
+- Install the package once with `pip install -e .`; the `flux-transformer-*` console
   scripts and the `paper/analysis/` scripts then work from any directory.
 - The `.h5` and `.pkl` training outputs are gitignored; only the final `.pt`
   model is committed.

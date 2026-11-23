@@ -1,7 +1,7 @@
-"""Tests for sigmaflux.ai.checkpoint and the ensemble prediction path.
+"""Tests for flux_transformer.ai.checkpoint and the ensemble prediction path.
 
 ``load_eval_context``/``build_flux_decoder`` are the single point of failure for
-every analysis script, and ``EnsembleSigmaFlux`` is now the default predictor
+every analysis script, and ``EnsembleFluxTransformer`` is now the default predictor
 whenever a run has an ``ensemble/`` directory. Both were previously untested.
 """
 
@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 import torch
 
-from sigmaflux.ai.checkpoint import (
+from flux_transformer.ai.checkpoint import (
     ALL,
     VAL,
     build_flux_decoder,
@@ -19,7 +19,7 @@ from sigmaflux.ai.checkpoint import (
     promote_norm_buffers,
     resolve_device,
 )
-from sigmaflux.ai.inference import EnsembleSigmaFlux, SigmaFlux, load_predictor
+from flux_transformer.ai.inference import EnsembleFluxTransformer, FluxTransformer, load_predictor
 
 from conftest import N_SAMPLES, TRACER_ID
 
@@ -178,9 +178,9 @@ def test_flux_decoder_config_ignores_extra_keys(toy_run):
 # ── ensemble prediction (the default predict path) ────────────────────────────
 
 def test_ensemble_predict_is_one_member_per_sample(toy_run):
-    """EnsembleSigmaFlux reports, per sample, one member's own prediction (the medoid)
-    with SigmaFlux's schema."""
-    ens = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
+    """EnsembleFluxTransformer reports, per sample, one member's own prediction (the medoid)
+    with FluxTransformer's schema."""
+    ens = EnsembleFluxTransformer(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
     assert len(ens.members) == 2
 
     df_L = _toy_df_L(n_samples=2)
@@ -192,14 +192,14 @@ def test_ensemble_predict_is_one_member_per_sample(toy_run):
         assert any(np.array_equal(combined["Value"].to_numpy()[rows], member[rows])
                    for member in per_member)
 
-    single = SigmaFlux(toy_run["config"], toy_run["member_paths"][0], device="cpu")
+    single = FluxTransformer(toy_run["config"], toy_run["member_paths"][0], device="cpu")
     assert list(combined.columns) == list(single.predict(df_L).columns)
     assert len(combined) == len(single.predict(df_L))
 
 
 def test_ensemble_predict_aggregate_false(toy_run):
     """aggregate=False returns every member's raw prediction, not the medoid."""
-    ens = EnsembleSigmaFlux(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
+    ens = EnsembleFluxTransformer(toy_run["config"], toy_run["ensemble_dir"], device="cpu")
 
     df_L = _toy_df_L(n_samples=2)
     aggregated = ens.predict(df_L)
@@ -212,7 +212,7 @@ def test_ensemble_predict_aggregate_false(toy_run):
     # Row order within each member's block matches `aggregated`'s row order exactly
     # (same Sample/Flux Name sequence per member, since flux_names/rev_names are
     # shared across members), so the aggregate is one member's block positionally,
-    # mirroring EnsembleSigmaFlux.predict()'s own aggregate=True path. A name-based
+    # mirroring EnsembleFluxTransformer.predict()'s own aggregate=True path. A name-based
     # groupby would be wrong here: reversibility names can repeat a flux's own
     # reaction id, so "Flux Name" alone is not unique per Sample.
     for midx in range(len(ens.members)):
@@ -228,7 +228,7 @@ def test_ensemble_predict_aggregate_false(toy_run):
         assert any(np.array_equal(aggregated["Value"].to_numpy()[rows], member[rows])
                    for member in per_member_values)
 
-    # Single-sample calls drop 'Sample' inside SigmaFlux.predict(); aggregate=False
+    # Single-sample calls drop 'Sample' inside FluxTransformer.predict(); aggregate=False
     # must still guarantee the column is present.
     single_df_L = _toy_df_L(n_samples=1)
     raw_single = ens.predict(single_df_L, aggregate=False)
@@ -238,13 +238,13 @@ def test_ensemble_predict_aggregate_false(toy_run):
 
 def test_ensemble_missing_members_raises(tmp_path, toy_run):
     with pytest.raises(FileNotFoundError, match="No model_.*pt"):
-        EnsembleSigmaFlux(toy_run["config"], str(tmp_path), device="cpu")
+        EnsembleFluxTransformer(toy_run["config"], str(tmp_path), device="cpu")
 
 
 def test_load_predictor_prefers_sibling_ensemble(toy_run):
     """A sibling ensemble/ wins over the single .pt it was pointed at."""
     predictor = load_predictor(toy_run["config"], toy_run["checkpoint"], device="cpu")
-    assert isinstance(predictor, EnsembleSigmaFlux)
+    assert isinstance(predictor, EnsembleFluxTransformer)
     assert len(predictor.members) == 2
 
 
@@ -254,4 +254,4 @@ def test_load_predictor_falls_back_to_single_model(tmp_path, toy_run):
     lone = tmp_path / "model.pt"
     shutil.copy(toy_run["checkpoint"], lone)
     predictor = load_predictor(toy_run["config"], str(lone), device="cpu")
-    assert isinstance(predictor, SigmaFlux)
+    assert isinstance(predictor, FluxTransformer)

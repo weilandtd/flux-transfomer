@@ -9,7 +9,7 @@ CONFIGURATION section below with your actual file paths, then run:
 Each entry produces one CSV mapping LC/MS platform compound names (from
 data/HILIC_LCMS_knowns.csv) to model metabolite IDs, filtered to rows whose atom
 map tracks the compound's full carbon count (see
-sigmaflux.utils.carbon_coverage.filter_by_carbon_coverage). This CSV is the
+flux_transformer.utils.carbon_coverage.filter_by_carbon_coverage). This CSV is the
 LC/MS-platform-measurable subset of the model -- what one experiment happened to
 report plays no part in it. It is used by prepare_experiment_data.py and
 run_inference.py via --mapping-csv.
@@ -28,8 +28,8 @@ import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from sigmaflux.utils import match_lcms_knowns
-from sigmaflux.utils.carbon_coverage import filter_by_carbon_coverage, formulas_from_knowns
+from flux_transformer.utils import match_lcms_knowns
+from flux_transformer.utils.carbon_coverage import filter_by_carbon_coverage, formulas_from_knowns
 
 LCMS_KNOWNS = "data/HILIC_LCMS_knowns.csv"
 
@@ -144,7 +144,7 @@ def _collapse_to_measurement_tokens(org, root):
     """
     from cobra.io import load_json_model
 
-    from sigmaflux.core.measurement_pools import measurement_token
+    from flux_transformer.core.measurement_pools import measurement_token
 
     model = load_json_model(os.path.join(root, org["model_json"]))
     output = os.path.join(root, org["output_csv"])

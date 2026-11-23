@@ -35,8 +35,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
-from sigmaflux.ai.train import per_reaction_r2
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.train import per_reaction_r2
 
 matplotlib.rcParams.update({'font.family': 'Arial', 'font.size': 12})
 

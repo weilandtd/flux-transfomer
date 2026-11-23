@@ -1,10 +1,10 @@
 """
-CPU hours for 1000 samples, 13CFLUX with a single start against SigmaFlux and a dummy for
+CPU hours for 1000 samples, 13CFLUX with a single start against FluxTransformer and a dummy for
 INCA, as a bar graph on a log axis. CPU hours are wall time times the cores a run used.
 
   13CFLUX    per-sample seconds of the MFA benchmark's samples that ran a single start, on
              one core each: median, with the 10th and 90th percentiles as bounds
-  SigmaFlux  measured by time_sigmaflux.py (<run-dir>/timing/sigmaflux_predict.json) times
+  FluxTransformer  measured by time_flux_transformer.py (<run-dir>/timing/flux_transformer_predict.json) times
              the threads it ran on, scaled to 1000 samples; bounds are the fastest and slowest
              repeat, and model loading is added once
   INCA       not measured: a hatched dummy at INCA_SLOWDOWN times 13CFLUX
@@ -43,9 +43,9 @@ def mfa_hours(run):
     return conv.loc[one, "seconds"].quantile(QUANTILES).to_numpy() * N_SAMPLES / 3600
 
 
-def sigmaflux_hours(run):
+def flux_transformer_hours(run):
     """(low, median, high) CPU hours for N_SAMPLES samples, model loading included once."""
-    rec = json.loads((run / "timing" / "sigmaflux_predict.json").read_text())
+    rec = json.loads((run / "timing" / "flux_transformer_predict.json").read_text())
     per = np.array(rec["seconds"]) / rec["n_samples"] * N_SAMPLES
     wall = np.array([per.min(), np.median(per), per.max()]) + rec["load_seconds"]
     return wall * rec["threads"] / 3600
@@ -54,7 +54,7 @@ def sigmaflux_hours(run):
 def plot_model(model, args):
     run = run_dir_for(model, args.run_suffix)
     mfa = mfa_hours(run)
-    tbl = pd.DataFrame([("SigmaFlux", *sigmaflux_hours(run)), ("13CFLUX", *mfa),
+    tbl = pd.DataFrame([("FluxTransformer", *flux_transformer_hours(run)), ("13CFLUX", *mfa),
                         ("INCA (dummy)", *(INCA_SLOWDOWN * mfa))],
                        columns=["method", "cpu_hours_lo", "cpu_hours", "cpu_hours_hi"])
     tbl.to_csv(args.out_dir / f"runtime_{model['key']}.csv", index=False)

@@ -29,9 +29,9 @@ import torch
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_REPO_ROOT / "paper" / "scripts"))
 
-from sigmaflux.ai.inference import load_predictor
-from sigmaflux.pipeline._paths import mapping_csv_for, resolve_path, load_config
-from sigmaflux.pipeline.run_inference_workflow import (
+from flux_transformer.ai.inference import load_predictor
+from flux_transformer.pipeline._paths import mapping_csv_for, resolve_path, load_config
+from flux_transformer.pipeline.run_inference_workflow import (
     _discover_conditions, _find_ext_flux_file, load_condition_inputs)
 
 RUN_DIR = _REPO_ROOT / "paper/.results/s_cerevisiae_20260831"

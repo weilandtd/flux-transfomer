@@ -72,7 +72,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from sigmaflux.utils import magnitude_bounds
+from flux_transformer.utils import magnitude_bounds
 
 from _figure_common import (
     COLORS, METHOD_COLORS, PREDICTION_SPECS, R2_THRESHOLD, TRACER_MARKERS,
@@ -489,7 +489,7 @@ def main():
             plot_mid_panel(model, cond, grp, marker, out_dir)
         mid_rows.extend(mid_summary(model, df))
         tokens.append(df.assign(model=model["label"], key=model["key"]))
-        per_tracer.append(labeling_r2_per_tracer(model, df).assign(method="sigmaflux"))
+        per_tracer.append(labeling_r2_per_tracer(model, df).assign(method="flux_transformer"))
         mfa_path = mfa_tokens_path(run_dir_for(model, args.run_suffix))
         if mfa_path.is_file():
             mfa_df, _ = drop_unplottable(pd.read_csv(mfa_path), args.min_fraction)
@@ -530,11 +530,11 @@ def main():
             print(f"Saved: {out_dir / name}")
         median = (lab.groupby(["method", "key", "condition"], sort=False)["r2"].median()
                   .reset_index())
-        sigmaflux = median[median["method"] == "sigmaflux"]
+        flux_transformer = median[median["method"] == "flux_transformer"]
         # Same bar order as the flux plot, so the two read side by side.
-        plot_r2(sigmaflux, order, "Flux transformer vs.\n" r"measured labeling $R^2$",
+        plot_r2(flux_transformer, order, "Flux transformer vs.\n" r"measured labeling $R^2$",
                 out_dir / "r2_labeling.svg")
-        plot_r2_paired(sigmaflux, median[median["method"] == "mfa"], order,
+        plot_r2_paired(flux_transformer, median[median["method"] == "mfa"], order,
                        r"Labeling $R^2$ vs. measurement", out_dir / "r2_labeling_mfa.svg")
     else:
         print("No model had a token table — no labeling outputs written.")

@@ -22,9 +22,9 @@ import argparse
 import numpy as np
 import torch
 
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
-from sigmaflux.ai.model import MISSING_LABEL_VALUE
-from sigmaflux.ai.train import per_reaction_r2
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.model import MISSING_LABEL_VALUE
+from flux_transformer.ai.train import per_reaction_r2
 
 
 def run_inference(model, loader, device, missing_fn=None):

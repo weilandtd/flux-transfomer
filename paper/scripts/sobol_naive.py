@@ -21,7 +21,7 @@ The groups are otherwise independent, so
 no correlation between metabolites survives. SALib's Sobol sequence places N(D + 2) points for the
 D factors, and ``SALib.analyze.sobol`` gives each flux the first-order index S1 (Saltelli 2010) and
 the total index ST (Jansen) with bootstrap confidence intervals, of the ensemble prediction as
-``EnsembleSigmaFlux.predict`` reports it: the ensemble medoid (``uncertainty._medoid_weights``),
+``EnsembleFluxTransformer.predict`` reports it: the ensemble medoid (``uncertainty._medoid_weights``),
 one member for the whole population, chosen on the independent base samples (A and B). Choosing it
 per sample instead lets a small change of one token switch the member, a jump every token then
 reads as sensitivity.
@@ -75,8 +75,8 @@ from SALib.sample import sobol as sobol_sample
 from scipy.stats import gamma, rankdata
 from sobol_sensitivity import predict
 
-from sigmaflux.ai import load_model
-from sigmaflux.ai.uncertainty import _medoid_weights
+from flux_transformer.ai import load_model
+from flux_transformer.ai.uncertainty import _medoid_weights
 
 GRID = np.linspace(1e-6, 1 - 1e-6, 4001)   # quantiles tabulated per Gamma factor
 KEYS = ("S1", "ST", "S1_conf", "ST_conf", "SRRC", "SRRC_conf", "PRCC", "mu", "mu_star")

@@ -37,7 +37,7 @@ jobs:
         # CPU wheels only: the default torch build drags in ~2.5 GB of CUDA that a
         # GitHub runner cannot use.
         pip install torch --index-url https://download.pytorch.org/whl/cpu
-        # Editable install rather than requirements.txt: the tests import sigmaflux,
+        # Editable install rather than requirements.txt: the tests import flux_transformer,
         # and pyproject carries the complete dependency list.
         pip install -e ".[dev]" flake8
     - name: Lint with flake8
@@ -48,7 +48,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     - name: Test with pytest
       run: |
-        pytest --cov=sigmaflux --cov-report=xml
+        pytest --cov=flux_transformer --cov-report=xml
 
     - name: Codacy Coverage Reporter
       # Skipped rather than failed when no token is configured, so a fork PR — which

@@ -6,8 +6,8 @@ Computes per-reaction R2 two ways on the SAME split:
 Saves paper/.results/version_benchmark/current_io.json
 """
 import argparse, json, os, numpy as np, torch
-from sigmaflux.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
-from sigmaflux.ai.train import per_reaction_r2
+from flux_transformer.ai.checkpoint import build_flux_decoder, load_eval_context, resolve_device
+from flux_transformer.ai.train import per_reaction_r2
 
 
 def main():

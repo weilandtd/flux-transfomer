@@ -3,13 +3,13 @@
 # Run from the repo root -- the pip section resolves `-e .` against the invoking
 # working directory, not against this file:
 #
-#   conda env create -f environment.yml && conda activate sigmaflux
+#   conda env create -f environment.yml && conda activate flux_transformer
 #
 # The split between the two dependency lists is deliberate: conda owns everything
 # with a compiled ABI that pip cannot build, pip owns the pure-Python graph, and it
 # owns it exactly once -- through `-e .`, so pyproject.toml stays the single
 # dependency list and the two files cannot drift apart.
-name: sigmaflux
+name: flux_transformer
 channels:
   - conda-forge
   # Keeps `defaults` out of the solve even when the user's .condarc adds it, so the
@@ -20,7 +20,7 @@ dependencies:
   # choice rather than a constraint.
   - python=3.11
   # cyipopt links libspral, which needs CXXABI_1.3.15 -- present here, absent from
-  # the system /lib64 libstdc++. See sigmaflux.x3cflux's module docstring for why
+  # the system /lib64 libstdc++. See flux_transformer.x3cflux's module docstring for why
   # the import order matters as well.
   - libstdcxx-ng>=12
   # The only supported route to Ipopt: pip's cyipopt is an sdist that needs Ipopt

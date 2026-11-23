@@ -34,12 +34,12 @@ import torch
 from cobra.io import load_json_model
 from cobra.util.array import create_stoichiometric_matrix
 
-from sigmaflux.core.model import MFAModel
-from sigmaflux.pipeline._paths import load_config, resolve_path
-from sigmaflux.pipeline.generate_training_data import build_experiments, build_targets
-from sigmaflux.pipeline.sample_flux import prepare_for_mfa
-from sigmaflux.utils import read_reference_fluxes
-from sigmaflux.utils.read_xlsx_mid_data import read_xlsx_mid_data
+from flux_transformer.core.model import MFAModel
+from flux_transformer.pipeline._paths import load_config, resolve_path
+from flux_transformer.pipeline.generate_training_data import build_experiments, build_targets
+from flux_transformer.pipeline.sample_flux import prepare_for_mfa
+from flux_transformer.utils import read_reference_fluxes
+from flux_transformer.utils.read_xlsx_mid_data import read_xlsx_mid_data
 
 ROOT = Path(__file__).resolve().parents[3]
 CONFIG = ROOT / "paper/configs/e_coli_core_gc.yaml"

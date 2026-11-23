@@ -13,7 +13,7 @@ breaks anything that compares members in basis space.
 import numpy as np
 import pytest
 
-from sigmaflux.pipeline.train_ai_model import share_basis
+from flux_transformer.pipeline.train_ai_model import share_basis
 
 
 def _basis(seed, shape=(12, 4)):

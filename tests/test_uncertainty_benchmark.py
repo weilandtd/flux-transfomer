@@ -1,8 +1,8 @@
 """
 Tests for the missing-metabolite / measurement-noise sensitivity benchmark.
 
-``sigmaflux-benchmark-uncertainty`` never re-derives a prediction -- it only builds
-argv for ``sigmaflux-benchmark``/``sigmaflux-benchmark-mfa`` and calls their own
+``flux-transformer-benchmark-uncertainty`` never re-derives a prediction -- it only builds
+argv for ``flux-transformer-benchmark``/``flux-transformer-benchmark-mfa`` and calls their own
 ``cli()``. So these tests cover what actually is new: the grid itself (every sample
 scored exactly once per condition/method, regardless of how ``--per-task`` slices
 it; replicated metabolite draws nest within a replicate and vary across replicates),
@@ -18,9 +18,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sigmaflux.pipeline import run_ai_benchmark, run_mfa_benchmark, run_uncertainty_benchmark
-from sigmaflux.pipeline._benchmark import metabolite_subset, select_samples
-from sigmaflux.pipeline.run_uncertainty_benchmark import (
+from flux_transformer.pipeline import run_ai_benchmark, run_mfa_benchmark, run_uncertainty_benchmark
+from flux_transformer.pipeline._benchmark import metabolite_subset, select_samples
+from flux_transformer.pipeline.run_uncertainty_benchmark import (
     CONDITIONS, METHODS, _build_conditions, _pct, _resolve_sample_pool_path,
     resolve_solved_sample_pool, tasks,
 )
@@ -356,11 +356,11 @@ def test_bad_task_id_raises():
 def test_resolve_ai_checkpoint_falls_back_to_ensemble_dir(toy_run, tmp_path):
     """Every current paper/.results/*_20260822 run has an ensemble/ but no
     top-level .pt (train_ai_model returns from the ensemble branch before writing
-    training.output_model) -- sigmaflux.ai.data.find_checkpoint only looks at the
+    training.output_model) -- flux_transformer.ai.data.find_checkpoint only looks at the
     top level and raises there, which is what broke the first real run of this
     driver against production data. The toy_run fixture always ships a top-level
     .pt, so this branch needs its own run dir to exercise at all."""
-    from sigmaflux.pipeline.run_uncertainty_benchmark import _resolve_ai_checkpoint
+    from flux_transformer.pipeline.run_uncertainty_benchmark import _resolve_ai_checkpoint
 
     ensemble_only = tmp_path / "ensemble_only_run"
     ensemble_only.mkdir()
@@ -374,7 +374,7 @@ def test_resolve_ai_checkpoint_falls_back_to_ensemble_dir(toy_run, tmp_path):
 def test_uncertainty_benchmark_ai_task_works_with_ensemble_only_run(tmp_path, toy_run, monkeypatch):
     """End-to-end: an ensemble-only run dir (no top-level .pt) must still run the
     ai method through the sensitivity driver, not just through plain
-    sigmaflux-benchmark -- this is the exact shape every real _20260822 run has."""
+    flux-transformer-benchmark -- this is the exact shape every real _20260822 run has."""
     monkeypatch.chdir(tmp_path)
     run_dir = tmp_path / "ensemble_only_run"
     run_dir.mkdir()
@@ -422,7 +422,7 @@ def test_uncertainty_benchmark_list_prints_grid_and_runs_nothing(toy_run, capsys
 
 
 def test_uncertainty_benchmark_ai_task_writes_expected_layout(toy_run, tmp_path):
-    """One --task-id call reaches straight into sigmaflux-benchmark and writes into
+    """One --task-id call reaches straight into flux-transformer-benchmark and writes into
     <output-dir>/<condition>/ai/, mirroring ai_benchmark/'s own file schema, and
     resolves+persists samples.json alongside it."""
     baseline = tmp_path / "baseline_mfa"

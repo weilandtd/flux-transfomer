@@ -16,9 +16,9 @@ os.environ.update(MKL_CBWR="COMPATIBLE", DNNL_MAX_CPU_ISA="AVX2", ATEN_CPU_CAPAB
 import numpy as np
 import pandas as pd
 
-from sigmaflux.ai import load_model
-from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
-from sigmaflux.pipeline.run_inference_workflow import predict_draws
+from flux_transformer.ai import load_model
+from flux_transformer.ai.uncertainty import sample_inputs, summarize_draws
+from flux_transformer.pipeline.run_inference_workflow import predict_draws
 
 ROOT = Path(__file__).resolve().parent.parent
 N_BOOTSTRAP = 200
