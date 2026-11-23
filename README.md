@@ -42,7 +42,7 @@ Verify:
 
 ```bash
 python -c "import sigmaflux; print(sigmaflux.__version__)"
-sigmaflux-inspect models/pretrained/i_orientalis-v1.4.1.sfx
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.2.sfx
 ```
 
 If `sigmaflux-inspect` reports a format error, the LFS objects were not fetched —
@@ -89,7 +89,7 @@ from sigmaflux.ai import load_model
 from sigmaflux.ai.uncertainty import sample_inputs, summarize_draws
 from sigmaflux.pipeline.run_inference_workflow import predict_draws
 
-sf = load_model("models/pretrained/i_orientalis-v1.4.1.sfx")
+sf = load_model("models/pretrained/i_orientalis-v1.4.2.sfx")
 data = Path("tests/data/interface_test/i_orientalis/input")
 condition = "B1"
 
@@ -144,7 +144,7 @@ torch.
 To inspect a model without loading any weights (no torch required):
 
 ```bash
-sigmaflux-inspect models/pretrained/i_orientalis-v1.4.1.sfx --verify
+sigmaflux-inspect models/pretrained/i_orientalis-v1.4.2.sfx --verify
 ```
 
 Reads the name, version, output dimensions, tracers, and provenance — the
