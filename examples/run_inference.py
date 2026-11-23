@@ -25,7 +25,7 @@ N_BOOTSTRAP = 200
 
 model, condition = sys.argv[1:3]
 data = ROOT / "tests/data/interface_test" / model
-sf = load_model(ROOT / f"models/pretrained/{model}-v1.4.1.sfx")
+sf = load_model(next((ROOT / "models/pretrained").glob(f"{model}-v*.sfx")))
 
 # One CSV per tracer, named labeling_measurements_<tracer name>.csv.
 PREFIX = "labeling_measurements_"
